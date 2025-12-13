@@ -6,29 +6,29 @@ let package = Package(
     name: "AudioCapture",
     platforms: [
         .iOS(.v18),
-        .macOS(.v15),
+        .watchOS(.v11),
+        .macOS(.v15)
     ],
     products: [
         .library(
             name: "AudioCapture",
             targets: ["AudioCapture"]
-        ),
+        )
     ],
     dependencies: [
-        .package(path: "../SharedModels"),
-        .package(path: "../Storage"),
+        .package(path: "../SharedModels")
     ],
     targets: [
         .target(
             name: "AudioCapture",
-            dependencies: ["SharedModels", "Storage"],
+            dependencies: ["SharedModels"],
             swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency"),
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         .testTarget(
             name: "AudioCaptureTests",
             dependencies: ["AudioCapture"]
-        ),
+        )
     ]
 )
