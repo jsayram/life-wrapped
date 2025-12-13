@@ -1,0 +1,183 @@
+# =============================================================================
+# Life Wrapped — .gitignore
+# iOS / watchOS / macOS + Swift Packages + Xcode
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Xcode
+# -----------------------------------------------------------------------------
+## User-specific settings
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+
+## Build artifacts
+build/
+DerivedData/
+*.dSYM.zip
+*.dSYM
+
+## Xcode SPM cache
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+*.xcworkspace/xcshareddata/swiftpm/
+
+## Index store
+IndexStoreDB/
+
+# -----------------------------------------------------------------------------
+# Swift Package Manager
+# -----------------------------------------------------------------------------
+.build/
+.swiftpm/
+Package.resolved
+
+# Keep Package.resolved for apps (reproducible builds) — uncomment if desired:
+# !Package.resolved
+
+# -----------------------------------------------------------------------------
+# CocoaPods (if ever used)
+# -----------------------------------------------------------------------------
+Pods/
+Podfile.lock
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# -----------------------------------------------------------------------------
+# Secrets & Configuration
+# -----------------------------------------------------------------------------
+# NEVER commit actual secrets
+Config/Secrets.xcconfig
+Config/*.local.xcconfig
+
+# Local environment overrides
+.env
+.env.local
+*.local.env
+
+# -----------------------------------------------------------------------------
+# macOS System Files
+# -----------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+*.Trashes
+
+# -----------------------------------------------------------------------------
+# VS Code
+# -----------------------------------------------------------------------------
+# Ignore local settings but keep workspace-level settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# -----------------------------------------------------------------------------
+# IDE Files
+# -----------------------------------------------------------------------------
+*.swp
+*.swo
+*~
+*.orig
+
+# JetBrains IDEs
+.idea/
+
+# Vim
+.vim/
+
+# -----------------------------------------------------------------------------
+# Testing & Coverage
+# -----------------------------------------------------------------------------
+*.xcresult
+coverage/
+*.coverage
+.coverage.*
+lcov.info
+TestResults/
+
+# -----------------------------------------------------------------------------
+# Instruments & Profiling
+# -----------------------------------------------------------------------------
+*.trace
+*.trace/
+Instruments/
+
+# -----------------------------------------------------------------------------
+# Archives & Distribution
+# -----------------------------------------------------------------------------
+*.ipa
+*.app
+*.app.dSYM
+*.appex
+*.xcarchive
+*.framework
+*.xcframework
+
+# -----------------------------------------------------------------------------
+# Backup Files
+# -----------------------------------------------------------------------------
+# Local backup exports (user's machine only)
+Backups/
+*.lifewrapped-backup
+*.lifewrapped-backup.encrypted
+
+# -----------------------------------------------------------------------------
+# Documentation Build Artifacts
+# -----------------------------------------------------------------------------
+.docc-build/
+docs/_site/
+
+# -----------------------------------------------------------------------------
+# Misc
+# -----------------------------------------------------------------------------
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Log files
+*.log
+logs/
+
+# Crash reports
+*.crash
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database files (local dev/test copies)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Audio test files (large)
+TestAudio/
+*.wav
+*.m4a
+*.mp3
+*.caf
+!Tests/Fixtures/**/*.wav
+!Tests/Fixtures/**/*.m4a
+
+# -----------------------------------------------------------------------------
+# CI/CD
+# -----------------------------------------------------------------------------
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# GitHub Actions local
+.act/
+
+# -----------------------------------------------------------------------------
+# Security Scanning
+# -----------------------------------------------------------------------------
+.gitleaks.toml.local
+security-scan-results/

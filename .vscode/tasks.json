@@ -1,0 +1,155 @@
+{
+  // ==========================================================================
+  // Life Wrapped — VS Code Tasks
+  // ==========================================================================
+  "version": "2.0.0",
+  "tasks": [
+    // -------------------------------------------------------------------------
+    // Build Tasks
+    // -------------------------------------------------------------------------
+    {
+      "label": "Build iOS App",
+      "type": "shell",
+      "command": "./Scripts/build.sh",
+      "args": [
+        "ios"
+      ],
+      "group": "build",
+      "problemMatcher": [
+        "$swiftc"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Build Watch App",
+      "type": "shell",
+      "command": "./Scripts/build.sh",
+      "args": [
+        "watch"
+      ],
+      "group": "build",
+      "problemMatcher": [
+        "$swiftc"
+      ]
+    },
+    {
+      "label": "Build All Packages",
+      "type": "shell",
+      "command": "./Scripts/build.sh",
+      "args": [
+        "packages"
+      ],
+      "group": "build",
+      "problemMatcher": [
+        "$swiftc"
+      ]
+    },
+    {
+      "label": "Build All",
+      "type": "shell",
+      "command": "./Scripts/build.sh",
+      "args": [
+        "all"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        "$swiftc"
+      ]
+    },
+    // -------------------------------------------------------------------------
+    // Test Tasks
+    // -------------------------------------------------------------------------
+    {
+      "label": "Run All Tests",
+      "type": "shell",
+      "command": "./Scripts/test.sh",
+      "args": [
+        "all"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": [
+        "$swiftc"
+      ]
+    },
+    {
+      "label": "Run Package Tests",
+      "type": "shell",
+      "command": "./Scripts/test.sh",
+      "args": [
+        "packages"
+      ],
+      "group": "test",
+      "problemMatcher": [
+        "$swiftc"
+      ]
+    },
+    {
+      "label": "Run Unit Tests",
+      "type": "shell",
+      "command": "./Scripts/test.sh",
+      "args": [
+        "unit"
+      ],
+      "group": "test",
+      "problemMatcher": [
+        "$swiftc"
+      ]
+    },
+    // -------------------------------------------------------------------------
+    // Quality Tasks
+    // -------------------------------------------------------------------------
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "./Scripts/lint.sh",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Format",
+      "type": "shell",
+      "command": "./Scripts/format.sh",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify Privacy",
+      "type": "shell",
+      "command": "./Scripts/verify-privacy.sh",
+      "group": "none",
+      "problemMatcher": []
+    },
+    // -------------------------------------------------------------------------
+    // Utility Tasks
+    // -------------------------------------------------------------------------
+    {
+      "label": "Open Xcode",
+      "type": "shell",
+      "command": "open",
+      "args": [
+        "LifeWrapped.xcworkspace"
+      ],
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Clean Build",
+      "type": "shell",
+      "command": "./Scripts/build.sh",
+      "args": [
+        "clean"
+      ],
+      "group": "none",
+      "problemMatcher": []
+    }
+  ]
+}

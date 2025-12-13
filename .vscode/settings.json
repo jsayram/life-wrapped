@@ -1,0 +1,123 @@
+{
+  // ==========================================================================
+  // Life Wrapped — VS Code Settings
+  // ==========================================================================
+  // ---------------------------------------------------------------------------
+  // Editor
+  // ---------------------------------------------------------------------------
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": false,
+  "editor.minimap.enabled": false,
+  "editor.rulers": [
+    100,
+    120
+  ],
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true,
+  "editor.wordWrap": "off",
+  // ---------------------------------------------------------------------------
+  // Swift Configuration
+  // ---------------------------------------------------------------------------
+  "[swift]": {
+    "editor.defaultFormatter": "vknabel.vscode-apple-swift-format",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  // Swift Extension Settings
+  "swift.path": "/usr/bin/swift",
+  "swift.buildPath": "${workspaceFolder}/.build",
+  "swift.diagnostics": true,
+  "swift.autoGenerateLaunchConfigurations": true,
+  "swift.backgroundCompilation": true,
+  // SourceKit-LSP
+  "sourcekit-lsp.serverPath": "/usr/bin/sourcekit-lsp",
+  "sourcekit-lsp.toolchainPath": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain",
+  "sourcekit-lsp.tracing.server": "off",
+  // ---------------------------------------------------------------------------
+  // SwiftFormat
+  // ---------------------------------------------------------------------------
+  "apple-swift-format.path": "/opt/homebrew/bin/swift-format",
+  "apple-swift-format.configSearchPaths": [
+    "${workspaceFolder}/.swift-format"
+  ],
+  // ---------------------------------------------------------------------------
+  // SwiftLint (if using the extension)
+  // ---------------------------------------------------------------------------
+  "swiftlint.path": "/opt/homebrew/bin/swiftlint",
+  "swiftlint.configSearchPaths": [
+    "${workspaceFolder}/.swiftlint.yml"
+  ],
+  // ---------------------------------------------------------------------------
+  // File Associations
+  // ---------------------------------------------------------------------------
+  "files.associations": {
+    "*.xcconfig": "properties",
+    "*.entitlements": "xml",
+    "*.plist": "xml",
+    "*.storyboard": "xml",
+    "*.xib": "xml"
+  },
+  // ---------------------------------------------------------------------------
+  // File Exclusions (hide noise)
+  // ---------------------------------------------------------------------------
+  "files.exclude": {
+    "**/.build": true,
+    "**/DerivedData": true,
+    "**/*.xcuserstate": true,
+    "**/.git": false,
+    "**/.DS_Store": true,
+    "**/xcuserdata": true,
+    "**/*.xcuserdatad": true
+  },
+  // ---------------------------------------------------------------------------
+  // Search Exclusions
+  // ---------------------------------------------------------------------------
+  "search.exclude": {
+    "**/.build": true,
+    "**/DerivedData": true,
+    "**/*.xcodeproj": true,
+    "**/*.xcworkspace": true,
+    "**/Pods": true
+  },
+  // ---------------------------------------------------------------------------
+  // Terminal
+  // ---------------------------------------------------------------------------
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.env.osx": {
+    "PATH": "/opt/homebrew/bin:${env:PATH}"
+  },
+  // ---------------------------------------------------------------------------
+  // Explorer
+  // ---------------------------------------------------------------------------
+  "explorer.sortOrder": "type",
+  "explorer.compactFolders": false,
+  // ---------------------------------------------------------------------------
+  // Git
+  // ---------------------------------------------------------------------------
+  "git.enableSmartCommit": true,
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  // ---------------------------------------------------------------------------
+  // Markdown
+  // ---------------------------------------------------------------------------
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": false
+  },
+  // ---------------------------------------------------------------------------
+  // JSON
+  // ---------------------------------------------------------------------------
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.tabSize": 2
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.tabSize": 2
+  }
+}

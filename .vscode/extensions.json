@@ -1,0 +1,34 @@
+{
+  // ==========================================================================
+  // Life Wrapped — Recommended VS Code Extensions
+  // ==========================================================================
+  "recommendations": [
+    // Swift Development (Essential)
+    "sswg.swift-lang", // Official Swift Language Support
+    "vknabel.vscode-apple-swift-format", // SwiftFormat integration
+    // Swift Development (Optional but Recommended)
+    "mattflower.swift-console", // Better Swift REPL
+    // Code Quality
+    "dbaeumer.vscode-eslint", // For any JS in the project
+    "esbenp.prettier-vscode", // For JSON/MD formatting
+    // Git
+    "eamodio.gitlens", // Enhanced Git visualization
+    "mhutchie.git-graph", // Git branch visualization
+    // Productivity
+    "christian-kohler.path-intellisense", // Path autocomplete
+    "gruntfuggly.todo-tree", // TODO/FIXME tracking
+    "wayou.vscode-todo-highlight", // Highlight TODOs
+    // Documentation
+    "yzhang.markdown-all-in-one", // Markdown tooling
+    "bierner.markdown-mermaid", // Mermaid diagrams in MD
+    // Debugging
+    "vadimcn.vscode-lldb", // LLDB debugger (Swift debugging)
+    // File Icons
+    "vscode-icons-team.vscode-icons", // Better file icons
+    // XML/Plist
+    "dotjoshjohnson.xml" // XML formatting (for plists)
+  ],
+  "unwantedRecommendations": [
+    // These are incompatible or redundant
+  ]
+}
