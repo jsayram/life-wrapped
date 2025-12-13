@@ -7,21 +7,71 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0102D045CCDDF9C0A6F41067 /* InsightsRollup in Frameworks */ = {isa = PBXBuildFile; productRef = 2767C43F89A29AB2EBA6ADF2 /* InsightsRollup */; };
+		1EB67F9F4DDCF27E95700FB5 /* LifeWrappedWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0237823FD9B25D17A3195722 /* LifeWrappedWidget.swift */; };
 		244A734639F00E2AE85D6920 /* LifeWrappedApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */; };
+		2719E959356B301B429501F6 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2CBE511C20A8C5633211A25E /* WidgetKit.framework */; };
 		4542A997CBA0AE57206FA214 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47408049BA4C55795D819D9D /* ContentView.swift */; };
+		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AE95A6904C8E62C2C740C797 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 3AC00A8D34DD43FEB8110721 /* Storage */; };
+		B563ACAF356FCFFCB92306CA /* SharedModels in Frameworks */ = {isa = PBXBuildFile; productRef = CA3DCC7908C3EAF40858A0FB /* SharedModels */; };
+		DFAE398E797D760D03FC06F0 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */; };
 		E5F4BFB6621EA617BAFB066C /* SharedModels in Frameworks */ = {isa = PBXBuildFile; productRef = 5164369DCEB7F287DDFA1A0C /* SharedModels */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		894892F8012FB66ACCB75203 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6F8F3F3B4FF654BDFBE10870 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C2920333D7915E05BCC0A924;
+			remoteInfo = LifeWrappedWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		864DAA9114CB2B9FFC694CD4 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0237823FD9B25D17A3195722 /* LifeWrappedWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedWidget.swift; sourceTree = "<group>"; };
 		240FB3461A42E1AD0DD2178B /* LifeWrapped.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LifeWrapped.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2CBE511C20A8C5633211A25E /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
+		4C9255CE1AB102B4DF974A24 /* Storage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Storage; path = Packages/Storage; sourceTree = SOURCE_ROOT; };
+		5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		77C5EF04CEB54A1460DC0F2A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8066CFE3A2B06F1666440F97 /* SharedModels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SharedModels; path = Packages/SharedModels; sourceTree = SOURCE_ROOT; };
+		A2364FBAC7DF6A4134CC8A43 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BC7B84119E24CB9BFB92A171 /* Entitlements.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Entitlements.entitlements; sourceTree = "<group>"; };
+		CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LifeWrappedWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5E571CA2A4CC0C39FBCFCCE2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B563ACAF356FCFFCB92306CA /* SharedModels in Frameworks */,
+				AE95A6904C8E62C2C740C797 /* Storage in Frameworks */,
+				0102D045CCDDF9C0A6F41067 /* InsightsRollup in Frameworks */,
+				2719E959356B301B429501F6 /* WidgetKit.framework in Frameworks */,
+				DFAE398E797D760D03FC06F0 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8434CD72ED30A3C8690B9FE3 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -47,6 +97,7 @@
 			isa = PBXGroup;
 			children = (
 				240FB3461A42E1AD0DD2178B /* LifeWrapped.app */,
+				CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -56,16 +107,38 @@
 			children = (
 				1DBB8D0ABAB53A6AE528F4AD /* App */,
 				BB2CBF013343BDECF27FFC31 /* Packages */,
+				DA1F14E43DC88CFBF29C46B1 /* WidgetExtension */,
+				B387CBB1DDBDC1C214C195D9 /* Frameworks */,
 				3E9270F723F2E94ECF04E082 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		B387CBB1DDBDC1C214C195D9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */,
+				2CBE511C20A8C5633211A25E /* WidgetKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		BB2CBF013343BDECF27FFC31 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
+				4BFA9A8C0292221E0BD75A6D /* InsightsRollup */,
 				8066CFE3A2B06F1666440F97 /* SharedModels */,
+				4C9255CE1AB102B4DF974A24 /* Storage */,
 			);
 			path = Packages;
+			sourceTree = "<group>";
+		};
+		DA1F14E43DC88CFBF29C46B1 /* WidgetExtension */ = {
+			isa = PBXGroup;
+			children = (
+				A2364FBAC7DF6A4134CC8A43 /* Info.plist */,
+				0237823FD9B25D17A3195722 /* LifeWrappedWidget.swift */,
+			);
+			path = WidgetExtension;
 			sourceTree = "<group>";
 		};
 		EEFEC05EA185B9B9A3D0A429 /* Resources */ = {
@@ -86,10 +159,12 @@
 			buildPhases = (
 				6FBBEECDDE74F909F214D62C /* Sources */,
 				8434CD72ED30A3C8690B9FE3 /* Frameworks */,
+				864DAA9114CB2B9FFC694CD4 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1D4C2209AD7BD27BA0BED453 /* PBXTargetDependency */,
 			);
 			name = LifeWrapped;
 			packageProductDependencies = (
@@ -98,6 +173,27 @@
 			productName = LifeWrapped;
 			productReference = 240FB3461A42E1AD0DD2178B /* LifeWrapped.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C2920333D7915E05BCC0A924 /* LifeWrappedWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A4BA5A4F122DB3580E2B6F4 /* Build configuration list for PBXNativeTarget "LifeWrappedWidget" */;
+			buildPhases = (
+				CA9DB9E56C675D580121BCE9 /* Sources */,
+				5E571CA2A4CC0C39FBCFCCE2 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LifeWrappedWidget;
+			packageProductDependencies = (
+				CA3DCC7908C3EAF40858A0FB /* SharedModels */,
+				3AC00A8D34DD43FEB8110721 /* Storage */,
+				2767C43F89A29AB2EBA6ADF2 /* InsightsRollup */,
+			);
+			productName = LifeWrappedWidget;
+			productReference = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -119,13 +215,16 @@
 			mainGroup = AA4F27C9692EA729DDA632EA;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */,
 				02D8BAF21912F2D47D5AACC7 /* XCLocalSwiftPackageReference "Packages/SharedModels" */,
+				49D1508E1F7F1B06FAD33759 /* XCLocalSwiftPackageReference "Packages/Storage" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				0B3E1D81B97997FA30362587 /* LifeWrapped */,
+				C2920333D7915E05BCC0A924 /* LifeWrappedWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -140,7 +239,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA9DB9E56C675D580121BCE9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EB67F9F4DDCF27E95700FB5 /* LifeWrappedWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1D4C2209AD7BD27BA0BED453 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C2920333D7915E05BCC0A924 /* LifeWrappedWidget */;
+			targetProxy = 894892F8012FB66ACCB75203 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		23ECD8668A1BFC3D3C312850 /* Release */ = {
@@ -230,6 +345,25 @@
 			};
 			name = Debug;
 		};
+		490E8E21D854C656A5895DFB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WidgetExtension/WidgetExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
+				INFOPLIST_FILE = WidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).lifewrapped.widget";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				xcconfig = Config/Debug.xcconfig;
+			};
+			name = Debug;
+		};
 		6611712CDACBA09E1954918D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -310,6 +444,25 @@
 			};
 			name = Release;
 		};
+		DB417CB46B38C0CAE0518C65 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WidgetExtension/WidgetExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = YES;
+				INFOPLIST_FILE = WidgetExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).lifewrapped.widget";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				xcconfig = Config/Release.xcconfig;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -318,6 +471,15 @@
 			buildConfigurations = (
 				6611712CDACBA09E1954918D /* Debug */,
 				23ECD8668A1BFC3D3C312850 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9A4BA5A4F122DB3580E2B6F4 /* Build configuration list for PBXNativeTarget "LifeWrappedWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				490E8E21D854C656A5895DFB /* Debug */,
+				DB417CB46B38C0CAE0518C65 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -338,10 +500,30 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SharedModels;
 		};
+		49D1508E1F7F1B06FAD33759 /* XCLocalSwiftPackageReference "Packages/Storage" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Storage;
+		};
+		E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/InsightsRollup;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		2767C43F89A29AB2EBA6ADF2 /* InsightsRollup */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InsightsRollup;
+		};
+		3AC00A8D34DD43FEB8110721 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Storage;
+		};
 		5164369DCEB7F287DDFA1A0C /* SharedModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SharedModels;
+		};
+		CA3DCC7908C3EAF40858A0FB /* SharedModels */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SharedModels;
 		};
