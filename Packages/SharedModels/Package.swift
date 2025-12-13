@@ -22,7 +22,7 @@ let package = Package(
             name: "SharedModels",
             dependencies: [],
             swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency"),
+                .swiftLanguageMode(.v6),
             ]
         ),
         .testTarget(

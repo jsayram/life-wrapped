@@ -15,6 +15,12 @@ packages:
     path: Packages/SharedModels
   Storage:
     path: Packages/Storage
+  AudioCapture:
+    path: Packages/AudioCapture
+  Transcription:
+    path: Packages/Transcription
+  Summarization:
+    path: Packages/Summarization
   InsightsRollup:
     path: Packages/InsightsRollup
   WidgetCore:
@@ -49,6 +55,12 @@ targets:
           xcconfig: Config/Release.xcconfig
     dependencies:
       - package: SharedModels
+      - package: Storage
+      - package: AudioCapture
+      - package: Transcription
+      - package: Summarization
+      - package: InsightsRollup
+      - package: WidgetCore
       - target: LifeWrappedWidget
         embed: true
 
