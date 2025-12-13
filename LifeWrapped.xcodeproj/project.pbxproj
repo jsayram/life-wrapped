@@ -13,6 +13,7 @@
 		2719E959356B301B429501F6 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2CBE511C20A8C5633211A25E /* WidgetKit.framework */; };
 		4542A997CBA0AE57206FA214 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47408049BA4C55795D819D9D /* ContentView.swift */; };
 		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
 		AE95A6904C8E62C2C740C797 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 3AC00A8D34DD43FEB8110721 /* Storage */; };
 		B563ACAF356FCFFCB92306CA /* SharedModels in Frameworks */ = {isa = PBXBuildFile; productRef = CA3DCC7908C3EAF40858A0FB /* SharedModels */; };
 		DFAE398E797D760D03FC06F0 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */; };
@@ -56,6 +57,7 @@
 		8066CFE3A2B06F1666440F97 /* SharedModels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SharedModels; path = Packages/SharedModels; sourceTree = SOURCE_ROOT; };
 		A2364FBAC7DF6A4134CC8A43 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BC7B84119E24CB9BFB92A171 /* Entitlements.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Entitlements.entitlements; sourceTree = "<group>"; };
+		C7E753E38B3B07C29F32F98D /* WidgetCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WidgetCore; path = Packages/WidgetCore; sourceTree = SOURCE_ROOT; };
 		CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LifeWrappedWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -67,6 +69,7 @@
 				B563ACAF356FCFFCB92306CA /* SharedModels in Frameworks */,
 				AE95A6904C8E62C2C740C797 /* Storage in Frameworks */,
 				0102D045CCDDF9C0A6F41067 /* InsightsRollup in Frameworks */,
+				65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */,
 				2719E959356B301B429501F6 /* WidgetKit.framework in Frameworks */,
 				DFAE398E797D760D03FC06F0 /* SwiftUI.framework in Frameworks */,
 			);
@@ -128,6 +131,7 @@
 				4BFA9A8C0292221E0BD75A6D /* InsightsRollup */,
 				8066CFE3A2B06F1666440F97 /* SharedModels */,
 				4C9255CE1AB102B4DF974A24 /* Storage */,
+				C7E753E38B3B07C29F32F98D /* WidgetCore */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -190,6 +194,7 @@
 				CA3DCC7908C3EAF40858A0FB /* SharedModels */,
 				3AC00A8D34DD43FEB8110721 /* Storage */,
 				2767C43F89A29AB2EBA6ADF2 /* InsightsRollup */,
+				A34D06F783FED7A00B324107 /* WidgetCore */,
 			);
 			productName = LifeWrappedWidget;
 			productReference = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */;
@@ -218,6 +223,7 @@
 				E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */,
 				02D8BAF21912F2D47D5AACC7 /* XCLocalSwiftPackageReference "Packages/SharedModels" */,
 				49D1508E1F7F1B06FAD33759 /* XCLocalSwiftPackageReference "Packages/Storage" */,
+				D0F826A35D149D928EF0E855 /* XCLocalSwiftPackageReference "Packages/WidgetCore" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
@@ -504,6 +510,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/Storage;
 		};
+		D0F826A35D149D928EF0E855 /* XCLocalSwiftPackageReference "Packages/WidgetCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/WidgetCore;
+		};
 		E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/InsightsRollup;
@@ -522,6 +532,10 @@
 		5164369DCEB7F287DDFA1A0C /* SharedModels */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SharedModels;
+		};
+		A34D06F783FED7A00B324107 /* WidgetCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WidgetCore;
 		};
 		CA3DCC7908C3EAF40858A0FB /* SharedModels */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -4,120 +4,107 @@
 
 import WidgetKit
 import SwiftUI
+import AppIntents
+import WidgetCore
 
 // MARK: - Widget Entry
 
 struct LifeWrappedEntry: TimelineEntry {
     let date: Date
-    let streakDays: Int
-    let todayWords: Int
-    let todayMinutes: Int
-    let goalProgress: Double
-    let lastEntryTime: Date?
-    let isStreakAtRisk: Bool
+    let widgetData: WidgetData
+    let configuration: WidgetDisplayModeIntent
+    
+    var streakDays: Int { widgetData.streakDays }
+    var todayWords: Int { widgetData.todayWords }
+    var todayMinutes: Int { widgetData.todayMinutes }
+    var goalProgress: Double { widgetData.goalProgress }
+    var lastEntryTime: Date? { widgetData.lastEntryTime }
+    var isStreakAtRisk: Bool { widgetData.isStreakAtRisk }
     
     static let placeholder = LifeWrappedEntry(
         date: Date(),
-        streakDays: 7,
-        todayWords: 350,
-        todayMinutes: 5,
-        goalProgress: 0.7,
-        lastEntryTime: Date().addingTimeInterval(-3600),
-        isStreakAtRisk: false
+        widgetData: .placeholder,
+        configuration: .overview
     )
     
     static let empty = LifeWrappedEntry(
         date: Date(),
-        streakDays: 0,
-        todayWords: 0,
-        todayMinutes: 0,
-        goalProgress: 0,
-        lastEntryTime: nil,
-        isStreakAtRisk: false
+        widgetData: .empty,
+        configuration: .overview
     )
+}
+
+// MARK: - Widget Display Mode Intent
+
+enum WidgetDisplayModeIntent: String, CaseIterable, AppEnum {
+    case overview = "Overview"
+    case streak = "Streak Focus"
+    case goals = "Goals"
+    case weekly = "Weekly Stats"
+    
+    static var typeDisplayRepresentation: TypeDisplayRepresentation {
+        "Display Mode"
+    }
+    
+    static var caseDisplayRepresentations: [WidgetDisplayModeIntent: DisplayRepresentation] {
+        [
+            .overview: "Overview",
+            .streak: "Streak Focus",
+            .goals: "Goals",
+            .weekly: "Weekly Stats"
+        ]
+    }
+}
+
+// MARK: - Widget Configuration Intent
+
+struct LifeWrappedWidgetIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "Configure Widget"
+    static let description: IntentDescription = "Choose what to display in your widget."
+    
+    @Parameter(title: "Display Mode", default: .overview)
+    var displayMode: WidgetDisplayModeIntent
 }
 
 // MARK: - Timeline Provider
 
-struct LifeWrappedProvider: TimelineProvider {
+struct LifeWrappedProvider: AppIntentTimelineProvider {
+    typealias Entry = LifeWrappedEntry
+    typealias Intent = LifeWrappedWidgetIntent
+    
+    private let dataManager = WidgetDataManager.shared
     
     func placeholder(in context: Context) -> LifeWrappedEntry {
         .placeholder
     }
     
-    func getSnapshot(in context: Context, completion: @escaping (LifeWrappedEntry) -> Void) {
+    func snapshot(for configuration: LifeWrappedWidgetIntent, in context: Context) async -> LifeWrappedEntry {
         // Return placeholder for preview
         if context.isPreview {
-            completion(.placeholder)
-            return
+            return .placeholder
         }
         
         // Return actual data
-        let entry = loadCurrentEntry()
-        completion(entry)
+        return loadCurrentEntry(configuration: configuration.displayMode)
     }
     
-    func getTimeline(in context: Context, completion: @escaping (Timeline<LifeWrappedEntry>) -> Void) {
-        let entry = loadCurrentEntry()
+    func timeline(for configuration: LifeWrappedWidgetIntent, in context: Context) async -> Timeline<LifeWrappedEntry> {
+        let entry = loadCurrentEntry(configuration: configuration.displayMode)
         
         // Refresh every 30 minutes
         let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date()
         
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
-        completion(timeline)
+        return Timeline(entries: [entry], policy: .after(nextUpdate))
     }
     
-    private func loadCurrentEntry() -> LifeWrappedEntry {
-        // TODO: Load real data from App Group shared storage
-        // For now, return placeholder data
-        
-        // In real implementation:
-        // 1. Open shared SQLite database from App Group container
-        // 2. Query today's rollup data
-        // 3. Calculate streak from activity dates
-        // 4. Return populated entry
+    private func loadCurrentEntry(configuration: WidgetDisplayModeIntent) -> LifeWrappedEntry {
+        let widgetData = dataManager.readWidgetData()
         
         return LifeWrappedEntry(
             date: Date(),
-            streakDays: loadStreakDays(),
-            todayWords: loadTodayWords(),
-            todayMinutes: loadTodayMinutes(),
-            goalProgress: loadGoalProgress(),
-            lastEntryTime: loadLastEntryTime(),
-            isStreakAtRisk: loadIsStreakAtRisk()
+            widgetData: widgetData,
+            configuration: configuration
         )
-    }
-    
-    // MARK: - Data Loading (Placeholder implementations)
-    
-    private func loadStreakDays() -> Int {
-        // TODO: Load from App Group
-        return 0
-    }
-    
-    private func loadTodayWords() -> Int {
-        // TODO: Load from App Group
-        return 0
-    }
-    
-    private func loadTodayMinutes() -> Int {
-        // TODO: Load from App Group
-        return 0
-    }
-    
-    private func loadGoalProgress() -> Double {
-        // TODO: Load from App Group
-        return 0
-    }
-    
-    private func loadLastEntryTime() -> Date? {
-        // TODO: Load from App Group
-        return nil
-    }
-    
-    private func loadIsStreakAtRisk() -> Bool {
-        // TODO: Load from App Group
-        return false
     }
 }
 
@@ -440,12 +427,11 @@ struct AccessoryInlineView: View {
 
 // MARK: - Widget Configuration
 
-@main
 struct LifeWrappedWidget: Widget {
     let kind: String = "LifeWrappedWidget"
     
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: LifeWrappedProvider()) { entry in
+        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
             LifeWrappedWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("Life Wrapped")
@@ -458,6 +444,446 @@ struct LifeWrappedWidget: Widget {
             .accessoryRectangular,
             .accessoryInline
         ])
+    }
+}
+
+// MARK: - Streak Focus Widget
+
+struct StreakFocusWidget: Widget {
+    let kind: String = "LifeWrappedStreakWidget"
+    
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
+            StreakFocusWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Streak Focus")
+        .description("Keep your journaling streak alive!")
+        .supportedFamilies([
+            .systemSmall,
+            .accessoryCircular,
+            .accessoryRectangular
+        ])
+    }
+}
+
+struct StreakFocusWidgetView: View {
+    let entry: LifeWrappedEntry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            StreakSmallView(entry: entry)
+        case .accessoryCircular:
+            AccessoryCircularView(entry: entry)
+        case .accessoryRectangular:
+            AccessoryRectangularView(entry: entry)
+        default:
+            StreakSmallView(entry: entry)
+        }
+    }
+}
+
+struct StreakSmallView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            // Flame with animation hint
+            Image(systemName: entry.streakDays > 0 ? "flame.fill" : "flame")
+                .font(.system(size: 48))
+                .foregroundStyle(flameGradient)
+            
+            // Streak count
+            Text("\(entry.streakDays)")
+                .font(.system(size: 36, weight: .bold, design: .rounded))
+            
+            Text(entry.streakDays == 1 ? "day" : "days")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            // Status message
+            if entry.isStreakAtRisk {
+                Text("Journal today!")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fontWeight(.medium)
+            } else if entry.streakDays > 0 {
+                Text("Keep going! 🎯")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+    
+    private var flameGradient: LinearGradient {
+        LinearGradient(
+            colors: entry.streakDays > 0 
+                ? [.orange, .red] 
+                : [.gray, .gray.opacity(0.5)],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+    }
+}
+
+// MARK: - Goals Widget
+
+struct GoalsWidget: Widget {
+    let kind: String = "LifeWrappedGoalsWidget"
+    
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
+            GoalsWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Daily Goals")
+        .description("Track your daily journaling goals.")
+        .supportedFamilies([
+            .systemSmall,
+            .systemMedium
+        ])
+    }
+}
+
+struct GoalsWidgetView: View {
+    let entry: LifeWrappedEntry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            GoalsSmallView(entry: entry)
+        case .systemMedium:
+            GoalsMediumView(entry: entry)
+        default:
+            GoalsSmallView(entry: entry)
+        }
+    }
+}
+
+struct GoalsSmallView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Goal ring
+            ZStack {
+                Circle()
+                    .stroke(.secondary.opacity(0.3), lineWidth: 8)
+                
+                Circle()
+                    .trim(from: 0, to: entry.goalProgress)
+                    .stroke(progressColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                
+                VStack(spacing: 2) {
+                    Text("\(Int(entry.goalProgress * 100))%")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("goal")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 80, height: 80)
+            
+            Text("\(entry.todayWords) words")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+    
+    private var progressColor: Color {
+        switch entry.goalProgress {
+        case 0..<0.25: return .red
+        case 0.25..<0.5: return .orange
+        case 0.5..<0.75: return .yellow
+        case 0.75..<1.0: return .green
+        default: return .blue
+        }
+    }
+}
+
+struct GoalsMediumView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            // Goal ring
+            ZStack {
+                Circle()
+                    .stroke(.secondary.opacity(0.3), lineWidth: 10)
+                
+                Circle()
+                    .trim(from: 0, to: entry.goalProgress)
+                    .stroke(progressColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                
+                VStack(spacing: 2) {
+                    Text("\(Int(entry.goalProgress * 100))%")
+                        .font(.title)
+                        .fontWeight(.bold)
+                }
+            }
+            .frame(width: 100, height: 100)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Today's Progress")
+                    .font(.headline)
+                
+                GoalProgressRow(icon: "text.word.spacing", label: "Words", value: entry.todayWords, color: .blue)
+                GoalProgressRow(icon: "clock", label: "Minutes", value: entry.todayMinutes, color: .green)
+                GoalProgressRow(icon: "doc.text", label: "Entries", value: entry.widgetData.todayEntries, color: .purple)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding()
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+    
+    private var progressColor: Color {
+        switch entry.goalProgress {
+        case 0..<0.25: return .red
+        case 0.25..<0.5: return .orange
+        case 0.5..<0.75: return .yellow
+        case 0.75..<1.0: return .green
+        default: return .blue
+        }
+    }
+}
+
+struct GoalProgressRow: View {
+    let icon: String
+    let label: String
+    let value: Int
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(color)
+                .frame(width: 16)
+            
+            Text("\(value)")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Weekly Stats Widget
+
+struct WeeklyStatsWidget: Widget {
+    let kind: String = "LifeWrappedWeeklyWidget"
+    
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
+            WeeklyStatsWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Weekly Stats")
+        .description("View your weekly journaling summary.")
+        .supportedFamilies([
+            .systemMedium,
+            .systemLarge
+        ])
+    }
+}
+
+struct WeeklyStatsWidgetView: View {
+    let entry: LifeWrappedEntry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .systemMedium:
+            WeeklyMediumView(entry: entry)
+        case .systemLarge:
+            WeeklyLargeView(entry: entry)
+        default:
+            WeeklyMediumView(entry: entry)
+        }
+    }
+}
+
+struct WeeklyMediumView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Weekly summary
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This Week")
+                    .font(.headline)
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "text.word.spacing")
+                        .foregroundStyle(.blue)
+                    Text("\(entry.widgetData.weeklyWords)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("words")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .foregroundStyle(.green)
+                    Text("\(entry.widgetData.weeklyMinutes)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("minutes")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            Divider()
+            
+            // Streak
+            VStack(spacing: 4) {
+                Image(systemName: "flame.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.orange)
+                
+                Text("\(entry.streakDays)")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("day streak")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding()
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct WeeklyLargeView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header
+            HStack {
+                Text("Weekly Summary")
+                    .font(.headline)
+                Spacer()
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(entry.streakDays) days")
+                        .fontWeight(.semibold)
+                }
+            }
+            
+            Divider()
+            
+            // Stats grid
+            LazyVGrid(columns: [
+                GridItem(.flexible()),
+                GridItem(.flexible())
+            ], spacing: 16) {
+                WeeklyStatCard(
+                    icon: "text.word.spacing",
+                    title: "Words",
+                    thisWeek: entry.widgetData.weeklyWords,
+                    today: entry.todayWords,
+                    color: .blue
+                )
+                
+                WeeklyStatCard(
+                    icon: "clock",
+                    title: "Minutes",
+                    thisWeek: entry.widgetData.weeklyMinutes,
+                    today: entry.todayMinutes,
+                    color: .green
+                )
+            }
+            
+            Spacer()
+            
+            // Goal progress
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Daily Goal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int(entry.goalProgress * 100))%")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(.secondary.opacity(0.3))
+                            .frame(height: 8)
+                        
+                        Capsule()
+                            .fill(.blue)
+                            .frame(width: geometry.size.width * entry.goalProgress, height: 8)
+                    }
+                }
+                .frame(height: 8)
+            }
+        }
+        .padding()
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct WeeklyStatCard: View {
+    let icon: String
+    let title: String
+    let thisWeek: Int
+    let today: Int
+    let color: Color
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Text("\(thisWeek)")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            Text("Today: \(today)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Widget Bundle
+
+@main
+struct LifeWrappedWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        LifeWrappedWidget()
+        StreakFocusWidget()
+        GoalsWidget()
+        WeeklyStatsWidget()
     }
 }
 
@@ -478,6 +904,24 @@ struct LifeWrappedWidget: Widget {
 
 #Preview("Large", as: .systemLarge) {
     LifeWrappedWidget()
+} timeline: {
+    LifeWrappedEntry.placeholder
+}
+
+#Preview("Streak Small", as: .systemSmall) {
+    StreakFocusWidget()
+} timeline: {
+    LifeWrappedEntry.placeholder
+}
+
+#Preview("Goals Medium", as: .systemMedium) {
+    GoalsWidget()
+} timeline: {
+    LifeWrappedEntry.placeholder
+}
+
+#Preview("Weekly Large", as: .systemLarge) {
+    WeeklyStatsWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
 }

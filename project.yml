@@ -17,6 +17,8 @@ packages:
     path: Packages/Storage
   InsightsRollup:
     path: Packages/InsightsRollup
+  WidgetCore:
+    path: Packages/WidgetCore
 
 targets:
   LifeWrapped:
@@ -78,5 +80,6 @@ targets:
       - package: SharedModels
       - package: Storage
       - package: InsightsRollup
+      - package: WidgetCore
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
