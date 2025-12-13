@@ -10,6 +10,7 @@ The Transcription package provides on-device speech-to-text transcription using 
 ## Features
 
 ### Core Capabilities
+
 - **On-Device Transcription**: Privacy-first approach using `requiresOnDeviceRecognition = true`
 - **Multi-Language Support**: Transcription in any locale supported by Speech framework
 - **Batch Processing**: Process multiple audio chunks with progress callbacks
@@ -22,7 +23,9 @@ The Transcription package provides on-device speech-to-text transcription using 
 ### Components
 
 #### 1. TranscriptionManager (Actor)
+
 Main transcription coordinator with:
+
 - Permission management (`requestAuthorization()`)
 - Single chunk transcription with retry support
 - Batch transcription with progress tracking
@@ -31,13 +34,17 @@ Main transcription coordinator with:
 - Automatic storage of transcript segments
 
 #### 2. LanguageDetector (Actor)
+
 Language identification using NaturalLanguage framework:
+
 - Detect dominant language in text
 - Get language confidence scores
 - Support for mixed-language content
 
 #### 3. TranscriptionStatistics (Actor)
+
 Performance tracking:
+
 - Total chunks processed
 - Success/failure counts
 - Success rate calculation
@@ -46,7 +53,9 @@ Performance tracking:
 - Comprehensive statistics summary
 
 #### 4. TranscriptionError (Enum)
+
 Comprehensive error handling:
+
 - `notAuthorized`: Speech recognition not authorized
 - `notAvailable`: Speech recognition unavailable for locale
 - `recognizerSetupFailed`: Failed to initialize recognizer
@@ -127,7 +136,7 @@ do {
             print("Progress: \(Int(progress))% (\(completed)/\(total))")
         }
     )
-    
+
     print("Created \(totalSegments) transcript segments")
 } catch {
     print("Batch transcription failed: \(error)")
@@ -208,23 +217,28 @@ transcriptionManager.cancelAllTranscriptions()
 ## Architecture Decisions
 
 ### Actor-Based Concurrency
+
 All managers are actors to ensure thread-safe operations:
+
 - `TranscriptionManager`: Manages Speech framework tasks
 - `LanguageDetector`: Handles NaturalLanguage operations
 - `TranscriptionStatistics`: Tracks metrics safely
 
 ### Privacy-First Design
+
 - **On-Device Only**: `requiresOnDeviceRecognition = true` ensures no data leaves device
 - **No Network**: All transcription happens locally using Speech framework
 - **Locale Control**: Explicit locale selection for language-specific recognition
 
 ### Retry Strategy
+
 - **Configurable Retries**: Default 2 retries, customizable per request
 - **Smart Retry**: Doesn't retry for non-recoverable errors (notAuthorized, notAvailable, cancelled)
 - **Exponential Backoff**: Configurable delay between retry attempts
 - **Statistics Integration**: Tracks success/failure for monitoring
 
 ### Storage Integration
+
 - **Automatic Persistence**: TranscriptSegments saved to database during transcription
 - **Dependency Injection**: DatabaseManager passed at initialization
 - **Batch Efficiency**: Segments saved individually during batch processing
@@ -234,10 +248,12 @@ All managers are actors to ensure thread-safe operations:
 ### Test Suite (10 tests in 3 suites)
 
 **Transcription Manager Tests (2 tests)**
+
 - ✅ Manager checks speech recognition availability
 - ✅ Manager can check locale availability
 
 **Language Detector Tests (5 tests)**
+
 - ✅ Detects English text
 - ✅ Detects Spanish text
 - ✅ Returns nil for empty text
@@ -245,11 +261,13 @@ All managers are actors to ensure thread-safe operations:
 - ✅ Handles mixed language text
 
 **Transcription Error Tests (3 tests)**
+
 - ✅ Error descriptions are meaningful
 - ✅ Error types are distinct
 - ✅ Audio file not found includes path
 
 ### Running Tests
+
 ```bash
 cd Packages/Transcription
 swift test
@@ -268,6 +286,7 @@ swift test
 ## Swift 6 Concurrency
 
 The package uses Swift 6 strict concurrency:
+
 - Actor isolation for thread safety
 - `@Sendable` closures for callbacks
 - Structured concurrency with async/await
@@ -277,6 +296,7 @@ The package uses Swift 6 strict concurrency:
 ## Performance Considerations
 
 ### Optimization Strategies
+
 1. **Batch Processing**: Process multiple chunks efficiently
 2. **Progress Callbacks**: UI updates without blocking
 3. **Task Tracking**: Monitor and cancel active operations
@@ -284,6 +304,7 @@ The package uses Swift 6 strict concurrency:
 5. **On-Device**: No network latency
 
 ### Resource Management
+
 - Speech recognizers created per request (not cached)
 - Tasks tracked in dictionary for cancellation
 - Automatic cleanup on completion/cancellation
@@ -300,6 +321,7 @@ The package uses Swift 6 strict concurrency:
 ## Future Enhancements
 
 Potential improvements for future steps:
+
 - Streaming transcription for real-time processing
 - Word-level timestamps for better synchronization
 - Speaker diarization (if Speech framework adds support)
@@ -310,6 +332,7 @@ Potential improvements for future steps:
 ## Integration with Other Packages
 
 ### AudioCapture → Transcription
+
 ```swift
 // AudioCapture creates chunks
 audioManager.onChunkCompleted = { chunk in
@@ -322,6 +345,7 @@ audioManager.onChunkCompleted = { chunk in
 ```
 
 ### Transcription → Storage
+
 ```swift
 // Segments automatically saved during transcription
 let segments = try await transcriptionManager.transcribe(chunk: chunk)
@@ -329,6 +353,7 @@ let segments = try await transcriptionManager.transcribe(chunk: chunk)
 ```
 
 ### Transcription → Summarization (Future)
+
 ```swift
 // Future: Feed transcript to LLM for summarization
 let segments = try await transcriptionManager.transcribe(chunk: chunk)
