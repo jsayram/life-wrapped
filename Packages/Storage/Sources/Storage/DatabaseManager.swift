@@ -386,4 +386,571 @@ public actor DatabaseManager {
             createdAt: createdAt
         )
     }
+    
+    // MARK: - TranscriptSegment CRUD
+    
+    public func insertTranscriptSegment(_ segment: TranscriptSegment) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            INSERT INTO transcript_segments 
+            (id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, segment.id.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, segment.audioChunkID.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 3, segment.startTime)
+        sqlite3_bind_double(stmt, 4, segment.endTime)
+        sqlite3_bind_text(stmt, 5, segment.text, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 6, Double(segment.confidence))
+        sqlite3_bind_text(stmt, 7, segment.languageCode, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 8, segment.createdAt.timeIntervalSince1970)
+        
+        if let speakerLabel = segment.speakerLabel {
+            sqlite3_bind_text(stmt, 9, speakerLabel, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 9)
+        }
+        
+        if let entitiesJSON = segment.entitiesJSON {
+            sqlite3_bind_text(stmt, 10, entitiesJSON, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 10)
+        }
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    public func fetchTranscriptSegment(id: UUID) throws -> TranscriptSegment? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json
+            FROM transcript_segments
+            WHERE id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseTranscriptSegment(from: stmt)
+        }
+        
+        return nil
+    }
+    
+    public func fetchTranscriptSegments(audioChunkID: UUID) throws -> [TranscriptSegment] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json
+            FROM transcript_segments
+            WHERE audio_chunk_id = ?
+            ORDER BY start_time ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, audioChunkID.uuidString, -1, SQLITE_TRANSIENT)
+        
+        var segments: [TranscriptSegment] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            segments.append(try parseTranscriptSegment(from: stmt))
+        }
+        
+        return segments
+    }
+    
+    public func deleteTranscriptSegment(id: UUID) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = "DELETE FROM transcript_segments WHERE id = ?"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    private func parseTranscriptSegment(from stmt: OpaquePointer?) throws -> TranscriptSegment {
+        guard let idString = sqlite3_column_text(stmt, 0),
+              let audioChunkIDString = sqlite3_column_text(stmt, 1),
+              let textString = sqlite3_column_text(stmt, 4),
+              let languageCodeString = sqlite3_column_text(stmt, 6) else {
+            throw StorageError.invalidData("Missing required TranscriptSegment column data")
+        }
+        
+        guard let id = UUID(uuidString: String(cString: idString)),
+              let audioChunkID = UUID(uuidString: String(cString: audioChunkIDString)) else {
+            throw StorageError.invalidData("Could not parse TranscriptSegment UUID fields")
+        }
+        
+        let startTime = sqlite3_column_double(stmt, 2)
+        let endTime = sqlite3_column_double(stmt, 3)
+        let text = String(cString: textString)
+        let confidence = Float(sqlite3_column_double(stmt, 5))
+        let languageCode = String(cString: languageCodeString)
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7))
+        
+        let speakerLabel: String?
+        if let speakerLabelText = sqlite3_column_text(stmt, 8) {
+            speakerLabel = String(cString: speakerLabelText)
+        } else {
+            speakerLabel = nil
+        }
+        
+        let entitiesJSON: String?
+        if let entitiesText = sqlite3_column_text(stmt, 9) {
+            entitiesJSON = String(cString: entitiesText)
+        } else {
+            entitiesJSON = nil
+        }
+        
+        return TranscriptSegment(
+            id: id,
+            audioChunkID: audioChunkID,
+            startTime: startTime,
+            endTime: endTime,
+            text: text,
+            confidence: confidence,
+            languageCode: languageCode,
+            createdAt: createdAt,
+            speakerLabel: speakerLabel,
+            entitiesJSON: entitiesJSON
+        )
+    }
+    
+    // MARK: - Summary CRUD
+    
+    public func insertSummary(_ summary: Summary) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, summary.id.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, summary.periodType.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 3, summary.periodStart.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 4, summary.periodEnd.timeIntervalSince1970)
+        sqlite3_bind_text(stmt, 5, summary.text, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 6, summary.createdAt.timeIntervalSince1970)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    public func fetchSummary(id: UUID) throws -> Summary? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at
+            FROM summaries
+            WHERE id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseSummary(from: stmt)
+        }
+        
+        return nil
+    }
+    
+    public func fetchSummaries(periodType: PeriodType? = nil, limit: Int = 100) throws -> [Summary] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        var sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at
+            FROM summaries
+            """
+        
+        if periodType != nil {
+            sql += " WHERE period_type = ?"
+        }
+        
+        sql += " ORDER BY period_start DESC LIMIT \(limit)"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        if let periodType = periodType {
+            sqlite3_bind_text(stmt, 1, periodType.rawValue, -1, SQLITE_TRANSIENT)
+        }
+        
+        var summaries: [Summary] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            summaries.append(try parseSummary(from: stmt))
+        }
+        
+        return summaries
+    }
+    
+    public func deleteSummary(id: UUID) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = "DELETE FROM summaries WHERE id = ?"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    private func parseSummary(from stmt: OpaquePointer?) throws -> Summary {
+        guard let idString = sqlite3_column_text(stmt, 0),
+              let periodTypeString = sqlite3_column_text(stmt, 1),
+              let textString = sqlite3_column_text(stmt, 4) else {
+            throw StorageError.invalidData("Missing required Summary column data")
+        }
+        
+        guard let id = UUID(uuidString: String(cString: idString)),
+              let periodType = PeriodType(rawValue: String(cString: periodTypeString)) else {
+            throw StorageError.invalidData("Could not parse Summary fields")
+        }
+        
+        let periodStart = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
+        let periodEnd = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
+        let text = String(cString: textString)
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 5))
+        
+        return Summary(
+            id: id,
+            periodType: periodType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            text: text,
+            createdAt: createdAt
+        )
+    }
+    
+    // MARK: - InsightsRollup CRUD
+    
+    public func insertRollup(_ rollup: InsightsRollup) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            INSERT INTO insights_rollups (id, bucket_type, bucket_start, bucket_end, word_count, speaking_seconds, segment_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, rollup.id.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, rollup.bucketType.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 3, rollup.bucketStart.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 4, rollup.bucketEnd.timeIntervalSince1970)
+        sqlite3_bind_int(stmt, 5, Int32(rollup.wordCount))
+        sqlite3_bind_double(stmt, 6, rollup.speakingSeconds)
+        sqlite3_bind_int(stmt, 7, Int32(rollup.segmentCount))
+        sqlite3_bind_double(stmt, 8, rollup.createdAt.timeIntervalSince1970)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    public func fetchRollup(id: UUID) throws -> InsightsRollup? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, bucket_type, bucket_start, bucket_end, word_count, speaking_seconds, segment_count, created_at
+            FROM insights_rollups
+            WHERE id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseRollup(from: stmt)
+        }
+        
+        return nil
+    }
+    
+    public func fetchRollups(bucketType: PeriodType? = nil, limit: Int = 100) throws -> [InsightsRollup] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        var sql = """
+            SELECT id, bucket_type, bucket_start, bucket_end, word_count, speaking_seconds, segment_count, created_at
+            FROM insights_rollups
+            """
+        
+        if bucketType != nil {
+            sql += " WHERE bucket_type = ?"
+        }
+        
+        sql += " ORDER BY bucket_start DESC LIMIT \(limit)"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        if let bucketType = bucketType {
+            sqlite3_bind_text(stmt, 1, bucketType.rawValue, -1, SQLITE_TRANSIENT)
+        }
+        
+        var rollups: [InsightsRollup] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            rollups.append(try parseRollup(from: stmt))
+        }
+        
+        return rollups
+    }
+    
+    public func deleteRollup(id: UUID) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = "DELETE FROM insights_rollups WHERE id = ?"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    private func parseRollup(from stmt: OpaquePointer?) throws -> InsightsRollup {
+        guard let idString = sqlite3_column_text(stmt, 0),
+              let bucketTypeString = sqlite3_column_text(stmt, 1) else {
+            throw StorageError.invalidData("Missing required InsightsRollup column data")
+        }
+        
+        guard let id = UUID(uuidString: String(cString: idString)),
+              let bucketType = PeriodType(rawValue: String(cString: bucketTypeString)) else {
+            throw StorageError.invalidData("Could not parse InsightsRollup fields")
+        }
+        
+        let bucketStart = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
+        let bucketEnd = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
+        let wordCount = Int(sqlite3_column_int(stmt, 4))
+        let speakingSeconds = sqlite3_column_double(stmt, 5)
+        let segmentCount = Int(sqlite3_column_int(stmt, 6))
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7))
+        
+        return InsightsRollup(
+            id: id,
+            bucketType: bucketType,
+            bucketStart: bucketStart,
+            bucketEnd: bucketEnd,
+            wordCount: wordCount,
+            speakingSeconds: speakingSeconds,
+            segmentCount: segmentCount,
+            createdAt: createdAt
+        )
+    }
+    
+    // MARK: - ControlEvent CRUD
+    
+    public func insertEvent(_ event: ControlEvent) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            INSERT INTO control_events (id, timestamp, source, type, payload_json)
+            VALUES (?, ?, ?, ?, ?)
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, event.id.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 2, event.timestamp.timeIntervalSince1970)
+        sqlite3_bind_text(stmt, 3, event.source.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 4, event.type.rawValue, -1, SQLITE_TRANSIENT)
+        
+        if let payload = event.payloadJSON {
+            sqlite3_bind_text(stmt, 5, payload, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 5)
+        }
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    public func fetchEvent(id: UUID) throws -> ControlEvent? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, timestamp, source, type, payload_json
+            FROM control_events
+            WHERE id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseEvent(from: stmt)
+        }
+        
+        return nil
+    }
+    
+    public func fetchEvents(limit: Int = 100) throws -> [ControlEvent] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, timestamp, source, type, payload_json
+            FROM control_events
+            ORDER BY timestamp DESC
+            LIMIT \(limit)
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        var events: [ControlEvent] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            events.append(try parseEvent(from: stmt))
+        }
+        
+        return events
+    }
+    
+    public func deleteEvent(id: UUID) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = "DELETE FROM control_events WHERE id = ?"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    private func parseEvent(from stmt: OpaquePointer?) throws -> ControlEvent {
+        guard let idString = sqlite3_column_text(stmt, 0),
+              let sourceString = sqlite3_column_text(stmt, 2),
+              let typeString = sqlite3_column_text(stmt, 3) else {
+            throw StorageError.invalidData("Missing required ControlEvent column data")
+        }
+        
+        guard let id = UUID(uuidString: String(cString: idString)),
+              let source = EventSource(rawValue: String(cString: sourceString)),
+              let type = EventType(rawValue: String(cString: typeString)) else {
+            throw StorageError.invalidData("Could not parse ControlEvent fields")
+        }
+        
+        let timestamp = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 1))
+        
+        let payloadJSON: String?
+        if let payloadText = sqlite3_column_text(stmt, 4) {
+            payloadJSON = String(cString: payloadText)
+        } else {
+            payloadJSON = nil
+        }
+        
+        return ControlEvent(
+            id: id,
+            timestamp: timestamp,
+            source: source,
+            type: type,
+            payloadJSON: payloadJSON
+        )
+    }
 }
