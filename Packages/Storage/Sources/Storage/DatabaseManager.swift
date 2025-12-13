@@ -29,13 +29,22 @@ public actor DatabaseManager {
     public init(containerIdentifier: String = AppConstants.appGroupIdentifier) async throws {
         // Get App Group container for sharing with widgets/watch
         print("💾 [DatabaseManager] Looking for App Group: \(containerIdentifier)")
-        guard let containerURL = fileManager.containerURL(
+        let containerURL: URL
+        if let appGroupURL = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: containerIdentifier
-        ) else {
-            print("❌ [DatabaseManager] App Group container not found: \(containerIdentifier)")
-            throw StorageError.appGroupContainerNotFound(containerIdentifier)
+        ) {
+            containerURL = appGroupURL
+            print("✅ [DatabaseManager] App Group found: \(containerURL.path)")
+        } else {
+            // Fallback to Documents directory for simulator/development
+            print("⚠️ [DatabaseManager] App Group not available, using Documents directory as fallback")
+            guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                print("❌ [DatabaseManager] Documents directory not available")
+                throw StorageError.appGroupContainerNotFound(containerIdentifier)
+            }
+            containerURL = documentsURL
+            print("✅ [DatabaseManager] Using Documents directory: \(containerURL.path)")
         }
-        print("✅ [DatabaseManager] App Group found: \(containerURL.path)")
         
         // Create database directory if needed
         let databaseDirectory = containerURL.appendingPathComponent("Database", isDirectory: true)

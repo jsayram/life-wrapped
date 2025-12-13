@@ -24,8 +24,15 @@ public final class WidgetDataManager: @unchecked Sendable {
     
     // MARK: - Initialization
     
-    public init(userDefaults: UserDefaults? = UserDefaults(suiteName: appGroupIdentifier)) {
-        self.userDefaults = userDefaults
+    public init(userDefaults: UserDefaults? = nil) {
+        // Try App Group first, fallback to standard UserDefaults for simulator/development
+        if let appGroupDefaults = UserDefaults(suiteName: Self.appGroupIdentifier) {
+            print("✅ [WidgetDataManager] Using App Group UserDefaults")
+            self.userDefaults = appGroupDefaults
+        } else {
+            print("⚠️ [WidgetDataManager] App Group not available, using standard UserDefaults")
+            self.userDefaults = userDefaults ?? .standard
+        }
     }
     
     // MARK: - Public Methods
