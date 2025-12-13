@@ -9,6 +9,10 @@ struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var selectedTab = 0
     
+    init() {
+        print("🖼️ [ContentView] Initializing ContentView")
+    }
+    
     var body: some View {
         TabView(selection: $selectedTab) {
             HomeTab()
@@ -230,18 +234,26 @@ struct RecordingButton: View {
     }
     
     private func handleRecordingAction() {
+        print("🔘 [RecordingButton] Button tapped, current state: \(coordinator.recordingState)")
         Task {
             do {
                 if coordinator.recordingState.isRecording {
+                    print("⏹️ [RecordingButton] Stopping recording...")
                     _ = try await coordinator.stopRecording()
+                    print("✅ [RecordingButton] Recording stopped")
                 } else if case .idle = coordinator.recordingState {
+                    print("▶️ [RecordingButton] Starting recording...")
                     try await coordinator.startRecording()
+                    print("✅ [RecordingButton] Recording started")
                 } else if case .completed = coordinator.recordingState {
+                    print("🔄 [RecordingButton] Resetting completed state")
                     coordinator.resetRecordingState()
                 } else if case .failed = coordinator.recordingState {
+                    print("🔄 [RecordingButton] Resetting failed state")
                     coordinator.resetRecordingState()
                 }
             } catch {
+                print("❌ [RecordingButton] Action failed: \(error.localizedDescription)")
                 errorMessage = error.localizedDescription
                 showError = true
             }

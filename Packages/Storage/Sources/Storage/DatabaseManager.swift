@@ -28,29 +28,39 @@ public actor DatabaseManager {
     
     public init(containerIdentifier: String = AppConstants.appGroupIdentifier) async throws {
         // Get App Group container for sharing with widgets/watch
+        print("💾 [DatabaseManager] Looking for App Group: \(containerIdentifier)")
         guard let containerURL = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: containerIdentifier
         ) else {
+            print("❌ [DatabaseManager] App Group container not found: \(containerIdentifier)")
             throw StorageError.appGroupContainerNotFound(containerIdentifier)
         }
+        print("✅ [DatabaseManager] App Group found: \(containerURL.path)")
         
         // Create database directory if needed
         let databaseDirectory = containerURL.appendingPathComponent("Database", isDirectory: true)
+        print("💾 [DatabaseManager] Creating database directory...")
         try fileManager.createDirectory(
             at: databaseDirectory,
             withIntermediateDirectories: true,
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         )
+        print("✅ [DatabaseManager] Database directory created")
         
         self.databaseURL = databaseDirectory.appendingPathComponent(AppConstants.databaseFilename)
         
         logger.info("Database path: \(self.databaseURL.path)")
+        print("💾 [DatabaseManager] Database path: \(self.databaseURL.path)")
         
         // Open database connection
+        print("💾 [DatabaseManager] Opening database connection...")
         try openDatabase()
+        print("✅ [DatabaseManager] Database opened")
         
         // Run migrations
+        print("💾 [DatabaseManager] Running migrations...")
         try migrate()
+        print("✅ [DatabaseManager] Migrations complete")
     }
     
     /// Close the database connection

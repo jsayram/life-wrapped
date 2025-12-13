@@ -137,31 +137,50 @@ public final class AppCoordinator: ObservableObject {
     
     /// Initialize the app coordinator and load initial state
     public func initialize() async {
-        guard !isInitialized else { return }
+        print("🚀 [AppCoordinator] Starting initialization...")
+        guard !isInitialized else {
+            print("⚠️ [AppCoordinator] Already initialized, skipping")
+            return
+        }
         
         do {
             // Initialize database
+            print("📦 [AppCoordinator] Initializing DatabaseManager...")
             let dbManager = try await DatabaseManager()
             self.databaseManager = dbManager
+            print("✅ [AppCoordinator] DatabaseManager initialized")
             
             // Initialize managers that need storage
+            print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)
+            print("📝 [AppCoordinator] Initializing SummarizationManager...")
             self.summarizationManager = SummarizationManager(storage: dbManager)
+            print("📊 [AppCoordinator] Initializing InsightsManager...")
             self.insightsManager = InsightsManager(storage: dbManager)
+            print("✅ [AppCoordinator] All managers initialized")
             
             // Load current streak
+            print("🔥 [AppCoordinator] Loading current streak...")
             await refreshStreak()
+            print("✅ [AppCoordinator] Streak loaded: \(currentStreak)")
             
             // Load today's stats
+            print("📈 [AppCoordinator] Loading today's stats...")
             await refreshTodayStats()
+            print("✅ [AppCoordinator] Today's stats loaded: \(todayStats.segmentCount) entries")
             
             // Update widget
+            print("🧩 [AppCoordinator] Updating widget data...")
             await updateWidgetData()
+            print("✅ [AppCoordinator] Widget updated")
             
             isInitialized = true
             initializationError = nil
+            print("🎉 [AppCoordinator] Initialization complete!")
             
         } catch {
+            print("❌ [AppCoordinator] Initialization failed: \(error.localizedDescription)")
+            print("❌ [AppCoordinator] Error details: \(error)")
             initializationError = error
             isInitialized = false
         }
@@ -171,11 +190,14 @@ public final class AppCoordinator: ObservableObject {
     
     /// Start a new recording session
     public func startRecording() async throws {
+        print("🎙️ [AppCoordinator] Starting recording...")
         guard isInitialized else {
+            print("❌ [AppCoordinator] Cannot start recording: not initialized")
             throw AppCoordinatorError.notInitialized
         }
         
         guard !recordingState.isRecording else {
+            print("❌ [AppCoordinator] Cannot start recording: already in progress")
             throw AppCoordinatorError.recordingInProgress
         }
         
@@ -183,68 +205,91 @@ public final class AppCoordinator: ObservableObject {
         lastCompletedChunk = nil
         
         // Start recording
+        print("🎤 [AppCoordinator] Starting AudioCaptureManager...")
         try await audioCapture.startRecording(mode: .active)
+        print("✅ [AppCoordinator] Audio capture started")
         
         recordingStartTime = Date()
         recordingState = .recording(startTime: Date())
+        print("🎙️ [AppCoordinator] Recording state updated to .recording")
     }
     
     /// Stop the current recording and process it through the pipeline
     /// Returns the UUID of the saved AudioChunk
     public func stopRecording() async throws -> UUID {
+        print("⏹️ [AppCoordinator] Stopping recording...")
         guard case .recording = recordingState else {
+            print("❌ [AppCoordinator] Cannot stop: no active recording")
             throw AppCoordinatorError.noActiveRecording
         }
         
         guard let dbManager = databaseManager else {
+            print("❌ [AppCoordinator] Cannot stop: not initialized")
             throw AppCoordinatorError.notInitialized
         }
         
         recordingState = .processing
+        print("🔄 [AppCoordinator] State changed to .processing")
         
         do {
             // 1. Stop audio capture - this triggers onChunkCompleted callback
+            print("🎤 [AppCoordinator] Stopping audio capture...")
             try await audioCapture.stopRecording()
+            print("✅ [AppCoordinator] Audio capture stopped")
             
             // Wait a moment for callback to be called
             try? await Task.sleep(for: .milliseconds(100))
             
             // 2. Get the completed chunk
             guard let chunk = lastCompletedChunk else {
+                print("❌ [AppCoordinator] No audio chunk received from callback")
                 throw AppCoordinatorError.storageFailed(
                     NSError(domain: "AppCoordinator", code: -1, 
                            userInfo: [NSLocalizedDescriptionKey: "No audio chunk received"])
                 )
             }
+            print("✅ [AppCoordinator] Audio chunk received: \(chunk.id)")
             
             // 3. Save the audio chunk to storage
+            print("💾 [AppCoordinator] Saving audio chunk to database...")
             try await dbManager.insertAudioChunk(chunk)
+            print("✅ [AppCoordinator] Audio chunk saved")
             
             // 4. Transcribe the audio
+            print("🎯 [AppCoordinator] Starting transcription...")
             let segments = try await transcribeAudio(chunk: chunk)
+            print("✅ [AppCoordinator] Transcription complete: \(segments.count) segments")
             
             // 5. Save transcript segments to storage
+            print("💾 [AppCoordinator] Saving transcript segments...")
             for segment in segments {
                 try await dbManager.insertTranscriptSegment(segment)
             }
+            print("✅ [AppCoordinator] Transcript segments saved")
             
             // 6. Generate summary if enough content
+            print("📝 [AppCoordinator] Generating summary...")
             await generateSummaryIfNeeded(segments: segments)
             
             // 7. Update rollups and stats
+            print("📊 [AppCoordinator] Updating rollups and stats...")
             await updateRollupsAndStats()
             
             // 8. Update widget data
+            print("🧩 [AppCoordinator] Updating widget...")
             await updateWidgetData()
             
             // Reset recording state
             recordingStartTime = nil
             lastCompletedChunk = nil
             recordingState = .completed(chunkId: chunk.id)
+            print("🎉 [AppCoordinator] Recording completed successfully: \(chunk.id)")
             
             return chunk.id
             
         } catch {
+            print("❌ [AppCoordinator] Recording failed: \(error.localizedDescription)")
+            print("❌ [AppCoordinator] Error details: \(error)")
             recordingState = .failed(error.localizedDescription)
             throw error
         }
