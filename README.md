@@ -74,13 +74,13 @@ code --install-extension vknabel.vscode-apple-swift-format
 
 ### Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `./Scripts/build.sh [target]` | Build iOS, Watch, Widgets, or all |
-| `./Scripts/test.sh [target]` | Run unit, integration, UI, or all tests |
-| `./Scripts/lint.sh` | Check code style |
-| `./Scripts/format.sh` | Auto-format Swift code |
-| `./Scripts/verify-privacy.sh` | Verify no unauthorized network calls |
+| Script                        | Purpose                                 |
+| ----------------------------- | --------------------------------------- |
+| `./Scripts/build.sh [target]` | Build iOS, Watch, Widgets, or all       |
+| `./Scripts/test.sh [target]`  | Run unit, integration, UI, or all tests |
+| `./Scripts/lint.sh`           | Check code style                        |
+| `./Scripts/format.sh`         | Auto-format Swift code                  |
+| `./Scripts/verify-privacy.sh` | Verify no unauthorized network calls    |
 
 ---
 
@@ -174,6 +174,7 @@ xcodebuild test \
 ## 🗺️ Roadmap
 
 ### V1 (Current)
+
 - [x] Project setup & architecture
 - [ ] SQLite storage with migrations
 - [ ] Audio capture pipeline
@@ -184,6 +185,7 @@ xcodebuild test \
 - [ ] Apple Watch app
 
 ### V2
+
 - [ ] On-device summarization (Core ML / local LLM)
 - [ ] macOS companion app
 - [ ] CloudKit sync (opt-in)

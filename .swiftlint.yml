@@ -83,9 +83,9 @@ opt_in_rules:
 # Disabled Rules
 # -----------------------------------------------------------------------------
 disabled_rules:
-  - todo  # We use TODOs actively during development
-  - opening_brace  # Conflicts with swift-format sometimes
-  - trailing_comma  # Personal preference
+  - todo # We use TODOs actively during development
+  - opening_brace # Conflicts with swift-format sometimes
+  - trailing_comma # Personal preference
 
 # -----------------------------------------------------------------------------
 # Rule Configuration
@@ -181,7 +181,7 @@ custom_rules:
 
   privacy_allowed_comment:
     name: "Privacy-allowed annotation"
-    regex: '// PRIVACY-ALLOWED:'
+    regex: "// PRIVACY-ALLOWED:"
     match_kinds:
       - comment
     message: "Verify this privacy exception is documented"
