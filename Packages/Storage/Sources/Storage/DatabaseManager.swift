@@ -502,6 +502,34 @@ public actor DatabaseManager {
         }
     }
     
+    public func getTranscriptSegments(from startDate: Date, to endDate: Date) throws -> [TranscriptSegment] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+        SELECT ts.* FROM transcript_segments ts
+        INNER JOIN audio_chunks ac ON ts.audioChunkID = ac.id
+        WHERE ac.startTime >= ? AND ac.startTime < ?
+        ORDER BY ac.startTime ASC, ts.startTime ASC
+        """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var segments: [TranscriptSegment] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            segments.append(try parseTranscriptSegment(from: stmt))
+        }
+        
+        return segments
+    }
+    
     private func parseTranscriptSegment(from stmt: OpaquePointer?) throws -> TranscriptSegment {
         guard let idString = sqlite3_column_text(stmt, 0),
               let audioChunkIDString = sqlite3_column_text(stmt, 1),

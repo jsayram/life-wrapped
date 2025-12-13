@@ -7,6 +7,7 @@ let package = Package(
     platforms: [
         .iOS(.v18),
         .macOS(.v15),
+        .watchOS(.v11)
     ],
     products: [
         .library(
@@ -23,12 +24,12 @@ let package = Package(
             name: "Summarization",
             dependencies: ["SharedModels", "Storage"],
             swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency"),
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         .testTarget(
             name: "SummarizationTests",
             dependencies: ["Summarization"]
-        ),
+        )
     ]
 )
