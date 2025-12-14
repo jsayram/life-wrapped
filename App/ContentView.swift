@@ -562,10 +562,35 @@ struct SettingsTab: View {
     @State private var showDataManagement = false
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var databasePath: String?
+    @State private var chunkDuration: Double = 180 // Default 3 minutes
     
     var body: some View {
         NavigationStack {
             List {
+                Section("Recording") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Auto-Chunk Duration")
+                            Spacer()
+                            Text("\(Int(chunkDuration))s")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        
+                        Slider(value: $chunkDuration, in: 30...300, step: 30) {
+                            Text("Chunk Duration")
+                        }
+                        .onChange(of: chunkDuration) { oldValue, newValue in
+                            coordinator.audioCapture.autoChunkDuration = newValue
+                        }
+                        
+                        Text("Recordings are automatically split into chunks of this duration for better processing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                
                 Section("Preferences") {
                     NavigationLink(destination: Text("Audio Settings")) {
                         Label("Audio Quality", systemImage: "waveform")
@@ -630,6 +655,7 @@ struct SettingsTab: View {
             }
             .task {
                 databasePath = await coordinator.getDatabasePath()
+                chunkDuration = coordinator.audioCapture.autoChunkDuration
             }
         }
     }

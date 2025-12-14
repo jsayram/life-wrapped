@@ -7,6 +7,23 @@ import Speech
 import SharedModels
 import Storage
 
+/// Helper class to track transcription state across callbacks
+@MainActor
+private class TranscriptionState {
+    var hasResumed = false
+    var allUtterances: [String] = []  // All completed utterances
+    var currentUtterance = ""         // Current in-progress utterance
+    var finalCount = 0
+    
+    var fullText: String {
+        var parts = allUtterances
+        if !currentUtterance.isEmpty {
+            parts.append(currentUtterance)
+        }
+        return parts.joined(separator: " ")
+    }
+}
+
 /// Actor that manages speech-to-text transcription using Apple's Speech framework
 /// Handles batch processing of audio chunks with progress tracking
 public actor TranscriptionManager {
@@ -149,44 +166,81 @@ public actor TranscriptionManager {
         // Capture values needed by the callback (to avoid actor isolation issues)
         let chunkID = chunk.id
         let localeIdentifier = locale.identifier
+        let duration = chunk.endTime.timeIntervalSince(chunk.startTime)
         
-        // Perform recognition - extract just the text from result inside callback
-        // to avoid sending non-Sendable SFSpeechRecognitionResult across isolation boundaries
+        // Perform recognition - wait for entire audio file to be processed
+        // Do NOT return early on "final" results (pauses) - keep accumulating all text
         let transcribedText: String = try await withCheckedThrowingContinuation { continuation in
-            var hasResumed = false
-            var lastText = ""
+            let state = TranscriptionState()
             
-            recognizer.recognitionTask(with: request) { result, error in
-                // Don't resume multiple times
-                guard !hasResumed else { return }
+            _ = recognizer.recognitionTask(with: request) { result, error in
+                // Extract text immediately to avoid sending non-Sendable result
+                let text = result?.bestTranscription.formattedString
+                let isFinal = result?.isFinal ?? false
                 
-                if let error = error {
-                    hasResumed = true
-                    continuation.resume(throwing: TranscriptionError.recognitionFailed(error.localizedDescription))
-                    return
+                Task { @MainActor in
+                    guard !state.hasResumed else { return }
+                    
+                    if let error = error {
+                        // Recognition ended with error - use what we have
+                        print("⚠️ [TranscriptionManager] Recognition ended: \(error.localizedDescription)")
+                        let finalText = state.fullText
+                        if !finalText.isEmpty {
+                            print("✅ [TranscriptionManager] Using accumulated: \(finalText.split(separator: " ").count) words total")
+                            state.hasResumed = true
+                            continuation.resume(returning: finalText)
+                        } else {
+                            state.hasResumed = true
+                            continuation.resume(throwing: TranscriptionError.recognitionFailed(error.localizedDescription))
+                        }
+                        return
+                    }
+                    
+                    guard let text = text else { return }
+                    
+                    let newWordCount = text.split(separator: " ").count
+                    let currentWordCount = state.currentUtterance.split(separator: " ").count
+                    
+                    // Detect abandoned utterance: if new text is shorter than current,
+                    // Speech Recognition has abandoned the previous utterance without marking it final
+                    if !state.currentUtterance.isEmpty && newWordCount < currentWordCount {
+                        print("🔄 [TranscriptionManager] Abandoned utterance detected (was \(currentWordCount) words, now \(newWordCount) words)")
+                        state.allUtterances.append(state.currentUtterance)
+                        print("💾 [TranscriptionManager] Saved abandoned utterance #\(state.allUtterances.count): '\(state.currentUtterance.prefix(50))...' (\(currentWordCount) words)")
+                        state.currentUtterance = ""
+                    }
+                    
+                    if isFinal {
+                        // This utterance is complete - save it and reset for next
+                        state.finalCount += 1
+                        if !text.isEmpty && !state.allUtterances.contains(text) {
+                            state.allUtterances.append(text)
+                            print("✅ [TranscriptionManager] Final #\(state.finalCount): '\(text.prefix(50))...' (\(text.split(separator: " ").count) words) - Total: \(state.fullText.split(separator: " ").count) words")
+                        }
+                        state.currentUtterance = ""
+                        // Continue listening for more utterances after the pause
+                    } else {
+                        // Partial result - update current utterance
+                        state.currentUtterance = text
+                        print("⏳ [TranscriptionManager] Partial: '\(text.prefix(30))...' (\(newWordCount) words) - Total: \(state.fullText.split(separator: " ").count) words")
+                    }
                 }
-                
-                guard let result = result else { return }
-                
-                // Update the latest transcription
-                let text = result.bestTranscription.formattedString
-                lastText = text
-                
-                if result.isFinal {
-                    // Final result received
-                    print("✅ [TranscriptionManager] Final result received: '\(text.prefix(50))...'")
-                    hasResumed = true
-                    continuation.resume(returning: text)
-                } else {
-                    // Partial result - just update lastText
-                    print("⏳ [TranscriptionManager] Partial result: '\(text.prefix(30))...' (words: \(text.split(separator: " ").count))")
-                }
+            }
+            
+            // Only return when timeout is reached (entire audio file processed)
+            Task { @MainActor in
+                let timeoutDuration = max(duration + 5.0, 10.0) // At least 10 seconds
+                try? await Task.sleep(for: .seconds(timeoutDuration))
+                guard !state.hasResumed else { return }
+                let finalText = state.fullText
+                print("✅ [TranscriptionManager] Processing complete - \(state.finalCount) utterances, \(finalText.split(separator: " ").count) total words")
+                state.hasResumed = true
+                continuation.resume(returning: finalText)
             }
         }
         print("🔄 [TranscriptionManager] Recognition complete, converting to segments...")
         
         // Convert to segments after continuation completes (back on actor)
-        let duration = chunk.endTime.timeIntervalSince(chunk.startTime)
         let segments = convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier), duration: duration)
         print("✅ [TranscriptionManager] Converted to \(segments.count) segments")
         return segments

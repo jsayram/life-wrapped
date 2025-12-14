@@ -107,14 +107,15 @@ public final class AudioCaptureManager: ObservableObject {
         let sessionId = UUID()
         currentSessionId = sessionId
         currentChunkIndex = 0
-        print("🎧 [AudioCaptureManager] new session started: \(sessionId)")
+        let sessionStartTime = Date()
+        print("🎧 [AudioCaptureManager] new session started: \(sessionId) at \(sessionStartTime)")
 
         // Create first chunk
         try await startNewChunk(mode: mode)
         
         // Start auto-chunk timer
         startAutoChunkTimer()
-        print("🎧 [AudioCaptureManager] auto-chunk timer started (\(autoChunkDuration)s)")
+        print("🎧 [AudioCaptureManager] auto-chunk timer started at \(Date()), will fire at \(Date().addingTimeInterval(autoChunkDuration))")
     }
     
     /// Start a new chunk within the current session
@@ -202,10 +203,11 @@ public final class AudioCaptureManager: ObservableObject {
             chunkIndex: currentChunkIndex
         )
         
-        print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) finalized: \(chunk.duration)s")
+        print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) finalized at \(endTime): \(chunk.duration)s (session: \(sessionId))")
         
         // Notify via callback (caller handles storage and transcription)
         await onChunkCompleted?(chunk)
+        print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) callback completed")
         
         // Clear current chunk state
         currentChunkID = nil
@@ -216,18 +218,20 @@ public final class AudioCaptureManager: ObservableObject {
     
     /// Automatically start a new chunk while recording continues
     private func autoFinalizeAndContinue() async {
-        print("🎧 [AudioCaptureManager] auto-chunk triggered")
+        print("⏰ [AudioCaptureManager] AUTO-CHUNK TIMER FIRED at \(Date())")
+        print("🎧 [AudioCaptureManager] Current chunk index: \(currentChunkIndex), session: \(currentSessionId?.uuidString ?? "none")")
         
         // Finalize current chunk
         await finalizeCurrentChunk()
         
         // Increment chunk index
         currentChunkIndex += 1
+        print("🎧 [AudioCaptureManager] Starting next chunk with index: \(currentChunkIndex)")
         
         // Start next chunk in same session
         do {
             try await startNewChunk(mode: currentState.mode ?? .active)
-            print("🎧 [AudioCaptureManager] auto-chunk continuation successful")
+            print("✅ [AudioCaptureManager] auto-chunk continuation successful - now recording chunk \(currentChunkIndex)")
         } catch {
             print("❌ [AudioCaptureManager] failed to start next chunk: \(error)")
             onError?(AudioCaptureError.recordingFailed("Failed to continue recording: \(error.localizedDescription)"))
@@ -247,11 +251,17 @@ public final class AudioCaptureManager: ObservableObject {
         autoChunkTimer?.invalidate()
         
         // Create new timer
-        autoChunkTimer = Timer.scheduledTimer(withTimeInterval: autoChunkDuration, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: autoChunkDuration, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.autoFinalizeAndContinue()
             }
         }
+        
+        // Add to run loop with common mode to ensure it fires during tracking
+        RunLoop.main.add(timer, forMode: .common)
+        autoChunkTimer = timer
+        
+        print("⏰ [AudioCaptureManager] Auto-chunk timer scheduled for \(autoChunkDuration)s intervals")
     }
     
     /// Pause recording (keep engine running but don't write to file)

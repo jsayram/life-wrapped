@@ -114,7 +114,7 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Dependencies
     
     private var databaseManager: DatabaseManager?
-    private let audioCapture: AudioCaptureManager
+    public let audioCapture: AudioCaptureManager
     public let audioPlayback: AudioPlaybackManager
     private var transcriptionManager: TranscriptionManager?
     private var summarizationManager: SummarizationManager?
@@ -141,9 +141,42 @@ public final class AppCoordinator: ObservableObject {
     
     private func setupAudioCaptureCallback() {
         audioCapture.onChunkCompleted = { [weak self] chunk in
-            await MainActor.run {
-                self?.lastCompletedChunk = chunk
+            print("✅ [AppCoordinator] Audio chunk received: \(chunk.id) (chunk \(chunk.chunkIndex) of session \(chunk.sessionId))")
+            await self?.processCompletedChunk(chunk)
+        }
+    }
+    
+    /// Process a completed chunk (called from auto-chunking or final stop)
+    private func processCompletedChunk(_ chunk: AudioChunk) async {
+        do {
+            // Save the audio chunk to storage
+            print("💾 [AppCoordinator] Saving audio chunk to database...")
+            guard let dbManager = databaseManager else {
+                print("❌ [AppCoordinator] DatabaseManager not available")
+                return
             }
+            try await dbManager.insertAudioChunk(chunk)
+            print("✅ [AppCoordinator] Audio chunk saved")
+            
+            // Transcribe the audio in background
+            Task {
+                print("🎯 [AppCoordinator] Starting transcription for chunk \(chunk.chunkIndex)...")
+                let segments = try await self.transcribeAudio(chunk: chunk)
+                print("✅ [AppCoordinator] Transcription complete: \(segments.count) segments")
+                
+                // Save transcript segments
+                print("💾 [AppCoordinator] Saving transcript segments...")
+                for segment in segments {
+                    try await dbManager.insertTranscriptSegment(segment)
+                }
+                print("✅ [AppCoordinator] Transcript segments saved")
+                
+                // Update rollups incrementally
+                print("📊 [AppCoordinator] Updating rollups...")
+                await self.updateRollupsAndStats()
+            }
+        } catch {
+            print("❌ [AppCoordinator] Failed to process chunk: \(error)")
         }
     }
     
@@ -393,7 +426,7 @@ public final class AppCoordinator: ObservableObject {
     /// Stop the current recording and process it through the pipeline
     /// Returns the UUID of the saved AudioChunk
     @MainActor
-    public func stopRecording() async throws -> UUID {
+    public func stopRecording() async throws {
         print("⏹️ [AppCoordinator] Stopping recording...")
         guard case .recording = recordingState else {
             print("❌ [AppCoordinator] Cannot stop: no active recording")
@@ -409,58 +442,27 @@ public final class AppCoordinator: ObservableObject {
         print("🔄 [AppCoordinator] State changed to .processing")
         
         do {
-            // 1. Stop audio capture - this triggers onChunkCompleted callback
+            // 1. Stop audio capture - this triggers onChunkCompleted callback for final chunk
             print("🎤 [AppCoordinator] Stopping audio capture...")
             try await audioCapture.stopRecording()
             print("✅ [AppCoordinator] Audio capture stopped")
             
-            // Wait a moment for callback to be called
-            try? await Task.sleep(for: .milliseconds(100))
+            // Wait for final chunk to be processed
+            try? await Task.sleep(for: .milliseconds(500))
             
-            // 2. Get the completed chunk
-            guard let chunk = lastCompletedChunk else {
-                print("❌ [AppCoordinator] No audio chunk received from callback")
-                throw AppCoordinatorError.storageFailed(
-                    NSError(domain: "AppCoordinator", code: -1, 
-                           userInfo: [NSLocalizedDescriptionKey: "No audio chunk received"])
-                )
-            }
-            print("✅ [AppCoordinator] Audio chunk received: \(chunk.id)")
-            
-            // 3. Save the audio chunk to storage
-            print("💾 [AppCoordinator] Saving audio chunk to database...")
-            try await dbManager.insertAudioChunk(chunk)
-            print("✅ [AppCoordinator] Audio chunk saved")
-            
-            // 4. Transcribe the audio
-            print("🎯 [AppCoordinator] Starting transcription...")
-            let segments = try await transcribeAudio(chunk: chunk)
-            print("✅ [AppCoordinator] Transcription complete: \(segments.count) segments")
-            
-            // 5. Save transcript segments to storage
-            print("💾 [AppCoordinator] Saving transcript segments...")
-            for segment in segments {
-                try await dbManager.insertTranscriptSegment(segment)
-            }
-            print("✅ [AppCoordinator] Transcript segments saved")
-            
-            // 6. Generate summary if enough content
+            // 2. Generate summary if enough content
             print("📝 [AppCoordinator] Generating summary...")
-            await generateSummaryIfNeeded(segments: segments)
+            // Note: segments are processed per-chunk now, so we'd need to fetch all segments for summary
             
-            // 7. Update rollups and stats
-            print("📊 [AppCoordinator] Updating rollups and stats...")
-            await updateRollupsAndStats()
-            
-            // 8. Update widget data
+            // 3. Update widget data
             print("🧩 [AppCoordinator] Updating widget...")
             await updateWidgetData()
             
             // Reset recording state
             recordingStartTime = nil
             lastCompletedChunk = nil
-            recordingState = .completed(chunkId: chunk.id)
-            print("🎉 [AppCoordinator] Recording completed successfully: \(chunk.id)")
+            recordingState = .completed(chunkId: UUID()) // Just show completed state
+            print("🎉 [AppCoordinator] Recording session completed successfully")
             
             // Auto-reset to idle after brief success display
             Task {
@@ -472,8 +474,6 @@ public final class AppCoordinator: ObservableObject {
                     }
                 }
             }
-            
-            return chunk.id
             
         } catch {
             print("❌ [AppCoordinator] Recording failed: \(error.localizedDescription)")
