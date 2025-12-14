@@ -199,12 +199,12 @@ public final class AudioCaptureManager: ObservableObject {
         do {
             // Configure for background audio recording
             // .mixWithOthers allows other audio to play while recording
-            // .allowBluetooth enables Bluetooth headset recording
+            // .allowBluetoothHFP enables Bluetooth headset recording (Hands-Free Profile)
             // Note: .defaultToSpeaker is not compatible with .record category
             try session.setCategory(
                 .record,
                 mode: .default,
-                options: [.mixWithOthers, .allowBluetooth]
+                options: [.mixWithOthers, .allowBluetoothHFP]
             )
             
             // Request permission to record in background
@@ -359,3 +359,4 @@ public final class AudioCaptureManager: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
     }
 }
+

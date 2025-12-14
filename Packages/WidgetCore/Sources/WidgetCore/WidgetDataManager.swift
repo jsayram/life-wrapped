@@ -32,8 +32,10 @@ public final class WidgetDataManager: @unchecked Sendable {
             return
         }
         
-        // Try App Group, fallback to nil (widget data won't be available)
-        if let appGroupDefaults = UserDefaults(suiteName: Self.appGroupIdentifier) {
+        // Check if App Group container exists before trying to create UserDefaults
+        // This prevents CFPrefs warnings when the container is not available
+        if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier) != nil,
+           let appGroupDefaults = UserDefaults(suiteName: Self.appGroupIdentifier) {
             print("✅ [WidgetDataManager] Using App Group UserDefaults")
             self.userDefaults = appGroupDefaults
         } else {
