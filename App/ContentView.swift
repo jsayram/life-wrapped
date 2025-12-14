@@ -356,80 +356,200 @@ struct StatItem: View {
 
 struct HistoryTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
-    @State private var recordings: [AudioChunk] = []
+    @State private var sessions: [RecordingSession] = []
+    @State private var sessionWordCounts: [UUID: Int] = [:] // Cache word counts
     @State private var isLoading = true
     @State private var playbackError: String?
     
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Loading recordings...")
-                } else if recordings.isEmpty {
-                    ContentUnavailableView(
-                        "No Recordings Yet",
-                        systemImage: "mic.slash",
-                        description: Text("Start recording to see your journal entries here.")
-                    )
-                } else {
-                    List {
-                        ForEach(recordings, id: \.id) { recording in
-                            NavigationLink(destination: RecordingDetailView(recording: recording)) {
-                                RecordingRow(
-                                    recording: recording,
-                                    isPlaying: coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL && coordinator.audioPlayback.isPlaying,
-                                    showPlayButton: false
-                                )
-                            }
-                        }
-                        .onDelete(perform: deleteRecording)
+            contentView
+                .navigationTitle("History")
+                .task {
+                    await loadSessions()
+                }
+                .refreshable {
+                    await loadSessions()
+                }
+                .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
+                    Button("OK") {
+                        playbackError = nil
+                    }
+                } message: {
+                    if let error = playbackError {
+                        Text(error)
                     }
                 }
-            }
-            .navigationTitle("History")
-            .task {
-                await loadRecordings()
-            }
-            .refreshable {
-                await loadRecordings()
-            }
-            .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
-                Button("OK") {
-                    playbackError = nil
-                }
-            } message: {
-                if let error = playbackError {
-                    Text(error)
+        }
+    }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        if isLoading {
+            ProgressView("Loading sessions...")
+        } else if sessions.isEmpty {
+            ContentUnavailableView(
+                "No Recordings Yet",
+                systemImage: "mic.slash",
+                description: Text("Start recording to see your journal entries here.")
+            )
+        } else {
+            sessionsList
+        }
+    }
+    
+    private var sessionsList: some View {
+        List {
+            ForEach(sortedDates, id: \.self) { date in
+                Section(header: Text(formatSectionDate(date))) {
+                    ForEach(groupedSessions[date] ?? [], id: \.id) { session in
+                        NavigationLink(destination: sessionDetailView(for: session)) {
+                            SessionRow(
+                                session: session,
+                                wordCount: sessionWordCounts[session.sessionId]
+                            )
+                        }
+                    }
+                    .onDelete { offsets in
+                        deleteSession(at: offsets, in: date)
+                    }
                 }
             }
         }
     }
     
-    private func loadRecordings() async {
+    private func sessionDetailView(for session: RecordingSession) -> some View {
+        SessionDetailView(session: session)
+    }
+    
+    /// Group sessions by date
+    private var groupedSessions: [Date: [RecordingSession]] {
+        Dictionary(grouping: sessions) { session in
+            Calendar.current.startOfDay(for: session.startTime)
+        }
+    }
+    
+    /// Sorted dates (most recent first)
+    private var sortedDates: [Date] {
+        Array(groupedSessions.keys).sorted(by: >)
+    }
+    
+    private func formatSectionDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            return formatter.string(from: date)
+        }
+    }
+    
+    private func loadSessions() async {
         isLoading = true
         do {
-            recordings = try await coordinator.fetchRecentRecordings(limit: 50)
+            sessions = try await coordinator.fetchRecentSessions(limit: 50)
+            print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
+            
+            // Note: Skipping word count loading for now as it's expensive
+            // Word counts will be calculated only in detail view when needed
         } catch {
-            print("Failed to load recordings: \(error)")
+            print("❌ [HistoryTab] Failed to load sessions: \(error)")
         }
         isLoading = false
     }
     
-    private func deleteRecording(at offsets: IndexSet) {
+    private func deleteSession(at offsets: IndexSet, in date: Date) {
+        guard let sessionsForDate = groupedSessions[date] else { return }
+        
         Task {
             for index in offsets {
-                let recording = recordings[index]
-                // Stop playback if this recording is playing
-                if coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL {
-                    coordinator.audioPlayback.stop()
+                let session = sessionsForDate[index]
+                // Stop playback if any chunk from this session is playing
+                for chunk in session.chunks {
+                    if coordinator.audioPlayback.currentlyPlayingURL == chunk.fileURL {
+                        coordinator.audioPlayback.stop()
+                        break
+                    }
                 }
                 do {
-                    try await coordinator.deleteRecording(recording.id)
-                    recordings.remove(at: index)
+                    try await coordinator.deleteSession(session.sessionId)
+                    sessions.removeAll { $0.sessionId == session.sessionId }
+                    sessionWordCounts.removeValue(forKey: session.sessionId)
                 } catch {
-                    print("Failed to delete recording: \(error)")
+                    print("Failed to delete session: \(error)")
                 }
             }
+        }
+    }
+}
+
+struct SessionRow: View {
+    let session: RecordingSession
+    let wordCount: Int?
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: session.chunkCount > 1 ? "waveform.circle.fill" : "waveform.circle")
+                .font(.title2)
+                .foregroundStyle(session.chunkCount > 1 ? .blue : .gray)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                // Time
+                Text(session.startTime, style: .time)
+                    .font(.headline)
+                
+                // Stats row
+                HStack(spacing: 16) {
+                    // Duration
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                        Text(formatDuration(session.totalDuration))
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    
+                    // Word count (if available)
+                    if let words = wordCount, words > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "text.word.spacing")
+                            Text("\(words) words")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                    
+                    // Chunk count (if multi-chunk)
+                    if session.chunkCount > 1 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.stack.3d.up")
+                            Text("\(session.chunkCount) parts")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        } else {
+            return "\(seconds)s"
         }
     }
 }
@@ -923,6 +1043,143 @@ struct InfoRow: View {
                 .fontWeight(.medium)
         }
         .font(.subheadline)
+    }
+}
+
+// MARK: - Session Detail View
+
+struct SessionDetailView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    let session: RecordingSession
+    
+    @State private var transcriptSegments: [TranscriptSegment] = []
+    @State private var isLoading = true
+    @State private var loadError: String?
+    @State private var currentlyPlayingChunkIndex: Int?
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Session Info Card
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Session Details")
+                        .font(.headline)
+                    
+                    InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
+                    InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
+                    InfoRow(label: "Parts", value: "\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
+                    
+                    if !transcriptSegments.isEmpty {
+                        let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+                        InfoRow(label: "Word Count", value: "\(wordCount) words")
+                    }
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+                
+                // Transcription Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Transcription")
+                        .font(.headline)
+                    
+                    if isLoading {
+                        ProgressView("Loading transcription...")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    } else if let error = loadError {
+                        Text("Error: \(error)")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                            .padding()
+                    } else if transcriptSegments.isEmpty {
+                        Text("No transcription available")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                            .padding()
+                    } else {
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(groupedByChunk, id: \.chunkIndex) { group in
+                                if session.chunkCount > 1 {
+                                    // Show chunk marker for multi-chunk sessions
+                                    HStack {
+                                        Divider()
+                                            .frame(width: 40)
+                                        Text("Part \(group.chunkIndex + 1)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        Divider()
+                                    }
+                                }
+                                
+                                Text(group.text)
+                                    .font(.body)
+                            }
+                        }
+                        .padding()
+                    }
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+            }
+            .padding()
+        }
+        .navigationTitle("Recording")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadTranscription()
+        }
+    }
+    
+    private var groupedByChunk: [(chunkIndex: Int, text: String)] {
+        // Group segments by chunk and combine text
+        var groups: [Int: [TranscriptSegment]] = [:]
+        
+        for segment in transcriptSegments {
+            for (index, chunk) in session.chunks.enumerated() {
+                if segment.audioChunkID == chunk.id {
+                    groups[index, default: []].append(segment)
+                    break
+                }
+            }
+        }
+        
+        return groups.keys.sorted().map { chunkIndex in
+            let segments = groups[chunkIndex] ?? []
+            let text = segments.map { $0.text }.joined(separator: " ")
+            return (chunkIndex, text)
+        }
+    }
+    
+    private func loadTranscription() async {
+        print("📄 [SessionDetailView] Loading transcription for session \(session.sessionId)")
+        isLoading = true
+        loadError = nil
+        
+        do {
+            transcriptSegments = try await coordinator.fetchSessionTranscript(sessionId: session.sessionId)
+            print("📄 [SessionDetailView] Loaded \(transcriptSegments.count) transcript segments")
+        } catch {
+            print("❌ [SessionDetailView] Failed to load transcription: \(error)")
+            loadError = error.localizedDescription
+        }
+        
+        isLoading = false
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        let seconds = Int(duration) % 60
+        
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        } else if minutes > 0 {
+            return String(format: "%d:%02d", minutes, seconds)
+        } else {
+            return "\(seconds)s"
+        }
     }
 }
 

@@ -394,6 +394,26 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchRecentAudioChunks(limit: limit)
     }
     
+    /// Fetch recent recording sessions with all their chunks
+    public func fetchRecentSessions(limit: Int = 50) async throws -> [RecordingSession] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Get session metadata
+        let sessionMetadata = try await dbManager.fetchSessions(limit: limit)
+        
+        // Fetch chunks for each session and build RecordingSession objects
+        var sessions: [RecordingSession] = []
+        for (sessionId, _, _) in sessionMetadata {
+            let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
+            let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+            sessions.append(session)
+        }
+        
+        return sessions
+    }
+    
     // MARK: - Recording
     
     /// Start a new recording session
@@ -711,6 +731,32 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchTranscriptSegments(audioChunkID: chunkId)
     }
     
+    /// Fetch transcript segments for an entire session (all chunks combined)
+    public func fetchSessionTranscript(sessionId: UUID) async throws -> [TranscriptSegment] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Get all chunks for the session
+        let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
+        
+        // Fetch transcripts for all chunks and combine
+        var allSegments: [TranscriptSegment] = []
+        for chunk in chunks {
+            let segments = try await dbManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+            allSegments.append(contentsOf: segments)
+        }
+        
+        // Sort by createdAt to maintain order (segments are already ordered within chunks)
+        return allSegments.sorted { $0.createdAt < $1.createdAt }
+    }
+    
+    /// Get total word count for a session
+    public func getSessionWordCount(sessionId: UUID) async throws -> Int {
+        let transcript = try await fetchSessionTranscript(sessionId: sessionId)
+        return transcript.reduce(0) { $0 + $1.text.split(separator: " ").count }
+    }
+    
     /// Fetch recent summaries
     public func fetchRecentSummaries(limit: Int = 10) async throws -> [Summary] {
         guard let dbManager = databaseManager else {
@@ -728,6 +774,20 @@ public final class AppCoordinator: ObservableObject {
         
         // Cascade delete will handle transcript segments via FK
         try await dbManager.deleteAudioChunk(id: chunkId)
+        
+        // Refresh stats
+        await updateRollupsAndStats()
+        await updateWidgetData()
+    }
+    
+    /// Delete an entire recording session (all chunks)
+    public func deleteSession(_ sessionId: UUID) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Delete entire session - cascade delete handles transcript segments
+        try await dbManager.deleteSession(sessionId: sessionId)
         
         // Refresh stats
         await updateRollupsAndStats()
