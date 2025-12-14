@@ -156,6 +156,10 @@ struct RecordingButton: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var recordingDuration: TimeInterval = 0
+    
+    // Timer that fires every 0.1 seconds to update the recording duration
+    private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     var body: some View {
         VStack(spacing: 16) {
@@ -184,6 +188,15 @@ struct RecordingButton: View {
             Text(statusText)
                 .font(.headline)
                 .foregroundStyle(.secondary)
+                .monospacedDigit() // Makes numbers consistent width for smooth timer display
+        }
+        .onReceive(timer) { _ in
+            // Update recording duration every 0.1 seconds when recording
+            if case .recording(let startTime) = coordinator.recordingState {
+                recordingDuration = Date().timeIntervalSince(startTime)
+            } else {
+                recordingDuration = 0
+            }
         }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {
@@ -223,9 +236,8 @@ struct RecordingButton: View {
     private var statusText: String {
         switch coordinator.recordingState {
         case .idle: return "Tap to start recording"
-        case .recording(let startTime): 
-            let duration = Date().timeIntervalSince(startTime)
-            return "Recording... \(formatDuration(duration))"
+        case .recording: 
+            return "Recording... \(formatDuration(recordingDuration))"
         case .processing: return "Processing..."
         case .completed: return "Saved!"
         case .failed(let message): return message
@@ -256,12 +268,6 @@ struct RecordingButton: View {
                     try await coordinator.startRecording()
                     print("✅ [RecordingButton] Recording started")
                     coordinator.showInfo("Recording started")
-                } else if case .completed = coordinator.recordingState {
-                    print("🔄 [RecordingButton] Resetting completed state")
-                    coordinator.resetRecordingState()
-                } else if case .failed = coordinator.recordingState {
-                    print("🔄 [RecordingButton] Resetting failed state")
-                    coordinator.resetRecordingState()
                 }
             } catch {
                 print("❌ [RecordingButton] Action failed: \(error.localizedDescription)")

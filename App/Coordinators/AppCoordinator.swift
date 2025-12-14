@@ -456,6 +456,17 @@ public final class AppCoordinator: ObservableObject {
             recordingState = .completed(chunkId: chunk.id)
             print("🎉 [AppCoordinator] Recording completed successfully: \(chunk.id)")
             
+            // Auto-reset to idle after brief success display
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                await MainActor.run {
+                    if case .completed = self.recordingState {
+                        self.recordingState = .idle
+                        print("🔄 [AppCoordinator] Auto-reset to idle state")
+                    }
+                }
+            }
+            
             return chunk.id
             
         } catch {
