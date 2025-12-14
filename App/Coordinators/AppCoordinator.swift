@@ -115,6 +115,7 @@ public final class AppCoordinator: ObservableObject {
     
     private var databaseManager: DatabaseManager?
     private let audioCapture: AudioCaptureManager
+    public let audioPlayback: AudioPlaybackManager
     private var transcriptionManager: TranscriptionManager?
     private var summarizationManager: SummarizationManager?
     private var insightsManager: InsightsManager?
@@ -131,6 +132,7 @@ public final class AppCoordinator: ObservableObject {
         widgetDataManager: WidgetDataManager = .shared
     ) {
         self.audioCapture = AudioCaptureManager()
+        self.audioPlayback = AudioPlaybackManager()
         self.widgetDataManager = widgetDataManager
         
         // Setup chunk completion callback

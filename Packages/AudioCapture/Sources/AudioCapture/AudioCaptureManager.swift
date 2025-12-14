@@ -311,39 +311,49 @@ public final class AudioCaptureManager: ObservableObject {
         }
     }
     
-    private func setupAudioEngineTap() throws {
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        
+    private nonisolated func installAudioTap(
+        on inputNode: AVAudioInputNode,
+        format: AVAudioFormat,
+        audioFile: AVAudioFile?,
+        onError: (@Sendable (AudioCaptureError) -> Void)?
+    ) {
         // Remove any existing tap
         inputNode.removeTap(onBus: 0)
         
-        // Capture actor-isolated state on the current (main) actor before installing the
-        // realtime tap so the realtime audio thread does not touch @MainActor state.
-        let capturedAudioFile = self.audioFile
-        let capturedOnError = self.onError
-        let writeEnabledAtInstall = self.currentState.isListening
-
-        // Install tap to capture audio — the closure only touches the captured values above
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, time in
-            // If writing was not enabled at install time, skip writing
-            guard writeEnabledAtInstall else { return }
-
-            // Write buffer to the captured audio file (safe to use from the audio thread)
-            if let audioFile = capturedAudioFile {
-                do {
-                    try audioFile.write(from: buffer)
-                } catch {
-                    // Notify error back on the main thread using the captured callback
-                    let captureError = AudioCaptureError.recordingFailed(error.localizedDescription)
-                    if let onError = capturedOnError {
-                        DispatchQueue.main.async {
-                            onError(captureError)
-                        }
+        // Install tap to capture audio — this closure runs on the realtime audio thread
+        // and must NOT access any @MainActor state. All values are passed in as parameters.
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+            guard let audioFile = audioFile else { return }
+            
+            do {
+                try audioFile.write(from: buffer)
+            } catch {
+                let captureError = AudioCaptureError.recordingFailed(error.localizedDescription)
+                if let onError = onError {
+                    DispatchQueue.main.async {
+                        onError(captureError)
                     }
                 }
             }
         }
+    }
+    
+    private func setupAudioEngineTap() throws {
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        
+        // Capture all needed values before calling the nonisolated function
+        let capturedAudioFile = self.audioFile
+        let capturedOnError = self.onError
+        
+        // Call nonisolated helper to install the tap - this ensures the closure
+        // is created outside of the @MainActor context entirely
+        installAudioTap(
+            on: inputNode,
+            format: format,
+            audioFile: capturedAudioFile,
+            onError: capturedOnError
+        )
     }
     
     private func startAudioEngine() throws {

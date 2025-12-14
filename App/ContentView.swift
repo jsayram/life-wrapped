@@ -340,6 +340,7 @@ struct HistoryTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var recordings: [AudioChunk] = []
     @State private var isLoading = true
+    @State private var playbackError: String?
     
     var body: some View {
         NavigationStack {
@@ -355,7 +356,11 @@ struct HistoryTab: View {
                 } else {
                     List {
                         ForEach(recordings, id: \.id) { recording in
-                            RecordingRow(recording: recording)
+                            RecordingRow(
+                                recording: recording,
+                                isPlaying: coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL && coordinator.audioPlayback.isPlaying,
+                                onTap: { playRecording(recording) }
+                            )
                         }
                         .onDelete(perform: deleteRecording)
                     }
@@ -367,6 +372,29 @@ struct HistoryTab: View {
             }
             .refreshable {
                 await loadRecordings()
+            }
+            .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
+                Button("OK") {
+                    playbackError = nil
+                }
+            } message: {
+                if let error = playbackError {
+                    Text(error)
+                }
+            }
+        }
+    }
+    
+    private func playRecording(_ recording: AudioChunk) {
+        // If already playing this recording, toggle pause
+        if coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL {
+            coordinator.audioPlayback.togglePlayPause()
+        } else {
+            // Play new recording
+            do {
+                try coordinator.audioPlayback.play(url: recording.fileURL)
+            } catch {
+                playbackError = "Could not play recording: \(error.localizedDescription)"
             }
         }
     }
@@ -385,6 +413,10 @@ struct HistoryTab: View {
         Task {
             for index in offsets {
                 let recording = recordings[index]
+                // Stop playback if this recording is playing
+                if coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL {
+                    coordinator.audioPlayback.stop()
+                }
                 do {
                     try await coordinator.deleteRecording(recording.id)
                     recordings.remove(at: index)
@@ -398,26 +430,40 @@ struct HistoryTab: View {
 
 struct RecordingRow: View {
     let recording: AudioChunk
+    let isPlaying: Bool
+    let onTap: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(recording.startTime, style: .date)
-                .font(.headline)
-            
-            HStack(spacing: 16) {
-                Text(recording.startTime, style: .time)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                    Text(formatDuration(recording.duration))
+        Button(action: onTap) {
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(recording.startTime, style: .date)
+                        .font(.headline)
+                    
+                    HStack(spacing: 16) {
+                        Text(recording.startTime, style: .time)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                            Text(formatDuration(recording.duration))
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                // Play/Pause button
+                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.blue)
             }
+            .padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {

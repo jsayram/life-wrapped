@@ -122,9 +122,14 @@ public actor TranscriptionManager {
         request.shouldReportPartialResults = false
         request.requiresOnDeviceRecognition = true // Privacy: on-device only
         
-        // Perform recognition
-        return try await withCheckedThrowingContinuation { continuation in
-            let task = recognizer.recognitionTask(with: request) { result, error in
+        // Capture values needed by the callback (to avoid actor isolation issues)
+        let chunkID = chunk.id
+        let localeIdentifier = locale.identifier
+        
+        // Perform recognition - extract just the text from result inside callback
+        // to avoid sending non-Sendable SFSpeechRecognitionResult across isolation boundaries
+        let transcribedText: String = try await withCheckedThrowingContinuation { continuation in
+            recognizer.recognitionTask(with: request) { result, error in
                 if let error = error {
                     continuation.resume(throwing: TranscriptionError.recognitionFailed(error.localizedDescription))
                     return
@@ -134,21 +139,13 @@ public actor TranscriptionManager {
                     return
                 }
                 
-                // Convert to TranscriptSegments
-                let segments = self.convertToSegments(
-                    from: result,
-                    audioChunkID: chunk.id,
-                    locale: locale
-                )
-                
-                continuation.resume(returning: segments)
-            }
-            
-            // Store task reference
-            Task {
-                self.storeTask(task, for: chunk.id)
+                // Extract just the string - this is Sendable
+                continuation.resume(returning: result.bestTranscription.formattedString)
             }
         }
+        
+        // Convert to segments after continuation completes (back on actor)
+        return convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier))
     }
     
     // MARK: - Batch Processing
@@ -249,5 +246,28 @@ public actor TranscriptionManager {
         }
         
         return segments
+    }
+    
+    /// Convert transcribed text to segments (simplified version when we only have the text)
+    private func convertToSegmentsFromText(
+        _ text: String,
+        audioChunkID: UUID,
+        locale: Locale
+    ) -> [TranscriptSegment] {
+        guard !text.isEmpty else {
+            return []
+        }
+        
+        // Create a single segment with the full transcribed text
+        let segment = TranscriptSegment(
+            audioChunkID: audioChunkID,
+            startTime: 0.0,
+            endTime: 0.0, // Unknown duration when using text-only
+            text: text,
+            confidence: 0.0, // Unknown confidence when using text-only
+            languageCode: locale.identifier
+        )
+        
+        return [segment]
     }
 }
