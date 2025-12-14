@@ -211,15 +211,106 @@ The system includes comprehensive logging:
 📊 [AppCoordinator] - Stats and rollup updates
 ```
 
-## Future Enhancements
+## Implementation Roadmap
 
-Potential improvements to consider:
+### Step 1: Database Session Queries
+**Goal**: Add methods to fetch all chunks for a session and list all sessions
 
-- Parallel transcription with TaskGroup (max 2-3 concurrent)
-- History UI showing session groupings instead of individual chunks
-- Detail view for multi-chunk session playback
-- Session summaries generated across all chunks
-- Export options for complete session transcripts
+**Tasks**:
+- Add `fetchChunksForSession(sessionId:)` → returns all chunks with same session_id
+- Add `fetchAllSessions()` → returns distinct session_ids with metadata (first chunk timestamp, total chunks, total duration)
+- Test: Print session list and verify chunks group correctly
+
+**Testing**: Record 5+ minute session (2+ chunks), verify database returns all chunks for that session
+
+---
+
+### Step 2: History UI - Session Grouping
+**Goal**: Display sessions instead of individual chunks in History
+
+**Tasks**:
+- Modify HistoryTab to fetch sessions instead of individual chunks
+- Show session card with: total duration, total words, chunk count
+- Display session start time (from first chunk)
+- Group by date sections as before
+
+**Testing**: History should show 1 card per session with aggregated stats
+
+---
+
+### Step 3: Detail View - Multi-Chunk Playback
+**Goal**: Update RecordingDetailView to handle sessions with multiple chunks
+
+**Tasks**:
+- Modify detail view to accept sessionId instead of single chunk
+- Fetch all chunks for session and display in order
+- Show chunk boundaries in transcript (e.g., "— Chunk 2 —")
+- Update audio player to play chunks sequentially
+- Show combined transcript from all chunks
+
+**Testing**: Tap session in History, should show all chunks and play continuously
+
+---
+
+### Step 4: Parallel Transcription with TaskGroup
+**Goal**: Transcribe multiple chunks simultaneously (max 3 concurrent)
+
+**Tasks**:
+- Add `transcribeBatch()` method using TaskGroup
+- Track active transcription count (max 3 concurrent)
+- Queue additional chunks if limit reached
+- Update progress tracking for batch operations
+
+**Testing**: Record 6+ minute session (3+ chunks), verify chunks transcribe in parallel (check logs for concurrent processing)
+
+---
+
+### Step 5: Session Summary Generation
+**Goal**: Generate summary across all chunks in a session
+
+**Tasks**:
+- Modify summarization to accept array of transcripts
+- Combine all chunk transcripts before summarization
+- Store summary at session level (not chunk level)
+- Display session-wide summary in detail view
+
+**Testing**: Multi-chunk session should have one coherent summary covering all content
+
+---
+
+### Step 6: Export Complete Session Transcripts
+**Goal**: Export full session transcript as text file
+
+**Tasks**:
+- Add export button in RecordingDetailView
+- Combine all chunk transcripts in order
+- Format with timestamps and chunk markers
+- Use UIActivityViewController for sharing
+- Support .txt format with metadata header
+
+**Testing**: Tap export, share transcript via Messages/Files/Email, verify complete content
+
+---
+
+### Step 7: Polish & Edge Cases
+**Goal**: Handle edge cases and improve UX
+
+**Tasks**:
+- Handle single-chunk sessions gracefully (no chunk markers)
+- Add loading states during multi-chunk operations
+- Improve error handling for missing chunks
+- Add session deletion (deletes all chunks)
+- Update widget to show session count instead of chunk count
+
+**Testing**: Test with various session lengths, verify smooth UX
+
+---
+
+## Current Status
+
+✅ **Completed**: Auto-chunking, complete transcription, pause handling, abandoned utterance detection, configurable chunk duration
+
+📋 **Ready to Build**: Follow steps 1-7 above, building and testing after each step
 
 ## Code References
 
