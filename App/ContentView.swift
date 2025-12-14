@@ -986,7 +986,7 @@ struct RecordingDetailView: View {
             coordinator.audioPlayback.togglePlayPause()
         } else {
             do {
-                try coordinator.audioPlayback.play(url: recording.fileURL)
+                try coordinator.audioPlayback.playSingle(url: recording.fileURL)
             } catch {
                 loadError = "Could not play recording: \(error.localizedDescription)"
             }
@@ -1056,10 +1056,40 @@ struct SessionDetailView: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var currentlyPlayingChunkIndex: Int?
+    @State private var playbackUpdateTimer: Timer?
+    @State private var forceUpdateTrigger = false
+    @State private var isTranscriptionComplete = false
+    @State private var transcriptionCheckTimer: Timer?
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // Transcription Processing Banner
+                if !isTranscriptionComplete {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Processing Transcription...")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Some chunks are still being transcribed")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                
                 // Session Info Card
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Session Details")
@@ -1073,6 +1103,117 @@ struct SessionDetailView: View {
                         let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
                         InfoRow(label: "Word Count", value: "\(wordCount) words")
                     }
+                }
+                .padding()
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+                
+                // Playback Controls
+                VStack(spacing: 16) {
+                    // Waveform/Progress visualization
+                    VStack(spacing: 12) {
+                        // Progress bar with scrubbing
+                        ZStack {
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    // Background waveform
+                                    HStack(spacing: 2) {
+                                        ForEach(0..<50, id: \.self) { index in
+                                            RoundedRectangle(cornerRadius: 2)
+                                                .fill(Color.gray.opacity(0.3))
+                                                .frame(height: waveformHeight(for: index))
+                                        }
+                                    }
+                                    .padding(.horizontal, 4)
+                                    .background(Color(.tertiarySystemBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    
+                                    // Playhead indicator (white line)
+                                    let progress = session.totalDuration > 0
+                                        ? totalElapsedTime / session.totalDuration
+                                        : 0
+                                    
+                                    if isPlayingThisSession {
+                                        Rectangle()
+                                            .fill(Color.white)
+                                            .frame(width: 3, height: 60)
+                                            .shadow(color: .black.opacity(0.5), radius: 3)
+                                            .offset(x: geometry.size.width * progress)
+                                            .animation(.linear(duration: 0.1), value: progress)
+                                    }
+                                }
+                            }
+                            .frame(height: 60)
+                        }
+                        
+                        // Slider for scrubbing across entire session
+                        Slider(
+                            value: Binding(
+                                get: { totalElapsedTime },
+                                set: { seekToTotalTime($0) }
+                            ),
+                            in: 0...session.totalDuration
+                        )
+                        .tint(.blue)
+                        .disabled(!isPlayingThisSession)
+                        
+                        // Time display
+                        HStack {
+                            Text(formatTime(totalElapsedTime))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            
+                            Spacer()
+                            
+                            // Show current chunk in session
+                            if isPlayingThisSession, let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
+                               let currentChunkIndex = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
+                                Text("Part \(currentChunkIndex + 1) of \(session.chunkCount)")
+                                    .font(.caption)
+                                    .foregroundStyle(.blue)
+                                    .fontWeight(.medium)
+                            }
+                            
+                            Spacer()
+                            
+                            Text(formatTime(session.totalDuration))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    
+                    // Play/Pause button
+                    Button {
+                        playSession()
+                    } label: {
+                        HStack(spacing: 12) {
+                            let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
+                            Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                .font(.title)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                if isCurrentlyPlaying {
+                                    Text("Pause")
+                                        .font(.headline)
+                                } else if isPlayingThisSession {
+                                    Text("Resume")
+                                        .font(.headline)
+                                } else {
+                                    Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
+                                        .font(.headline)
+                                }
+                            }
+                            
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding()
                 .background(Color(.secondarySystemBackground))
@@ -1100,20 +1241,34 @@ struct SessionDetailView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 16) {
                             ForEach(groupedByChunk, id: \.chunkIndex) { group in
-                                if session.chunkCount > 1 {
-                                    // Show chunk marker for multi-chunk sessions
-                                    HStack {
-                                        Divider()
-                                            .frame(width: 40)
-                                        Text("Part \(group.chunkIndex + 1)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Divider()
-                                    }
-                                }
+                                let isCurrentChunk = isPlayingThisSession && currentChunkIndex == group.chunkIndex
                                 
-                                Text(group.text)
-                                    .font(.body)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    if session.chunkCount > 1 {
+                                        // Show chunk marker for multi-chunk sessions
+                                        HStack {
+                                            Divider()
+                                                .frame(width: 40)
+                                            Text("Part \(group.chunkIndex + 1)")
+                                                .font(.caption)
+                                                .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                                                .fontWeight(isCurrentChunk ? .semibold : .regular)
+                                            Divider()
+                                        }
+                                    }
+                                    
+                                    Text(group.text)
+                                        .font(.body)
+                                        .foregroundStyle(isCurrentChunk ? .primary : .secondary)
+                                }
+                                .padding(12)
+                                .background(isCurrentChunk ? Color.blue.opacity(0.1) : Color.clear)
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(isCurrentChunk ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
+                                )
+                                .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
                             }
                         }
                         .padding()
@@ -1129,6 +1284,68 @@ struct SessionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadTranscription()
+        }
+        .onAppear {
+            startPlaybackUpdateTimer()
+            startTranscriptionCheckTimer()
+        }
+        .onDisappear {
+            stopPlaybackUpdateTimer()
+            stopTranscriptionCheckTimer()
+            // Stop playback when leaving this view
+            if isPlayingThisSession {
+                coordinator.audioPlayback.stop()
+            }
+        }
+    }
+    
+    private func startPlaybackUpdateTimer() {
+        stopPlaybackUpdateTimer()
+        // Update at 20fps for smooth visual feedback
+        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            Task { @MainActor in
+                self.forceUpdateTrigger.toggle()
+            }
+        }
+    }
+    
+    private func stopPlaybackUpdateTimer() {
+        playbackUpdateTimer?.invalidate()
+        playbackUpdateTimer = nil
+    }
+    
+    private func startTranscriptionCheckTimer() {
+        // Check immediately
+        checkTranscriptionStatus()
+        
+        // Then check every 2 seconds
+        transcriptionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            Task { @MainActor in
+                self.checkTranscriptionStatus()
+            }
+        }
+    }
+    
+    private func stopTranscriptionCheckTimer() {
+        transcriptionCheckTimer?.invalidate()
+        transcriptionCheckTimer = nil
+    }
+    
+    private func checkTranscriptionStatus() {
+        Task {
+            do {
+                let isComplete = try await coordinator.isSessionTranscriptionComplete(sessionId: session.sessionId)
+                isTranscriptionComplete = isComplete
+                
+                // If complete, stop checking
+                if isComplete {
+                    stopTranscriptionCheckTimer()
+                    // Reload transcription to get the latest segments
+                    await loadTranscription()
+                }
+            } catch {
+                print("❌ [SessionDetailView] Failed to check transcription status: \(error)")
+            }
         }
     }
     
@@ -1152,6 +1369,89 @@ struct SessionDetailView: View {
         }
     }
     
+    private var isPlayingThisSession: Bool {
+        // Check if any chunk from this session is currently playing
+        guard let currentURL = coordinator.audioPlayback.currentlyPlayingURL else { return false }
+        return session.chunks.contains { $0.fileURL == currentURL }
+    }
+    
+    private var currentChunkIndex: Int? {
+        // Get the index of the currently playing chunk
+        guard let currentURL = coordinator.audioPlayback.currentlyPlayingURL else { return nil }
+        return session.chunks.firstIndex { $0.fileURL == currentURL }
+    }
+    
+    // Generate consistent waveform heights (seeded for consistency)
+    private func waveformHeight(for index: Int) -> CGFloat {
+        let seed = Double(index) * 0.12345
+        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
+        return 20 + abs(height) * 40
+    }
+    
+    // Calculate total elapsed time across all chunks
+    private var totalElapsedTime: TimeInterval {
+        // Use forceUpdateTrigger to ensure UI updates
+        _ = forceUpdateTrigger
+        
+        guard isPlayingThisSession,
+              let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
+              let currentChunkIndex = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) else {
+            return 0
+        }
+        
+        // Sum durations of all previous chunks
+        var elapsed: TimeInterval = 0
+        for i in 0..<currentChunkIndex {
+            elapsed += session.chunks[i].duration
+        }
+        
+        // Add current chunk's progress
+        elapsed += coordinator.audioPlayback.currentTime
+        
+        return elapsed
+    }
+    
+    // Seek to a specific time in the total session
+    private func seekToTotalTime(_ targetTime: TimeInterval) {
+        var remainingTime = targetTime
+        
+        // Find which chunk contains this time
+        for (index, chunk) in session.chunks.enumerated() {
+            if remainingTime <= chunk.duration {
+                // Check if we're already in this chunk
+                if let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
+                   session.chunks[index].fileURL == currentURL {
+                    // Same chunk - just seek within it
+                    coordinator.audioPlayback.seek(to: remainingTime)
+                } else {
+                    // Different chunk - restart playback from this chunk
+                    let chunkURLs = session.chunks.map { $0.fileURL }
+                    let wasPlaying = coordinator.audioPlayback.isPlaying
+                    
+                    coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
+                        print("✅ [SessionDetailView] Session playback completed after seek")
+                    }
+                    
+                    // Seek within this chunk immediately for smooth scrubbing
+                    Task {
+                        // Minimal delay to ensure player is initialized
+                        try? await Task.sleep(for: .milliseconds(10))
+                        coordinator.audioPlayback.seek(to: remainingTime)
+                        
+                        // If wasn't playing before, pause immediately after seeking
+                        if !wasPlaying {
+                            coordinator.audioPlayback.pause()
+                        }
+                    }
+                }
+                
+                return
+            }
+            
+            remainingTime -= chunk.duration
+        }
+    }
+    
     private func loadTranscription() async {
         print("📄 [SessionDetailView] Loading transcription for session \(session.sessionId)")
         isLoading = true
@@ -1166,6 +1466,30 @@ struct SessionDetailView: View {
         }
         
         isLoading = false
+    }
+    
+    private func playSession() {
+        if isPlayingThisSession {
+            // Pause if playing
+            if coordinator.audioPlayback.isPlaying {
+                coordinator.audioPlayback.pause()
+            } else {
+                coordinator.audioPlayback.resume()
+            }
+        } else {
+            // Start sequential playback of all chunks
+            let chunkURLs = session.chunks.map { $0.fileURL }
+            print("🎵 [SessionDetailView] Starting playback of \(chunkURLs.count) chunks")
+            coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                print("✅ [SessionDetailView] Session playback completed")
+            }
+        }
+    }
+    
+    private func formatTime(_ time: TimeInterval) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {

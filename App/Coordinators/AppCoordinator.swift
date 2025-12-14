@@ -126,6 +126,12 @@ public final class AppCoordinator: ObservableObject {
     private var recordingStartTime: Date?
     private var lastCompletedChunk: AudioChunk?
     
+    // MARK: - Transcription Queue
+    
+    private var pendingTranscriptions: [AudioChunk] = []
+    private var activeTranscriptionCount: Int = 0
+    private let maxConcurrentTranscriptions: Int = 3
+    
     // MARK: - Initialization
     
     public init(
@@ -158,22 +164,13 @@ public final class AppCoordinator: ObservableObject {
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
             
-            // Transcribe the audio in background
+            // Add to transcription queue for parallel processing
+            print("📝 [AppCoordinator] Adding chunk \(chunk.chunkIndex) to transcription queue")
+            pendingTranscriptions.append(chunk)
+            
+            // Start batch transcription if not already running
             Task {
-                print("🎯 [AppCoordinator] Starting transcription for chunk \(chunk.chunkIndex)...")
-                let segments = try await self.transcribeAudio(chunk: chunk)
-                print("✅ [AppCoordinator] Transcription complete: \(segments.count) segments")
-                
-                // Save transcript segments
-                print("💾 [AppCoordinator] Saving transcript segments...")
-                for segment in segments {
-                    try await dbManager.insertTranscriptSegment(segment)
-                }
-                print("✅ [AppCoordinator] Transcript segments saved")
-                
-                // Update rollups incrementally
-                print("📊 [AppCoordinator] Updating rollups...")
-                await self.updateRollupsAndStats()
+                await processTranscriptionQueue()
             }
         } catch {
             print("❌ [AppCoordinator] Failed to process chunk: \(error)")
@@ -528,6 +525,58 @@ public final class AppCoordinator: ObservableObject {
     
     // MARK: - Private Recording Helpers
     
+    /// Process transcription queue with concurrency limit
+    private func processTranscriptionQueue() async {
+        guard let dbManager = databaseManager else { return }
+        
+        // Process chunks while we have pending transcriptions and capacity
+        while !pendingTranscriptions.isEmpty && activeTranscriptionCount < maxConcurrentTranscriptions {
+            guard let chunk = pendingTranscriptions.first else { break }
+            pendingTranscriptions.removeFirst()
+            
+            activeTranscriptionCount += 1
+            print("🔄 [AppCoordinator] Starting transcription \(activeTranscriptionCount)/\(maxConcurrentTranscriptions) for chunk \(chunk.chunkIndex)")
+            
+            // Start transcription in parallel
+            Task {
+                do {
+                    print("🎯 [AppCoordinator] Transcribing chunk \(chunk.chunkIndex)...")
+                    let segments = try await self.transcribeAudio(chunk: chunk)
+                    print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) transcription complete: \(segments.count) segments")
+                    
+                    // Save transcript segments
+                    print("💾 [AppCoordinator] Saving \(segments.count) segments for chunk \(chunk.chunkIndex)...")
+                    for segment in segments {
+                        try await dbManager.insertTranscriptSegment(segment)
+                    }
+                    print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) segments saved")
+                    
+                    // Update rollups incrementally
+                    print("📊 [AppCoordinator] Updating rollups after chunk \(chunk.chunkIndex)...")
+                    await self.updateRollupsAndStats()
+                    
+                } catch {
+                    print("❌ [AppCoordinator] Failed to transcribe chunk \(chunk.chunkIndex): \(error)")
+                }
+                
+                // Decrement counter and process next in queue
+                await MainActor.run {
+                    self.activeTranscriptionCount -= 1
+                    print("⬇️ [AppCoordinator] Transcription completed, active count now: \(self.activeTranscriptionCount)")
+                }
+                
+                // Continue processing queue
+                await self.processTranscriptionQueue()
+            }
+        }
+        
+        if pendingTranscriptions.isEmpty && activeTranscriptionCount == 0 {
+            print("✅ [AppCoordinator] All transcriptions complete")
+        } else if !pendingTranscriptions.isEmpty {
+            print("⏳ [AppCoordinator] \(pendingTranscriptions.count) chunks queued, \(activeTranscriptionCount) active transcriptions")
+        }
+    }
+    
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
         guard let transcriber = transcriptionManager else {
             throw AppCoordinatorError.notInitialized
@@ -755,6 +804,15 @@ public final class AppCoordinator: ObservableObject {
     public func getSessionWordCount(sessionId: UUID) async throws -> Int {
         let transcript = try await fetchSessionTranscript(sessionId: sessionId)
         return transcript.reduce(0) { $0 + $1.text.split(separator: " ").count }
+    }
+    
+    /// Check if all chunks in a session have been transcribed
+    public func isSessionTranscriptionComplete(sessionId: UUID) async throws -> Bool {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.isSessionTranscriptionComplete(sessionId: sessionId)
     }
     
     /// Fetch recent summaries

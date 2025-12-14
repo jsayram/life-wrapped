@@ -21,6 +21,11 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     private var audioPlayer: AVAudioPlayer?
     private var progressTimer: Timer?
     
+    // Sequential playback
+    private var playQueue: [URL] = []
+    private var currentQueueIndex: Int = 0
+    private var onQueueComplete: (() -> Void)?
+    
     // MARK: - Initialization
     
     public override init() {
@@ -31,10 +36,7 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     
     /// Play audio from a file URL
     /// - Parameter url: The URL of the audio file to play
-    public func play(url: URL) throws {
-        // Stop any current playback
-        stop()
-        
+    private func play(url: URL) throws {
         // Configure audio session for playback
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
@@ -59,6 +61,14 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         startProgressTimer()
         
         print("▶️ [AudioPlaybackManager] Started playing: \(url.lastPathComponent)")
+    }
+    
+    /// Play a single audio file (clears any queue)
+    /// - Parameter url: The URL of the audio file to play
+    public func playSingle(url: URL) throws {
+        // Stop any current playback and clear queue
+        stop()
+        try play(url: url)
     }
     
     /// Pause the current playback
@@ -95,6 +105,12 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         currentTime = 0
         duration = 0
         currentlyPlayingURL = nil
+        
+        // Clear queue
+        playQueue = []
+        currentQueueIndex = 0
+        onQueueComplete = nil
+        
         print("⏹️ [AudioPlaybackManager] Stopped")
     }
     
@@ -103,6 +119,66 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     public func seek(to time: TimeInterval) {
         audioPlayer?.currentTime = time
         currentTime = time
+    }
+    
+    // MARK: - Sequential Playback
+    
+    /// Play multiple audio files sequentially
+    /// - Parameters:
+    ///   - urls: Array of audio file URLs to play in order
+    ///   - completion: Optional callback when all files finish playing
+    public func playSequence(urls: [URL], completion: (() -> Void)? = nil) {
+        guard !urls.isEmpty else {
+            print("⚠️ [AudioPlaybackManager] Empty playback queue")
+            return
+        }
+        
+        // Stop current playback but don't clear timer
+        stopProgressTimer()
+        audioPlayer?.stop()
+        audioPlayer = nil
+        
+        playQueue = urls
+        currentQueueIndex = 0
+        onQueueComplete = completion
+        
+        print("🎵 [AudioPlaybackManager] Starting sequential playback: \(urls.count) files")
+        playNextInQueue()
+    }
+    
+    /// Play the next file in the queue
+    private func playNextInQueue() {
+        guard currentQueueIndex < playQueue.count else {
+            print("✅ [AudioPlaybackManager] Queue completed")
+            playQueue = []
+            currentQueueIndex = 0
+            onQueueComplete?()
+            onQueueComplete = nil
+            return
+        }
+        
+        let url = playQueue[currentQueueIndex]
+        print("🎵 [AudioPlaybackManager] Playing \(currentQueueIndex + 1)/\(playQueue.count): \(url.lastPathComponent)")
+        
+        do {
+            try play(url: url)
+        } catch {
+            print("❌ [AudioPlaybackManager] Failed to play \(url.lastPathComponent): \(error)")
+            // Skip to next
+            currentQueueIndex += 1
+            playNextInQueue()
+        }
+    }
+    
+    /// Check if currently playing from a queue
+    public var isPlayingSequence: Bool {
+        !playQueue.isEmpty
+    }
+    
+    /// Get current position in queue
+    public var queueProgress: (current: Int, total: Int)? {
+        guard !playQueue.isEmpty else { return nil }
+        return (currentQueueIndex + 1, playQueue.count)
     }
     
     // MARK: - Private Helpers
@@ -134,7 +210,14 @@ extension AudioPlaybackManager: AVAudioPlayerDelegate {
             self.isPlaying = false
             self.currentTime = 0
             self.stopProgressTimer()
-            print("✅ [AudioPlaybackManager] Finished playing")
+            
+            // If playing from queue, advance to next
+            if !self.playQueue.isEmpty {
+                self.currentQueueIndex += 1
+                self.playNextInQueue()
+            } else {
+                print("✅ [AudioPlaybackManager] Finished playing")
+            }
         }
     }
     

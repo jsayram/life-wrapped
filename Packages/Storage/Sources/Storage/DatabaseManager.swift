@@ -641,6 +641,36 @@ public actor DatabaseManager {
         }
     }
     
+    /// Check if all chunks in a session have been transcribed
+    public func isSessionTranscriptionComplete(sessionId: UUID) throws -> Bool {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT COUNT(DISTINCT ac.id) as total_chunks,
+                   COUNT(DISTINCT ts.audio_chunk_id) as transcribed_chunks
+            FROM audio_chunks ac
+            LEFT JOIN transcript_segments ts ON ac.id = ts.audio_chunk_id
+            WHERE ac.session_id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            let totalChunks = sqlite3_column_int(stmt, 0)
+            let transcribedChunks = sqlite3_column_int(stmt, 1)
+            return totalChunks == transcribedChunks && totalChunks > 0
+        }
+        
+        return false
+    }
+    
     public func getTranscriptSegments(from startDate: Date, to endDate: Date) throws -> [TranscriptSegment] {
         guard let db = db else { throw StorageError.notOpen }
         

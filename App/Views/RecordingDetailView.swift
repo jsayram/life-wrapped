@@ -133,7 +133,7 @@ struct RecordingDetailView: View {
             coordinator.audioPlayback.togglePlayPause()
         } else {
             do {
-                try coordinator.audioPlayback.play(url: recording.fileURL)
+                try coordinator.audioPlayback.playSingle(url: recording.fileURL)
             } catch {
                 loadError = "Could not play recording: \(error.localizedDescription)"
             }
