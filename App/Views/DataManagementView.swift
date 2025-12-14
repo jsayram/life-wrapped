@@ -137,7 +137,7 @@ struct DataManagementView: View {
     
     private func loadStorageInfo() async {
         do {
-            if let dbManager = await coordinator.getDatabaseManager() {
+            if let dbManager = coordinator.getDatabaseManager() {
                 let exporter = DataExporter(databaseManager: dbManager)
                 let info = try await exporter.getStorageInfo()
                 await MainActor.run {
@@ -244,3 +244,4 @@ struct DataManagementView_Previews: PreviewProvider {
             .environmentObject(AppCoordinator())
     }
 }
+

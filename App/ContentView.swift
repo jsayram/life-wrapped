@@ -90,21 +90,33 @@ struct HomeTab: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                // Streak Card
-                StreakCard(streak: coordinator.currentStreak)
-                
-                // Recording Button
-                RecordingButton()
-                
-                // Today's Stats
-                TodayStatsCard(stats: coordinator.todayStats)
-                
-                Spacer()
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Streak Card
+                    StreakCard(streak: coordinator.currentStreak)
+                    
+                    // Recording Button
+                    RecordingButton()
+                    
+                    // Today's Stats
+                    TodayStatsCard(stats: coordinator.todayStats)
+                    
+                    Spacer()
+                }
+                .padding()
             }
-            .padding()
+            .refreshable {
+                await refreshStats()
+            }
             .navigationTitle("Life Wrapped")
         }
+    }
+    
+    private func refreshStats() async {
+        print("🔄 [HomeTab] Manual refresh triggered")
+        await coordinator.refreshTodayStats()
+        await coordinator.refreshStreak()
+        print("✅ [HomeTab] Stats refreshed")
     }
 }
 
@@ -548,6 +560,8 @@ struct SummaryRow: View {
 
 struct SettingsTab: View {
     @State private var showDataManagement = false
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var databasePath: String?
     
     var body: some View {
         NavigationStack {
@@ -569,6 +583,25 @@ struct SettingsTab: View {
                         Label("Data Management", systemImage: "externaldrive")
                     }
                     .foregroundColor(.primary)
+                }
+                
+                Section("Debug") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Database Location")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let path = databasePath {
+                            Text(path)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.primary)
+                                .textSelection(.enabled)
+                        } else {
+                            Text("Loading...")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
                 
                 Section("About") {
@@ -594,6 +627,9 @@ struct SettingsTab: View {
             .navigationTitle("Settings")
             .sheet(isPresented: $showDataManagement) {
                 DataManagementView()
+            }
+            .task {
+                databasePath = await coordinator.getDatabasePath()
             }
         }
     }

@@ -136,8 +136,14 @@ public actor TranscriptionManager {
         // Create recognition request
         print("📄 [TranscriptionManager] Creating recognition request")
         let request = SFSpeechURLRecognitionRequest(url: chunk.fileURL)
-        request.shouldReportPartialResults = false
+        request.shouldReportPartialResults = true // Enable partial results to get more complete transcription
         request.requiresOnDeviceRecognition = true // Privacy: on-device only
+        
+        // Add context to improve recognition accuracy
+        if #available(iOS 16.0, *) {
+            request.addsPunctuation = true
+        }
+        
         print("✅ [TranscriptionManager] Recognition request created (on-device only)")
         
         // Capture values needed by the callback (to avoid actor isolation issues)
@@ -147,27 +153,41 @@ public actor TranscriptionManager {
         // Perform recognition - extract just the text from result inside callback
         // to avoid sending non-Sendable SFSpeechRecognitionResult across isolation boundaries
         let transcribedText: String = try await withCheckedThrowingContinuation { continuation in
+            var hasResumed = false
+            var lastText = ""
+            
             recognizer.recognitionTask(with: request) { result, error in
+                // Don't resume multiple times
+                guard !hasResumed else { return }
+                
                 if let error = error {
+                    hasResumed = true
                     continuation.resume(throwing: TranscriptionError.recognitionFailed(error.localizedDescription))
                     return
                 }
                 
-                guard let result = result, result.isFinal else {
-                    print("⏳ [TranscriptionManager] Intermediate result, waiting for final...")
-                    return
-                }
+                guard let result = result else { return }
                 
-                // Extract just the string - this is Sendable
+                // Update the latest transcription
                 let text = result.bestTranscription.formattedString
-                print("✅ [TranscriptionManager] Final result received: '\(text.prefix(50))...'")
-                continuation.resume(returning: text)
+                lastText = text
+                
+                if result.isFinal {
+                    // Final result received
+                    print("✅ [TranscriptionManager] Final result received: '\(text.prefix(50))...'")
+                    hasResumed = true
+                    continuation.resume(returning: text)
+                } else {
+                    // Partial result - just update lastText
+                    print("⏳ [TranscriptionManager] Partial result: '\(text.prefix(30))...' (words: \(text.split(separator: " ").count))")
+                }
             }
         }
         print("🔄 [TranscriptionManager] Recognition complete, converting to segments...")
         
         // Convert to segments after continuation completes (back on actor)
-        let segments = convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier))
+        let duration = chunk.endTime - chunk.startTime
+        let segments = convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier), duration: duration)
         print("✅ [TranscriptionManager] Converted to \(segments.count) segments")
         return segments
     }
@@ -276,17 +296,19 @@ public actor TranscriptionManager {
     private func convertToSegmentsFromText(
         _ text: String,
         audioChunkID: UUID,
-        locale: Locale
+        locale: Locale,
+        duration: TimeInterval
     ) -> [TranscriptSegment] {
         guard !text.isEmpty else {
             return []
         }
         
         // Create a single segment with the full transcribed text
+        // Use the audio chunk's actual duration for accurate time tracking
         let segment = TranscriptSegment(
             audioChunkID: audioChunkID,
             startTime: 0.0,
-            endTime: 0.0, // Unknown duration when using text-only
+            endTime: duration,
             text: text,
             confidence: 0.0, // Unknown confidence when using text-only
             languageCode: locale.identifier

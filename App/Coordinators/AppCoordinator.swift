@@ -317,6 +317,12 @@ public final class AppCoordinator: ObservableObject {
         return databaseManager
     }
     
+    /// Get database file path for debugging
+    public func getDatabasePath() async -> String? {
+        guard let dbManager = databaseManager else { return nil }
+        return await dbManager.getDatabasePath()
+    }
+    
     /// Delete all user data
     public func deleteAllData() async {
         guard let dbManager = databaseManager else { return }
@@ -544,12 +550,13 @@ public final class AppCoordinator: ObservableObject {
         do {
             // Generate daily rollup for today
             _ = try await insights.generateRollup(bucketType: .day, for: Date())
+            print("✅ [AppCoordinator] Daily rollup generated")
             
         } catch {
-            print("Rollup generation failed: \(error)")
+            print("❌ [AppCoordinator] Rollup generation failed: \(error)")
         }
         
-        // Refresh local stats
+        // Refresh local stats after rollup generation
         await refreshStreak()
         await refreshTodayStats()
     }
@@ -579,28 +586,56 @@ public final class AppCoordinator: ObservableObject {
     
     /// Refresh today's stats
     public func refreshTodayStats() async {
-        guard let dbManager = databaseManager else { return }
+        guard let dbManager = databaseManager else {
+            print("⚠️ [AppCoordinator] refreshTodayStats: No database manager")
+            return
+        }
         
         let today = Calendar.current.startOfDay(for: Date())
+        print("📊 [AppCoordinator] refreshTodayStats called for date: \(today)")
         
         do {
-            // Fetch today's rollup if it exists
-            let rollups = try await dbManager.fetchRollups(bucketType: .day, limit: 1)
+            // Fetch today's rollup specifically by date (not just most recent)
+            let todayRollup = try await dbManager.fetchRollup(bucketType: .day, bucketStart: today)
             
-            if let todayRollup = rollups.first,
-               Calendar.current.isDate(todayRollup.bucketStart, inSameDayAs: today) {
+            if let rollup = todayRollup {
                 todayStats = DayStats(
                     date: today,
-                    segmentCount: todayRollup.segmentCount,
-                    wordCount: todayRollup.wordCount,
-                    totalDuration: todayRollup.speakingSeconds
+                    segmentCount: rollup.segmentCount,
+                    wordCount: rollup.wordCount,
+                    totalDuration: rollup.speakingSeconds
                 )
+                print("✅ [AppCoordinator] Today stats loaded: \(rollup.segmentCount) entries, \(rollup.wordCount) words, \(Int(rollup.speakingSeconds))s")
             } else {
+                // No rollup for today yet - show zeros
                 todayStats = DayStats.empty
+                print("ℹ️ [AppCoordinator] No rollup found for today - showing zeros")
             }
         } catch {
-            print("Failed to refresh today stats: \(error)")
+            print("❌ [AppCoordinator] Failed to refresh today stats: \(error)")
             todayStats = DayStats.empty
+        }
+    }
+    
+    /// Debug method to manually generate rollups for today
+    public func generateRollupsForToday() async {
+        guard let insights = insightsManager else {
+            NSLog("❌ [AppCoordinator] No insights manager")
+            return
+        }
+        
+        NSLog("🔧 [AppCoordinator] Manually generating rollups for today...")
+        
+        do {
+            let rollup = try await insights.generateRollup(bucketType: .day, for: Date())
+            NSLog("✅ [AppCoordinator] Rollup generated: %d segments, %d words", rollup.segmentCount, rollup.wordCount)
+            
+            // Refresh stats
+            await refreshTodayStats()
+            await refreshStreak()
+            
+        } catch {
+            NSLog("❌ [AppCoordinator] Failed to generate rollup: %@", error.localizedDescription)
         }
     }
     

@@ -24,6 +24,11 @@ public actor DatabaseManager {
     /// Current database schema version
     private static let currentSchemaVersion = 1
     
+    /// Public accessor for database path
+    public func getDatabasePath() -> String {
+        databaseURL.path
+    }
+    
     // MARK: - Initialization
     
     public init(containerIdentifier: String = AppConstants.appGroupIdentifier) async throws {
@@ -531,9 +536,9 @@ public actor DatabaseManager {
         
         let sql = """
         SELECT ts.* FROM transcript_segments ts
-        INNER JOIN audio_chunks ac ON ts.audioChunkID = ac.id
-        WHERE ac.startTime >= ? AND ac.startTime < ?
-        ORDER BY ac.startTime ASC, ts.startTime ASC
+        INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+        WHERE ac.start_time >= ? AND ac.start_time < ?
+        ORDER BY ac.start_time ASC, ts.start_time ASC
         """
         
         var stmt: OpaquePointer?
@@ -745,6 +750,22 @@ public actor DatabaseManager {
     public func insertRollup(_ rollup: InsightsRollup) throws {
         guard let db = db else { throw StorageError.notOpen }
         
+        // Delete any existing rollup for the same bucket_type and bucket_start
+        let deleteSql = """
+            DELETE FROM insights_rollups 
+            WHERE bucket_type = ? AND bucket_start = ?
+            """
+        
+        var deleteStmt: OpaquePointer?
+        defer { sqlite3_finalize(deleteStmt) }
+        
+        if sqlite3_prepare_v2(db, deleteSql, -1, &deleteStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(deleteStmt, 1, rollup.bucketType.rawValue, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(deleteStmt, 2, rollup.bucketStart.timeIntervalSince1970)
+            _ = sqlite3_step(deleteStmt)
+        }
+        
+        // Now insert the new rollup
         let sql = """
             INSERT INTO insights_rollups (id, bucket_type, bucket_start, bucket_end, word_count, speaking_seconds, segment_count, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -827,6 +848,49 @@ public actor DatabaseManager {
         }
         
         return rollups
+    }
+    
+    /// Fetch rollup for a specific date range
+    public func fetchRollup(bucketType: PeriodType, bucketStart: Date) throws -> InsightsRollup? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        // Calculate end of the period based on bucket type
+        let calendar = Calendar.current
+        let bucketEnd: Date
+        switch bucketType {
+        case .hour:
+            bucketEnd = calendar.date(byAdding: .hour, value: 1, to: bucketStart) ?? bucketStart
+        case .day:
+            bucketEnd = calendar.date(byAdding: .day, value: 1, to: bucketStart) ?? bucketStart
+        case .week:
+            bucketEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: bucketStart) ?? bucketStart
+        case .month:
+            bucketEnd = calendar.date(byAdding: .month, value: 1, to: bucketStart) ?? bucketStart
+        }
+        
+        let sql = """
+            SELECT id, bucket_type, bucket_start, bucket_end, word_count, speaking_seconds, segment_count, created_at
+            FROM insights_rollups
+            WHERE bucket_type = ? AND bucket_start >= ? AND bucket_start < ?
+            LIMIT 1
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, bucketType.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 2, bucketStart.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 3, bucketEnd.timeIntervalSince1970)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseRollup(from: stmt)
+        }
+        
+        return nil
     }
     
     public func deleteRollup(id: UUID) throws {
