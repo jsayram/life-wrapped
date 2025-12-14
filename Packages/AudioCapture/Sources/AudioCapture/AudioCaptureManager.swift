@@ -182,12 +182,12 @@ public final class AudioCaptureManager: ObservableObject {
         do {
             // Configure for background audio recording
             // .mixWithOthers allows other audio to play while recording
-            // .defaultToSpeaker routes audio to speaker by default
             // .allowBluetooth enables Bluetooth headset recording
+            // Note: .defaultToSpeaker is not compatible with .record category
             try session.setCategory(
                 .record,
                 mode: .default,
-                options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth]
+                options: [.mixWithOthers, .allowBluetooth]
             )
             
             // Request permission to record in background

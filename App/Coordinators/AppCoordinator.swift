@@ -356,6 +356,7 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Recording
     
     /// Start a new recording session
+    @MainActor
     public func startRecording() async throws {
         print("🎙️ [AppCoordinator] Starting recording...")
         guard isInitialized else {
@@ -383,6 +384,7 @@ public final class AppCoordinator: ObservableObject {
     
     /// Stop the current recording and process it through the pipeline
     /// Returns the UUID of the saved AudioChunk
+    @MainActor
     public func stopRecording() async throws -> UUID {
         print("⏹️ [AppCoordinator] Stopping recording...")
         guard case .recording = recordingState else {
@@ -704,3 +706,21 @@ extension AppCoordinator {
     }
 }
 #endif
+
+// MARK: - Preview Support
+
+extension AppCoordinator {
+    /// Create a preview instance with mock state (available in all build configurations)
+    static func previewInstance() -> AppCoordinator {
+        let coordinator = AppCoordinator()
+        coordinator.isInitialized = true
+        coordinator.currentStreak = 7
+        coordinator.todayStats = DayStats(
+            date: Date(),
+            segmentCount: 3,
+            wordCount: 450,
+            totalDuration: 180
+        )
+        return coordinator
+    }
+}
