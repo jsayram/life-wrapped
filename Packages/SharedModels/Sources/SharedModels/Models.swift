@@ -170,6 +170,7 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
     public let periodEnd: Date
     public let text: String
     public let createdAt: Date
+    public let sessionId: UUID?  // Optional: set for session summaries
 
     public init(
         id: UUID = UUID(),
@@ -177,7 +178,8 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         periodStart: Date,
         periodEnd: Date,
         text: String,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        sessionId: UUID? = nil
     ) {
         self.id = id
         self.periodType = periodType
@@ -185,12 +187,14 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         self.periodEnd = periodEnd
         self.text = text
         self.createdAt = createdAt
+        self.sessionId = sessionId
     }
 }
 
 // MARK: - Period Type
 
 public enum PeriodType: String, Codable, Sendable, CaseIterable {
+    case session  // Session-level summary
     case hour
     case day
     case week
@@ -198,10 +202,16 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .hour: "Hour"
-        case .day: "Day"
-        case .week: "Week"
-        case .month: "Month"
+        case .session:
+            return "Session"
+        case .hour:
+            return "Hour"
+        case .day:
+            return "Day"
+        case .week:
+            return "Week"
+        case .month:
+            return "Month"
         }
     }
 }

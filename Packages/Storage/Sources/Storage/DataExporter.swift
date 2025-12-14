@@ -89,6 +89,9 @@ public actor DataExporter {
     private func formatPeriod(_ type: PeriodType, start: Date, end: Date) -> String {
         let formatter = DateFormatter()
         switch type {
+        case .session:
+            formatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
+            return "Session on \(formatter.string(from: start))"
         case .hour:
             formatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
             return formatter.string(from: start)

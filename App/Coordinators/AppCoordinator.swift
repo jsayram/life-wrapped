@@ -565,6 +565,11 @@ public final class AppCoordinator: ObservableObject {
                     print("⬇️ [AppCoordinator] Transcription completed, active count now: \(self.activeTranscriptionCount)")
                 }
                 
+                // Check if session is complete and generate summary
+                Task {
+                    await self.checkAndGenerateSessionSummary(for: chunk.sessionId)
+                }
+                
                 // Continue processing queue
                 await self.processTranscriptionQueue()
             }
@@ -575,6 +580,78 @@ public final class AppCoordinator: ObservableObject {
         } else if !pendingTranscriptions.isEmpty {
             print("⏳ [AppCoordinator] \(pendingTranscriptions.count) chunks queued, \(activeTranscriptionCount) active transcriptions")
         }
+    }
+    
+    /// Check if all chunks in a session are transcribed and generate session summary
+    private func checkAndGenerateSessionSummary(for sessionId: UUID) async {
+        do {
+            // Check if all chunks are transcribed
+            let isComplete = try await isSessionTranscriptionComplete(sessionId: sessionId)
+            guard isComplete else {
+                print("⏳ [AppCoordinator] Session \(sessionId) not yet complete, skipping summary")
+                return
+            }
+            
+            // Check if summary already exists
+            guard let dbManager = databaseManager else { return }
+            if let existingSummary = try await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+                print("ℹ️ [AppCoordinator] Summary already exists for session \(sessionId)")
+                return
+            }
+            
+            // Generate session summary
+            print("📝 [AppCoordinator] Generating summary for session \(sessionId)...")
+            try await generateSessionSummary(sessionId: sessionId)
+            print("✅ [AppCoordinator] Session summary generated")
+            
+        } catch {
+            print("❌ [AppCoordinator] Failed to check/generate session summary: \(error)")
+        }
+    }
+    
+    /// Generate a summary for an entire session
+    private func generateSessionSummary(sessionId: UUID) async throws {
+        guard let dbManager = databaseManager,
+              let summarizer = summarizationManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Get all transcript segments for the session
+        let allSegments = try await fetchSessionTranscript(sessionId: sessionId)
+        
+        // Combine all text
+        let fullText = allSegments.map { $0.text }.joined(separator: " ")
+        let wordCount = fullText.split(separator: " ").count
+        
+        // Only summarize if there's enough content (at least 50 words)
+        guard wordCount >= 50 else {
+            print("ℹ️ [AppCoordinator] Session has only \(wordCount) words, skipping summary")
+            return
+        }
+        
+        // Get session time range
+        let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
+        guard let firstChunk = chunks.first, let lastChunk = chunks.last else { return }
+        
+        let periodStart = firstChunk.startTime
+        let periodEnd = lastChunk.endTime
+        
+        // Generate summary using the date range method
+        print("📝 [AppCoordinator] Summarizing \(wordCount) words from session...")
+        let generatedSummary = try await summarizer.generateSummary(from: periodStart, to: periodEnd)
+        let summaryText = generatedSummary.text
+        
+        // Save session summary
+        let summary = Summary(
+            periodType: .session,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            text: summaryText,
+            sessionId: sessionId
+        )
+        
+        try await dbManager.insertSummary(summary)
+        print("✅ [AppCoordinator] Session summary saved")
     }
     
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
@@ -813,6 +890,15 @@ public final class AppCoordinator: ObservableObject {
         }
         
         return try await dbManager.isSessionTranscriptionComplete(sessionId: sessionId)
+    }
+    
+    /// Fetch summary for a session
+    public func fetchSessionSummary(sessionId: UUID) async throws -> Summary? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSummaryForSession(sessionId: sessionId)
     }
     
     /// Fetch recent summaries

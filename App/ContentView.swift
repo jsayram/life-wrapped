@@ -1060,6 +1060,7 @@ struct SessionDetailView: View {
     @State private var forceUpdateTrigger = false
     @State private var isTranscriptionComplete = false
     @State private var transcriptionCheckTimer: Timer?
+    @State private var sessionSummary: Summary?
     
     var body: some View {
         ScrollView {
@@ -1342,6 +1343,8 @@ struct SessionDetailView: View {
                     stopTranscriptionCheckTimer()
                     // Reload transcription to get the latest segments
                     await loadTranscription()
+                    // Load session summary
+                    await loadSessionSummary()
                 }
             } catch {
                 print("❌ [SessionDetailView] Failed to check transcription status: \(error)")
@@ -1449,6 +1452,17 @@ struct SessionDetailView: View {
             }
             
             remainingTime -= chunk.duration
+        }
+    }
+    
+    private func loadSessionSummary() async {
+        do {
+            sessionSummary = try await coordinator.fetchSessionSummary(sessionId: session.sessionId)
+            if sessionSummary != nil {
+                print("✨ [SessionDetailView] Loaded session summary")
+            }
+        } catch {
+            print("❌ [SessionDetailView] Failed to load session summary: \(error)")
         }
     }
     

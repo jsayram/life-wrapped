@@ -22,7 +22,7 @@ public actor DatabaseManager {
     private let fileManager = FileManager.default
     
     /// Current database schema version
-    private static let currentSchemaVersion = 1
+    private static let currentSchemaVersion = 2
     
     /// Public accessor for database path
     public func getDatabasePath() -> String {
@@ -154,6 +154,8 @@ public actor DatabaseManager {
             switch version {
             case 1:
                 try applyMigrationV1()
+            case 2:
+                try applyMigrationV2()
             default:
                 throw StorageError.unknownMigrationVersion(version)
             }
@@ -266,6 +268,23 @@ public actor DatabaseManager {
             """)
         
         logger.info("Schema v1 created successfully")
+    }
+    
+    // MARK: - Schema (Migration V2)
+    
+    private func applyMigrationV2() throws {
+        // Add session_id column to summaries table for session-level summaries
+        try execute("""
+            ALTER TABLE summaries ADD COLUMN session_id TEXT
+            """)
+        
+        // Create index for session_id lookups
+        try execute("""
+            CREATE INDEX IF NOT EXISTS idx_summaries_session
+            ON summaries(session_id)
+            """)
+        
+        logger.info("Schema v2 applied successfully: Added session_id to summaries")
     }
     
     // MARK: - Utilities
@@ -753,8 +772,8 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """
         
         var stmt: OpaquePointer?
@@ -771,6 +790,12 @@ public actor DatabaseManager {
         sqlite3_bind_text(stmt, 5, summary.text, -1, SQLITE_TRANSIENT)
         sqlite3_bind_double(stmt, 6, summary.createdAt.timeIntervalSince1970)
         
+        if let sessionId = summary.sessionId {
+            sqlite3_bind_text(stmt, 7, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 7)
+        }
+        
         guard sqlite3_step(stmt) == SQLITE_DONE else {
             throw StorageError.stepFailed(lastError())
         }
@@ -780,7 +805,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id
             FROM summaries
             WHERE id = ?
             """
@@ -805,7 +830,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         var sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id
             FROM summaries
             """
         
@@ -837,6 +862,34 @@ public actor DatabaseManager {
     /// Fetch all summaries (convenience method for export)
     public func fetchAllSummaries() throws -> [Summary] {
         return try fetchSummaries(periodType: nil, limit: 10000)
+    }
+    
+    /// Fetch summary for a specific session
+    public func fetchSummaryForSession(sessionId: UUID) throws -> Summary? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            FROM summaries
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseSummary(from: stmt)
+        }
+        
+        return nil
     }
     
     public func deleteSummary(id: UUID) throws {
@@ -875,13 +928,22 @@ public actor DatabaseManager {
         let text = String(cString: textString)
         let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 5))
         
+        // Parse optional session_id
+        let sessionId: UUID?
+        if let sessionIdText = sqlite3_column_text(stmt, 6) {
+            sessionId = UUID(uuidString: String(cString: sessionIdText))
+        } else {
+            sessionId = nil
+        }
+        
         return Summary(
             id: id,
             periodType: periodType,
             periodStart: periodStart,
             periodEnd: periodEnd,
             text: text,
-            createdAt: createdAt
+            createdAt: createdAt,
+            sessionId: sessionId
         )
     }
     
@@ -998,6 +1060,9 @@ public actor DatabaseManager {
         let calendar = Calendar.current
         let bucketEnd: Date
         switch bucketType {
+        case .session:
+            // Session rollups are not used, but handle for completeness
+            bucketEnd = calendar.date(byAdding: .hour, value: 1, to: bucketStart) ?? bucketStart
         case .hour:
             bucketEnd = calendar.date(byAdding: .hour, value: 1, to: bucketStart) ?? bucketStart
         case .day:

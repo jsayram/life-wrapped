@@ -232,6 +232,9 @@ public actor InsightsManager {
         let calendar = Calendar.current
         
         switch bucketType {
+        case .session:
+            // Session boundaries are not used for rollups
+            return (date, date)
         case .hour:
             let start = calendar.date(bySetting: .minute, value: 0, of: date) ?? date
             let cleanStart = calendar.date(bySetting: .second, value: 0, of: start) ?? start
@@ -261,6 +264,9 @@ public actor InsightsManager {
     
     private func nextBucketStart(after date: Date, bucketType: PeriodType, calendar: Calendar) -> Date {
         switch bucketType {
+        case .session:
+            // Session is not used for rollup iteration
+            return date
         case .hour:
             return calendar.date(byAdding: .hour, value: 1, to: date) ?? date
         case .day:
