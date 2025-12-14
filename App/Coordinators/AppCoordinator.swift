@@ -138,6 +138,16 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
+    // MARK: - Preview Helper
+    
+    public static func preview() -> AppCoordinator {
+        let coordinator = AppCoordinator()
+        Task {
+            await coordinator.initialize()
+        }
+        return coordinator
+    }
+    
     // MARK: - Async Initialization
     
     /// Initialize the app coordinator and load initial state
@@ -299,6 +309,70 @@ public final class AppCoordinator: ObservableObject {
     /// Show info feedback (toast only)
     public func showInfo(_ message: String) {
         showToast(Toast(style: .info, message: message))
+    }
+    
+    // MARK: - Data Management
+    
+    /// Get database manager for export/import operations
+    public func getDatabaseManager() -> DatabaseManager? {
+        return databaseManager
+    }
+    
+    /// Delete all user data
+    public func deleteAllData() async {
+        guard let dbManager = databaseManager else { return }
+        
+        do {
+            // Delete all audio chunks and files
+            let chunks = try await dbManager.fetchAllAudioChunks()
+            for chunk in chunks {
+                try? FileManager.default.removeItem(at: chunk.fileURL)
+                try await dbManager.deleteAudioChunk(chunk.id)
+            }
+            
+            // Delete all summaries
+            let summaries = try await dbManager.fetchAllSummaries()
+            for summary in summaries {
+                try await dbManager.deleteSummary(summary.id)
+            }
+            
+            // Refresh stats
+            await refreshStreak()
+            await refreshTodayStats()
+            await updateWidgetData()
+            
+            print("🗑️ [AppCoordinator] All data deleted")
+        } catch {
+            print("❌ [AppCoordinator] Failed to delete data: \(error)")
+            showError("Failed to delete data")
+        }
+    }
+    
+    /// Fetch recent recordings for history view
+    public func fetchRecentRecordings(limit: Int = 50) async throws -> [AudioChunk] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        return try await dbManager.fetchRecentAudioChunks(limit: limit)
+    }
+    
+    /// Delete a specific recording
+    public func deleteRecording(_ id: UUID) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Delete audio file
+        if let chunk = try await dbManager.fetchAudioChunk(id) {
+            try? FileManager.default.removeItem(at: chunk.fileURL)
+        }
+        
+        // Delete from database
+        try await dbManager.deleteAudioChunk(id)
+        
+        // Refresh stats
+        await refreshTodayStats()
+        await updateWidgetData()
     }
     
     // MARK: - Recording

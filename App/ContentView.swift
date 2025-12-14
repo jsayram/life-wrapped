@@ -508,6 +508,8 @@ struct SummaryRow: View {
 // MARK: - Settings Tab
 
 struct SettingsTab: View {
+    @State private var showDataManagement = false
+    
     var body: some View {
         NavigationStack {
             List {
@@ -522,13 +524,12 @@ struct SettingsTab: View {
                 }
                 
                 Section("Data") {
-                    NavigationLink(destination: Text("Export")) {
-                        Label("Export Data", systemImage: "square.and.arrow.up")
+                    Button {
+                        showDataManagement = true
+                    } label: {
+                        Label("Data Management", systemImage: "externaldrive")
                     }
-                    
-                    NavigationLink(destination: Text("Storage")) {
-                        Label("Storage Usage", systemImage: "internaldrive")
-                    }
+                    .foregroundColor(.primary)
                 }
                 
                 Section("About") {
@@ -539,13 +540,90 @@ struct SettingsTab: View {
                             .foregroundStyle(.secondary)
                     }
                     
-                    NavigationLink(destination: Text("Privacy Policy")) {
+                    NavigationLink(destination: PrivacyPolicyView()) {
                         Label("Privacy Policy", systemImage: "doc.text")
+                    }
+                    
+                    HStack {
+                        Text("On-Device Processing")
+                        Spacer()
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundColor(.green)
                     }
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showDataManagement) {
+                DataManagementView()
+            }
         }
+    }
+}
+
+struct PrivacyPolicyView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Privacy First")
+                    .font(.title.bold())
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    PrivacyPoint(
+                        icon: "lock.shield.fill",
+                        title: "100% On-Device",
+                        description: "All audio processing and transcription happens on your device."
+                    )
+                    
+                    PrivacyPoint(
+                        icon: "wifi.slash",
+                        title: "Zero Network Calls",
+                        description: "Life Wrapped never sends your data to any server."
+                    )
+                    
+                    PrivacyPoint(
+                        icon: "eye.slash.fill",
+                        title: "No Tracking",
+                        description: "We don't collect analytics, telemetry, or usage data."
+                    )
+                    
+                    PrivacyPoint(
+                        icon: "square.and.arrow.up",
+                        title: "Your Data, Your Control",
+                        description: "Export or delete your data anytime."
+                    )
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Privacy Policy")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct PrivacyPoint: View {
+    let icon: String
+    let title: String
+    let description: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(.blue)
+                .frame(width: 32)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
     }
 }
 
