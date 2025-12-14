@@ -51,7 +51,7 @@ struct ContentView: View {
         }
         .alert("Initialization Error", isPresented: .constant(coordinator.initializationError != nil)) {
             Button("Retry") {
-                Swift.Task {
+                Task {
                     await coordinator.initialize()
                 }
             }
@@ -244,7 +244,7 @@ struct RecordingButton: View {
         // Haptic feedback on tap
         coordinator.triggerHaptic(.medium)
         
-        Swift.Task {
+        Task {
             do {
                 if coordinator.recordingState.isRecording {
                     print("⏹️ [RecordingButton] Stopping recording...")
@@ -382,7 +382,7 @@ struct HistoryTab: View {
     }
     
     private func deleteRecording(at offsets: IndexSet) {
-        Swift.Task {
+        Task {
             for index in offsets {
                 let recording = recordings[index]
                 do {

@@ -145,16 +145,6 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
-    // MARK: - Preview Helper
-    
-    public static func preview() -> AppCoordinator {
-        let coordinator = AppCoordinator()
-        Task {
-            await coordinator.initialize()
-        }
-        return coordinator
-    }
-    
     // MARK: - Async Initialization
     
     /// Initialize the app coordinator and load initial state
@@ -361,25 +351,6 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         return try await dbManager.fetchRecentAudioChunks(limit: limit)
-    }
-    
-    /// Delete a specific recording
-    public func deleteRecording(_ id: UUID) async throws {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        // Delete audio file
-        if let chunk = try await dbManager.fetchAudioChunk(id: id) {
-            try? FileManager.default.removeItem(at: chunk.fileURL)
-        }
-        
-        // Delete from database
-        try await dbManager.deleteAudioChunk(id: id)
-        
-        // Refresh stats
-        await refreshTodayStats()
-        await updateWidgetData()
     }
     
     // MARK: - Recording
@@ -680,15 +651,6 @@ public final class AppCoordinator: ObservableObject {
     }
     
     // MARK: - History & Data Access
-    
-    /// Fetch recent audio chunks (recordings)
-    public func fetchRecentRecordings(limit: Int = 20) async throws -> [AudioChunk] {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchAllAudioChunks(limit: limit)
-    }
     
     /// Fetch transcript segments for an audio chunk
     public func fetchTranscript(for chunkId: UUID) async throws -> [TranscriptSegment] {

@@ -154,7 +154,7 @@ struct DataManagementView: View {
         
         Task {
             do {
-                if let dbManager = await coordinator.getDatabaseManager() {
+                if let dbManager = coordinator.getDatabaseManager() {
                     let exporter = DataExporter(databaseManager: dbManager)
                     
                     let filename = "lifewrapped-export-\(Date().timeIntervalSince1970).\(exportFormat.fileExtension)"

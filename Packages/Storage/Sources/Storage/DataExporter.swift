@@ -191,7 +191,7 @@ public struct JSONSummary: Codable {
     }
 }
 
-public struct StorageInfo {
+public struct StorageInfo: Sendable {
     public let audioChunkCount: Int
     public let summaryCount: Int
     public let totalAudioSize: Int64

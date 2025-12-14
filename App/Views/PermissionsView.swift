@@ -217,7 +217,7 @@ enum PermissionStatus {
     case denied
     case restricted
     
-    init(from recordPermission: AVAudioApplication.RecordPermission) {
+    init(from recordPermission: AVAudioApplication.recordPermission) {
         switch recordPermission {
         case .undetermined: self = .notDetermined
         case .denied: self = .denied

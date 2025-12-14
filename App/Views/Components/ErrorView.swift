@@ -39,7 +39,7 @@ struct ErrorView: View {
             VStack(spacing: 12) {
                 if let onRetry = onRetry {
                     Button {
-                        Swift.Task {
+                        Task {
                             await onRetry()
                         }
                     } label: {
