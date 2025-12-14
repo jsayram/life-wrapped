@@ -59,13 +59,19 @@ public actor TranscriptionManager {
         maxRetries: Int = 2,
         retryDelay: TimeInterval = 1.0
     ) async throws -> [TranscriptSegment] {
+        print("🎯 [TranscriptionManager] transcribe() called for chunk: \(chunk.id)")
+        print("🎯 [TranscriptionManager] File URL: \(chunk.fileURL)")
+        print("🎯 [TranscriptionManager] Locale: \(locale.identifier)")
+        
         var lastError: Error?
         let startTime = Date()
         
         // Retry loop
         for attempt in 0...maxRetries {
+            print("🔄 [TranscriptionManager] Attempt \(attempt + 1)/\(maxRetries + 1)")
             do {
                 let segments = try await performTranscription(chunk: chunk, locale: locale)
+                print("✅ [TranscriptionManager] Transcription successful! Got \(segments.count) segments")
                 
                 // Record success
                 let duration = Date().timeIntervalSince(startTime)
@@ -73,6 +79,7 @@ public actor TranscriptionManager {
                 
                 return segments
             } catch {
+                print("❌ [TranscriptionManager] Transcription attempt \(attempt + 1) failed: \(error)")
                 lastError = error
                 
                 // Don't retry for certain errors
@@ -103,24 +110,35 @@ public actor TranscriptionManager {
         chunk: AudioChunk,
         locale: Locale
     ) async throws -> [TranscriptSegment] {
+        print("🎤 [TranscriptionManager] performTranscription() starting")
+        
         // Verify file exists
         guard FileManager.default.fileExists(atPath: chunk.fileURL.path) else {
+            print("❌ [TranscriptionManager] Audio file not found: \(chunk.fileURL.path)")
             throw TranscriptionError.audioFileNotFound(chunk.fileURL)
         }
+        print("✅ [TranscriptionManager] Audio file exists")
         
         // Create recognizer
+        print("🗣️ [TranscriptionManager] Creating SFSpeechRecognizer for locale: \(locale.identifier)")
         guard let recognizer = SFSpeechRecognizer(locale: locale) else {
+            print("❌ [TranscriptionManager] SFSpeechRecognizer not available for locale")
             throw TranscriptionError.notAvailable
         }
+        print("✅ [TranscriptionManager] SFSpeechRecognizer created")
         
         guard recognizer.isAvailable else {
+            print("❌ [TranscriptionManager] SFSpeechRecognizer not available on this device")
             throw TranscriptionError.notAvailable
         }
+        print("✅ [TranscriptionManager] SFSpeechRecognizer is available")
         
         // Create recognition request
+        print("📄 [TranscriptionManager] Creating recognition request")
         let request = SFSpeechURLRecognitionRequest(url: chunk.fileURL)
         request.shouldReportPartialResults = false
         request.requiresOnDeviceRecognition = true // Privacy: on-device only
+        print("✅ [TranscriptionManager] Recognition request created (on-device only)")
         
         // Capture values needed by the callback (to avoid actor isolation issues)
         let chunkID = chunk.id
@@ -136,16 +154,22 @@ public actor TranscriptionManager {
                 }
                 
                 guard let result = result, result.isFinal else {
+                    print("⏳ [TranscriptionManager] Intermediate result, waiting for final...")
                     return
                 }
                 
                 // Extract just the string - this is Sendable
-                continuation.resume(returning: result.bestTranscription.formattedString)
+                let text = result.bestTranscription.formattedString
+                print("✅ [TranscriptionManager] Final result received: '\(text.prefix(50))...'")
+                continuation.resume(returning: text)
             }
         }
+        print("🔄 [TranscriptionManager] Recognition complete, converting to segments...")
         
         // Convert to segments after continuation completes (back on actor)
-        return convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier))
+        let segments = convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier))
+        print("✅ [TranscriptionManager] Converted to \(segments.count) segments")
+        return segments
     }
     
     // MARK: - Batch Processing
