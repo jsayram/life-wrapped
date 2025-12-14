@@ -4,6 +4,9 @@
 
 import Foundation
 import SwiftUI
+import UIKit
+import AVFoundation
+import Speech
 import SharedModels
 import Storage
 import AudioCapture
@@ -98,6 +101,8 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var todayStats: DayStats = .empty
     @Published public private(set) var isInitialized: Bool = false
     @Published public private(set) var initializationError: Error?
+    @Published public var needsPermissions: Bool = false
+    @Published public var currentToast: Toast?
     
     // MARK: - Dependencies
     
@@ -143,6 +148,14 @@ public final class AppCoordinator: ObservableObject {
             return
         }
         
+        // Check permissions first
+        let hasPermissions = await checkPermissions()
+        if !hasPermissions {
+            print("⚠️ [AppCoordinator] Permissions not granted, showing permissions UI")
+            needsPermissions = true
+            return
+        }
+        
         do {
             // Initialize database
             print("📦 [AppCoordinator] Initializing DatabaseManager...")
@@ -184,6 +197,108 @@ public final class AppCoordinator: ObservableObject {
             initializationError = error
             isInitialized = false
         }
+    }
+    
+    // MARK: - Lifecycle Management
+    
+    /// Handle app becoming active (foreground)
+    public func handleAppBecameActive() async {
+        print("🟢 [AppCoordinator] App became active")
+        // Resume any paused operations if needed
+        // Widget updates happen here since they need to be current
+        await updateWidgetData()
+    }
+    
+    /// Handle app becoming inactive (transition state)
+    public func handleAppBecameInactive() async {
+        print("🟡 [AppCoordinator] App became inactive")
+        // Prepare for potential background entry
+        // Save any pending state if needed
+    }
+    
+    /// Handle app entering background
+    public func handleAppEnteredBackground() async {
+        print("🔴 [AppCoordinator] App entered background")
+        
+        // If recording, audio will continue in background thanks to background mode
+        if recordingState.isRecording {
+            print("🎙️ [AppCoordinator] Recording continues in background")
+        }
+        
+        // Save current state
+        await refreshTodayStats()
+        await updateWidgetData()
+        print("💾 [AppCoordinator] State saved for background")
+    }
+    
+    // MARK: - Permissions
+    
+    /// Check if all required permissions are granted
+    public func checkPermissions() async -> Bool {
+        let micPermission = await checkMicrophonePermission()
+        let speechPermission = await checkSpeechRecognitionPermission()
+        
+        let hasAll = micPermission && speechPermission
+        print("🔐 [AppCoordinator] Permissions - Mic: \(micPermission), Speech: \(speechPermission)")
+        
+        await MainActor.run {
+            needsPermissions = !hasAll
+        }
+        
+        return hasAll
+    }
+    
+    private func checkMicrophonePermission() async -> Bool {
+        #if os(iOS)
+        let status = AVAudioApplication.shared.recordPermission
+        return status == .granted
+        #else
+        return true
+        #endif
+    }
+    
+    private func checkSpeechRecognitionPermission() async -> Bool {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        return status == .authorized
+    }
+    
+    /// Called when user completes permission flow
+    public func permissionsGranted() async {
+        print("✅ [AppCoordinator] Permissions granted, initializing...")
+        needsPermissions = false
+        await initialize()
+    }
+    
+    // MARK: - User Feedback
+    
+    /// Show a toast notification
+    public func showToast(_ toast: Toast) {
+        withAnimation {
+            currentToast = toast
+        }
+    }
+    
+    /// Provide haptic feedback
+    public func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
+        let generator = UIImpactFeedbackGenerator(style: style)
+        generator.impactOccurred()
+    }
+    
+    /// Show success feedback (toast + haptic)
+    public func showSuccess(_ message: String) {
+        triggerHaptic(.light)
+        showToast(Toast(style: .success, message: message))
+    }
+    
+    /// Show error feedback (toast + haptic)
+    public func showError(_ message: String) {
+        triggerHaptic(.heavy)
+        showToast(Toast(style: .error, message: message))
+    }
+    
+    /// Show info feedback (toast only)
+    public func showInfo(_ message: String) {
+        showToast(Toast(style: .info, message: message))
     }
     
     // MARK: - Recording

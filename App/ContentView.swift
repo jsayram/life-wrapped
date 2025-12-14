@@ -39,8 +39,13 @@ struct ContentView: View {
                 }
                 .tag(3)
         }
+        .sheet(isPresented: $coordinator.needsPermissions) {
+            PermissionsView()
+                .interactiveDismissDisabled()
+        }
+        .toast($coordinator.currentToast)
         .overlay {
-            if !coordinator.isInitialized && coordinator.initializationError == nil {
+            if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
                 LoadingOverlay()
             }
         }
@@ -235,16 +240,22 @@ struct RecordingButton: View {
     
     private func handleRecordingAction() {
         print("🔘 [RecordingButton] Button tapped, current state: \(coordinator.recordingState)")
+        
+        // Haptic feedback on tap
+        coordinator.triggerHaptic(.medium)
+        
         Task {
             do {
                 if coordinator.recordingState.isRecording {
                     print("⏹️ [RecordingButton] Stopping recording...")
                     _ = try await coordinator.stopRecording()
                     print("✅ [RecordingButton] Recording stopped")
+                    coordinator.showSuccess("Recording saved successfully!")
                 } else if case .idle = coordinator.recordingState {
                     print("▶️ [RecordingButton] Starting recording...")
                     try await coordinator.startRecording()
                     print("✅ [RecordingButton] Recording started")
+                    coordinator.showInfo("Recording started")
                 } else if case .completed = coordinator.recordingState {
                     print("🔄 [RecordingButton] Resetting completed state")
                     coordinator.resetRecordingState()
@@ -254,6 +265,7 @@ struct RecordingButton: View {
                 }
             } catch {
                 print("❌ [RecordingButton] Action failed: \(error.localizedDescription)")
+                coordinator.showError(error.localizedDescription)
                 errorMessage = error.localizedDescription
                 showError = true
             }

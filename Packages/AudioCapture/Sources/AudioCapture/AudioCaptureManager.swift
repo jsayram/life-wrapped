@@ -44,12 +44,24 @@ public final class AudioCaptureManager: ObservableObject {
         if audioEngine.isRunning {
             stopAudioEngine()
         }
+        
+        #if os(iOS)
+        // Remove notification observers
+        NotificationCenter.default.removeObserver(
+            self,
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+        #endif
+        
         currentChunkID = nil
         currentChunkStartTime = nil
         currentFileURL = nil
         audioFile = nil
         currentState = .idle
         isRecording = false
+        
+        print("🧹 [AudioCaptureManager] Cleanup complete")
     }
     
     // MARK: - Public API
@@ -168,12 +180,72 @@ public final class AudioCaptureManager: ObservableObject {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .default, options: [.allowBluetooth])
+            // Configure for background audio recording
+            // .mixWithOthers allows other audio to play while recording
+            // .defaultToSpeaker routes audio to speaker by default
+            // .allowBluetooth enables Bluetooth headset recording
+            try session.setCategory(
+                .record,
+                mode: .default,
+                options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth]
+            )
+            
+            // Request permission to record in background
             try session.setActive(true)
+            
+            // Setup interruption notification observer
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleAudioInterruption(_:)),
+                name: AVAudioSession.interruptionNotification,
+                object: session
+            )
+            
+            print("🎙️ [AudioCaptureManager] Audio session configured for background recording")
         } catch {
             throw AudioCaptureError.audioSessionSetupFailed(error.localizedDescription)
         }
         #endif
+    }
+    
+    @objc private func handleAudioInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+        
+        print("🎙️ [AudioCaptureManager] Audio interruption: \(type == .began ? "began" : "ended")")
+        
+        switch type {
+        case .began:
+            // Pause recording when interrupted (phone call, alarm, etc.)
+            if currentState.isListening {
+                do {
+                    try pauseRecording(reason: .systemInterruption)
+                    print("⏸️ [AudioCaptureManager] Recording paused due to interruption")
+                } catch {
+                    print("❌ [AudioCaptureManager] Failed to pause on interruption: \(error)")
+                }
+            }
+            
+        case .ended:
+            // Resume recording when interruption ends
+            if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) && currentState.isPaused {
+                    do {
+                        try resumeRecording()
+                        print("▶️ [AudioCaptureManager] Recording resumed after interruption")
+                    } catch {
+                        print("❌ [AudioCaptureManager] Failed to resume after interruption: \(error)")
+                    }
+                }
+            }
+            
+        @unknown default:
+            print("⚠️ [AudioCaptureManager] Unknown interruption type")
+        }
     }
     
     private func generateFileURL(for chunkID: UUID) throws -> URL {
