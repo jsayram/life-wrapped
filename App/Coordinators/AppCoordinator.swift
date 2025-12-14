@@ -75,6 +75,13 @@ public struct DayStats: Sendable, Equatable {
     public let wordCount: Int
     public let totalDuration: TimeInterval
     
+    public init(date: Date, segmentCount: Int, wordCount: Int, totalDuration: TimeInterval) {
+        self.date = date
+        self.segmentCount = segmentCount
+        self.wordCount = wordCount
+        self.totalDuration = totalDuration
+    }
+    
     public var totalMinutes: Int {
         Int(totalDuration / 60)
     }
@@ -327,13 +334,13 @@ public final class AppCoordinator: ObservableObject {
             let chunks = try await dbManager.fetchAllAudioChunks()
             for chunk in chunks {
                 try? FileManager.default.removeItem(at: chunk.fileURL)
-                try await dbManager.deleteAudioChunk(chunk.id)
+                try await dbManager.deleteAudioChunk(id: chunk.id)
             }
             
             // Delete all summaries
             let summaries = try await dbManager.fetchAllSummaries()
             for summary in summaries {
-                try await dbManager.deleteSummary(summary.id)
+                try await dbManager.deleteSummary(id: summary.id)
             }
             
             // Refresh stats
@@ -363,12 +370,12 @@ public final class AppCoordinator: ObservableObject {
         }
         
         // Delete audio file
-        if let chunk = try await dbManager.fetchAudioChunk(id) {
+        if let chunk = try await dbManager.fetchAudioChunk(id: id) {
             try? FileManager.default.removeItem(at: chunk.fileURL)
         }
         
         // Delete from database
-        try await dbManager.deleteAudioChunk(id)
+        try await dbManager.deleteAudioChunk(id: id)
         
         // Refresh stats
         await refreshTodayStats()

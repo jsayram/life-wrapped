@@ -39,7 +39,7 @@ struct ErrorView: View {
             VStack(spacing: 12) {
                 if let onRetry = onRetry {
                     Button {
-                        Task {
+                        Swift.Task {
                             await onRetry()
                         }
                     } label: {
@@ -179,45 +179,47 @@ struct ErrorBanner: View {
 
 // MARK: - Preview
 
-#Preview("Permission Error") {
-    ErrorView(
-        error: NSError(
-            domain: "LifeWrapped",
-            code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied"]
-        ),
-        onRetry: {
-            print("Retry tapped")
-        },
-        onDismiss: {
-            print("Dismiss tapped")
-        }
-    )
-}
-
-#Preview("Storage Error") {
-    ErrorView(
-        error: NSError(
-            domain: "LifeWrapped",
-            code: 2,
-            userInfo: [NSLocalizedDescriptionKey: "Database connection failed"]
-        ),
-        onRetry: {
-            print("Retry tapped")
-        }
-    )
-}
-
-#Preview("Error Banner") {
-    VStack(spacing: 16) {
-        ErrorBanner(message: "Recording failed. Please try again.")
-        
-        ErrorBanner(
-            message: "Network connection lost.",
-            onDismiss: {
-                print("Dismissed")
+struct ErrorView_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            ErrorView(
+                error: NSError(
+                    domain: "LifeWrapped",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Microphone permission denied"]
+                ),
+                onRetry: {
+                    print("Retry tapped")
+                },
+                onDismiss: {
+                    print("Dismiss tapped")
+                }
+            )
+            .previewDisplayName("Permission Error")
+            
+            ErrorView(
+                error: NSError(
+                    domain: "LifeWrapped",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Database connection failed"]
+                ),
+                onRetry: {
+                    print("Retry tapped")
+                }
+            )
+            .previewDisplayName("Storage Error")
+            
+            VStack(spacing: 16) {
+                ErrorBanner(message: "Recording failed. Please try again.")
+                
+                ErrorBanner(
+                    message: "Network connection lost.",
+                    onDismiss: {
+                        print("Dismissed")
+                    }
+                )
             }
-        )
+            .padding()
+        }
     }
-    .padding()
 }

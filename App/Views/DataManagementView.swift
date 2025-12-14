@@ -238,7 +238,9 @@ struct ShareSheet: UIViewControllerRepresentable {
 
 // MARK: - Preview
 
-#Preview {
-    DataManagementView()
-        .environmentObject(AppCoordinator())
+struct DataManagementView_Previews: PreviewProvider {
+    static var previews: some View {
+        DataManagementView()
+            .environmentObject(AppCoordinator())
+    }
 }

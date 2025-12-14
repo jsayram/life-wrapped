@@ -46,9 +46,9 @@ public actor DataExporter {
         markdown += "---\n\n"
         
         // Group by period type
-        let dailySummaries = summaries.filter { $0.periodType == .daily }.sorted { $0.startDate > $1.startDate }
-        let weeklySummaries = summaries.filter { $0.periodType == .weekly }.sorted { $0.startDate > $1.startDate }
-        let monthlySummaries = summaries.filter { $0.periodType == .monthly }.sorted { $0.startDate > $1.startDate }
+        let dailySummaries = summaries.filter { $0.periodType == .day }.sorted { $0.periodStart > $1.periodStart }
+        let weeklySummaries = summaries.filter { $0.periodType == .week }.sorted { $0.periodStart > $1.periodStart }
+        let monthlySummaries = summaries.filter { $0.periodType == .month }.sorted { $0.periodStart > $1.periodStart }
         
         if !dailySummaries.isEmpty {
             markdown += "## Daily Summaries\n\n"
@@ -75,16 +75,11 @@ public actor DataExporter {
     }
     
     private func formatSummaryMarkdown(_ summary: Summary) -> String {
-        var md = "### \(formatPeriod(summary.periodType, start: summary.startDate, end: summary.endDate))\n\n"
+        var md = "### \(formatPeriod(summary.periodType, start: summary.periodStart, end: summary.periodEnd))\n\n"
         
-        if let content = summary.content {
-            md += "\(content)\n\n"
-        }
+        md += "\(summary.text)\n\n"
         
-        md += "**Stats:**\n"
-        md += "- Segments: \(summary.segmentCount)\n"
-        md += "- Words: \(summary.wordCount)\n"
-        md += "- Duration: \(formatDuration(summary.totalDuration))\n\n"
+        md += "**Date:** \(DateFormatter.localizedString(from: summary.periodStart, dateStyle: .medium, timeStyle: .none))\n\n"
         
         md += "---\n\n"
         
@@ -94,31 +89,21 @@ public actor DataExporter {
     private func formatPeriod(_ type: PeriodType, start: Date, end: Date) -> String {
         let formatter = DateFormatter()
         switch type {
-        case .daily:
+        case .hour:
+            formatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
+            return formatter.string(from: start)
+        case .day:
             formatter.dateFormat = "EEEE, MMMM d, yyyy"
             return formatter.string(from: start)
-        case .weekly:
+        case .week:
             formatter.dateFormat = "MMM d"
             return "Week of \(formatter.string(from: start))"
-        case .monthly:
+        case .month:
             formatter.dateFormat = "MMMM yyyy"
             return formatter.string(from: start)
-        case .yearly:
-            formatter.dateFormat = "yyyy"
-            return formatter.string(from: start)
         }
     }
-    
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let hours = Int(seconds) / 3600
-        let minutes = (Int(seconds) % 3600) / 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
+
     
     // MARK: - Storage Info
     
@@ -139,16 +124,23 @@ public actor DataExporter {
             audioChunkCount: chunks.count,
             summaryCount: summaries.count,
             totalAudioSize: totalAudioSize,
-            databaseSize: try getDatabaseSize()
+            databaseSize: try await getDatabaseSize()
         )
     }
     
-    private func getDatabaseSize() throws -> Int64 {
-        // Get database file size
-        let dbPath = databaseManager.databaseURL.path
-        if FileManager.default.fileExists(atPath: dbPath) {
-            let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
-            return attrs[.size] as? Int64 ?? 0
+    private func getDatabaseSize() async throws -> Int64 {
+        // Get database file size from container
+        let chunks = try await databaseManager.fetchAllAudioChunks()
+        if let firstChunk = chunks.first {
+            // Navigate up from audio file to database directory
+            let dbDirectory = firstChunk.fileURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Database")
+            let dbPath = dbDirectory.appendingPathComponent("lifewrapped.db").path
+            if FileManager.default.fileExists(atPath: dbPath) {
+                let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
+                if let size = attrs[FileAttributeKey.size] as? Int64 {
+                    return size
+                }
+            }
         }
         return 0
     }
@@ -184,23 +176,17 @@ public struct JSONAudioChunk: Codable {
 public struct JSONSummary: Codable {
     let id: UUID
     let periodType: String
-    let startDate: Date
-    let endDate: Date
-    let content: String?
-    let segmentCount: Int
-    let wordCount: Int
-    let totalDuration: TimeInterval
+    let periodStart: Date
+    let periodEnd: Date
+    let text: String
     let createdAt: Date
     
     init(from summary: Summary) {
         self.id = summary.id
         self.periodType = summary.periodType.rawValue
-        self.startDate = summary.startDate
-        self.endDate = summary.endDate
-        self.content = summary.content
-        self.segmentCount = summary.segmentCount
-        self.wordCount = summary.wordCount
-        self.totalDuration = summary.totalDuration
+        self.periodStart = summary.periodStart
+        self.periodEnd = summary.periodEnd
+        self.text = summary.text
         self.createdAt = summary.createdAt
     }
 }

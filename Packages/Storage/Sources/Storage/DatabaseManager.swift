@@ -358,6 +358,11 @@ public actor DatabaseManager {
         return chunks
     }
     
+    /// Fetch recent audio chunks (convenience method)
+    public func fetchRecentAudioChunks(limit: Int = 50) throws -> [AudioChunk] {
+        return try fetchAllAudioChunks(limit: limit)
+    }
+    
     public func deleteAudioChunk(id: UUID) throws {
         guard let db = db else { throw StorageError.notOpen }
         
@@ -682,6 +687,11 @@ public actor DatabaseManager {
         }
         
         return summaries
+    }
+    
+    /// Fetch all summaries (convenience method for export)
+    public func fetchAllSummaries() throws -> [Summary] {
+        return try fetchSummaries(periodType: nil, limit: 10000)
     }
     
     public func deleteSummary(id: UUID) throws {

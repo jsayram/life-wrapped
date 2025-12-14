@@ -5,7 +5,7 @@
 import SwiftUI
 
 /// Toast notification style
-enum ToastStyle {
+public enum ToastStyle {
     case success
     case error
     case info
@@ -31,19 +31,19 @@ enum ToastStyle {
 }
 
 /// Toast notification data
-struct Toast: Equatable, Identifiable {
-    let id = UUID()
-    let style: ToastStyle
-    let message: String
-    let duration: TimeInterval
+public struct Toast: Equatable, Identifiable {
+    public let id = UUID()
+    public let style: ToastStyle
+    public let message: String
+    public let duration: TimeInterval
     
-    init(style: ToastStyle, message: String, duration: TimeInterval = 3.0) {
+    public init(style: ToastStyle, message: String, duration: TimeInterval = 3.0) {
         self.style = style
         self.message = message
         self.duration = duration
     }
     
-    static func == (lhs: Toast, rhs: Toast) -> Bool {
+    public static func == (lhs: Toast, rhs: Toast) -> Bool {
         lhs.id == rhs.id
     }
 }
@@ -107,29 +107,32 @@ extension View {
 
 // MARK: - Preview
 
-#Preview("Success Toast") {
-    VStack {
-        Spacer()
+struct ToastView_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            VStack {
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.gray.opacity(0.1))
+            .toast(.constant(Toast(style: .success, message: "Recording saved successfully!")))
+            .previewDisplayName("Success Toast")
+            
+            VStack {
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.gray.opacity(0.1))
+            .toast(.constant(Toast(style: .error, message: "Failed to start recording. Please check microphone permissions.")))
+            .previewDisplayName("Error Toast")
+            
+            VStack {
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.gray.opacity(0.1))
+            .toast(.constant(Toast(style: .info, message: "Processing your recording...")))
+            .previewDisplayName("Info Toast")
+        }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.gray.opacity(0.1))
-    .toast(.constant(Toast(style: .success, message: "Recording saved successfully!")))
-}
-
-#Preview("Error Toast") {
-    VStack {
-        Spacer()
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.gray.opacity(0.1))
-    .toast(.constant(Toast(style: .error, message: "Failed to start recording. Please check microphone permissions.")))
-}
-
-#Preview("Info Toast") {
-    VStack {
-        Spacer()
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.gray.opacity(0.1))
-    .toast(.constant(Toast(style: .info, message: "Processing your recording...")))
 }

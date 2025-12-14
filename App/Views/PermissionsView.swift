@@ -301,7 +301,9 @@ struct PermissionCard: View {
 
 // MARK: - Preview
 
-#Preview {
-    PermissionsView()
-        .environmentObject(AppCoordinator())
+struct PermissionsView_Previews: PreviewProvider {
+    static var previews: some View {
+        PermissionsView()
+            .environmentObject(AppCoordinator())
+    }
 }
