@@ -174,13 +174,20 @@ public actor DatabaseManager {
                 end_time REAL NOT NULL,
                 format TEXT NOT NULL,
                 sample_rate INTEGER NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                session_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL DEFAULT 0
             )
             """)
         
         try execute("""
             CREATE INDEX IF NOT EXISTS idx_audio_chunks_start_time
             ON audio_chunks(start_time)
+            """)
+        
+        try execute("""
+            CREATE INDEX IF NOT EXISTS idx_audio_chunks_session
+            ON audio_chunks(session_id, chunk_index)
             """)
         
         try execute("""
@@ -285,8 +292,8 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            INSERT INTO audio_chunks (id, file_url, start_time, end_time, format, sample_rate, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO audio_chunks (id, file_url, start_time, end_time, format, sample_rate, created_at, session_id, chunk_index)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         
         var stmt: OpaquePointer?
@@ -303,6 +310,8 @@ public actor DatabaseManager {
         sqlite3_bind_text(stmt, 5, chunk.format.rawValue, -1, SQLITE_TRANSIENT)
         sqlite3_bind_int(stmt, 6, Int32(chunk.sampleRate))
         sqlite3_bind_double(stmt, 7, chunk.createdAt.timeIntervalSince1970)
+        sqlite3_bind_text(stmt, 8, chunk.sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 9, Int32(chunk.chunkIndex))
         
         guard sqlite3_step(stmt) == SQLITE_DONE else {
             throw StorageError.stepFailed(lastError())
@@ -313,7 +322,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, file_url, start_time, end_time, format, sample_rate, created_at
+            SELECT id, file_url, start_time, end_time, format, sample_rate, created_at, session_id, chunk_index
             FROM audio_chunks
             WHERE id = ?
             """
@@ -338,7 +347,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         var sql = """
-            SELECT id, file_url, start_time, end_time, format, sample_rate, created_at
+            SELECT id, file_url, start_time, end_time, format, sample_rate, created_at, session_id, chunk_index
             FROM audio_chunks
             ORDER BY start_time DESC
             """
@@ -387,6 +396,97 @@ public actor DatabaseManager {
         }
     }
     
+    // MARK: - Session Queries
+    
+    /// Fetch all chunks belonging to a session, ordered by chunk_index
+    public func fetchChunksBySession(sessionId: UUID) throws -> [AudioChunk] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, file_url, start_time, end_time, format, sample_rate, created_at, session_id, chunk_index
+            FROM audio_chunks
+            WHERE session_id = ?
+            ORDER BY chunk_index ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        var chunks: [AudioChunk] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            chunks.append(try parseAudioChunk(from: stmt))
+        }
+        
+        return chunks
+    }
+    
+    /// Fetch all unique sessions with their first chunk's timestamp
+    public func fetchSessions(limit: Int = 100) throws -> [(sessionId: UUID, firstChunkTime: Date, chunkCount: Int)] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                session_id,
+                MIN(created_at) as first_chunk_time,
+                COUNT(*) as chunk_count
+            FROM audio_chunks
+            GROUP BY session_id
+            ORDER BY first_chunk_time DESC
+            LIMIT ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_int(stmt, 1, Int32(limit))
+        
+        var sessions: [(UUID, Date, Int)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let sessionIdString = sqlite3_column_text(stmt, 0),
+                  let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+                continue
+            }
+            
+            let firstChunkTime = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 1))
+            let chunkCount = Int(sqlite3_column_int(stmt, 2))
+            
+            sessions.append((sessionId, firstChunkTime, chunkCount))
+        }
+        
+        return sessions
+    }
+    
+    /// Delete an entire session (all chunks)
+    public func deleteSession(sessionId: UUID) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        // Cascade delete will handle transcript_segments via FK
+        let sql = "DELETE FROM audio_chunks WHERE session_id = ?"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
     private func parseAudioChunk(from stmt: OpaquePointer?) throws -> AudioChunk {
         guard let idString = sqlite3_column_text(stmt, 0),
               let fileURLString = sqlite3_column_text(stmt, 1),
@@ -405,6 +505,14 @@ public actor DatabaseManager {
         let sampleRate = Int(sqlite3_column_int(stmt, 5))
         let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 6))
         
+        // Parse session fields (columns 7 and 8)
+        guard let sessionIdString = sqlite3_column_text(stmt, 7),
+              let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+            throw StorageError.invalidData("Missing required session_id")
+        }
+        
+        let chunkIndex = Int(sqlite3_column_int(stmt, 8))
+        
         return AudioChunk(
             id: id,
             fileURL: fileURL,
@@ -412,7 +520,9 @@ public actor DatabaseManager {
             endTime: endTime,
             format: format,
             sampleRate: sampleRate,
-            createdAt: createdAt
+            createdAt: createdAt,
+            sessionId: sessionId,
+            chunkIndex: chunkIndex
         )
     }
     

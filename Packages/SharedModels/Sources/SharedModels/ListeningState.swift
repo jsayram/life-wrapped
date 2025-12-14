@@ -92,6 +92,13 @@ public enum ListeningState: Sendable, Equatable {
         case .error: "exclamationmark.triangle"
         }
     }
+    
+    public var mode: ListeningMode? {
+        if case .listening(let mode) = self {
+            return mode
+        }
+        return nil
+    }
 }
 
 // MARK: - Pause Reason

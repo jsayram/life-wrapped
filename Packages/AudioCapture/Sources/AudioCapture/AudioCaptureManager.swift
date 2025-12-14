@@ -27,6 +27,14 @@ public final class AudioCaptureManager: ObservableObject {
     private var currentFileURL: URL?
     private var audioFile: AVAudioFile?
     
+    // Session tracking for auto-chunking
+    private var currentSessionId: UUID?
+    private var currentChunkIndex: Int = 0
+    private var autoChunkTimer: Timer?
+    
+    /// Duration in seconds after which to automatically start a new chunk (default: 180 = 3 minutes)
+    public var autoChunkDuration: TimeInterval = 180
+    
     // Callback for when a chunk is completed
     public var onChunkCompleted: (@Sendable (AudioChunk) async -> Void)?
     
@@ -41,6 +49,10 @@ public final class AudioCaptureManager: ObservableObject {
     
     /// Clean up resources - call when manager is no longer needed
     public func cleanup() {
+        // Stop auto-chunk timer
+        autoChunkTimer?.invalidate()
+        autoChunkTimer = nil
+        
         if audioEngine.isRunning {
             stopAudioEngine()
         }
@@ -58,6 +70,8 @@ public final class AudioCaptureManager: ObservableObject {
         currentChunkStartTime = nil
         currentFileURL = nil
         audioFile = nil
+        currentSessionId = nil
+        currentChunkIndex = 0
         currentState = .idle
         isRecording = false
         
@@ -89,7 +103,22 @@ public final class AudioCaptureManager: ObservableObject {
         try setupAudioSession()
         print("🎧 [AudioCaptureManager] audio session configured")
 
-        // Create new chunk
+        // Initialize session tracking (first chunk of new session)
+        let sessionId = UUID()
+        currentSessionId = sessionId
+        currentChunkIndex = 0
+        print("🎧 [AudioCaptureManager] new session started: \(sessionId)")
+
+        // Create first chunk
+        try await startNewChunk(mode: mode)
+        
+        // Start auto-chunk timer
+        startAutoChunkTimer()
+        print("🎧 [AudioCaptureManager] auto-chunk timer started (\(autoChunkDuration)s)")
+    }
+    
+    /// Start a new chunk within the current session
+    private func startNewChunk(mode: ListeningMode = .active) async throws {
         let chunkID = UUID()
         let startTime = Date()
         print("🎧 [AudioCaptureManager] generating file URL for chunk: \(chunkID)")
@@ -101,15 +130,17 @@ public final class AudioCaptureManager: ObservableObject {
         try setupAudioFile(at: fileURL)
         print("🎧 [AudioCaptureManager] audio file ready")
 
-        // Setup audio engine tap
+        // Setup audio engine tap (update or create)
         print("🎧 [AudioCaptureManager] installing audio engine tap...")
         try setupAudioEngineTap()
         print("🎧 [AudioCaptureManager] audio engine tap installed")
 
-        // Start the engine
-        print("🎧 [AudioCaptureManager] starting audio engine...")
-        try startAudioEngine()
-        print("🎧 [AudioCaptureManager] audio engine started")
+        // Start the engine if not already running
+        if !audioEngine.isRunning {
+            print("🎧 [AudioCaptureManager] starting audio engine...")
+            try startAudioEngine()
+            print("🎧 [AudioCaptureManager] audio engine started")
+        }
 
         // Update state
         currentChunkID = chunkID
@@ -117,45 +148,110 @@ public final class AudioCaptureManager: ObservableObject {
         currentFileURL = fileURL
         currentState = .listening(mode: mode)
         isRecording = true
-        print("🎧 [AudioCaptureManager] recording state updated to listening")
+        print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) started in session \(currentSessionId?.uuidString ?? "unknown")")
     }
     
     /// Stop recording and save the current chunk
     public func stopRecording() async throws {
+        print("🎧 [AudioCaptureManager] stopRecording() called")
+        
         guard currentState.canStop else {
             throw AudioCaptureError.invalidState("Cannot stop recording from state: \(currentState)")
         }
         
+        // Stop auto-chunk timer
+        autoChunkTimer?.invalidate()
+        autoChunkTimer = nil
+        print("🎧 [AudioCaptureManager] auto-chunk timer stopped")
+        
+        // Finalize current chunk
+        await finalizeCurrentChunk()
+        
         // Stop the engine
         stopAudioEngine()
+        print("🎧 [AudioCaptureManager] audio engine stopped")
         
-        // Create chunk object and notify callback
-        if let chunkID = currentChunkID,
-           let startTime = currentChunkStartTime,
-           let fileURL = currentFileURL {
-            
-            let endTime = Date()
-            let chunk = AudioChunk(
-                id: chunkID,
-                fileURL: fileURL,
-                startTime: startTime,
-                endTime: endTime,
-                format: .m4a,
-                sampleRate: 44100,
-                createdAt: Date()
-            )
-            
-            // Notify via callback (caller handles storage)
-            await onChunkCompleted?(chunk)
+        // Reset session state
+        currentSessionId = nil
+        currentChunkIndex = 0
+        currentState = .idle
+        isRecording = false
+        print("🎧 [AudioCaptureManager] recording stopped, session ended")
+    }
+    
+    /// Finalize the current chunk and emit it via callback
+    private func finalizeCurrentChunk() async {
+        guard let chunkID = currentChunkID,
+              let startTime = currentChunkStartTime,
+              let fileURL = currentFileURL,
+              let sessionId = currentSessionId else {
+            print("⚠️ [AudioCaptureManager] finalizeCurrentChunk called but no chunk data available")
+            return
         }
         
-        // Reset state
+        let endTime = Date()
+        let chunk = AudioChunk(
+            id: chunkID,
+            fileURL: fileURL,
+            startTime: startTime,
+            endTime: endTime,
+            format: .m4a,
+            sampleRate: 44100,
+            createdAt: Date(),
+            sessionId: sessionId,
+            chunkIndex: currentChunkIndex
+        )
+        
+        print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) finalized: \(chunk.duration)s")
+        
+        // Notify via callback (caller handles storage and transcription)
+        await onChunkCompleted?(chunk)
+        
+        // Clear current chunk state
         currentChunkID = nil
         currentChunkStartTime = nil
         currentFileURL = nil
         audioFile = nil
-        currentState = .idle
-        isRecording = false
+    }
+    
+    /// Automatically start a new chunk while recording continues
+    private func autoFinalizeAndContinue() async {
+        print("🎧 [AudioCaptureManager] auto-chunk triggered")
+        
+        // Finalize current chunk
+        await finalizeCurrentChunk()
+        
+        // Increment chunk index
+        currentChunkIndex += 1
+        
+        // Start next chunk in same session
+        do {
+            try await startNewChunk(mode: currentState.mode ?? .active)
+            print("🎧 [AudioCaptureManager] auto-chunk continuation successful")
+        } catch {
+            print("❌ [AudioCaptureManager] failed to start next chunk: \(error)")
+            onError?(AudioCaptureError.recordingFailed("Failed to continue recording: \(error.localizedDescription)"))
+            
+            // Stop recording on error
+            autoChunkTimer?.invalidate()
+            autoChunkTimer = nil
+            stopAudioEngine()
+            currentState = .idle
+            isRecording = false
+        }
+    }
+    
+    /// Start the auto-chunk timer
+    private func startAutoChunkTimer() {
+        // Invalidate any existing timer
+        autoChunkTimer?.invalidate()
+        
+        // Create new timer
+        autoChunkTimer = Timer.scheduledTimer(withTimeInterval: autoChunkDuration, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.autoFinalizeAndContinue()
+            }
+        }
     }
     
     /// Pause recording (keep engine running but don't write to file)

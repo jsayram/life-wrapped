@@ -17,6 +17,8 @@ public struct AudioChunk: Identifiable, Codable, Sendable, Hashable {
     public let format: AudioFormat
     public let sampleRate: Int
     public let createdAt: Date
+    public let sessionId: UUID
+    public let chunkIndex: Int
 
     public init(
         id: UUID = UUID(),
@@ -25,7 +27,9 @@ public struct AudioChunk: Identifiable, Codable, Sendable, Hashable {
         endTime: Date,
         format: AudioFormat,
         sampleRate: Int,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        sessionId: UUID? = nil,
+        chunkIndex: Int = 0
     ) {
         self.id = id
         self.fileURL = fileURL
@@ -34,11 +38,53 @@ public struct AudioChunk: Identifiable, Codable, Sendable, Hashable {
         self.format = format
         self.sampleRate = sampleRate
         self.createdAt = createdAt
+        self.sessionId = sessionId ?? id // Default to own ID for backward compatibility
+        self.chunkIndex = chunkIndex
     }
 
     /// Duration in seconds
     public var duration: TimeInterval {
         endTime.timeIntervalSince(startTime)
+    }
+}
+
+// MARK: - Recording Session
+
+/// Represents a logical recording session composed of multiple audio chunks
+public struct RecordingSession: Identifiable, Sendable, Hashable {
+    public let sessionId: UUID
+    public let chunks: [AudioChunk]
+    
+    public var id: UUID { sessionId }
+    
+    public init(sessionId: UUID, chunks: [AudioChunk]) {
+        self.sessionId = sessionId
+        self.chunks = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
+    }
+    
+    /// Total duration of all chunks combined
+    public var totalDuration: TimeInterval {
+        chunks.reduce(0) { $0 + $1.duration }
+    }
+    
+    /// Number of chunks in this session
+    public var chunkCount: Int {
+        chunks.count
+    }
+    
+    /// Start time of the first chunk
+    public var startTime: Date {
+        chunks.first?.startTime ?? Date()
+    }
+    
+    /// End time of the last chunk
+    public var endTime: Date {
+        chunks.last?.endTime ?? Date()
+    }
+    
+    /// Created at timestamp from the first chunk
+    public var createdAt: Date {
+        chunks.first?.createdAt ?? Date()
     }
 }
 

@@ -186,7 +186,7 @@ public actor TranscriptionManager {
         print("🔄 [TranscriptionManager] Recognition complete, converting to segments...")
         
         // Convert to segments after continuation completes (back on actor)
-        let duration = chunk.endTime - chunk.startTime
+        let duration = chunk.endTime.timeIntervalSince(chunk.startTime)
         let segments = convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier), duration: duration)
         print("✅ [TranscriptionManager] Converted to \(segments.count) segments")
         return segments
