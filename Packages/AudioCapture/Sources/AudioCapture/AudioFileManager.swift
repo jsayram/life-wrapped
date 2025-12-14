@@ -19,23 +19,27 @@ public actor AudioFileManager {
     
     /// Get the audio directory URL
     public func getAudioDirectory() throws -> URL {
-        guard let containerURL = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: containerIdentifier
-        ) else {
-            throw AudioCaptureError.appGroupContainerNotFound
+        // Prefer app group container when available, but fall back to temporary directory
+        if let containerURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: containerIdentifier) {
+            let audioDirectory = containerURL.appendingPathComponent("Audio", isDirectory: true)
+
+            // Create directory if needed
+            if !fileManager.fileExists(atPath: audioDirectory.path) {
+                try fileManager.createDirectory(
+                    at: audioDirectory,
+                    withIntermediateDirectories: true
+                )
+            }
+
+            return audioDirectory
+        } else {
+            print("⚠️ [AudioFileManager] App Group container not found; falling back to temporary directory")
+            let audioDirectory = fileManager.temporaryDirectory.appendingPathComponent("Audio", isDirectory: true)
+            if !fileManager.fileExists(atPath: audioDirectory.path) {
+                try fileManager.createDirectory(at: audioDirectory, withIntermediateDirectories: true)
+            }
+            return audioDirectory
         }
-        
-        let audioDirectory = containerURL.appendingPathComponent("Audio", isDirectory: true)
-        
-        // Create directory if needed
-        if !fileManager.fileExists(atPath: audioDirectory.path) {
-            try fileManager.createDirectory(
-                at: audioDirectory,
-                withIntermediateDirectories: true
-            )
-        }
-        
-        return audioDirectory
     }
     
     /// Delete a specific audio file

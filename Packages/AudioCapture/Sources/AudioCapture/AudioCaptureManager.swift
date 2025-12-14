@@ -68,39 +68,56 @@ public final class AudioCaptureManager: ObservableObject {
     
     /// Start recording audio
     public func startRecording(mode: ListeningMode = .active) async throws {
+        print("🎧 [AudioCaptureManager] startRecording() called")
+
         guard currentState == .idle else {
+            print("❌ [AudioCaptureManager] invalid state: \(currentState)")
             throw AudioCaptureError.invalidState("Cannot start recording from state: \(currentState)")
         }
-        
+
         // Request microphone permission
+        print("🎧 [AudioCaptureManager] requesting microphone permission...")
         let authorized = await requestMicrophonePermission()
+        print("🎧 [AudioCaptureManager] microphone permission granted: \(authorized)")
         guard authorized else {
+            print("❌ [AudioCaptureManager] microphone permission denied")
             throw AudioCaptureError.notAuthorized
         }
-        
+
         // Setup audio session
+        print("🎧 [AudioCaptureManager] setting up audio session...")
         try setupAudioSession()
-        
+        print("🎧 [AudioCaptureManager] audio session configured")
+
         // Create new chunk
         let chunkID = UUID()
         let startTime = Date()
+        print("🎧 [AudioCaptureManager] generating file URL for chunk: \(chunkID)")
         let fileURL = try generateFileURL(for: chunkID)
-        
+        print("🎧 [AudioCaptureManager] file URL: \(fileURL.path)")
+
         // Setup audio file for recording
+        print("🎧 [AudioCaptureManager] setting up audio file...")
         try setupAudioFile(at: fileURL)
-        
+        print("🎧 [AudioCaptureManager] audio file ready")
+
         // Setup audio engine tap
+        print("🎧 [AudioCaptureManager] installing audio engine tap...")
         try setupAudioEngineTap()
-        
+        print("🎧 [AudioCaptureManager] audio engine tap installed")
+
         // Start the engine
+        print("🎧 [AudioCaptureManager] starting audio engine...")
         try startAudioEngine()
-        
+        print("🎧 [AudioCaptureManager] audio engine started")
+
         // Update state
         currentChunkID = chunkID
         currentChunkStartTime = startTime
         currentFileURL = fileURL
         currentState = .listening(mode: mode)
         isRecording = true
+        print("🎧 [AudioCaptureManager] recording state updated to listening")
     }
     
     /// Stop recording and save the current chunk
@@ -249,23 +266,30 @@ public final class AudioCaptureManager: ObservableObject {
     }
     
     private func generateFileURL(for chunkID: UUID) throws -> URL {
-        guard let containerURL = FileManager.default.containerURL(
+        // Prefer app group container when available, but fall back to temporary directory
+        if let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: containerIdentifier
-        ) else {
-            throw AudioCaptureError.appGroupContainerNotFound
+        ) {
+            let audioDirectory = containerURL.appendingPathComponent("Audio", isDirectory: true)
+
+            // Create directory if needed
+            if !FileManager.default.fileExists(atPath: audioDirectory.path) {
+                try FileManager.default.createDirectory(
+                    at: audioDirectory,
+                    withIntermediateDirectories: true
+                )
+            }
+
+            return audioDirectory.appendingPathComponent("\(chunkID.uuidString).m4a")
+        } else {
+            // App Group container not available — log and use a safe fallback
+            print("⚠️ [AudioCaptureManager] App Group container not found; falling back to temporary directory")
+            let audioDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("Audio", isDirectory: true)
+            if !FileManager.default.fileExists(atPath: audioDirectory.path) {
+                try FileManager.default.createDirectory(at: audioDirectory, withIntermediateDirectories: true)
+            }
+            return audioDirectory.appendingPathComponent("\(chunkID.uuidString).m4a")
         }
-        
-        let audioDirectory = containerURL.appendingPathComponent("Audio", isDirectory: true)
-        
-        // Create directory if needed
-        if !FileManager.default.fileExists(atPath: audioDirectory.path) {
-            try FileManager.default.createDirectory(
-                at: audioDirectory,
-                withIntermediateDirectories: true
-            )
-        }
-        
-        return audioDirectory.appendingPathComponent("\(chunkID.uuidString).m4a")
     }
     
     private func setupAudioFile(at url: URL) throws {
@@ -294,21 +318,29 @@ public final class AudioCaptureManager: ObservableObject {
         // Remove any existing tap
         inputNode.removeTap(onBus: 0)
         
-        // Install tap to capture audio
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
-            guard let self = self else { return }
-            
-            // Only write if we're in listening state (not paused)
-            guard self.currentState.isListening else { return }
-            
-            // Write buffer to file
-            if let audioFile = self.audioFile {
+        // Capture actor-isolated state on the current (main) actor before installing the
+        // realtime tap so the realtime audio thread does not touch @MainActor state.
+        let capturedAudioFile = self.audioFile
+        let capturedOnError = self.onError
+        let writeEnabledAtInstall = self.currentState.isListening
+
+        // Install tap to capture audio — the closure only touches the captured values above
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, time in
+            // If writing was not enabled at install time, skip writing
+            guard writeEnabledAtInstall else { return }
+
+            // Write buffer to the captured audio file (safe to use from the audio thread)
+            if let audioFile = capturedAudioFile {
                 do {
                     try audioFile.write(from: buffer)
                 } catch {
-                    // Handle write error - notify via callback
+                    // Notify error back on the main thread using the captured callback
                     let captureError = AudioCaptureError.recordingFailed(error.localizedDescription)
-                    self.onError?(captureError)
+                    if let onError = capturedOnError {
+                        DispatchQueue.main.async {
+                            onError(captureError)
+                        }
+                    }
                 }
             }
         }
