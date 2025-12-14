@@ -214,9 +214,11 @@ The system includes comprehensive logging:
 ## Implementation Roadmap
 
 ### Step 1: Database Session Queries
+
 **Goal**: Add methods to fetch all chunks for a session and list all sessions
 
 **Tasks**:
+
 - Add `fetchChunksForSession(sessionId:)` → returns all chunks with same session_id
 - Add `fetchAllSessions()` → returns distinct session_ids with metadata (first chunk timestamp, total chunks, total duration)
 - Test: Print session list and verify chunks group correctly
@@ -226,9 +228,11 @@ The system includes comprehensive logging:
 ---
 
 ### Step 2: History UI - Session Grouping
+
 **Goal**: Display sessions instead of individual chunks in History
 
 **Tasks**:
+
 - Modify HistoryTab to fetch sessions instead of individual chunks
 - Show session card with: total duration, total words, chunk count
 - Display session start time (from first chunk)
@@ -239,9 +243,11 @@ The system includes comprehensive logging:
 ---
 
 ### Step 3: Detail View - Multi-Chunk Playback
+
 **Goal**: Update RecordingDetailView to handle sessions with multiple chunks
 
 **Tasks**:
+
 - Modify detail view to accept sessionId instead of single chunk
 - Fetch all chunks for session and display in order
 - Show chunk boundaries in transcript (e.g., "— Chunk 2 —")
@@ -253,9 +259,11 @@ The system includes comprehensive logging:
 ---
 
 ### Step 4: Parallel Transcription with TaskGroup
+
 **Goal**: Transcribe multiple chunks simultaneously (max 3 concurrent)
 
 **Tasks**:
+
 - Add `transcribeBatch()` method using TaskGroup
 - Track active transcription count (max 3 concurrent)
 - Queue additional chunks if limit reached
@@ -266,9 +274,11 @@ The system includes comprehensive logging:
 ---
 
 ### Step 5: Session Summary Generation
+
 **Goal**: Generate summary across all chunks in a session
 
 **Tasks**:
+
 - Modify summarization to accept array of transcripts
 - Combine all chunk transcripts before summarization
 - Store summary at session level (not chunk level)
@@ -279,9 +289,11 @@ The system includes comprehensive logging:
 ---
 
 ### Step 6: Export Complete Session Transcripts
+
 **Goal**: Export full session transcript as text file
 
 **Tasks**:
+
 - Add export button in RecordingDetailView
 - Combine all chunk transcripts in order
 - Format with timestamps and chunk markers
@@ -293,9 +305,11 @@ The system includes comprehensive logging:
 ---
 
 ### Step 7: Polish & Edge Cases
+
 **Goal**: Handle edge cases and improve UX
 
 **Tasks**:
+
 - Handle single-chunk sessions gracefully (no chunk markers)
 - Add loading states during multi-chunk operations
 - Improve error handling for missing chunks

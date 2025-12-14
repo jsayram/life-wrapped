@@ -627,6 +627,14 @@ struct SettingsTab: View {
                         }
                     }
                     .padding(.vertical, 4)
+                    
+                    Button {
+                        Task {
+                            await coordinator.testSessionQueries()
+                        }
+                    } label: {
+                        Label("Test Session Queries", systemImage: "testtube.2")
+                    }
                 }
                 
                 Section("About") {

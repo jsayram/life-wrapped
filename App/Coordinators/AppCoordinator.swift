@@ -733,6 +733,44 @@ public final class AppCoordinator: ObservableObject {
         await updateRollupsAndStats()
         await updateWidgetData()
     }
+    
+    // MARK: - Session Query Testing (Step 1)
+    
+    /// Test session queries - prints all sessions and their chunks
+    public func testSessionQueries() async {
+        guard let dbManager = databaseManager else {
+            print("❌ [SessionTest] No database manager")
+            return
+        }
+        
+        print("🧪 [SessionTest] ========== Testing Session Queries ==========")
+        
+        do {
+            // Fetch all sessions
+            let sessions = try await dbManager.fetchSessions(limit: 10)
+            print("📋 [SessionTest] Found \(sessions.count) sessions:")
+            
+            for (index, session) in sessions.enumerated() {
+                print("\n🎯 [SessionTest] Session \(index + 1):")
+                print("   Session ID: \(session.sessionId)")
+                print("   First Chunk: \(session.firstChunkTime)")
+                print("   Chunk Count: \(session.chunkCount)")
+                
+                // Fetch all chunks for this session
+                let chunks = try await dbManager.fetchChunksBySession(sessionId: session.sessionId)
+                print("   📦 Chunks in order:")
+                for chunk in chunks {
+                    let duration = chunk.endTime.timeIntervalSince(chunk.startTime)
+                    print("      • Chunk \(chunk.chunkIndex): \(String(format: "%.1f", duration))s (\(chunk.id))")
+                }
+            }
+            
+            print("\n✅ [SessionTest] ========== Test Complete ==========\n")
+            
+        } catch {
+            print("❌ [SessionTest] Error: \(error)")
+        }
+    }
 }
 
 // MARK: - Preview Support
