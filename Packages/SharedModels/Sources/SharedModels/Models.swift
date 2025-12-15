@@ -120,6 +120,7 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
     public let confidence: Float
     public let languageCode: String
     public let createdAt: Date
+    public let wordCount: Int  // Cached word count
 
     // Future fields (placeholders)
     public let speakerLabel: String?
@@ -135,7 +136,8 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
         languageCode: String = "en-US",
         createdAt: Date = Date(),
         speakerLabel: String? = nil,
-        entitiesJSON: String? = nil
+        entitiesJSON: String? = nil,
+        wordCount: Int? = nil
     ) {
         self.id = id
         self.audioChunkID = audioChunkID
@@ -147,16 +149,13 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
         self.createdAt = createdAt
         self.speakerLabel = speakerLabel
         self.entitiesJSON = entitiesJSON
+        // Calculate word count if not provided
+        self.wordCount = wordCount ?? text.split(separator: " ").count
     }
 
     /// Duration of this segment in seconds
     public var duration: TimeInterval {
         endTime - startTime
-    }
-
-    /// Word count (simple whitespace split)
-    public var wordCount: Int {
-        text.split(separator: " ").count
     }
 }
 

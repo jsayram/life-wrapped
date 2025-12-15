@@ -128,9 +128,15 @@ public final class AppCoordinator: ObservableObject {
     
     // MARK: - Transcription Queue
     
-    private var pendingTranscriptions: [AudioChunk] = []
+    private var pendingTranscriptionIds: [UUID] = []  // Chunk IDs awaiting transcription
     private var activeTranscriptionCount: Int = 0
     private let maxConcurrentTranscriptions: Int = 3
+    
+    // MARK: - Transcription Status Tracking
+    
+    @Published public private(set) var transcribingChunkIds: Set<UUID> = []  // Currently transcribing
+    @Published public private(set) var transcribedChunkIds: Set<UUID> = []   // Successfully completed
+    @Published public private(set) var failedChunkIds: Set<UUID> = []         // Failed transcription
     
     // MARK: - Initialization
     
@@ -164,9 +170,11 @@ public final class AppCoordinator: ObservableObject {
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
             
-            // Add to transcription queue for parallel processing
+            // Add to transcription queue for parallel processing (using ID only)
             print("📝 [AppCoordinator] Adding chunk \(chunk.chunkIndex) to transcription queue")
-            pendingTranscriptions.append(chunk)
+            await MainActor.run {
+                pendingTranscriptionIds.append(chunk.id)
+            }
             
             // Start batch transcription if not already running
             Task {
@@ -530,11 +538,22 @@ public final class AppCoordinator: ObservableObject {
         guard let dbManager = databaseManager else { return }
         
         // Process chunks while we have pending transcriptions and capacity
-        while !pendingTranscriptions.isEmpty && activeTranscriptionCount < maxConcurrentTranscriptions {
-            guard let chunk = pendingTranscriptions.first else { break }
-            pendingTranscriptions.removeFirst()
+        while !pendingTranscriptionIds.isEmpty && activeTranscriptionCount < maxConcurrentTranscriptions {
+            guard let chunkId = pendingTranscriptionIds.first else { break }
+            await MainActor.run {
+                _ = pendingTranscriptionIds.removeFirst()
+            }
+            
+            // Fetch chunk from database
+            guard let chunk = try? await dbManager.fetchAudioChunk(id: chunkId) else {
+                print("❌ [AppCoordinator] Could not fetch chunk \(chunkId) from database")
+                continue
+            }
             
             activeTranscriptionCount += 1
+            await MainActor.run {
+                _ = transcribingChunkIds.insert(chunkId)
+            }
             print("🔄 [AppCoordinator] Starting transcription \(activeTranscriptionCount)/\(maxConcurrentTranscriptions) for chunk \(chunk.chunkIndex)")
             
             // Start transcription in parallel
@@ -551,12 +570,22 @@ public final class AppCoordinator: ObservableObject {
                     }
                     print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) segments saved")
                     
+                    // Update status tracking
+                    await MainActor.run {
+                        self.transcribingChunkIds.remove(chunkId)
+                        self.transcribedChunkIds.insert(chunkId)
+                    }
+                    
                     // Update rollups incrementally
                     print("📊 [AppCoordinator] Updating rollups after chunk \(chunk.chunkIndex)...")
                     await self.updateRollupsAndStats()
                     
                 } catch {
                     print("❌ [AppCoordinator] Failed to transcribe chunk \(chunk.chunkIndex): \(error)")
+                    await MainActor.run {
+                        self.transcribingChunkIds.remove(chunkId)
+                        self.failedChunkIds.insert(chunkId)
+                    }
                 }
                 
                 // Decrement counter and process next in queue
@@ -575,10 +604,10 @@ public final class AppCoordinator: ObservableObject {
             }
         }
         
-        if pendingTranscriptions.isEmpty && activeTranscriptionCount == 0 {
+        if pendingTranscriptionIds.isEmpty && activeTranscriptionCount == 0 {
             print("✅ [AppCoordinator] All transcriptions complete")
-        } else if !pendingTranscriptions.isEmpty {
-            print("⏳ [AppCoordinator] \(pendingTranscriptions.count) chunks queued, \(activeTranscriptionCount) active transcriptions")
+        } else if !pendingTranscriptionIds.isEmpty {
+            print("⏳ [AppCoordinator] \(pendingTranscriptionIds.count) chunks queued, \(activeTranscriptionCount) active transcriptions")
         }
     }
     

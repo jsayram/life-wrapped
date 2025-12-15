@@ -204,6 +204,7 @@ public actor DatabaseManager {
                 created_at REAL NOT NULL,
                 speaker_label TEXT,
                 entities_json TEXT,
+                word_count INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (audio_chunk_id) REFERENCES audio_chunks(id) ON DELETE CASCADE
             )
             """)
@@ -552,8 +553,8 @@ public actor DatabaseManager {
         
         let sql = """
             INSERT INTO transcript_segments 
-            (id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json, word_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         
         var stmt: OpaquePointer?
@@ -584,6 +585,8 @@ public actor DatabaseManager {
             sqlite3_bind_null(stmt, 10)
         }
         
+        sqlite3_bind_int(stmt, 11, Int32(segment.wordCount))
+        
         guard sqlite3_step(stmt) == SQLITE_DONE else {
             throw StorageError.stepFailed(lastError())
         }
@@ -593,7 +596,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json
+            SELECT id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json, word_count
             FROM transcript_segments
             WHERE id = ?
             """
@@ -618,7 +621,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json
+            SELECT id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json, word_count
             FROM transcript_segments
             WHERE audio_chunk_id = ?
             ORDER BY start_time ASC
@@ -718,6 +721,33 @@ public actor DatabaseManager {
         return segments
     }
     
+    /// Efficiently get total word count for a session
+    public func fetchSessionWordCount(sessionId: UUID) throws -> Int {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT SUM(ts.word_count) 
+            FROM transcript_segments ts
+            INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+            WHERE ac.session_id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return Int(sqlite3_column_int(stmt, 0))
+        }
+        
+        return 0
+    }
+    
     private func parseTranscriptSegment(from stmt: OpaquePointer?) throws -> TranscriptSegment {
         guard let idString = sqlite3_column_text(stmt, 0),
               let audioChunkIDString = sqlite3_column_text(stmt, 1),
@@ -752,6 +782,8 @@ public actor DatabaseManager {
             entitiesJSON = nil
         }
         
+        let wordCount = Int(sqlite3_column_int(stmt, 10))
+        
         return TranscriptSegment(
             id: id,
             audioChunkID: audioChunkID,
@@ -762,7 +794,8 @@ public actor DatabaseManager {
             languageCode: languageCode,
             createdAt: createdAt,
             speakerLabel: speakerLabel,
-            entitiesJSON: entitiesJSON
+            entitiesJSON: entitiesJSON,
+            wordCount: wordCount
         )
     }
     

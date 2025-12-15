@@ -453,8 +453,21 @@ struct HistoryTab: View {
             sessions = try await coordinator.fetchRecentSessions(limit: 50)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
             
-            // Note: Skipping word count loading for now as it's expensive
-            // Word counts will be calculated only in detail view when needed
+            // Load word counts in parallel for all sessions
+            guard let dbManager = coordinator.getDatabaseManager() else { return }
+            await withTaskGroup(of: (UUID, Int).self) { group in
+                for session in sessions {
+                    group.addTask {
+                        let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
+                        return (session.sessionId, count)
+                    }
+                }
+                
+                for await (sessionId, wordCount) in group {
+                    sessionWordCounts[sessionId] = wordCount
+                }
+            }
+            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions")
         } catch {
             print("❌ [HistoryTab] Failed to load sessions: \(error)")
         }
@@ -1243,17 +1256,43 @@ struct SessionDetailView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             ForEach(groupedByChunk, id: \.chunkIndex) { group in
                                 let isCurrentChunk = isPlayingThisSession && currentChunkIndex == group.chunkIndex
+                                let chunkId = session.chunks[safe: group.chunkIndex]?.id
                                 
                                 VStack(alignment: .leading, spacing: 8) {
                                     if session.chunkCount > 1 {
-                                        // Show chunk marker for multi-chunk sessions
-                                        HStack {
+                                        // Show chunk marker for multi-chunk sessions with status indicator
+                                        HStack(spacing: 8) {
                                             Divider()
                                                 .frame(width: 40)
-                                            Text("Part \(group.chunkIndex + 1)")
-                                                .font(.caption)
-                                                .foregroundStyle(isCurrentChunk ? .blue : .secondary)
-                                                .fontWeight(isCurrentChunk ? .semibold : .regular)
+                                            
+                                            HStack(spacing: 6) {
+                                                Text("Part \(group.chunkIndex + 1)")
+                                                    .font(.caption)
+                                                    .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                                                    .fontWeight(isCurrentChunk ? .semibold : .regular)
+                                                
+                                                // Transcription status badge
+                                                if let chunkId = chunkId {
+                                                    if coordinator.transcribingChunkIds.contains(chunkId) {
+                                                        HStack(spacing: 4) {
+                                                            ProgressView()
+                                                                .scaleEffect(0.6)
+                                                            Text("Transcribing...")
+                                                                .font(.caption2)
+                                                                .foregroundStyle(.blue)
+                                                        }
+                                                    } else if coordinator.transcribedChunkIds.contains(chunkId) {
+                                                        Image(systemName: "checkmark.circle.fill")
+                                                            .font(.caption)
+                                                            .foregroundColor(.green)
+                                                    } else if coordinator.failedChunkIds.contains(chunkId) {
+                                                        Image(systemName: "exclamationmark.triangle.fill")
+                                                            .font(.caption)
+                                                            .foregroundColor(.orange)
+                                                    }
+                                                }
+                                            }
+                                            
                                             Divider()
                                         }
                                     }
@@ -1333,21 +1372,35 @@ struct SessionDetailView: View {
     }
     
     private func checkTranscriptionStatus() {
-        Task {
-            do {
-                let isComplete = try await coordinator.isSessionTranscriptionComplete(sessionId: session.sessionId)
-                isTranscriptionComplete = isComplete
-                
-                // If complete, stop checking
-                if isComplete {
-                    stopTranscriptionCheckTimer()
-                    // Reload transcription to get the latest segments
-                    await loadTranscription()
-                    // Load session summary
-                    await loadSessionSummary()
-                }
-            } catch {
-                print("❌ [SessionDetailView] Failed to check transcription status: \(error)")
+        // Check using real-time status tracking from coordinator
+        let chunkIds = Set(session.chunks.map { $0.id })
+        
+        // Check if any chunks are actively being transcribed right now
+        let hasTranscribing = !chunkIds.isDisjoint(with: coordinator.transcribingChunkIds)
+        
+        // For chunks not actively transcribing, check if they have transcript segments
+        // This handles both new transcriptions and previously completed ones
+        let chunksWithTranscripts = Set(transcriptSegments.map { $0.audioChunkID })
+        
+        // A session is complete if:
+        // 1. No chunks are currently being transcribed AND
+        // 2. All chunks either have transcripts OR are marked as failed
+        let allChunksAccountedFor = chunkIds.allSatisfy { chunkId in
+            chunksWithTranscripts.contains(chunkId) || 
+            coordinator.failedChunkIds.contains(chunkId)
+        }
+        
+        let wasComplete = isTranscriptionComplete
+        isTranscriptionComplete = !hasTranscribing && allChunksAccountedFor
+        
+        // If just completed, reload data and stop checking
+        if !wasComplete && isTranscriptionComplete {
+            Task {
+                stopTranscriptionCheckTimer()
+                // Reload transcription to get the latest segments
+                await loadTranscription()
+                // Load session summary
+                await loadSessionSummary()
             }
         }
     }
@@ -1518,6 +1571,14 @@ struct SessionDetailView: View {
         } else {
             return "\(seconds)s"
         }
+    }
+}
+
+// MARK: - Array Extension
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }
 
