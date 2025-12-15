@@ -227,13 +227,45 @@ public actor TranscriptionManager {
                 }
             }
             
-            // Only return when timeout is reached (entire audio file processed)
+            // Set up timeout as safety net, but allow early completion
             Task { @MainActor in
-                let timeoutDuration = max(duration + 5.0, 10.0) // At least 10 seconds
-                try? await Task.sleep(for: .seconds(timeoutDuration))
+                // Use shorter timeout - just 3 seconds past audio duration or 5 seconds minimum
+                let timeoutDuration = max(duration + 3.0, 5.0)
+                
+                // Check every 0.5 seconds if we have stable transcription
+                let checkInterval = 0.5
+                var lastWordCount = 0
+                var stableCount = 0
+                let stableThreshold = 3 // 1.5 seconds of no changes
+                
+                for _ in 0..<Int(timeoutDuration / checkInterval) {
+                    try? await Task.sleep(for: .seconds(checkInterval))
+                    guard !state.hasResumed else { return }
+                    
+                    let currentWordCount = state.fullText.split(separator: " ").count
+                    
+                    // If word count hasn't changed and we have content, increment stable counter
+                    if currentWordCount > 0 && currentWordCount == lastWordCount {
+                        stableCount += 1
+                        
+                        // If stable for threshold checks and we have at least one final result, we're done
+                        if stableCount >= stableThreshold && state.finalCount > 0 {
+                            let finalText = state.fullText
+                            print("✅ [TranscriptionManager] Early completion - stable at \(currentWordCount) words, \(state.finalCount) utterances")
+                            state.hasResumed = true
+                            continuation.resume(returning: finalText)
+                            return
+                        }
+                    } else {
+                        stableCount = 0
+                        lastWordCount = currentWordCount
+                    }
+                }
+                
+                // Timeout reached - use what we have
                 guard !state.hasResumed else { return }
                 let finalText = state.fullText
-                print("✅ [TranscriptionManager] Processing complete - \(state.finalCount) utterances, \(finalText.split(separator: " ").count) total words")
+                print("⏱️ [TranscriptionManager] Timeout reached - \(state.finalCount) utterances, \(finalText.split(separator: " ").count) total words")
                 state.hasResumed = true
                 continuation.resume(returning: finalText)
             }
