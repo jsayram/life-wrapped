@@ -419,6 +419,25 @@ public final class AppCoordinator: ObservableObject {
         return sessions
     }
     
+    /// Fetch specific sessions by IDs
+    public func fetchSessions(ids: [UUID]) async throws -> [RecordingSession] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Fetch chunks for each session and build RecordingSession objects
+        var sessions: [RecordingSession] = []
+        for sessionId in ids {
+            let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
+            if !chunks.isEmpty {
+                let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+                sessions.append(session)
+            }
+        }
+        
+        return sessions
+    }
+    
     // MARK: - Recording
     
     /// Start a new recording session

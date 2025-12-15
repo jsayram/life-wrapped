@@ -642,40 +642,54 @@ struct InsightsTab: View {
                         Section("Key Statistics") {
                             // Longest session
                             if let longest = longestSession {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Longest Session")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    HStack {
-                                        Text(formatDuration(longest.duration))
-                                            .font(.title3)
-                                            .fontWeight(.semibold)
-                                        Spacer()
-                                        Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                NavigationLink {
+                                    FilteredSessionsView(
+                                        title: "Longest Session",
+                                        sessionIds: [longest.sessionId]
+                                    )
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Longest Session")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
+                                        HStack {
+                                            Text(formatDuration(longest.duration))
+                                                .font(.title3)
+                                                .fontWeight(.semibold)
+                                            Spacer()
+                                            Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
+                                    .padding(.vertical, 4)
                                 }
-                                .padding(.vertical, 4)
                             }
                             
                             // Most active month
                             if let mostActive = mostActiveMonth {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Most Active Month")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    HStack {
-                                        Text(formatMonth(year: mostActive.year, month: mostActive.month))
-                                            .font(.title3)
-                                            .fontWeight(.semibold)
-                                        Spacer()
-                                        Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                NavigationLink {
+                                    FilteredSessionsView(
+                                        title: formatMonth(year: mostActive.year, month: mostActive.month),
+                                        sessionIds: mostActive.sessionIds
+                                    )
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Most Active Month")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
+                                        HStack {
+                                            Text(formatMonth(year: mostActive.year, month: mostActive.month))
+                                                .font(.title3)
+                                                .fontWeight(.semibold)
+                                            Spacer()
+                                            Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
+                                    .padding(.vertical, 4)
                                 }
-                                .padding(.vertical, 4)
                             }
                         }
                         
@@ -683,13 +697,20 @@ struct InsightsTab: View {
                         if !sessionsByHour.isEmpty {
                             Section("Sessions by Time of Day") {
                                 ForEach(sessionsByHour, id: \.hour) { data in
-                                    HStack {
-                                        Text(formatHour(data.hour))
-                                            .font(.subheadline)
-                                        Spacer()
-                                        Text("\(data.count) session\(data.count == 1 ? "" : "s")")
-                                            .foregroundStyle(.secondary)
-                                            .font(.caption)
+                                    NavigationLink {
+                                        FilteredSessionsView(
+                                            title: formatHour(data.hour),
+                                            sessionIds: data.sessionIds
+                                        )
+                                    } label: {
+                                        HStack {
+                                            Text(formatHour(data.hour))
+                                                .font(.subheadline)
+                                            Spacer()
+                                            Text("\(data.count) session\(data.count == 1 ? "" : "s")")
+                                                .foregroundStyle(.secondary)
+                                                .font(.caption)
+                                        }
                                     }
                                 }
                             }
@@ -748,6 +769,111 @@ struct InsightsTab: View {
         let calendar = Calendar.current
         let date = calendar.date(from: DateComponents(year: year, month: month)) ?? Date()
         return formatter.string(from: date)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        } else {
+            return "\(seconds)s"
+        }
+    }
+}
+
+// MARK: - FilteredSessionsView
+
+struct FilteredSessionsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    let title: String
+    let sessionIds: [UUID]
+    
+    @State private var sessions: [RecordingSession] = []
+    @State private var sessionWordCounts: [UUID: Int] = [:]
+    @State private var isLoading = true
+    
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading sessions...")
+            } else if sessions.isEmpty {
+                ContentUnavailableView(
+                    "No Sessions",
+                    systemImage: "waveform",
+                    description: Text("No sessions found for this filter.")
+                )
+            } else {
+                List {
+                    ForEach(sessions, id: \.sessionId) { session in
+                        NavigationLink {
+                            SessionDetailView(session: session)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text(session.startTime.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.headline)
+                                    Spacer()
+                                    if let wordCount = sessionWordCounts[session.sessionId] {
+                                        Text("\(wordCount) words")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                HStack {
+                                    Text("\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("•")
+                                        .foregroundStyle(.secondary)
+                                    Text(formatDuration(session.totalDuration))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .task {
+            await loadSessions()
+        }
+    }
+    
+    private func loadSessions() async {
+        isLoading = true
+        
+        do {
+            // Load sessions for these IDs
+            sessions = try await coordinator.fetchSessions(ids: sessionIds)
+            
+            // Load word counts in parallel
+            guard let dbManager = coordinator.getDatabaseManager() else { return }
+            await withTaskGroup(of: (UUID, Int).self) { group in
+                for session in sessions {
+                    group.addTask {
+                        let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
+                        return (session.sessionId, count)
+                    }
+                }
+                
+                for await (sessionId, wordCount) in group {
+                    sessionWordCounts[sessionId] = wordCount
+                }
+            }
+            
+            // Sort by start time descending
+            sessions.sort { $0.startTime > $1.startTime }
+            
+        } catch {
+            print("❌ [FilteredSessionsView] Failed to load sessions: \(error)")
+        }
+        
+        isLoading = false
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
