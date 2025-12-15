@@ -1007,6 +1007,15 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchMostActiveMonth()
     }
     
+    /// Fetch sessions grouped by day of week
+    public func fetchSessionsByDayOfWeek() async throws -> [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSessionsByDayOfWeek()
+    }
+    
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
         guard let dbManager = databaseManager else {

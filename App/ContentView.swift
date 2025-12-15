@@ -4,6 +4,7 @@
 
 import SwiftUI
 import SharedModels
+import Charts
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -621,6 +622,7 @@ struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var summaries: [Summary] = []
     @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
+    @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
     @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
     @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
     @State private var isLoading = true
@@ -648,18 +650,27 @@ struct InsightsTab: View {
                                         sessionIds: [longest.sessionId]
                                     )
                                 } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Longest Session")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        HStack {
-                                            Text(formatDuration(longest.duration))
-                                                .font(.title3)
-                                                .fontWeight(.semibold)
-                                            Spacer()
-                                            Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "timer")
+                                            .font(.title2)
+                                            .foregroundStyle(.orange.gradient)
+                                            .frame(width: 40, height: 40)
+                                            .background(.orange.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Longest Session")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
+                                            HStack {
+                                                Text(formatDuration(longest.duration))
+                                                    .font(.title3)
+                                                    .fontWeight(.semibold)
+                                                Spacer()
+                                                Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
                                         }
                                     }
                                     .padding(.vertical, 4)
@@ -674,18 +685,27 @@ struct InsightsTab: View {
                                         sessionIds: mostActive.sessionIds
                                     )
                                 } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Most Active Month")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        HStack {
-                                            Text(formatMonth(year: mostActive.year, month: mostActive.month))
-                                                .font(.title3)
-                                                .fontWeight(.semibold)
-                                            Spacer()
-                                            Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "calendar.badge.plus")
+                                            .font(.title2)
+                                            .foregroundStyle(.purple.gradient)
+                                            .frame(width: 40, height: 40)
+                                            .background(.purple.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Most Active Month")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
+                                            HStack {
+                                                Text(formatMonth(year: mostActive.year, month: mostActive.month))
+                                                    .font(.title3)
+                                                    .fontWeight(.semibold)
+                                                Spacer()
+                                                Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
                                         }
                                     }
                                     .padding(.vertical, 4)
@@ -693,26 +713,123 @@ struct InsightsTab: View {
                             }
                         }
                         
-                        // Sessions by Hour section
+                        // Sessions by Hour section with chart
                         if !sessionsByHour.isEmpty {
-                            Section("Sessions by Time of Day") {
-                                ForEach(sessionsByHour, id: \.hour) { data in
-                                    NavigationLink {
-                                        FilteredSessionsView(
-                                            title: formatHour(data.hour),
-                                            sessionIds: data.sessionIds
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Sessions by Time of Day")
+                                        .font(.headline)
+                                        .padding(.bottom, 4)
+                                    
+                                    // Bar chart
+                                    Chart(sessionsByHour, id: \.hour) { data in
+                                        BarMark(
+                                            x: .value("Hour", data.hour),
+                                            y: .value("Sessions", data.count)
                                         )
-                                    } label: {
-                                        HStack {
-                                            Text(formatHour(data.hour))
-                                                .font(.subheadline)
-                                            Spacer()
-                                            Text("\(data.count) session\(data.count == 1 ? "" : "s")")
-                                                .foregroundStyle(.secondary)
-                                                .font(.caption)
+                                        .foregroundStyle(.blue.gradient)
+                                    }
+                                    .chartXAxis {
+                                        AxisMarks(values: [0, 6, 12, 18, 23]) { value in
+                                            if let hour = value.as(Int.self) {
+                                                AxisValueLabel {
+                                                    Text(formatHourShort(hour))
+                                                        .font(.caption2)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .chartYAxis {
+                                        AxisMarks { value in
+                                            AxisGridLine()
+                                            AxisValueLabel()
+                                        }
+                                    }
+                                    .frame(height: 200)
+                                    
+                                    // Tappable list below chart
+                                    ForEach(sessionsByHour.sorted(by: { $0.count > $1.count }).prefix(5), id: \.hour) { data in
+                                        NavigationLink {
+                                            FilteredSessionsView(
+                                                title: formatHour(data.hour),
+                                                sessionIds: data.sessionIds
+                                            )
+                                        } label: {
+                                            HStack {
+                                                Circle()
+                                                    .fill(.blue.gradient)
+                                                    .frame(width: 8, height: 8)
+                                                Text(formatHour(data.hour))
+                                                    .font(.subheadline)
+                                                Spacer()
+                                                Text("\(data.count) session\(data.count == 1 ? "" : "s")")
+                                                    .foregroundStyle(.secondary)
+                                                    .font(.caption)
+                                            }
                                         }
                                     }
                                 }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                        
+                        // Sessions by Day of Week section with chart
+                        if !sessionsByDayOfWeek.isEmpty {
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Sessions by Day of Week")
+                                        .font(.headline)
+                                        .padding(.bottom, 4)
+                                    
+                                    // Bar chart
+                                    Chart(sessionsByDayOfWeek, id: \.dayOfWeek) { data in
+                                        BarMark(
+                                            x: .value("Day", formatDayOfWeek(data.dayOfWeek)),
+                                            y: .value("Sessions", data.count)
+                                        )
+                                        .foregroundStyle(.green.gradient)
+                                    }
+                                    .chartXAxis {
+                                        AxisMarks { value in
+                                            AxisValueLabel {
+                                                if let day = value.as(String.self) {
+                                                    Text(day)
+                                                        .font(.caption2)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .chartYAxis {
+                                        AxisMarks { value in
+                                            AxisGridLine()
+                                            AxisValueLabel()
+                                        }
+                                    }
+                                    .frame(height: 180)
+                                    
+                                    // Tappable list below chart
+                                    ForEach(sessionsByDayOfWeek.sorted(by: { $0.count > $1.count }), id: \.dayOfWeek) { data in
+                                        NavigationLink {
+                                            FilteredSessionsView(
+                                                title: formatDayOfWeekFull(data.dayOfWeek),
+                                                sessionIds: data.sessionIds
+                                            )
+                                        } label: {
+                                            HStack {
+                                                Circle()
+                                                    .fill(.green.gradient)
+                                                    .frame(width: 8, height: 8)
+                                                Text(formatDayOfWeekFull(data.dayOfWeek))
+                                                    .font(.subheadline)
+                                                Spacer()
+                                                Text("\(data.count) session\(data.count == 1 ? "" : "s")")
+                                                    .foregroundStyle(.secondary)
+                                                    .font(.caption)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 8)
                             }
                         }
                         
@@ -747,6 +864,9 @@ struct InsightsTab: View {
             // Load sessions by hour
             sessionsByHour = try await coordinator.fetchSessionsByHour()
             
+            // Load sessions by day of week
+            sessionsByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
+            
             // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
         } catch {
@@ -761,6 +881,28 @@ struct InsightsTab: View {
         let calendar = Calendar.current
         let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
         return formatter.string(from: date)
+    }
+    
+    private func formatHourShort(_ hour: Int) -> String {
+        if hour == 0 {
+            return "12 AM"
+        } else if hour < 12 {
+            return "\(hour) AM"
+        } else if hour == 12 {
+            return "12 PM"
+        } else {
+            return "\(hour - 12) PM"
+        }
+    }
+    
+    private func formatDayOfWeek(_ dayOfWeek: Int) -> String {
+        let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return days[dayOfWeek]
+    }
+    
+    private func formatDayOfWeekFull(_ dayOfWeek: Int) -> String {
+        let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        return days[dayOfWeek]
     }
     
     private func formatMonth(year: Int, month: Int) -> String {

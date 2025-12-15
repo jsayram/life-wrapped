@@ -625,6 +625,45 @@ public actor DatabaseManager {
             .max { $0.count < $1.count }
     }
     
+    /// Fetch session counts grouped by day of week (0 = Sunday, 6 = Saturday)
+    public func fetchSessionsByDayOfWeek() throws -> [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        // SQLite strftime('%w') returns day of week: 0 = Sunday, 6 = Saturday
+        let sql = """
+            SELECT 
+                CAST(strftime('%w', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as day_of_week,
+                session_id
+            FROM audio_chunks
+            WHERE chunk_index = 0
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        // Group by day of week
+        var dayGroups: [Int: [UUID]] = [:]
+        
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let dayOfWeek = Int(sqlite3_column_int(stmt, 0))
+            guard let sessionIdString = sqlite3_column_text(stmt, 1),
+                  let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+                continue
+            }
+            
+            dayGroups[dayOfWeek, default: []].append(sessionId)
+        }
+        
+        // Convert to array and sort by day (0-6)
+        return dayGroups
+            .map { (dayOfWeek: $0.key, count: $0.value.count, sessionIds: $0.value) }
+            .sorted { $0.dayOfWeek < $1.dayOfWeek }
+    }
+    
     /// Delete an entire session (all chunks)
     public func deleteSession(sessionId: UUID) throws {
         guard let db = db else { throw StorageError.notOpen }
