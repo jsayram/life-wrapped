@@ -620,11 +620,20 @@ struct RecordingRow: View {
 
 enum TimeRange: String, CaseIterable, Identifiable {
     case today = "Today"
-    case week = "This Week"
-    case month = "This Month"
-    case allTime = "All Time"
+    case week = "Week"
+    case month = "Month"
+    case allTime = "All"
     
     var id: String { rawValue }
+    
+    var fullName: String {
+        switch self {
+        case .today: return "Today"
+        case .week: return "This Week"
+        case .month: return "This Month"
+        case .allTime: return "All Time"
+        }
+    }
 }
 
 struct InsightsTab: View {
