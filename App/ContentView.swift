@@ -1074,6 +1074,7 @@ struct SessionDetailView: View {
     @State private var isTranscriptionComplete = false
     @State private var transcriptionCheckTimer: Timer?
     @State private var sessionSummary: Summary?
+    @State private var scrubbedTime: TimeInterval = 0
     
     var body: some View {
         ScrollView {
@@ -1176,17 +1177,24 @@ struct SessionDetailView: View {
                         // Slider for scrubbing across entire session
                         Slider(
                             value: Binding(
-                                get: { totalElapsedTime },
-                                set: { seekToTotalTime($0) }
+                                get: { 
+                                    isPlayingThisSession ? totalElapsedTime : scrubbedTime 
+                                },
+                                set: { newValue in
+                                    if isPlayingThisSession {
+                                        seekToTotalTime(newValue)
+                                    } else {
+                                        scrubbedTime = newValue
+                                    }
+                                }
                             ),
                             in: 0...session.totalDuration
                         )
                         .tint(.blue)
-                        .disabled(!isPlayingThisSession)
                         
                         // Time display
                         HStack {
-                            Text(formatTime(totalElapsedTime))
+                            Text(formatTime(isPlayingThisSession ? totalElapsedTime : scrubbedTime))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
@@ -1625,8 +1633,21 @@ struct SessionDetailView: View {
             // Start sequential playback of all chunks
             let chunkURLs = session.chunks.map { $0.fileURL }
             print("🎵 [SessionDetailView] Starting playback of \(chunkURLs.count) chunks")
-            coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                print("✅ [SessionDetailView] Session playback completed")
+            
+            // If user has scrubbed before playing, seek to that position
+            if scrubbedTime > 0 {
+                coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                    print("✅ [SessionDetailView] Session playback completed")
+                }
+                // Seek to scrubbed position after playback starts
+                Task {
+                    try? await Task.sleep(for: .milliseconds(50))
+                    seekToTotalTime(scrubbedTime)
+                }
+            } else {
+                coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                    print("✅ [SessionDetailView] Session playback completed")
+                }
             }
         }
     }
