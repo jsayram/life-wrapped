@@ -149,19 +149,33 @@ public actor DatabaseManager {
     
     private func runMigrations(from: Int, to: Int) throws {
         for version in (from + 1)...to {
-            logger.info("Applying migration v\(version)")
+            logger.info("🔄 [DatabaseManager] Starting migration v\(version)")
             
-            switch version {
-            case 1:
-                try applyMigrationV1()
-            case 2:
-                try applyMigrationV2()
-            default:
-                throw StorageError.unknownMigrationVersion(version)
+            // Begin transaction for atomic migration
+            try execute("BEGIN TRANSACTION")
+            logger.info("📝 [DatabaseManager] Transaction started for v\(version)")
+            
+            do {
+                switch version {
+                case 1:
+                    try applyMigrationV1()
+                case 2:
+                    try applyMigrationV2()
+                default:
+                    throw StorageError.unknownMigrationVersion(version)
+                }
+                
+                try setUserVersion(version)
+                
+                // Commit transaction
+                try execute("COMMIT")
+                logger.info("✅ [DatabaseManager] Migration v\(version) completed and committed")
+            } catch {
+                // Rollback on any error
+                try? execute("ROLLBACK")
+                logger.error("❌ [DatabaseManager] Migration v\(version) failed, rolled back: \(error.localizedDescription)")
+                throw error
             }
-            
-            try setUserVersion(version)
-            logger.info("Migration v\(version) completed")
         }
     }
     

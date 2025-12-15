@@ -715,6 +715,7 @@ struct SettingsTab: View {
                         }
                         .onChange(of: chunkDuration) { oldValue, newValue in
                             coordinator.audioCapture.autoChunkDuration = newValue
+                            coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
                         }
                         
                         Text("Recordings are automatically split into chunks of this duration for better processing.")

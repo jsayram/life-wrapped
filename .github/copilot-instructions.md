@@ -81,23 +81,35 @@ xcodebuild -scheme LifeWrapped -destination 'generic/platform=iOS Simulator' bui
 
 ### Database Schema Changes
 
-**Current Schema Version: V1** — No migrations yet, this is the initial schema.
+**Current Schema Version: V1** — Transaction-safe migrations with ROLLBACK on error.
 
 Database schema lives in `Packages/Storage/Sources/Storage/DatabaseManager.swift`:
 
-- **Approach**: Modify tables directly in `initializeDatabase()` method
+- **Approach**: Modify tables directly in `applyMigrationV1()` method
 - Change columns, indexes, or constraints in CREATE TABLE statements
+- Migrations wrapped in BEGIN TRANSACTION / COMMIT with ROLLBACK on error
 - Delete app and reinstall to regenerate database with new schema
-- No migration code needed unless explicitly requested
 
-**Current summaries table schema:**
+**Key Schema Features:**
+
+- `transcript_segments.word_count` — Cached word count for performance
+- `summaries.session_id` — Links summaries to recording sessions
+- Transaction safety prevents partial migrations from corrupting database
+
+**Current transcript_segments table schema:**
 
 ```swift
-private func initializeDatabase() throws {
+private func applyMigrationV1() throws {
     try execute("""
-        CREATE TABLE IF NOT EXISTS summaries (
+        CREATE TABLE IF NOT EXISTS transcript_segments (
             id TEXT PRIMARY KEY,
-            period_type TEXT NOT NULL,
+            audio_chunk_id TEXT NOT NULL,
+            start_time REAL NOT NULL,
+            end_time REAL NOT NULL,
+            text TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            created_at REAL NOT NULL,
+            word_count INTEGER NOT NULL DEFAULT 0,
             period_start REAL NOT NULL,
             period_end REAL NOT NULL,
             text TEXT NOT NULL,
@@ -184,14 +196,26 @@ public final class AppCoordinator: ObservableObject {
 
 ### Parallel Transcription (Max 3 Concurrent)
 
+**Memory-Optimized Queue System** — Uses UUIDs instead of full objects:
+
 ```swift
-private var pendingTranscriptions: [AudioChunk] = []
+private var pendingTranscriptionIds: [UUID] = []
+@Published public private(set) var transcribingChunkIds: Set<UUID> = []
+@Published public private(set) var transcribedChunkIds: Set<UUID> = []
+@Published public private(set) var failedChunkIds: Set<UUID> = []
 private var activeTranscriptionCount: Int = 0
 private let maxConcurrentTranscriptions: Int = 3
 
-// Chunks queue up, process 3 at a time
+// Chunks queue by ID (16 bytes vs 200+ bytes per chunk)
+// Fetch from database only when starting transcription
 private func processTranscriptionQueue() async { /* ... */ }
 ```
+
+**Key Benefits:**
+
+- Memory usage: 100 chunks = 1.6KB (UUIDs) vs 20KB+ (full objects)
+- Real-time UI updates via @Published status sets
+- Retry mechanism via `retryTranscription(chunkId:)`
 
 ### Session Summary Generation
 
@@ -204,11 +228,25 @@ try await generateSessionSummary(sessionId: sessionId)
 
 ### UI State Management
 
-`ContentView.swift` contains all views (1500+ lines):
+`ContentView.swift` contains all views (1600+ lines):
 
 - RecordingTab, HistoryTab (sessions list), SettingsTab, InsightsTab
 - SessionDetailView with playback controls, waveform, transcript highlighting
 - Uses Timers for real-time updates (playback position, transcription status)
+
+**Performance Features:**
+
+- Word count caching in database (SUM() aggregate queries)
+- Parallel loading with `withTaskGroup` for session word counts
+- Status badges show real-time transcription progress per chunk
+- Empty states with ContentUnavailableView for better UX
+
+**Playback Features:**
+
+- Pre-playback scrubbing (can seek before pressing play)
+- Cross-chunk playback progress tracking
+- Waveform visualization with playhead indicator
+- Sequential multi-chunk playback with auto-advance
 
 ## Common Tasks
 

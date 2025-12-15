@@ -211,120 +211,114 @@ The system includes comprehensive logging:
 📊 [AppCoordinator] - Stats and rollup updates
 ```
 
-## Implementation Roadmap
+## V1 Implementation Details
 
-### Step 1: Database Session Queries
+### Database Performance
 
-**Goal**: Add methods to fetch all chunks for a session and list all sessions
+**Word Count Caching**:
 
-**Tasks**:
+- `transcript_segments` table includes `word_count INTEGER NOT NULL DEFAULT 0`
+- Calculated once during segment insertion: `text.split(separator: " ").count`
+- `fetchSessionWordCount()` uses efficient `SUM(word_count)` aggregate query
+- Parallel loading in HistoryTab with `withTaskGroup` for responsive UI
 
-- Add `fetchChunksForSession(sessionId:)` → returns all chunks with same session_id
-- Add `fetchAllSessions()` → returns distinct session_ids with metadata (first chunk timestamp, total chunks, total duration)
-- Test: Print session list and verify chunks group correctly
+**Transaction Safety**:
 
-**Testing**: Record 5+ minute session (2+ chunks), verify database returns all chunks for that session
+- Database migrations wrapped in `BEGIN TRANSACTION` / `COMMIT`
+- Automatic `ROLLBACK` on any error during migration
+- Detailed logging for debugging: `🔄 Starting`, `📝 Transaction started`, `✅ Committed`, `❌ Rolled back`
 
----
+### Transcription Architecture
 
-### Step 2: History UI - Session Grouping
+**Memory-Optimized Queue**:
 
-**Goal**: Display sessions instead of individual chunks in History
+- Queue stores `[UUID]` instead of `[AudioChunk]` objects
+- Memory impact: 100 chunks = 1.6KB (UUIDs) vs 20KB+ (full objects)
+- Chunks fetched from database only when starting transcription
+- Real-time status tracking with `@Published` sets:
+  - `transcribingChunkIds: Set<UUID>` — Currently processing
+  - `transcribedChunkIds: Set<UUID>` — Successfully completed
+  - `failedChunkIds: Set<UUID>` — Errors encountered
 
-**Tasks**:
+**Parallel Processing**:
 
-- Modify HistoryTab to fetch sessions instead of individual chunks
-- Show session card with: total duration, total words, chunk count
-- Display session start time (from first chunk)
-- Group by date sections as before
+- Maximum 3 concurrent transcriptions (`maxConcurrentTranscriptions = 3`)
+- Additional chunks queue until slot available
+- Each transcription runs in background Task
+- UI updates automatically via SwiftUI observation
 
-**Testing**: History should show 1 card per session with aggregated stats
+**Error Recovery**:
 
----
+- `retryTranscription(chunkId:)` method for failed chunks
+- Moves chunk from `failedChunkIds` back to `pendingTranscriptionIds`
+- Triggers `processTranscriptionQueue()` for automatic retry
+- UI shows orange retry button for failed chunks
 
-### Step 3: Detail View - Multi-Chunk Playback
+### User Interface
 
-**Goal**: Update RecordingDetailView to handle sessions with multiple chunks
+**Session Detail View**:
 
-**Tasks**:
+- **Status Badges**: Per-chunk indicators showing transcription state
+  - 🔵 ProgressView + "Transcribing..." for active
+  - ✅ Green checkmark for completed
+  - ⚠️ Orange warning for failed
+- **Empty States**: ContentUnavailableView with context-aware messages
+  - "Transcribing Audio..." when chunks processing
+  - "Transcription Failed" with explanation when errors
+  - "No Transcript" fallback for other cases
+- **Playback Controls**:
+  - Pre-playback scrubbing enabled (seek before pressing play)
+  - Waveform visualization with animated playhead
+  - Cross-chunk progress tracking
+  - Sequential auto-advance through multiple chunks
+- **Retry Mechanism**: Orange button appears for failed chunks
 
-- Modify detail view to accept sessionId instead of single chunk
-- Fetch all chunks for session and display in order
-- Show chunk boundaries in transcript (e.g., "— Chunk 2 —")
-- Update audio player to play chunks sequentially
-- Show combined transcript from all chunks
+**History Tab**:
 
-**Testing**: Tap session in History, should show all chunks and play continuously
+- Session cards with aggregated statistics
+- Word counts loaded in parallel using `withTaskGroup`
+- Date-based grouping for organization
+- Navigation to SessionDetailView on tap
 
----
+**Settings Tab**:
 
-### Step 4: Parallel Transcription with TaskGroup
-
-**Goal**: Transcribe multiple chunks simultaneously (max 3 concurrent)
-
-**Tasks**:
-
-- Add `transcribeBatch()` method using TaskGroup
-- Track active transcription count (max 3 concurrent)
-- Queue additional chunks if limit reached
-- Update progress tracking for batch operations
-
-**Testing**: Record 6+ minute session (3+ chunks), verify chunks transcribe in parallel (check logs for concurrent processing)
-
----
-
-### Step 5: Session Summary Generation
-
-**Goal**: Generate summary across all chunks in a session
-
-**Tasks**:
-
-- Modify summarization to accept array of transcripts
-- Combine all chunk transcripts before summarization
-- Store summary at session level (not chunk level)
-- Display session-wide summary in detail view
-
-**Testing**: Multi-chunk session should have one coherent summary covering all content
-
----
-
-### Step 6: Export Complete Session Transcripts
-
-**Goal**: Export full session transcript as text file
-
-**Tasks**:
-
-- Add export button in RecordingDetailView
-- Combine all chunk transcripts in order
-- Format with timestamps and chunk markers
-- Use UIActivityViewController for sharing
-- Support .txt format with metadata header
-
-**Testing**: Tap export, share transcript via Messages/Files/Email, verify complete content
+- Chunk duration slider (30-300s in 30s increments)
+- Toast feedback on changes: "Chunk duration updated to Xs"
+- Real-time updates to `audioCapture.autoChunkDuration`
 
 ---
 
-### Step 7: Polish & Edge Cases
+## Current Status - V1 Complete
 
-**Goal**: Handle edge cases and improve UX
+✅ **Core Features Implemented**:
 
-**Tasks**:
+- Auto-chunking recording with configurable duration (30-300s)
+- Complete transcription with pause handling
+- Abandoned utterance detection for pauses
+- Session-based architecture with multi-chunk support
 
-- Handle single-chunk sessions gracefully (no chunk markers)
-- Add loading states during multi-chunk operations
-- Improve error handling for missing chunks
-- Add session deletion (deletes all chunks)
-- Update widget to show session count instead of chunk count
+✅ **Performance Optimizations**:
 
-**Testing**: Test with various session lengths, verify smooth UX
+- Word count caching in database (`word_count` column)
+- Memory-optimized transcription queue (UUID-based, ~90% reduction)
+- Parallel word count loading with `withTaskGroup`
+- Efficient SUM() aggregate queries for session statistics
 
----
+✅ **User Experience**:
 
-## Current Status
+- Real-time transcription status badges (🔵 transcribing, ✅ completed, ⚠️ failed)
+- Context-aware empty states with ContentUnavailableView
+- One-tap retry for failed transcriptions
+- Pre-playback scrubbing support
+- Cross-chunk playback with progress tracking
+- Toast notifications for settings changes
 
-✅ **Completed**: Auto-chunking, complete transcription, pause handling, abandoned utterance detection, configurable chunk duration
+✅ **Technical Quality**:
 
-📋 **Ready to Build**: Follow steps 1-7 above, building and testing after each step
+- Transaction-safe database migrations with ROLLBACK
+- Swift 6 strict concurrency compliance
+- Comprehensive error handling and recovery
+- Detailed logging for debugging
 
 ## Code References
 
