@@ -747,26 +747,45 @@ struct InsightsTab: View {
                                     }
                                     .frame(height: 200)
                                     
-                                    // Tappable list below chart
-                                    ForEach(sessionsByHour.sorted(by: { $0.count > $1.count }).prefix(5), id: \.hour) { data in
-                                        NavigationLink {
-                                            FilteredSessionsView(
-                                                title: formatHour(data.hour),
-                                                sessionIds: data.sessionIds
-                                            )
-                                        } label: {
-                                            HStack {
-                                                Circle()
-                                                    .fill(.blue.gradient)
-                                                    .frame(width: 8, height: 8)
-                                                Text(formatHour(data.hour))
-                                                    .font(.subheadline)
-                                                Spacer()
-                                                Text("\(data.count) session\(data.count == 1 ? "" : "s")")
-                                                    .foregroundStyle(.secondary)
-                                                    .font(.caption)
+                                    Divider()
+                                        .padding(.vertical, 4)
+                                    
+                                    Text("Tap an hour to view sessions")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.bottom, 4)
+                                    
+                                    // Scrollable list of all hours
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 12) {
+                                            ForEach(sessionsByHour.sorted(by: { $0.hour < $1.hour }), id: \.hour) { data in
+                                                NavigationLink {
+                                                    FilteredSessionsView(
+                                                        title: formatHour(data.hour),
+                                                        sessionIds: data.sessionIds
+                                                    )
+                                                } label: {
+                                                    VStack(spacing: 4) {
+                                                        Text(formatHourShort(data.hour))
+                                                            .font(.caption)
+                                                            .fontWeight(.semibold)
+                                                            .foregroundStyle(.blue)
+                                                        Text("\(data.count)")
+                                                            .font(.title3)
+                                                            .fontWeight(.bold)
+                                                        Text(data.count == 1 ? "session" : "sessions")
+                                                            .font(.caption2)
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                    .frame(width: 70)
+                                                    .padding(.vertical, 8)
+                                                    .background(.blue.opacity(0.1))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                }
+                                                .buttonStyle(.plain)
                                             }
                                         }
+                                        .padding(.horizontal, 4)
                                     }
                                 }
                                 .padding(.vertical, 8)
@@ -807,26 +826,45 @@ struct InsightsTab: View {
                                     }
                                     .frame(height: 180)
                                     
-                                    // Tappable list below chart
-                                    ForEach(sessionsByDayOfWeek.sorted(by: { $0.count > $1.count }), id: \.dayOfWeek) { data in
-                                        NavigationLink {
-                                            FilteredSessionsView(
-                                                title: formatDayOfWeekFull(data.dayOfWeek),
-                                                sessionIds: data.sessionIds
-                                            )
-                                        } label: {
-                                            HStack {
-                                                Circle()
-                                                    .fill(.green.gradient)
-                                                    .frame(width: 8, height: 8)
-                                                Text(formatDayOfWeekFull(data.dayOfWeek))
-                                                    .font(.subheadline)
-                                                Spacer()
-                                                Text("\(data.count) session\(data.count == 1 ? "" : "s")")
-                                                    .foregroundStyle(.secondary)
-                                                    .font(.caption)
+                                    Divider()
+                                        .padding(.vertical, 4)
+                                    
+                                    Text("Tap a day to view sessions")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.bottom, 4)
+                                    
+                                    // Scrollable list of all days
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 12) {
+                                            ForEach(sessionsByDayOfWeek.sorted(by: { $0.dayOfWeek < $1.dayOfWeek }), id: \.dayOfWeek) { data in
+                                                NavigationLink {
+                                                    FilteredSessionsView(
+                                                        title: formatDayOfWeekFull(data.dayOfWeek),
+                                                        sessionIds: data.sessionIds
+                                                    )
+                                                } label: {
+                                                    VStack(spacing: 4) {
+                                                        Text(formatDayOfWeek(data.dayOfWeek))
+                                                            .font(.caption)
+                                                            .fontWeight(.semibold)
+                                                            .foregroundStyle(.green)
+                                                        Text("\(data.count)")
+                                                            .font(.title3)
+                                                            .fontWeight(.bold)
+                                                        Text(data.count == 1 ? "session" : "sessions")
+                                                            .font(.caption2)
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                    .frame(width: 70)
+                                                    .padding(.vertical, 8)
+                                                    .background(.green.opacity(0.1))
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                }
+                                                .buttonStyle(.plain)
                                             }
                                         }
+                                        .padding(.horizontal, 4)
                                     }
                                 }
                                 .padding(.vertical, 8)
