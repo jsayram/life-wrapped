@@ -1067,6 +1067,12 @@ struct FilteredSessionsView: View {
     }
 }
 
+extension Array where Element: Hashable {
+    var uniqueCount: Int {
+        return Set(self).count
+    }
+}
+
 struct SummaryRow: View {
     let summary: Summary
     
@@ -1497,12 +1503,23 @@ struct SessionDetailView: View {
                             Text("Processing Transcription...")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            Text("Some chunks are still being transcribed")
+                            Text("\(session.chunkCount - transcriptSegments.map({ $0.audioChunkID }).uniqueCount) of \(session.chunkCount) chunks pending")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         
                         Spacer()
+                        
+                        Button {
+                            Task {
+                                await refreshSession()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                                .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.borderless)
                     }
                     .padding()
                     .background(Color.blue.opacity(0.1))
@@ -2008,12 +2025,61 @@ struct SessionDetailView: View {
         do {
             transcriptSegments = try await coordinator.fetchSessionTranscript(sessionId: session.sessionId)
             print("📄 [SessionDetailView] Loaded \(transcriptSegments.count) transcript segments")
+            
+            // Debug: Log which chunks have transcripts
+            let chunksWithTranscripts = Set(transcriptSegments.map { $0.audioChunkID })
+            for chunk in session.chunks {
+                let hasTranscript = chunksWithTranscripts.contains(chunk.id)
+                let isTranscribing = coordinator.transcribingChunkIds.contains(chunk.id)
+                let isFailed = coordinator.failedChunkIds.contains(chunk.id)
+                print("📄 [SessionDetailView] Chunk \(chunk.chunkIndex): hasTranscript=\(hasTranscript), transcribing=\(isTranscribing), failed=\(isFailed)")
+            }
         } catch {
             print("❌ [SessionDetailView] Failed to load transcription: \(error)")
             loadError = error.localizedDescription
         }
         
         isLoading = false
+    }
+    
+    private func refreshSession() async {
+        print("🔄 [SessionDetailView] Manually refreshing session...")
+        
+        // Reload transcription
+        await loadTranscription()
+        
+        // Force transcription status check
+        checkTranscriptionStatus()
+        
+        // Check if any chunks need to be queued for transcription
+        let chunksWithTranscripts = Set(transcriptSegments.map { $0.audioChunkID })
+        
+        print("📊 [SessionDetailView] Chunk analysis:")
+        print("   - Total chunks in session: \(session.chunks.count)")
+        print("   - Chunks with transcripts: \(chunksWithTranscripts.count)")
+        print("   - Currently transcribing: \(coordinator.transcribingChunkIds.count)")
+        print("   - Failed: \(coordinator.failedChunkIds.count)")
+        
+        for chunk in session.chunks {
+            let hasTranscript = chunksWithTranscripts.contains(chunk.id)
+            let isTranscribing = coordinator.transcribingChunkIds.contains(chunk.id)
+            let isFailed = coordinator.failedChunkIds.contains(chunk.id)
+            let isTranscribed = coordinator.transcribedChunkIds.contains(chunk.id)
+            
+            print("   - Chunk \(chunk.chunkIndex): transcript=\(hasTranscript), transcribing=\(isTranscribing), transcribed=\(isTranscribed), failed=\(isFailed)")
+            
+            if !hasTranscript && !isTranscribing && !isFailed {
+                print("🚨 [SessionDetailView] Chunk \(chunk.chunkIndex) is ORPHANED - forcing into transcription queue")
+                // Force this chunk into transcription by calling retry
+                // This will add it to pendingTranscriptionIds and start processing
+                await coordinator.retryTranscription(chunkId: chunk.id)
+            }
+        }
+        
+        // Wait a bit and reload again
+        try? await Task.sleep(for: .seconds(1))
+        await loadTranscription()
+        checkTranscriptionStatus()
     }
     
     private func playSession() {
