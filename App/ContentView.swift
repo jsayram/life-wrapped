@@ -645,45 +645,12 @@ struct WordFrequency: Identifiable {
 }
 
 class WordAnalyzer {
-    // Comprehensive stopwords list (common words to filter out)
-    static let stopwords: Set<String> = [
-        // Articles
-        "a", "an", "the",
-        // Pronouns
-        "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
-        "my", "your", "his", "her", "its", "our", "their", "mine", "yours", "hers", "ours", "theirs",
-        "myself", "yourself", "himself", "herself", "itself", "ourselves", "themselves",
-        "this", "that", "these", "those", "who", "what", "which", "whom", "whose",
-        // Prepositions
-        "in", "on", "at", "to", "for", "of", "with", "from", "about", "into", "through",
-        "during", "before", "after", "above", "below", "between", "under", "over", "by",
-        "up", "down", "out", "off", "off", "as", "than",
-        // Conjunctions
-        "and", "or", "but", "so", "yet", "nor", "for", "because", "since", "unless",
-        "while", "where", "after", "before", "if", "although", "though",
-        // Common verbs
-        "is", "am", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "having",
-        "do", "does", "did", "doing",
-        "will", "would", "should", "could", "might", "must", "can", "may",
-        "get", "got", "getting",
-        // Common adverbs & others
-        "very", "really", "just", "now", "then", "here", "there", "how", "when", "why",
-        "all", "both", "each", "few", "more", "most", "some", "such",
-        "no", "not", "only", "own", "same", "than", "too",
-        "yes", "no", "well", "also", "even", "still", "back",
-        // Contractions (expanded)
-        "don't", "doesn't", "didn't", "won't", "wouldn't", "shouldn't", "couldn't",
-        "can't", "cannot", "isn't", "aren't", "wasn't", "weren't",
-        "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
-        "i've", "you've", "we've", "they've",
-        "i'll", "you'll", "he'll", "she'll", "we'll", "they'll",
-        "let's", "that's", "there's", "here's", "what's", "who's", "where's", "when's",
-        // Fillers
-        "um", "uh", "like", "okay", "ok", "yeah", "oh", "ah", "hmm", "gonna", "wanna", "gotta"
-    ]
+    // Use comprehensive stopwords from constants file (single source of truth)
+    static let stopwords = StopWords.all
     
-    static func analyzeWords(from texts: [String], limit: Int = 20) -> [WordFrequency] {
+    static func analyzeWords(from texts: [String], limit: Int = 20, customExcludedWords: Set<String> = []) -> [WordFrequency] {
+        // Combine built-in and custom stopwords
+        let allStopwords = stopwords.union(customExcludedWords)
         var wordCounts: [String: Int] = [:]
         
         // Process all texts
@@ -699,7 +666,7 @@ class WordAnalyzer {
                     // Filter: non-empty, at least 2 chars, not a stopword, not a number
                     !word.isEmpty &&
                     word.count >= 2 &&
-                    !stopwords.contains(word) &&
+                    !allStopwords.contains(word) &&
                     !word.allSatisfy { $0.isNumber }
                 }
             
@@ -727,6 +694,9 @@ struct InsightsTab: View {
     @State private var topWords: [WordFrequency] = []
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
+    @State private var wordLimit: Int = 20
+    
+    private let wordLimitKey = "insightsWordLimit"
     
     var body: some View {
         NavigationStack {
@@ -826,7 +796,8 @@ struct InsightsTab: View {
                                     Chart(sessionsByHour, id: \.hour) { data in
                                         BarMark(
                                             x: .value("Hour", data.hour),
-                                            y: .value("Sessions", data.count)
+                                            y: .value("Sessions", data.count),
+                                            width: .fixed(20)
                                         )
                                         .foregroundStyle(.blue.gradient)
                                     }
@@ -846,7 +817,7 @@ struct InsightsTab: View {
                                             AxisValueLabel()
                                         }
                                     }
-                                    .frame(height: 200)
+                                    .frame(minHeight: 200, maxHeight: 200)
                                     
                                     Divider()
                                         .padding(.vertical, 4)
@@ -905,7 +876,8 @@ struct InsightsTab: View {
                                     Chart(sessionsByDayOfWeek, id: \.dayOfWeek) { data in
                                         BarMark(
                                             x: .value("Day", formatDayOfWeek(data.dayOfWeek)),
-                                            y: .value("Sessions", data.count)
+                                            y: .value("Sessions", data.count),
+                                            width: .fixed(40)
                                         )
                                         .foregroundStyle(.green.gradient)
                                     }
@@ -925,7 +897,7 @@ struct InsightsTab: View {
                                             AxisValueLabel()
                                         }
                                     }
-                                    .frame(height: 180)
+                                    .frame(minHeight: 180, maxHeight: 180)
                                     
                                     Divider()
                                         .padding(.vertical, 4)
@@ -976,45 +948,55 @@ struct InsightsTab: View {
                         if !topWords.isEmpty {
                             Section {
                                 VStack(alignment: .leading, spacing: 12) {
-                                    Text("Most Used Words")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
+                                    HStack {
+                                        Text("Most Used Words")
+                                            .font(.headline)
+                                        Spacer()
+                                        Text("Top \(topWords.count)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.bottom, 4)
                                     
                                     Text("Meaningful words from your transcripts")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .padding(.bottom, 8)
                                     
-                                    // Word cloud grid
-                                    LazyVGrid(columns: [
-                                        GridItem(.flexible()),
-                                        GridItem(.flexible())
-                                    ], spacing: 12) {
-                                        ForEach(Array(topWords.prefix(20).enumerated()), id: \.element.id) { index, wordFreq in
-                                            VStack(spacing: 6) {
-                                                // Word
-                                                Text(wordFreq.word.capitalized)
-                                                    .font(.system(size: fontSizeForRank(index), weight: .bold))
-                                                    .foregroundStyle(colorForRank(index))
-                                                    .lineLimit(1)
-                                                    .minimumScaleFactor(0.7)
-                                                
-                                                // Count badge
-                                                Text("\(wordFreq.count)")
-                                                    .font(.caption)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundStyle(.white)
-                                                    .padding(.horizontal, 10)
-                                                    .padding(.vertical, 4)
-                                                    .background(colorForRank(index).gradient)
-                                                    .clipShape(Capsule())
+                                    // Scrollable word cloud grid with fixed height
+                                    ScrollView(.vertical, showsIndicators: true) {
+                                        LazyVGrid(columns: [
+                                            GridItem(.flexible()),
+                                            GridItem(.flexible())
+                                        ], spacing: 12) {
+                                            ForEach(Array(topWords.enumerated()), id: \.element.id) { index, wordFreq in
+                                                VStack(spacing: 6) {
+                                                    // Word
+                                                    Text(wordFreq.word.capitalized)
+                                                        .font(.system(size: fontSizeForRank(index), weight: .bold))
+                                                        .foregroundStyle(colorForRank(index))
+                                                        .lineLimit(1)
+                                                        .minimumScaleFactor(0.7)
+                                                    
+                                                    // Count badge
+                                                    Text("\(wordFreq.count)")
+                                                        .font(.caption)
+                                                        .fontWeight(.semibold)
+                                                        .foregroundStyle(.white)
+                                                        .padding(.horizontal, 10)
+                                                        .padding(.vertical, 4)
+                                                        .background(colorForRank(index).gradient)
+                                                        .clipShape(Capsule())
+                                                }
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 12)
+                                                .background(colorForRank(index).opacity(0.08))
+                                                .clipShape(RoundedRectangle(cornerRadius: 12))
                                             }
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 12)
-                                            .background(colorForRank(index).opacity(0.08))
-                                            .clipShape(RoundedRectangle(cornerRadius: 12))
                                         }
+                                        .padding(.horizontal, 2)
                                     }
+                                    .frame(height: 400) // Fixed height for scrolling
                                 }
                                 .padding(.vertical, 8)
                             }
@@ -1044,6 +1026,11 @@ struct InsightsTab: View {
                 }
             }
             .task {
+                // Load word limit from UserDefaults
+                wordLimit = UserDefaults.standard.integer(forKey: wordLimitKey)
+                if wordLimit == 0 {
+                    wordLimit = 20 // Default if not set
+                }
                 await loadInsights()
             }
             .refreshable {
@@ -1083,7 +1070,20 @@ struct InsightsTab: View {
                 startDate: dateRange.start,
                 endDate: dateRange.end
             )
-            topWords = WordAnalyzer.analyzeWords(from: transcriptTexts, limit: 20)
+            
+            // Load custom excluded words from UserDefaults
+            let customExcludedWords: Set<String> = {
+                if let savedWords = UserDefaults.standard.stringArray(forKey: "customExcludedWords") {
+                    return Set(savedWords)
+                }
+                return []
+            }()
+            
+            topWords = WordAnalyzer.analyzeWords(
+                from: transcriptTexts,
+                limit: wordLimit,
+                customExcludedWords: customExcludedWords
+            )
             
             // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
@@ -1377,6 +1377,9 @@ struct SettingsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var databasePath: String?
     @State private var chunkDuration: Double = 180 // Default 3 minutes
+    @State private var wordLimit: Double = 20 // Default 20 words
+    
+    private let wordLimitKey = "insightsWordLimit"
     
     var body: some View {
         NavigationStack {
@@ -1404,6 +1407,35 @@ struct SettingsTab: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
+                }
+                
+                Section("Insights") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Word Cloud Limit")
+                            Spacer()
+                            Text("\(Int(wordLimit))")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        
+                        Slider(value: $wordLimit, in: 10...200, step: 10) {
+                            Text("Word Limit")
+                        }
+                        .onChange(of: wordLimit) { oldValue, newValue in
+                            UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
+                            coordinator.showSuccess("Word limit updated to \(Int(newValue))")
+                        }
+                        
+                        Text("Number of most-used words to display in the Insights tab.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    
+                    NavigationLink(destination: ExcludedWordsView()) {
+                        Label("Excluded Words", systemImage: "text.badge.xmark")
+                    }
                 }
                 
                 Section("Preferences") {
@@ -1479,7 +1511,296 @@ struct SettingsTab: View {
             .task {
                 databasePath = await coordinator.getDatabasePath()
                 chunkDuration = coordinator.audioCapture.autoChunkDuration
+                
+                // Load word limit from UserDefaults
+                wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
+                if wordLimit == 0 {
+                    wordLimit = 20 // Default if not set
+                    UserDefaults.standard.set(20, forKey: wordLimitKey)
+                }
             }
+        }
+    }
+}
+
+struct ExcludedWordsView: View {
+    @Environment(\.dismiss) private var dismiss
+    private let excludedWords = Array(StopWords.all).sorted()
+    @State private var customWordsText: String = ""
+    @State private var customWords: Set<String> = []
+    @State private var savedCustomWordsText: String = "" // Track saved state
+    @State private var showUnsavedAlert = false
+    @FocusState private var isTextFieldFocused: Bool
+    
+    private let customWordsKey = "customExcludedWords"
+    
+    private var hasUnsavedChanges: Bool {
+        // Check if text field has content that differs from saved state
+        let currentText = customWordsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !currentText.isEmpty && currentText != savedCustomWordsText
+    }
+    
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Common words that are filtered out from the word frequency analysis to focus on meaningful content.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundStyle(.blue)
+                        Text("\(excludedWords.count) words excluded")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Text("About Excluded Words")
+            }
+            
+            Section {
+                ForEach(categoryGroups, id: \.category) { group in
+                    DisclosureGroup {
+                        FlowLayout(spacing: 8) {
+                            ForEach(group.words, id: \.self) { word in
+                                Text(word)
+                                    .font(.caption)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.gray.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    } label: {
+                        HStack {
+                            Image(systemName: group.icon)
+                                .foregroundStyle(group.color)
+                                .frame(width: 24)
+                            Text(group.category)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("\(group.words.count)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("Word Categories")
+            }
+            
+            // Display saved custom words
+            if !customWords.isEmpty {
+                Section {
+                    FlowLayout(spacing: 8) {
+                        ForEach(Array(customWords).sorted(), id: \.self) { word in
+                            HStack(spacing: 6) {
+                                Text(word)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                Button {
+                                    withAnimation {
+                                        removeCustomWord(word)
+                                    }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.purple.opacity(0.15))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.vertical, 8)
+                } header: {
+                    HStack {
+                        Text("Your Custom Words")
+                        Spacer()
+                        Text("\(customWords.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text("Tap the X to remove a custom word")
+                        .font(.caption2)
+                }
+            }
+            
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Add your own words to exclude")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    TextField("Enter words separated by commas", text: $customWordsText)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isTextFieldFocused)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    
+                    Button("Save Custom Words") {
+                        // Dismiss keyboard first, then save after a brief delay
+                        isTextFieldFocused = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            saveCustomWords()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(customWordsText.isEmpty)
+                    
+                    Text("Words will be converted to lowercase and trimmed. Separate multiple words with commas.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Add Custom Words")
+            }
+        }
+        .navigationTitle("Excluded Words")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(hasUnsavedChanges)
+        .toolbar {
+            if hasUnsavedChanges {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showUnsavedAlert = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                }
+            }
+        }
+        .alert("Unsaved Custom Words", isPresented: $showUnsavedAlert) {
+            Button("Save and Go Back", role: .none) {
+                saveCustomWords()
+                dismiss()
+            }
+            Button("Discard", role: .destructive) {
+                customWordsText = savedCustomWordsText
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("You have unsaved words in the text field. Do you want to save them before going back?")
+        }
+        .onAppear {
+            loadCustomWords()
+        }
+    }
+    
+    private func loadCustomWords() {
+        if let savedWords = UserDefaults.standard.stringArray(forKey: customWordsKey) {
+            customWords = Set(savedWords)
+            // Keep track of saved state but don't populate text field
+            savedCustomWordsText = savedWords.sorted().joined(separator: ", ")
+        }
+    }
+    
+    private func saveCustomWords() {
+        // Parse comma-separated words
+        let newWords = customWordsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && $0.count >= 2 }
+        
+        // Add new words to existing set (don't replace)
+        customWords.formUnion(newWords)
+        
+        // Save to UserDefaults
+        UserDefaults.standard.set(Array(customWords), forKey: customWordsKey)
+        
+        // Update saved state and clear text field
+        savedCustomWordsText = Array(customWords).sorted().joined(separator: ", ")
+        customWordsText = ""
+    }
+    
+    private func removeCustomWord(_ word: String) {
+        customWords.remove(word)
+        UserDefaults.standard.set(Array(customWords), forKey: customWordsKey)
+        // Update saved state (text field should remain empty)
+        savedCustomWordsText = Array(customWords).sorted().joined(separator: ", ")
+    }
+    
+    private var categoryGroups: [WordCategory] {
+        // Use categories from constants file (single source of truth)
+        StopWords.categories.map { category in
+            WordCategory(
+                category: category.name,
+                icon: category.icon,
+                color: category.color,
+                words: Array(category.words).sorted()
+            )
+        }
+    }
+}
+
+struct WordCategory {
+    let category: String
+    let icon: String
+    let color: Color
+    let words: [String]
+}
+
+// Simple flow layout for wrapping words
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(
+            in: proposal.replacingUnspecifiedDimensions().width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        return result.size
+    }
+    
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(
+            in: bounds.width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.frames[index].minX, y: bounds.minY + result.frames[index].minY), proposal: .unspecified)
+        }
+    }
+    
+    struct FlowResult {
+        var frames: [CGRect] = []
+        var size: CGSize = .zero
+        
+        init(in maxWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var lineHeight: CGFloat = 0
+            
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += lineHeight + spacing
+                    lineHeight = 0
+                }
+                
+                frames.append(CGRect(x: x, y: y, width: size.width, height: size.height))
+                lineHeight = max(lineHeight, size.height)
+                x += size.width + spacing
+            }
+            
+            self.size = CGSize(width: maxWidth, height: y + lineHeight)
         }
     }
 }

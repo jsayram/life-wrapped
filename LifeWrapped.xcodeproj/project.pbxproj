@@ -16,6 +16,7 @@
 		34C84413912A31F5241961FC /* ToastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F84D56B203DF4B7F9C7E4F /* ToastView.swift */; };
 		3B10D378939DF4E006FAA89F /* AudioCapture in Frameworks */ = {isa = PBXBuildFile; productRef = B68C413BD4D27BF71ED299E5 /* AudioCapture */; };
 		4542A997CBA0AE57206FA214 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47408049BA4C55795D819D9D /* ContentView.swift */; };
+		4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */; };
 		5BADCDC2211908AD5EAA196D /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 303597C991FCE6CB954F0D29 /* PermissionsView.swift */; };
 		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
@@ -64,6 +65,7 @@
 		303597C991FCE6CB954F0D29 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
 		4C9255CE1AB102B4DF974A24 /* Storage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Storage; path = Packages/Storage; sourceTree = SOURCE_ROOT; };
 		5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
@@ -116,11 +118,20 @@
 			children = (
 				47408049BA4C55795D819D9D /* ContentView.swift */,
 				35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */,
+				5C6D7E8F9G0H1I2J3K4L5M6N /* Constants */,
 				DE26631D9D076574CFFC015F /* Coordinators */,
 				EEFEC05EA185B9B9A3D0A429 /* Resources */,
 				E78DCCDCF6EFA00394B8CCFD /* Views */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		5C6D7E8F9G0H1I2J3K4L5M6N /* Constants */ = {
+			isa = PBXGroup;
+			children = (
+				4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */,
+			);
+			path = Constants;
 			sourceTree = "<group>";
 		};
 		3E9270F723F2E94ECF04E082 /* Products */ = {
@@ -322,6 +333,7 @@
 				6EC3AC483412F35B275EC9ED /* ErrorView.swift in Sources */,
 				244A734639F00E2AE85D6920 /* LifeWrappedApp.swift in Sources */,
 				5BADCDC2211908AD5EAA196D /* PermissionsView.swift in Sources */,
+				4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */,
 				34C84413912A31F5241961FC /* ToastView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
