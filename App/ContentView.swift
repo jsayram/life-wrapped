@@ -1125,19 +1125,6 @@ struct SessionDetailView: View {
                 
                 // Playback Controls
                 VStack(spacing: 16) {
-                    // Linear progress bar (shows position across entire session)
-                    if isPlayingThisSession {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ProgressView(value: playbackProgress)
-                                .progressViewStyle(.linear)
-                                .tint(.blue)
-                            
-                            Text("\(Int(playbackProgress * 100))% complete")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    
                     // Waveform/Progress visualization
                     VStack(spacing: 12) {
                         // Progress bar with scrubbing
