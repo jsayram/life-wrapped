@@ -620,6 +620,7 @@ struct RecordingRow: View {
 struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var summaries: [Summary] = []
+    @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
     @State private var isLoading = true
     
     var body: some View {
@@ -627,36 +628,71 @@ struct InsightsTab: View {
             Group {
                 if isLoading {
                     ProgressView("Loading insights...")
-                } else if summaries.isEmpty {
+                } else if summaries.isEmpty && sessionsByHour.isEmpty {
                     ContentUnavailableView(
                         "No Insights Yet",
                         systemImage: "chart.bar",
                         description: Text("Record more journal entries to unlock insights.")
                     )
                 } else {
-                    List(summaries, id: \.id) { summary in
-                        SummaryRow(summary: summary)
+                    List {
+                        // Sessions by Hour section
+                        if !sessionsByHour.isEmpty {
+                            Section("Sessions by Time of Day") {
+                                ForEach(sessionsByHour, id: \.hour) { data in
+                                    HStack {
+                                        Text(formatHour(data.hour))
+                                            .font(.subheadline)
+                                        Spacer()
+                                        Text("\(data.count) session\(data.count == 1 ? "" : "s")")
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Summaries section
+                        if !summaries.isEmpty {
+                            Section("Summaries") {
+                                ForEach(summaries, id: \.id) { summary in
+                                    SummaryRow(summary: summary)
+                                }
+                            }
+                        }
                     }
                 }
             }
             .navigationTitle("Insights")
             .task {
-                await loadSummaries()
+                await loadInsights()
             }
             .refreshable {
-                await loadSummaries()
+                await loadInsights()
             }
         }
     }
     
-    private func loadSummaries() async {
+    private func loadInsights() async {
         isLoading = true
         do {
+            // Load sessions by hour
+            sessionsByHour = try await coordinator.fetchSessionsByHour()
+            
+            // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
         } catch {
-            print("Failed to load summaries: \(error)")
+            print("❌ [InsightsTab] Failed to load insights: \(error)")
         }
         isLoading = false
+    }
+    
+    private func formatHour(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+        let calendar = Calendar.current
+        let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return formatter.string(from: date)
     }
 }
 

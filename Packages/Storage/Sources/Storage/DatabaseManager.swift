@@ -500,6 +500,46 @@ public actor DatabaseManager {
         return sessions
     }
     
+    // MARK: - Analytics Queries
+    
+    /// Fetch session counts grouped by hour of day (0-23)
+    /// Returns array of (hour, count, sessionIds) for each hour that has sessions
+    public func fetchSessionsByHour() throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                CAST(strftime('%H', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as hour,
+                session_id
+            FROM audio_chunks
+            WHERE chunk_index = 0
+            ORDER BY hour
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        // Group by hour
+        var hourGroups: [Int: [UUID]] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let hour = Int(sqlite3_column_int(stmt, 0))
+            guard let sessionIdString = sqlite3_column_text(stmt, 1),
+                  let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+                continue
+            }
+            
+            hourGroups[hour, default: []].append(sessionId)
+        }
+        
+        // Convert to sorted array
+        return hourGroups.map { (hour: $0.key, count: $0.value.count, sessionIds: $0.value) }
+            .sorted { $0.hour < $1.hour }
+    }
+    
     /// Delete an entire session (all chunks)
     public func deleteSession(sessionId: UUID) throws {
         guard let db = db else { throw StorageError.notOpen }

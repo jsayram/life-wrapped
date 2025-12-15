@@ -961,6 +961,15 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSummaries(limit: limit)
     }
     
+    /// Fetch sessions grouped by hour of day
+    public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSessionsByHour()
+    }
+    
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
         guard let dbManager = databaseManager else {
