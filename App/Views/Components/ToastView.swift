@@ -51,29 +51,56 @@ public struct Toast: Equatable, Identifiable {
 /// Toast view modifier
 struct ToastModifier: ViewModifier {
     @Binding var toast: Toast?
+    @State private var workItem: DispatchWorkItem?
     
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .top) {
                 if let toast = toast {
-                    ToastView(toast: toast)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + toast.duration) {
-                                withAnimation {
-                                    self.toast = nil
-                                }
-                            }
-                        }
-                        .padding(.top, 50)
+                    ToastView(toast: toast, onDismiss: {
+                        dismissToast()
+                    })
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onAppear {
+                        scheduleAutoDismiss(duration: toast.duration)
+                    }
+                    .padding(.top, 50)
+                    .zIndex(999)
                 }
             }
+    }
+    
+    private func scheduleAutoDismiss(duration: TimeInterval) {
+        // Cancel any existing work item
+        workItem?.cancel()
+        
+        // Create new work item for auto-dismiss
+        let task = DispatchWorkItem {
+            withAnimation {
+                self.toast = nil
+            }
+        }
+        
+        workItem = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: task)
+    }
+    
+    private func dismissToast() {
+        // Cancel auto-dismiss timer
+        workItem?.cancel()
+        workItem = nil
+        
+        // Dismiss with animation
+        withAnimation {
+            toast = nil
+        }
     }
 }
 
 /// Toast notification view
 struct ToastView: View {
     let toast: Toast
+    let onDismiss: () -> Void
     
     var body: some View {
         HStack(spacing: 12) {
@@ -86,6 +113,16 @@ struct ToastView: View {
                 .foregroundColor(.primary)
             
             Spacer()
+            
+            // X button for explicit dismiss
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding()
         .background(
@@ -133,6 +170,14 @@ struct ToastView_Previews: PreviewProvider {
             .background(Color.gray.opacity(0.1))
             .toast(.constant(Toast(style: .info, message: "Processing your recording...")))
             .previewDisplayName("Info Toast")
+            
+            VStack {
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.gray.opacity(0.1))
+            .toast(.constant(Toast(style: .warning, message: "Low storage space available")))
+            .previewDisplayName("Warning Toast")
         }
     }
 }

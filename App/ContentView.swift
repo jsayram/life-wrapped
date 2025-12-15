@@ -1373,6 +1373,8 @@ struct SessionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadTranscription()
+            // Check status immediately after loading transcription
+            checkTranscriptionStatus()
         }
         .onAppear {
             startPlaybackUpdateTimer()
@@ -1514,6 +1516,20 @@ struct SessionDetailView: View {
         elapsed += coordinator.audioPlayback.currentTime
         
         return elapsed
+    }
+    
+    // Calculate playback progress as percentage (0.0 to 1.0)
+    private var playbackProgress: Double {
+        // Use forceUpdateTrigger to ensure UI updates
+        _ = forceUpdateTrigger
+        
+        guard session.totalDuration > 0 else { return 0 }
+        
+        if isPlayingThisSession {
+            return totalElapsedTime / session.totalDuration
+        } else {
+            return 0
+        }
     }
     
     // Seek to a specific time in the total session
