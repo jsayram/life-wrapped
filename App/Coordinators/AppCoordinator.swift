@@ -531,6 +531,28 @@ public final class AppCoordinator: ObservableObject {
         recordingState = .idle
     }
     
+    /// Retry transcription for a failed chunk
+    public func retryTranscription(chunkId: UUID) async {
+        print("🔄 [AppCoordinator] Retrying transcription for chunk: \(chunkId)")
+        
+        // Remove from failed set
+        await MainActor.run {
+            failedChunkIds.remove(chunkId)
+        }
+        
+        // Add back to pending queue
+        await MainActor.run {
+            if !pendingTranscriptionIds.contains(chunkId) {
+                pendingTranscriptionIds.append(chunkId)
+            }
+        }
+        
+        // Trigger queue processing
+        await processTranscriptionQueue()
+        
+        print("✅ [AppCoordinator] Chunk \(chunkId) added to transcription queue for retry")
+    }
+    
     // MARK: - Private Recording Helpers
     
     /// Process transcription queue with concurrency limit

@@ -1248,10 +1248,33 @@ struct SessionDetailView: View {
                             .font(.subheadline)
                             .padding()
                     } else if transcriptSegments.isEmpty {
-                        Text("No transcription available")
-                            .foregroundStyle(.secondary)
-                            .font(.subheadline)
+                        // Empty state with different messages based on transcription status
+                        let chunkIds = Set(session.chunks.map { $0.id })
+                        let hasTranscribing = !chunkIds.isDisjoint(with: coordinator.transcribingChunkIds)
+                        let hasFailed = !chunkIds.isDisjoint(with: coordinator.failedChunkIds)
+                        
+                        if hasTranscribing {
+                            ContentUnavailableView(
+                                "Transcribing Audio...",
+                                systemImage: "waveform.path",
+                                description: Text("Your audio is being processed. This may take a moment.")
+                            )
                             .padding()
+                        } else if hasFailed {
+                            ContentUnavailableView(
+                                "Transcription Failed",
+                                systemImage: "exclamationmark.triangle",
+                                description: Text("Unable to transcribe this recording. Try recording again.")
+                            )
+                            .padding()
+                        } else {
+                            ContentUnavailableView(
+                                "No Transcript",
+                                systemImage: "doc.text.slash",
+                                description: Text("No transcription available for this recording.")
+                            )
+                            .padding()
+                        }
                     } else {
                         VStack(alignment: .leading, spacing: 16) {
                             ForEach(groupedByChunk, id: \.chunkIndex) { group in
@@ -1297,9 +1320,35 @@ struct SessionDetailView: View {
                                         }
                                     }
                                     
-                                    Text(group.text)
-                                        .font(.body)
-                                        .foregroundStyle(isCurrentChunk ? .primary : .secondary)
+                                    // Show text or retry button for failed chunks
+                                    if let chunkId = chunkId, coordinator.failedChunkIds.contains(chunkId) {
+                                        VStack(spacing: 12) {
+                                            Text("Transcription failed for this part")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                            
+                                            Button {
+                                                Task {
+                                                    await coordinator.retryTranscription(chunkId: chunkId)
+                                                }
+                                            } label: {
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: "arrow.clockwise")
+                                                    Text("Retry Transcription")
+                                                }
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                            .tint(.orange)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                    } else {
+                                        Text(group.text)
+                                            .font(.body)
+                                            .foregroundStyle(isCurrentChunk ? .primary : .secondary)
+                                    }
                                 }
                                 .padding(12)
                                 .background(isCurrentChunk ? Color.blue.opacity(0.1) : Color.clear)
