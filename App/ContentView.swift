@@ -618,6 +618,15 @@ struct RecordingRow: View {
 
 // MARK: - Insights Tab
 
+enum TimeRange: String, CaseIterable, Identifiable {
+    case today = "Today"
+    case week = "This Week"
+    case month = "This Month"
+    case allTime = "All Time"
+    
+    var id: String { rawValue }
+}
+
 struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var summaries: [Summary] = []
@@ -626,6 +635,7 @@ struct InsightsTab: View {
     @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
     @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
     @State private var isLoading = true
+    @State private var selectedTimeRange: TimeRange = .allTime
     
     var body: some View {
         NavigationStack {
@@ -883,11 +893,27 @@ struct InsightsTab: View {
                 }
             }
             .navigationTitle("Insights")
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Picker("Time Range", selection: $selectedTimeRange) {
+                        ForEach(TimeRange.allCases) { range in
+                            Text(range.rawValue).tag(range)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 300)
+                }
+            }
             .task {
                 await loadInsights()
             }
             .refreshable {
                 await loadInsights()
+            }
+            .onChange(of: selectedTimeRange) { oldValue, newValue in
+                Task {
+                    await loadInsights()
+                }
             }
         }
     }
@@ -895,15 +921,23 @@ struct InsightsTab: View {
     private func loadInsights() async {
         isLoading = true
         do {
-            // Load key statistics
-            longestSession = try await coordinator.fetchLongestSession()
-            mostActiveMonth = try await coordinator.fetchMostActiveMonth()
+            // Get date range for filtering
+            let dateRange = getDateRange(for: selectedTimeRange)
             
-            // Load sessions by hour
-            sessionsByHour = try await coordinator.fetchSessionsByHour()
+            // Load key statistics (filtered)
+            let allLongest = try await coordinator.fetchLongestSession()
+            longestSession = filterSession(allLongest, in: dateRange)
             
-            // Load sessions by day of week
-            sessionsByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
+            let allMostActive = try await coordinator.fetchMostActiveMonth()
+            mostActiveMonth = filterMonth(allMostActive, in: dateRange)
+            
+            // Load sessions by hour (filtered)
+            let allByHour = try await coordinator.fetchSessionsByHour()
+            sessionsByHour = await filterSessionsByHour(allByHour, in: dateRange)
+            
+            // Load sessions by day of week (filtered)
+            let allByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
+            sessionsByDayOfWeek = await filterSessionsByDayOfWeek(allByDayOfWeek, in: dateRange)
             
             // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
@@ -941,6 +975,71 @@ struct InsightsTab: View {
     private func formatDayOfWeekFull(_ dayOfWeek: Int) -> String {
         let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
         return days[dayOfWeek]
+    }
+    
+    private func getDateRange(for timeRange: TimeRange) -> (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        switch timeRange {
+        case .today:
+            let start = calendar.startOfDay(for: now)
+            return (start, now)
+        case .week:
+            let start = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+            return (start, now)
+        case .month:
+            let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
+            return (start, now)
+        case .allTime:
+            return (Date.distantPast, Date.distantFuture)
+        }
+    }
+    
+    private func filterSession(_ session: (sessionId: UUID, duration: TimeInterval, date: Date)?, in range: (start: Date, end: Date)) -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
+        guard let session = session else { return nil }
+        return session.date >= range.start && session.date <= range.end ? session : nil
+    }
+    
+    private func filterMonth(_ month: (year: Int, month: Int, count: Int, sessionIds: [UUID])?, in range: (start: Date, end: Date)) -> (year: Int, month: Int, count: Int, sessionIds: [UUID])? {
+        guard let month = month else { return nil }
+        let calendar = Calendar.current
+        guard let monthDate = calendar.date(from: DateComponents(year: month.year, month: month.month)) else { return nil }
+        return monthDate >= range.start && monthDate <= range.end ? month : nil
+    }
+    
+    private func filterSessionsByHour(_ sessions: [(hour: Int, count: Int, sessionIds: [UUID])], in range: (start: Date, end: Date)) async -> [(hour: Int, count: Int, sessionIds: [UUID])] {
+        if range.start == Date.distantPast { return sessions }
+        
+        var filtered: [Int: [UUID]] = [:]
+        
+        for hourData in sessions {
+            for sessionId in hourData.sessionIds {
+                if let session = try? await coordinator.fetchSessions(ids: [sessionId]).first,
+                   session.startTime >= range.start && session.startTime <= range.end {
+                    filtered[hourData.hour, default: []].append(sessionId)
+                }
+            }
+        }
+        
+        return filtered.map { (hour: $0.key, count: $0.value.count, sessionIds: $0.value) }
+    }
+    
+    private func filterSessionsByDayOfWeek(_ sessions: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])], in range: (start: Date, end: Date)) async -> [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] {
+        if range.start == Date.distantPast { return sessions }
+        
+        var filtered: [Int: [UUID]] = [:]
+        
+        for dayData in sessions {
+            for sessionId in dayData.sessionIds {
+                if let session = try? await coordinator.fetchSessions(ids: [sessionId]).first,
+                   session.startTime >= range.start && session.startTime <= range.end {
+                    filtered[dayData.dayOfWeek, default: []].append(sessionId)
+                }
+            }
+        }
+        
+        return filtered.map { (dayOfWeek: $0.key, count: $0.value.count, sessionIds: $0.value) }
     }
     
     private func formatMonth(year: Int, month: Int) -> String {
