@@ -1016,6 +1016,15 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSessionsByDayOfWeek()
     }
     
+    /// Fetch all transcript text within a date range
+    public func fetchTranscriptText(startDate: Date, endDate: Date) async throws -> [String] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchTranscriptText(startDate: startDate, endDate: endDate)
+    }
+    
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
         guard let dbManager = databaseManager else {

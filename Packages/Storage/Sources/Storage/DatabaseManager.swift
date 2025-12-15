@@ -625,6 +625,39 @@ public actor DatabaseManager {
             .max { $0.count < $1.count }
     }
     
+    /// Fetch all transcript text within a date range
+    public func fetchTranscriptText(startDate: Date, endDate: Date) throws -> [String] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT ts.text
+            FROM transcript_segments ts
+            INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+            WHERE ac.created_at >= ? AND ac.created_at <= ?
+            ORDER BY ts.start_time
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var texts: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let textPtr = sqlite3_column_text(stmt, 0) {
+                let text = String(cString: textPtr)
+                texts.append(text)
+            }
+        }
+        
+        return texts
+    }
+    
     /// Fetch session counts grouped by day of week (0 = Sunday, 6 = Saturday)
     public func fetchSessionsByDayOfWeek() throws -> [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] {
         guard let db = db else { throw StorageError.notOpen }

@@ -636,6 +636,87 @@ enum TimeRange: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Word Frequency Analysis
+
+struct WordFrequency: Identifiable {
+    let id = UUID()
+    let word: String
+    let count: Int
+}
+
+class WordAnalyzer {
+    // Comprehensive stopwords list (common words to filter out)
+    static let stopwords: Set<String> = [
+        // Articles
+        "a", "an", "the",
+        // Pronouns
+        "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
+        "my", "your", "his", "her", "its", "our", "their", "mine", "yours", "hers", "ours", "theirs",
+        "myself", "yourself", "himself", "herself", "itself", "ourselves", "themselves",
+        "this", "that", "these", "those", "who", "what", "which", "whom", "whose",
+        // Prepositions
+        "in", "on", "at", "to", "for", "of", "with", "from", "about", "into", "through",
+        "during", "before", "after", "above", "below", "between", "under", "over", "by",
+        "up", "down", "out", "off", "off", "as", "than",
+        // Conjunctions
+        "and", "or", "but", "so", "yet", "nor", "for", "because", "since", "unless",
+        "while", "where", "after", "before", "if", "although", "though",
+        // Common verbs
+        "is", "am", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "having",
+        "do", "does", "did", "doing",
+        "will", "would", "should", "could", "might", "must", "can", "may",
+        "get", "got", "getting",
+        // Common adverbs & others
+        "very", "really", "just", "now", "then", "here", "there", "how", "when", "why",
+        "all", "both", "each", "few", "more", "most", "some", "such",
+        "no", "not", "only", "own", "same", "than", "too",
+        "yes", "no", "well", "also", "even", "still", "back",
+        // Contractions (expanded)
+        "don't", "doesn't", "didn't", "won't", "wouldn't", "shouldn't", "couldn't",
+        "can't", "cannot", "isn't", "aren't", "wasn't", "weren't",
+        "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
+        "i've", "you've", "we've", "they've",
+        "i'll", "you'll", "he'll", "she'll", "we'll", "they'll",
+        "let's", "that's", "there's", "here's", "what's", "who's", "where's", "when's",
+        // Fillers
+        "um", "uh", "like", "okay", "ok", "yeah", "oh", "ah", "hmm", "gonna", "wanna", "gotta"
+    ]
+    
+    static func analyzeWords(from texts: [String], limit: Int = 20) -> [WordFrequency] {
+        var wordCounts: [String: Int] = [:]
+        
+        // Process all texts
+        for text in texts {
+            // Normalize: lowercase and split into words
+            let words = text.lowercased()
+                .components(separatedBy: .whitespacesAndNewlines)
+                .map { word in
+                    // Remove punctuation from edges
+                    word.trimmingCharacters(in: .punctuationCharacters)
+                }
+                .filter { word in
+                    // Filter: non-empty, at least 2 chars, not a stopword, not a number
+                    !word.isEmpty &&
+                    word.count >= 2 &&
+                    !stopwords.contains(word) &&
+                    !word.allSatisfy { $0.isNumber }
+                }
+            
+            // Count occurrences
+            for word in words {
+                wordCounts[word, default: 0] += 1
+            }
+        }
+        
+        // Sort by frequency and take top N
+        return wordCounts
+            .sorted { $0.value > $1.value }
+            .prefix(limit)
+            .map { WordFrequency(word: $0.key, count: $0.value) }
+    }
+}
+
 struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var summaries: [Summary] = []
@@ -643,6 +724,7 @@ struct InsightsTab: View {
     @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
     @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
     @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
+    @State private var topWords: [WordFrequency] = []
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     
@@ -890,6 +972,54 @@ struct InsightsTab: View {
                             }
                         }
                         
+                        // Most Used Words section
+                        if !topWords.isEmpty {
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Most Used Words")
+                                        .font(.headline)
+                                        .padding(.bottom, 4)
+                                    
+                                    Text("Meaningful words from your transcripts")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.bottom, 8)
+                                    
+                                    // Word cloud grid
+                                    LazyVGrid(columns: [
+                                        GridItem(.flexible()),
+                                        GridItem(.flexible())
+                                    ], spacing: 12) {
+                                        ForEach(Array(topWords.prefix(20).enumerated()), id: \.element.id) { index, wordFreq in
+                                            VStack(spacing: 6) {
+                                                // Word
+                                                Text(wordFreq.word.capitalized)
+                                                    .font(.system(size: fontSizeForRank(index), weight: .bold))
+                                                    .foregroundStyle(colorForRank(index))
+                                                    .lineLimit(1)
+                                                    .minimumScaleFactor(0.7)
+                                                
+                                                // Count badge
+                                                Text("\(wordFreq.count)")
+                                                    .font(.caption)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 4)
+                                                    .background(colorForRank(index).gradient)
+                                                    .clipShape(Capsule())
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(colorForRank(index).opacity(0.08))
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                        
                         // Summaries section
                         if !summaries.isEmpty {
                             Section("Summaries") {
@@ -947,6 +1077,13 @@ struct InsightsTab: View {
             // Load sessions by day of week (filtered)
             let allByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
             sessionsByDayOfWeek = await filterSessionsByDayOfWeek(allByDayOfWeek, in: dateRange)
+            
+            // Load word frequency analysis
+            let transcriptTexts = try await coordinator.fetchTranscriptText(
+                startDate: dateRange.start,
+                endDate: dateRange.end
+            )
+            topWords = WordAnalyzer.analyzeWords(from: transcriptTexts, limit: 20)
             
             // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
@@ -1066,6 +1203,29 @@ struct InsightsTab: View {
             return "\(minutes)m \(seconds)s"
         } else {
             return "\(seconds)s"
+        }
+    }
+    
+    // MARK: - Word Cloud Styling Helpers
+    
+    private func fontSizeForRank(_ rank: Int) -> CGFloat {
+        // Top words get larger fonts
+        switch rank {
+        case 0...2: return 22  // Top 3
+        case 3...5: return 20  // 4-6
+        case 6...9: return 18  // 7-10
+        default: return 16     // 11-20
+        }
+    }
+    
+    private func colorForRank(_ rank: Int) -> Color {
+        // Gradient of colors from most to least frequent
+        switch rank {
+        case 0...2: return .purple    // Top 3
+        case 3...5: return .indigo    // 4-6
+        case 6...9: return .blue      // 7-10
+        case 10...14: return .teal    // 11-15
+        default: return .cyan         // 16-20
         }
     }
 }
