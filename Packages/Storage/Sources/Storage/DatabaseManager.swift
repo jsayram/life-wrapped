@@ -540,6 +540,91 @@ public actor DatabaseManager {
             .sorted { $0.hour < $1.hour }
     }
     
+    /// Fetch the longest recording session by total duration
+    /// Returns (sessionId, duration, date) or nil if no sessions exist
+    public func fetchLongestSession() throws -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                session_id,
+                SUM(end_time - start_time) as total_duration,
+                MIN(created_at) as session_date
+            FROM audio_chunks
+            GROUP BY session_id
+            ORDER BY total_duration DESC
+            LIMIT 1
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            guard let sessionIdString = sqlite3_column_text(stmt, 0),
+                  let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+                return nil
+            }
+            
+            let duration = sqlite3_column_double(stmt, 1)
+            let date = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
+            
+            return (sessionId, duration, date)
+        }
+        
+        return nil
+    }
+    
+    /// Fetch the most active month by session count
+    /// Returns (year, month, count, sessionIds) or nil if no sessions exist
+    public func fetchMostActiveMonth() throws -> (year: Int, month: Int, count: Int, sessionIds: [UUID])? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                CAST(strftime('%Y', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as year,
+                CAST(strftime('%m', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as month,
+                session_id
+            FROM audio_chunks
+            WHERE chunk_index = 0
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        // Group by year-month
+        var groupDict: [String: (year: Int, month: Int, sessionIds: [UUID])] = [:]
+        
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let year = Int(sqlite3_column_int(stmt, 0))
+            let month = Int(sqlite3_column_int(stmt, 1))
+            guard let sessionIdString = sqlite3_column_text(stmt, 2),
+                  let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+                continue
+            }
+            
+            let key = "\(year)-\(month)"
+            if var existing = groupDict[key] {
+                existing.sessionIds.append(sessionId)
+                groupDict[key] = existing
+            } else {
+                groupDict[key] = (year, month, [sessionId])
+            }
+        }
+        
+        // Find month with most sessions
+        return groupDict.values
+            .map { (year: $0.year, month: $0.month, count: $0.sessionIds.count, sessionIds: $0.sessionIds) }
+            .max { $0.count < $1.count }
+    }
+    
     /// Delete an entire session (all chunks)
     public func deleteSession(sessionId: UUID) throws {
         guard let db = db else { throw StorageError.notOpen }

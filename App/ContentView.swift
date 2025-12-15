@@ -621,6 +621,8 @@ struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var summaries: [Summary] = []
     @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
+    @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
+    @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
     @State private var isLoading = true
     
     var body: some View {
@@ -636,6 +638,47 @@ struct InsightsTab: View {
                     )
                 } else {
                     List {
+                        // Key Statistics section
+                        Section("Key Statistics") {
+                            // Longest session
+                            if let longest = longestSession {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Longest Session")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack {
+                                        Text(formatDuration(longest.duration))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            
+                            // Most active month
+                            if let mostActive = mostActiveMonth {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Most Active Month")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack {
+                                        Text(formatMonth(year: mostActive.year, month: mostActive.month))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        
                         // Sessions by Hour section
                         if !sessionsByHour.isEmpty {
                             Section("Sessions by Time of Day") {
@@ -676,6 +719,10 @@ struct InsightsTab: View {
     private func loadInsights() async {
         isLoading = true
         do {
+            // Load key statistics
+            longestSession = try await coordinator.fetchLongestSession()
+            mostActiveMonth = try await coordinator.fetchMostActiveMonth()
+            
             // Load sessions by hour
             sessionsByHour = try await coordinator.fetchSessionsByHour()
             
@@ -693,6 +740,24 @@ struct InsightsTab: View {
         let calendar = Calendar.current
         let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
         return formatter.string(from: date)
+    }
+    
+    private func formatMonth(year: Int, month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let calendar = Calendar.current
+        let date = calendar.date(from: DateComponents(year: year, month: month)) ?? Date()
+        return formatter.string(from: date)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        } else {
+            return "\(seconds)s"
+        }
     }
 }
 

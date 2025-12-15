@@ -970,6 +970,24 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSessionsByHour()
     }
     
+    /// Fetch the longest recording session
+    public func fetchLongestSession() async throws -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchLongestSession()
+    }
+    
+    /// Fetch the most active month
+    public func fetchMostActiveMonth() async throws -> (year: Int, month: Int, count: Int, sessionIds: [UUID])? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchMostActiveMonth()
+    }
+    
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
         guard let dbManager = databaseManager else {
