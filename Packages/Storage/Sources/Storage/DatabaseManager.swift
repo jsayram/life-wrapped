@@ -1030,6 +1030,82 @@ public actor DatabaseManager {
         )
     }
     
+    // MARK: - Sentiment Analytics
+    
+    /// Fetch average sentiment score for a specific session
+    public func fetchSessionSentiment(sessionId: UUID) throws -> Double? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT AVG(ts.sentiment_score)
+            FROM transcript_segments ts
+            INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+            WHERE ac.session_id = ? AND ts.sentiment_score IS NOT NULL
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            if sqlite3_column_type(stmt, 0) != SQLITE_NULL {
+                return sqlite3_column_double(stmt, 0)
+            }
+        }
+        
+        return nil
+    }
+    
+    /// Fetch daily average sentiment scores for date range
+    public func fetchDailySentiment(from startDate: Date, to endDate: Date) throws -> [(date: Date, sentiment: Double)] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                DATE(ac.start_time, 'unixepoch') as day,
+                AVG(ts.sentiment_score) as avg_sentiment
+            FROM transcript_segments ts
+            INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+            WHERE ac.start_time >= ? 
+                AND ac.start_time < ?
+                AND ts.sentiment_score IS NOT NULL
+            GROUP BY day
+            ORDER BY day ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var results: [(Date, Double)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let dayString = sqlite3_column_text(stmt, 0) {
+                let dayStr = String(cString: dayString)
+                let sentiment = sqlite3_column_double(stmt, 1)
+                
+                // Parse date from "YYYY-MM-DD" format
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                if let date = formatter.date(from: dayStr) {
+                    results.append((date, sentiment))
+                }
+            }
+        }
+        
+        return results
+    }
+    
     // MARK: - Summary CRUD
     
     public func insertSummary(_ summary: Summary) throws {

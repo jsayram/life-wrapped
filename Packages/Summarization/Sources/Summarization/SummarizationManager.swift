@@ -3,6 +3,7 @@
 // =============================================================================
 
 import Foundation
+import NaturalLanguage
 import SharedModels
 import Storage
 
@@ -269,33 +270,37 @@ public actor SummarizationManager {
         return Array(topWords)
     }
     
-    /// Analyze emotional tone from text
-    /// Returns a simple categorization (positive, neutral, negative)
+    /// Analyze emotional tone from text using Apple's Natural Language framework
+    /// Returns a human-readable categorization based on sentiment score
     private func analyzeEmotionalTone(from text: String) -> String {
-        let lowercasedText = text.lowercased()
+        // Use Apple's Natural Language framework for accurate sentiment analysis
+        let tagger = NLTagger(tagSchemes: [.sentimentScore])
+        tagger.string = text
         
-        // Simple sentiment analysis using keyword matching
-        let positiveWords = ["happy", "great", "good", "love", "wonderful", "excellent", "amazing", "joy", "grateful"]
-        let negativeWords = ["sad", "bad", "terrible", "awful", "hate", "difficult", "hard", "stress", "worry"]
+        let (tag, _) = tagger.tag(
+            at: text.startIndex,
+            unit: .paragraph,
+            scheme: .sentimentScore
+        )
         
-        let positiveCount = positiveWords.reduce(0) { count, word in
-            count + lowercasedText.components(separatedBy: word).count - 1
+        // Convert sentiment score to descriptive label
+        guard let tag = tag,
+              let score = Double(tag.rawValue) else {
+            return "balanced"  // Default if no sentiment detected
         }
         
-        let negativeCount = negativeWords.reduce(0) { count, word in
-            count + lowercasedText.components(separatedBy: word).count - 1
-        }
-        
-        if positiveCount > negativeCount * 2 {
-            return "positive"
-        } else if negativeCount > positiveCount * 2 {
+        // Map sentiment score (-1.0 to +1.0) to descriptive terms
+        switch score {
+        case ..<(-0.5):
+            return "very challenging"
+        case -0.5..<(-0.2):
             return "challenging"
-        } else if positiveCount > negativeCount {
-            return "mostly positive"
-        } else if negativeCount > positiveCount {
-            return "reflective"
-        } else {
+        case -0.2..<0.2:
             return "balanced"
+        case 0.2..<0.5:
+            return "mostly positive"
+        default:
+            return "positive"
         }
     }
 }

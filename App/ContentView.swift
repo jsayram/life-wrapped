@@ -359,6 +359,7 @@ struct HistoryTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var sessions: [RecordingSession] = []
     @State private var sessionWordCounts: [UUID: Int] = [:] // Cache word counts
+    @State private var sessionSentiments: [UUID: Double] = [:] // Cache sentiments
     @State private var isLoading = true
     @State private var playbackError: String?
     
@@ -407,7 +408,8 @@ struct HistoryTab: View {
                         NavigationLink(destination: sessionDetailView(for: session)) {
                             SessionRow(
                                 session: session,
-                                wordCount: sessionWordCounts[session.sessionId]
+                                wordCount: sessionWordCounts[session.sessionId],
+                                sentiment: sessionSentiments[session.sessionId]
                             )
                         }
                     }
@@ -454,21 +456,25 @@ struct HistoryTab: View {
             sessions = try await coordinator.fetchRecentSessions(limit: 50)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
             
-            // Load word counts in parallel for all sessions
+            // Load word counts and sentiments in parallel for all sessions
             guard let dbManager = coordinator.getDatabaseManager() else { return }
-            await withTaskGroup(of: (UUID, Int).self) { group in
+            await withTaskGroup(of: (UUID, Int, Double?).self) { group in
                 for session in sessions {
                     group.addTask {
                         let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
-                        return (session.sessionId, count)
+                        let sentiment = try? await dbManager.fetchSessionSentiment(sessionId: session.sessionId)
+                        return (session.sessionId, count, sentiment)
                     }
                 }
                 
-                for await (sessionId, wordCount) in group {
+                for await (sessionId, wordCount, sentiment) in group {
                     sessionWordCounts[sessionId] = wordCount
+                    if let sentiment = sentiment {
+                        sessionSentiments[sessionId] = sentiment
+                    }
                 }
             }
-            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions")
+            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions and \(sessionSentiments.count) sentiments")
         } catch {
             print("❌ [HistoryTab] Failed to load sessions: \(error)")
         }
@@ -503,6 +509,7 @@ struct HistoryTab: View {
 struct SessionRow: View {
     let session: RecordingSession
     let wordCount: Int?
+    let sentiment: Double?
     
     var body: some View {
         HStack(spacing: 12) {
@@ -550,6 +557,12 @@ struct SessionRow: View {
             
             Spacer()
             
+            // Sentiment badge
+            if let sentiment = sentiment {
+                Text(sentimentEmoji(sentiment))
+                    .font(.title3)
+            }
+            
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -564,6 +577,16 @@ struct SessionRow: View {
             return "\(minutes)m \(seconds)s"
         } else {
             return "\(seconds)s"
+        }
+    }
+    
+    private func sentimentEmoji(_ score: Double) -> String {
+        switch score {
+        case ..<(-0.5): return "😢"
+        case -0.5..<(-0.2): return "😔"
+        case -0.2..<0.2: return "😐"
+        case 0.2..<0.5: return "🙂"
+        default: return "😊"
         }
     }
 }
@@ -692,6 +715,7 @@ struct InsightsTab: View {
     @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
     @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
     @State private var topWords: [WordFrequency] = []
+    @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var wordLimit: Int = 20
@@ -1002,6 +1026,77 @@ struct InsightsTab: View {
                             }
                         }
                         
+                        // Emotional Trends section
+                        if !dailySentiment.isEmpty {
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Emotional Trends")
+                                        .font(.headline)
+                                        .padding(.bottom, 4)
+                                    
+                                    Text("Daily sentiment analysis from your journal entries")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.bottom, 8)
+                                    
+                                    // Line chart showing sentiment over time
+                                    Chart(dailySentiment, id: \.date) { data in
+                                        LineMark(
+                                            x: .value("Date", data.date),
+                                            y: .value("Sentiment", data.sentiment)
+                                        )
+                                        .foregroundStyle(sentimentColor(data.sentiment).gradient)
+                                        .interpolationMethod(.catmullRom)
+                                        
+                                        PointMark(
+                                            x: .value("Date", data.date),
+                                            y: .value("Sentiment", data.sentiment)
+                                        )
+                                        .foregroundStyle(sentimentColor(data.sentiment))
+                                    }
+                                    .chartYScale(domain: -1...1)
+                                    .chartYAxis {
+                                        AxisMarks(values: [-1, -0.5, 0, 0.5, 1]) { value in
+                                            AxisGridLine()
+                                            AxisValueLabel {
+                                                if let score = value.as(Double.self) {
+                                                    Text(sentimentLabel(score))
+                                                        .font(.caption2)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .chartXAxis {
+                                        AxisMarks { value in
+                                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                        }
+                                    }
+                                    .frame(minHeight: 200, maxHeight: 200)
+                                    
+                                    // Summary stats
+                                    HStack(spacing: 16) {
+                                        sentimentStatBox(
+                                            label: "Positive",
+                                            count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
+                                            color: .green
+                                        )
+                                        sentimentStatBox(
+                                            label: "Neutral",
+                                            count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
+                                            color: .gray
+                                        )
+                                        sentimentStatBox(
+                                            label: "Negative",
+                                            count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
+                                            color: .red
+                                        )
+                                    }
+                                    .padding(.top, 8)
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                        
                         // Summaries section
                         if !summaries.isEmpty {
                             Section("Summaries") {
@@ -1084,6 +1179,10 @@ struct InsightsTab: View {
                 limit: wordLimit,
                 customExcludedWords: customExcludedWords
             )
+            
+            // Load daily sentiment data
+            let (startDate, endDate) = getDateRange(for: selectedTimeRange)
+            dailySentiment = try await coordinator.fetchDailySentiment(from: startDate, to: endDate)
             
             // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
@@ -1227,6 +1326,43 @@ struct InsightsTab: View {
         case 10...14: return .teal    // 11-15
         default: return .cyan         // 16-20
         }
+    }
+    
+    // MARK: - Sentiment Helpers
+    
+    private func sentimentColor(_ score: Double) -> Color {
+        switch score {
+        case ..<(-0.3): return .red
+        case -0.3..<0.3: return .gray
+        default: return .green
+        }
+    }
+    
+    private func sentimentLabel(_ score: Double) -> String {
+        switch score {
+        case ..<(-0.5): return "😢"
+        case -0.5..<(-0.2): return "😔"
+        case -0.2..<0.2: return "😐"
+        case 0.2..<0.5: return "🙂"
+        default: return "😊"
+        }
+    }
+    
+    @ViewBuilder
+    private func sentimentStatBox(label: String, count: Int, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text("\(count)")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(color)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

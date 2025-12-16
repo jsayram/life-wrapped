@@ -10,6 +10,7 @@ struct SessionDetailView: View {
     let session: RecordingSession
     
     @State private var transcriptSegments: [TranscriptSegment] = []
+    @State private var sessionSentiment: Double?
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var currentlyPlayingChunkIndex: Int?
@@ -19,8 +20,25 @@ struct SessionDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Session Info Card
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Session Details")
-                        .font(.headline)
+                    HStack {
+                        Text("Session Details")
+                            .font(.headline)
+                        Spacer()
+                        if let sentiment = sessionSentiment {
+                            HStack(spacing: 6) {
+                                Text(sentimentEmoji(sentiment))
+                                    .font(.title2)
+                                Text(sentimentCategory(sentiment))
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(sentimentColor(sentiment))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(sentimentColor(sentiment).opacity(0.15))
+                            .clipShape(Capsule())
+                        }
+                    }
                     
                     InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
                     InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
@@ -224,6 +242,13 @@ struct SessionDetailView: View {
             loadError = error.localizedDescription
         }
         
+        // Load sentiment for this session
+        do {
+            sessionSentiment = try await coordinator.fetchSessionSentiment(sessionId: session.sessionId)
+        } catch {
+            print("❌ [SessionDetailView] Failed to load sentiment: \(error)")
+        }
+        
         isLoading = false
     }
     
@@ -326,6 +351,34 @@ struct ChunkCard: View {
             return "\(minutes)m \(seconds)s"
         } else {
             return "\(seconds)s"
+        }
+    }
+    
+    // MARK: - Sentiment Helpers
+    
+    private func sentimentEmoji(_ score: Double) -> String {
+        switch score {
+        case ..<(-0.5): return "😢"
+        case -0.5..<(-0.2): return "😔"
+        case -0.2..<0.2: return "😐"
+        case 0.2..<0.5: return "🙂"
+        default: return "😊"
+        }
+    }
+    
+    private func sentimentCategory(_ score: Double) -> String {
+        switch score {
+        case ..<(-0.3): return "Negative"
+        case -0.3..<0.3: return "Neutral"
+        default: return "Positive"
+        }
+    }
+    
+    private func sentimentColor(_ score: Double) -> Color {
+        switch score {
+        case ..<(-0.3): return .red
+        case -0.3..<0.3: return .gray
+        default: return .green
         }
     }
 }

@@ -730,8 +730,41 @@ public final class AppCoordinator: ObservableObject {
         }
         
         do {
+            // Step 1: Transcribe audio
             let segments = try await transcriber.transcribe(chunk: chunk)
-            return segments
+            
+            // Step 2: Analyze sentiment for each segment (real-time)
+            let sentimentAnalyzer = SentimentAnalyzer()
+            var enrichedSegments: [TranscriptSegment] = []
+            
+            for segment in segments {
+                let sentimentScore = await sentimentAnalyzer.analyze(segment: segment)
+                
+                // Create enriched segment with sentiment data
+                let enrichedSegment = TranscriptSegment(
+                    id: segment.id,
+                    audioChunkID: segment.audioChunkID,
+                    startTime: segment.startTime,
+                    endTime: segment.endTime,
+                    text: segment.text,
+                    confidence: segment.confidence,
+                    languageCode: segment.languageCode,
+                    createdAt: segment.createdAt,
+                    speakerLabel: segment.speakerLabel,
+                    entitiesJSON: segment.entitiesJSON,
+                    wordCount: segment.wordCount,
+                    sentimentScore: sentimentScore
+                )
+                enrichedSegments.append(enrichedSegment)
+                
+                // Log sentiment analysis for monitoring
+                if let score = sentimentScore {
+                    let category = SentimentAnalyzer.categorizeShort(score)
+                    print("📊 [AppCoordinator] Segment sentiment: \(category) (\(String(format: "%.2f", score)))")
+                }
+            }
+            
+            return enrichedSegments
         } catch {
             throw AppCoordinatorError.transcriptionFailed(error)
         }
@@ -1023,6 +1056,24 @@ public final class AppCoordinator: ObservableObject {
         }
         
         return try await dbManager.fetchTranscriptText(startDate: startDate, endDate: endDate)
+    }
+    
+    /// Fetch daily sentiment averages for a date range
+    public func fetchDailySentiment(from startDate: Date, to endDate: Date) async throws -> [(date: Date, sentiment: Double)] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchDailySentiment(from: startDate, to: endDate)
+    }
+    
+    /// Fetch sentiment for a specific session
+    public func fetchSessionSentiment(sessionId: UUID) async throws -> Double? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSessionSentiment(sessionId: sessionId)
     }
     
     /// Delete a recording and its associated data
