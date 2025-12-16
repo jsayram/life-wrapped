@@ -30,7 +30,7 @@ public actor LanguageDetector {
             "pt": "pt", "zh": "cn", "ja": "jp", "ko": "kr", "ar": "sa",
             "ru": "ru", "nl": "nl", "sv": "se", "no": "no", "da": "dk",
             "fi": "fi", "pl": "pl", "tr": "tr", "el": "gr", "he": "il",
-            "hi": "in", "th": "th", "vi": "vn", "id": "id", "ms": "my",
+            "hi": "in", "bn": "bd", "th": "th", "vi": "vn", "id": "id", "ms": "my",
             "uk": "ua", "cs": "cz", "sk": "sk", "ro": "ro", "hr": "hr", "hu": "hu"
         ]
         
@@ -47,20 +47,11 @@ public actor LanguageDetector {
         return emoji.isEmpty ? "🌐" : emoji
     }
     
-    /// Get list of all languages supported by Apple's NL framework
-    /// - Returns: Array of ISO language codes (priority languages first)
+    /// Get list of supported languages
+    /// - Returns: Array of ISO language codes (English and Spanish first)
     public static func supportedLanguages() -> [String] {
-        // Priority languages at the top
-        let priorityLanguages = ["en", "es", "hi", "fr", "vi", "zh", "ko", "tr"]
-        
-        // All other supported languages
-        let otherLanguages = [
-            "ar", "hr", "cs", "da", "nl", "fi", "de", "el",
-            "he", "hu", "id", "it", "ja", "ms", "no", "pl", "pt",
-            "ro", "ru", "sk", "sv", "th", "uk"
-        ].sorted()
-        
-        return priorityLanguages + otherLanguages
+        // Only support these 9 languages
+        return ["en", "es", "hi", "bn", "fr", "vi", "zh", "ko", "tr"]
     }
     
     /// Detect the dominant language in text
