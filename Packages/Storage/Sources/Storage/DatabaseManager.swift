@@ -1297,6 +1297,125 @@ public actor DatabaseManager {
         return nil
     }
     
+    /// Fetch period summary for a specific date and type
+    public func fetchPeriodSummary(type: PeriodType, date: Date) throws -> Summary? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            FROM summaries
+            WHERE period_type = ?
+            AND DATE(period_start, 'unixepoch') = DATE(?, 'unixepoch')
+            AND session_id IS NULL
+            LIMIT 1
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, type.rawValue, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_double(stmt, 2, date.timeIntervalSince1970)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return try parseSummary(from: stmt)
+        }
+        
+        return nil
+    }
+    
+    /// Upsert (insert or update) a period summary
+    public func upsertPeriodSummary(type: PeriodType, text: String, start: Date, end: Date) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        // Check if summary exists
+        if let existing = try fetchPeriodSummary(type: type, date: start) {
+            // Update existing
+            let sql = """
+                UPDATE summaries
+                SET text = ?, period_end = ?
+                WHERE id = ?
+                """
+            
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(lastError())
+            }
+            
+            sqlite3_bind_text(stmt, 1, text, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(stmt, 2, end.timeIntervalSince1970)
+            sqlite3_bind_text(stmt, 3, existing.id.uuidString, -1, SQLITE_TRANSIENT)
+            
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw StorageError.stepFailed(lastError())
+            }
+        } else {
+            // Insert new
+            let summary = Summary(
+                id: UUID(),
+                periodType: type,
+                periodStart: start,
+                periodEnd: end,
+                text: text,
+                createdAt: Date(),
+                sessionId: nil
+            )
+            try insertSummary(summary)
+        }
+    }
+    
+    /// Fetch all sessions for a specific date
+    public func fetchSessionsByDate(date: Date) throws -> [RecordingSession] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        
+        // Get all session IDs for this date
+        let sql = """
+            SELECT DISTINCT session_id
+            FROM audio_chunks
+            WHERE start_time >= ? AND start_time < ?
+            ORDER BY MIN(start_time) ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startOfDay.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endOfDay.timeIntervalSince1970)
+        
+        var sessionIds: [UUID] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let sessionIdString = String(cString: sqlite3_column_text(stmt, 0))
+            if let sessionId = UUID(uuidString: sessionIdString) {
+                sessionIds.append(sessionId)
+            }
+        }
+        
+        // Fetch full sessions with chunks
+        var sessions: [RecordingSession] = []
+        for sessionId in sessionIds {
+            let chunks = try fetchChunksBySession(sessionId: sessionId)
+            if !chunks.isEmpty {
+                let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+                sessions.append(session)
+            }
+        }
+        
+        return sessions
+    }
+    
     public func deleteSummary(id: UUID) throws {
         guard let db = db else { throw StorageError.notOpen }
         
