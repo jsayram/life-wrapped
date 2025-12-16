@@ -1090,6 +1090,15 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchLanguageDistribution()
     }
     
+    /// Fetch dominant language for a specific session
+    public func fetchSessionLanguage(sessionId: UUID) async throws -> String? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSessionLanguage(sessionId: sessionId)
+    }
+    
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
         guard let dbManager = databaseManager else {

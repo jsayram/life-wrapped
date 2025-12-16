@@ -20,25 +20,67 @@ public actor LanguageDetector {
         return locale.localizedString(forLanguageCode: code) ?? code.uppercased()
     }
     
+    /// Get flag emoji for language ISO code
+    /// - Parameter code: ISO language code (e.g., "en", "es", "fr")
+    /// - Returns: Flag emoji (e.g., 🇺🇸, 🇪🇸, 🇫🇷)
+    public static func flagEmoji(for code: String) -> String {
+        // Map language codes to country codes for flags
+        let languageToCountry: [String: String] = [
+            "en": "us", "es": "mx", "fr": "fr", "de": "de", "it": "it",
+            "pt": "pt", "zh": "cn", "ja": "jp", "ko": "kr", "ar": "sa",
+            "ru": "ru", "nl": "nl", "sv": "se", "no": "no", "da": "dk",
+            "fi": "fi", "pl": "pl", "tr": "tr", "el": "gr", "he": "il",
+            "hi": "in", "th": "th", "vi": "vn", "id": "id", "ms": "my",
+            "uk": "ua", "cs": "cz", "sk": "sk", "ro": "ro", "hr": "hr", "hu": "hu"
+        ]
+        
+        let countryCode = languageToCountry[code.lowercased()] ?? code.lowercased()
+        let base: UInt32 = 127397
+        var emoji = ""
+        
+        for scalar in countryCode.uppercased().unicodeScalars {
+            if let scalarValue = UnicodeScalar(base + scalar.value) {
+                emoji.append(String(scalarValue))
+            }
+        }
+        
+        return emoji.isEmpty ? "🌐" : emoji
+    }
+    
     /// Get list of all languages supported by Apple's NL framework
-    /// - Returns: Array of ISO language codes
+    /// - Returns: Array of ISO language codes (priority languages first)
     public static func supportedLanguages() -> [String] {
-        // Common languages supported by Apple's Natural Language framework
-        // This list represents the most commonly used languages
-        return [
-            "ar", "zh", "hr", "cs", "da", "nl", "en", "fi", "fr", "de", "el",
-            "he", "hi", "hu", "id", "it", "ja", "ko", "ms", "no", "pl", "pt",
-            "ro", "ru", "sk", "es", "sv", "th", "tr", "uk", "vi"
+        // Priority languages at the top
+        let priorityLanguages = ["en", "es", "hi", "fr", "vi", "zh", "ko", "tr"]
+        
+        // All other supported languages
+        let otherLanguages = [
+            "ar", "hr", "cs", "da", "nl", "fi", "de", "el",
+            "he", "hu", "id", "it", "ja", "ms", "no", "pl", "pt",
+            "ro", "ru", "sk", "sv", "th", "uk"
         ].sorted()
+        
+        return priorityLanguages + otherLanguages
     }
     
     /// Detect the dominant language in text
     /// - Parameter text: Text to analyze
     /// - Returns: Language code (e.g., "en", "es", "fr") or nil if undetermined
     public func detectLanguage(in text: String) -> String? {
-        guard !text.isEmpty else { return nil }
+        // Need minimum text length for accurate detection
+        guard text.count >= 10 else { return nil }
         
         recognizer.reset()
+        
+        // Constrain detection to enabled languages from Settings
+        if let enabledLanguages = UserDefaults.standard.array(forKey: "enabledLanguages") as? [String],
+           !enabledLanguages.isEmpty {
+            let nlLanguages = enabledLanguages.compactMap { NLLanguage(rawValue: $0) }
+            if !nlLanguages.isEmpty {
+                recognizer.languageHints = nlLanguages.reduce(into: [:]) { $0[$1] = 1.0 }
+            }
+        }
+        
         recognizer.processString(text)
         
         guard let language = recognizer.dominantLanguage else {

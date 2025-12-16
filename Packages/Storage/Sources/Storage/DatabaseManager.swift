@@ -1137,6 +1137,40 @@ public actor DatabaseManager {
         return results
     }
     
+    /// Fetch dominant language for a specific session
+    public func fetchSessionLanguage(sessionId: UUID) throws -> String? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                ts.language_code,
+                SUM(ts.word_count) as total_words
+            FROM transcript_segments ts
+            INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+            WHERE ac.session_id = ?
+                AND ts.language_code IS NOT NULL
+            GROUP BY ts.language_code
+            ORDER BY total_words DESC
+            LIMIT 1
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        let sessionIdString = sessionId.uuidString
+        sqlite3_bind_text(stmt, 1, (sessionIdString as NSString).utf8String, -1, nil)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return String(cString: sqlite3_column_text(stmt, 0))
+        }
+        
+        return nil
+    }
+    
     // MARK: - Summary CRUD
     
     public func insertSummary(_ summary: Summary) throws {

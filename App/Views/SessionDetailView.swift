@@ -4,6 +4,7 @@
 
 import SwiftUI
 import SharedModels
+import Transcription
 
 struct SessionDetailView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -11,6 +12,7 @@ struct SessionDetailView: View {
     
     @State private var transcriptSegments: [TranscriptSegment] = []
     @State private var sessionSentiment: Double?
+    @State private var sessionLanguage: String?
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var currentlyPlayingChunkIndex: Int?
@@ -24,19 +26,38 @@ struct SessionDetailView: View {
                         Text("Session Details")
                             .font(.headline)
                         Spacer()
-                        if let sentiment = sessionSentiment {
-                            HStack(spacing: 6) {
-                                Text(sentimentEmoji(sentiment))
-                                    .font(.title2)
-                                Text(sentimentCategory(sentiment))
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(sentimentColor(sentiment))
+                        HStack(spacing: 8) {
+                            // Language badge
+                            if let language = sessionLanguage {
+                                HStack(spacing: 6) {
+                                    Text(LanguageDetector.flagEmoji(for: language))
+                                        .font(.title3)
+                                    Text(LanguageDetector.displayName(for: language))
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.blue)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.15))
+                                .clipShape(Capsule())
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(sentimentColor(sentiment).opacity(0.15))
-                            .clipShape(Capsule())
+                            
+                            // Sentiment badge
+                            if let sentiment = sessionSentiment {
+                                HStack(spacing: 6) {
+                                    Text(sentimentEmoji(sentiment))
+                                        .font(.title2)
+                                    Text(sentimentCategory(sentiment))
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(sentimentColor(sentiment))
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(sentimentColor(sentiment).opacity(0.15))
+                                .clipShape(Capsule())
+                            }
                         }
                     }
                     
@@ -247,6 +268,13 @@ struct SessionDetailView: View {
             sessionSentiment = try await coordinator.fetchSessionSentiment(sessionId: session.sessionId)
         } catch {
             print("❌ [SessionDetailView] Failed to load sentiment: \(error)")
+        }
+        
+        // Load dominant language for this session
+        do {
+            sessionLanguage = try await coordinator.fetchSessionLanguage(sessionId: session.sessionId)
+        } catch {
+            print("❌ [SessionDetailView] Failed to load language: \(error)")
         }
         
         isLoading = false

@@ -361,6 +361,7 @@ struct HistoryTab: View {
     @State private var sessions: [RecordingSession] = []
     @State private var sessionWordCounts: [UUID: Int] = [:] // Cache word counts
     @State private var sessionSentiments: [UUID: Double] = [:] // Cache sentiments
+    @State private var sessionLanguages: [UUID: String] = [:] // Cache languages
     @State private var isLoading = true
     @State private var playbackError: String?
     
@@ -410,7 +411,8 @@ struct HistoryTab: View {
                             SessionRow(
                                 session: session,
                                 wordCount: sessionWordCounts[session.sessionId],
-                                sentiment: sessionSentiments[session.sessionId]
+                                sentiment: sessionSentiments[session.sessionId],
+                                language: sessionLanguages[session.sessionId]
                             )
                         }
                     }
@@ -457,25 +459,29 @@ struct HistoryTab: View {
             sessions = try await coordinator.fetchRecentSessions(limit: 50)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
             
-            // Load word counts and sentiments in parallel for all sessions
+            // Load word counts, sentiments, and languages in parallel for all sessions
             guard let dbManager = coordinator.getDatabaseManager() else { return }
-            await withTaskGroup(of: (UUID, Int, Double?).self) { group in
+            await withTaskGroup(of: (UUID, Int, Double?, String?).self) { group in
                 for session in sessions {
                     group.addTask {
                         let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
                         let sentiment = try? await dbManager.fetchSessionSentiment(sessionId: session.sessionId)
-                        return (session.sessionId, count, sentiment)
+                        let language = try? await dbManager.fetchSessionLanguage(sessionId: session.sessionId)
+                        return (session.sessionId, count, sentiment, language)
                     }
                 }
                 
-                for await (sessionId, wordCount, sentiment) in group {
+                for await (sessionId, wordCount, sentiment, language) in group {
                     sessionWordCounts[sessionId] = wordCount
                     if let sentiment = sentiment {
                         sessionSentiments[sessionId] = sentiment
                     }
+                    if let language = language {
+                        sessionLanguages[sessionId] = language
+                    }
                 }
             }
-            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions and \(sessionSentiments.count) sentiments")
+            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions, \(sessionSentiments.count) sentiments, and \(sessionLanguages.count) languages")
         } catch {
             print("❌ [HistoryTab] Failed to load sessions: \(error)")
         }
@@ -511,6 +517,7 @@ struct SessionRow: View {
     let session: RecordingSession
     let wordCount: Int?
     let sentiment: Double?
+    let language: String?
     
     var body: some View {
         HStack(spacing: 12) {
@@ -558,10 +565,18 @@ struct SessionRow: View {
             
             Spacer()
             
-            // Sentiment badge
-            if let sentiment = sentiment {
-                Text(sentimentEmoji(sentiment))
-                    .font(.title3)
+            HStack(spacing: 8) {
+                // Language flag
+                if let language = language {
+                    Text(LanguageDetector.flagEmoji(for: language))
+                        .font(.title3)
+                }
+                
+                // Sentiment badge
+                if let sentiment = sentiment {
+                    Text(sentimentEmoji(sentiment))
+                        .font(.title3)
+                }
             }
             
             Image(systemName: "chevron.right")
@@ -2966,6 +2981,8 @@ struct LanguageSettingsView: View {
                         }
                     )) {
                         HStack {
+                            Text(LanguageDetector.flagEmoji(for: languageCode))
+                                .font(.title3)
                             Text(LanguageDetector.displayName(for: languageCode))
                             Spacer()
                             Text(languageCode)
@@ -2990,8 +3007,8 @@ struct LanguageSettingsView: View {
         if let savedLanguages = UserDefaults.standard.array(forKey: enabledLanguagesKey) as? [String] {
             enabledLanguages = Set(savedLanguages)
         } else {
-            // Default to common languages if no preferences saved
-            let defaultLanguages = ["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko", "ar", "ru"]
+            // Default to English and Spanish only
+            let defaultLanguages = ["en", "es"]
             enabledLanguages = Set(defaultLanguages.filter { allLanguages.contains($0) })
             saveEnabledLanguages()
         }
