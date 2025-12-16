@@ -1,0 +1,737 @@
+{
+  "exportDate": "2025-12-16T18:00:00Z",
+  "version": "1.0",
+  "audioChunks": [
+    {
+      "id": "11111111-1111-1111-1111-000000000001",
+      "fileURL": "/tmp/audio/s1/c1.m4a",
+      "startTime": "2025-12-16T08:00:00Z",
+      "endTime": "2025-12-16T08:03:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-16T08:00:00Z",
+      "sessionId": "aaaa0001-0000-0000-0000-000000000001",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000002",
+      "fileURL": "/tmp/audio/s2/c1.m4a",
+      "startTime": "2025-12-16T14:30:00Z",
+      "endTime": "2025-12-16T14:32:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-16T14:30:00Z",
+      "sessionId": "aaaa0002-0000-0000-0000-000000000002",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000003",
+      "fileURL": "/tmp/audio/s3/c1.m4a",
+      "startTime": "2025-12-15T09:00:00Z",
+      "endTime": "2025-12-15T09:04:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-15T09:00:00Z",
+      "sessionId": "aaaa0003-0000-0000-0000-000000000003",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000004",
+      "fileURL": "/tmp/audio/s4/c1.m4a",
+      "startTime": "2025-12-14T16:00:00Z",
+      "endTime": "2025-12-14T16:02:30Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-14T16:00:00Z",
+      "sessionId": "aaaa0004-0000-0000-0000-000000000004",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000005",
+      "fileURL": "/tmp/audio/s5/c1.m4a",
+      "startTime": "2025-12-13T11:00:00Z",
+      "endTime": "2025-12-13T11:03:15Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-13T11:00:00Z",
+      "sessionId": "aaaa0005-0000-0000-0000-000000000005",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000006",
+      "fileURL": "/tmp/audio/s6/c1.m4a",
+      "startTime": "2025-12-10T10:00:00Z",
+      "endTime": "2025-12-10T10:02:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-10T10:00:00Z",
+      "sessionId": "aaaa0006-0000-0000-0000-000000000006",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000007",
+      "fileURL": "/tmp/audio/s7/c1.m4a",
+      "startTime": "2025-12-05T15:30:00Z",
+      "endTime": "2025-12-05T15:33:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-12-05T15:30:00Z",
+      "sessionId": "aaaa0007-0000-0000-0000-000000000007",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000008",
+      "fileURL": "/tmp/audio/s8/c1.m4a",
+      "startTime": "2025-11-20T09:00:00Z",
+      "endTime": "2025-11-20T09:02:30Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-11-20T09:00:00Z",
+      "sessionId": "aaaa0008-0000-0000-0000-000000000008",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000009",
+      "fileURL": "/tmp/audio/s9/c1.m4a",
+      "startTime": "2025-11-15T14:00:00Z",
+      "endTime": "2025-11-15T14:03:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-11-15T14:00:00Z",
+      "sessionId": "aaaa0009-0000-0000-0000-000000000009",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000010",
+      "fileURL": "/tmp/audio/s10/c1.m4a",
+      "startTime": "2025-10-25T10:30:00Z",
+      "endTime": "2025-10-25T10:32:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-10-25T10:30:00Z",
+      "sessionId": "aaaa0010-0000-0000-0000-000000000010",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000011",
+      "fileURL": "/tmp/audio/s11/c1.m4a",
+      "startTime": "2025-09-10T08:00:00Z",
+      "endTime": "2025-09-10T08:04:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-09-10T08:00:00Z",
+      "sessionId": "aaaa0011-0000-0000-0000-000000000011",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000012",
+      "fileURL": "/tmp/audio/s12/c1.m4a",
+      "startTime": "2025-08-05T13:00:00Z",
+      "endTime": "2025-08-05T13:02:30Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-08-05T13:00:00Z",
+      "sessionId": "aaaa0012-0000-0000-0000-000000000012",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000013",
+      "fileURL": "/tmp/audio/s13/c1.m4a",
+      "startTime": "2025-07-20T11:00:00Z",
+      "endTime": "2025-07-20T11:03:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-07-20T11:00:00Z",
+      "sessionId": "aaaa0013-0000-0000-0000-000000000013",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000014",
+      "fileURL": "/tmp/audio/s14/c1.m4a",
+      "startTime": "2025-06-15T16:00:00Z",
+      "endTime": "2025-06-15T16:02:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-06-15T16:00:00Z",
+      "sessionId": "aaaa0014-0000-0000-0000-000000000014",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000015",
+      "fileURL": "/tmp/audio/s15/c1.m4a",
+      "startTime": "2025-05-10T09:30:00Z",
+      "endTime": "2025-05-10T09:33:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-05-10T09:30:00Z",
+      "sessionId": "aaaa0015-0000-0000-0000-000000000015",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000016",
+      "fileURL": "/tmp/audio/s16/c1.m4a",
+      "startTime": "2025-04-05T14:00:00Z",
+      "endTime": "2025-04-05T14:02:30Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-04-05T14:00:00Z",
+      "sessionId": "aaaa0016-0000-0000-0000-000000000016",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000017",
+      "fileURL": "/tmp/audio/s17/c1.m4a",
+      "startTime": "2025-03-12T10:00:00Z",
+      "endTime": "2025-03-12T10:03:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-03-12T10:00:00Z",
+      "sessionId": "aaaa0017-0000-0000-0000-000000000017",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000018",
+      "fileURL": "/tmp/audio/s18/c1.m4a",
+      "startTime": "2025-02-14T15:00:00Z",
+      "endTime": "2025-02-14T15:02:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-02-14T15:00:00Z",
+      "sessionId": "aaaa0018-0000-0000-0000-000000000018",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000019",
+      "fileURL": "/tmp/audio/s19/c1.m4a",
+      "startTime": "2025-01-25T11:30:00Z",
+      "endTime": "2025-01-25T11:33:00Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2025-01-25T11:30:00Z",
+      "sessionId": "aaaa0019-0000-0000-0000-000000000019",
+      "chunkIndex": 0
+    },
+    {
+      "id": "11111111-1111-1111-1111-000000000020",
+      "fileURL": "/tmp/audio/s20/c1.m4a",
+      "startTime": "2024-12-20T09:00:00Z",
+      "endTime": "2024-12-20T09:02:30Z",
+      "format": "m4a",
+      "sampleRate": 44100,
+      "createdAt": "2024-12-20T09:00:00Z",
+      "sessionId": "aaaa0020-0000-0000-0000-000000000020",
+      "chunkIndex": 0
+    }
+  ],
+  "transcriptSegments": [
+    {
+      "id": "22222222-2222-2222-2222-000000000001",
+      "audioChunkID": "11111111-1111-1111-1111-000000000001",
+      "startTime": 0.0,
+      "endTime": 30.0,
+      "text": "Good morning! Starting my day with a quick team standup meeting. We discussed the sprint goals and identified a few blockers that need attention.",
+      "confidence": 0.94,
+      "languageCode": "en",
+      "createdAt": "2025-12-16T08:00:00Z",
+      "sentimentScore": 0.6
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000002",
+      "audioChunkID": "11111111-1111-1111-1111-000000000001",
+      "startTime": 30.0,
+      "endTime": 60.0,
+      "text": "The new feature implementation is progressing well. We're ahead of schedule on the backend API development.",
+      "confidence": 0.92,
+      "languageCode": "en",
+      "createdAt": "2025-12-16T08:00:30Z",
+      "sentimentScore": 0.8
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000003",
+      "audioChunkID": "11111111-1111-1111-1111-000000000001",
+      "startTime": 60.0,
+      "endTime": 90.0,
+      "text": "Need to follow up with the design team about the new UI mockups. The color scheme looks great but we need to ensure accessibility compliance.",
+      "confidence": 0.91,
+      "languageCode": "en",
+      "createdAt": "2025-12-16T08:01:00Z",
+      "sentimentScore": 0.4
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000004",
+      "audioChunkID": "11111111-1111-1111-1111-000000000002",
+      "startTime": 0.0,
+      "endTime": 25.0,
+      "text": "Afternoon check-in. Just finished a productive coding session. Implemented the new authentication flow using OAuth 2.0.",
+      "confidence": 0.95,
+      "languageCode": "en",
+      "createdAt": "2025-12-16T14:30:00Z",
+      "sentimentScore": 0.7
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000005",
+      "audioChunkID": "11111111-1111-1111-1111-000000000002",
+      "startTime": 25.0,
+      "endTime": 50.0,
+      "text": "Tuve una llamada con el cliente. Están muy contentos con el progreso del proyecto. Necesitamos preparar la demo para la próxima semana.",
+      "confidence": 0.89,
+      "languageCode": "es",
+      "createdAt": "2025-12-16T14:30:25Z",
+      "sentimentScore": 0.85
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000006",
+      "audioChunkID": "11111111-1111-1111-1111-000000000003",
+      "startTime": 0.0,
+      "endTime": 35.0,
+      "text": "Weekend planning session. Going to catch up on some personal projects and maybe work on that side hustle idea I've been thinking about.",
+      "confidence": 0.93,
+      "languageCode": "en",
+      "createdAt": "2025-12-15T09:00:00Z",
+      "sentimentScore": 0.65
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000007",
+      "audioChunkID": "11111111-1111-1111-1111-000000000003",
+      "startTime": 35.0,
+      "endTime": 70.0,
+      "text": "Also need to schedule that dentist appointment I've been putting off. And remember to call mom, haven't talked to her in a few days.",
+      "confidence": 0.90,
+      "languageCode": "en",
+      "createdAt": "2025-12-15T09:00:35Z",
+      "sentimentScore": 0.2
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000008",
+      "audioChunkID": "11111111-1111-1111-1111-000000000004",
+      "startTime": 0.0,
+      "endTime": 40.0,
+      "text": "Code review time. Looking at the pull request from Sarah. The implementation looks solid but there are a few edge cases we need to handle better.",
+      "confidence": 0.92,
+      "languageCode": "en",
+      "createdAt": "2025-12-14T16:00:00Z",
+      "sentimentScore": 0.5
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000009",
+      "audioChunkID": "11111111-1111-1111-1111-000000000005",
+      "startTime": 0.0,
+      "endTime": 45.0,
+      "text": "Friday reflection. This week was intense but rewarding. Shipped three major features and resolved two critical bugs. The team collaboration has been excellent.",
+      "confidence": 0.96,
+      "languageCode": "en",
+      "createdAt": "2025-12-13T11:00:00Z",
+      "sentimentScore": 0.9
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000010",
+      "audioChunkID": "11111111-1111-1111-1111-000000000006",
+      "startTime": 0.0,
+      "endTime": 30.0,
+      "text": "Weekly planning meeting. Setting priorities for the upcoming sprint. Focus areas: performance optimization, user feedback integration, and technical debt reduction.",
+      "confidence": 0.94,
+      "languageCode": "en",
+      "createdAt": "2025-12-10T10:00:00Z",
+      "sentimentScore": 0.55
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000011",
+      "audioChunkID": "11111111-1111-1111-1111-000000000007",
+      "startTime": 0.0,
+      "endTime": 40.0,
+      "text": "Client presentation went really well today. They loved the new dashboard interface and the real-time analytics features we built. Got approval to move forward with phase two.",
+      "confidence": 0.95,
+      "languageCode": "en",
+      "createdAt": "2025-12-05T15:30:00Z",
+      "sentimentScore": 0.95
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000012",
+      "audioChunkID": "11111111-1111-1111-1111-000000000008",
+      "startTime": 0.0,
+      "endTime": 35.0,
+      "text": "Learning day. Attended a workshop on microservices architecture. Lots of interesting patterns and best practices that we could apply to our current project.",
+      "confidence": 0.91,
+      "languageCode": "en",
+      "createdAt": "2025-11-20T09:00:00Z",
+      "sentimentScore": 0.7
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000013",
+      "audioChunkID": "11111111-1111-1111-1111-000000000009",
+      "startTime": 0.0,
+      "endTime": 40.0,
+      "text": "Debugging session. Tracked down a tricky race condition in the async event handlers. Took a while but finally resolved it with proper synchronization.",
+      "confidence": 0.88,
+      "languageCode": "en",
+      "createdAt": "2025-11-15T14:00:00Z",
+      "sentimentScore": 0.3
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000014",
+      "audioChunkID": "11111111-1111-1111-1111-000000000010",
+      "startTime": 0.0,
+      "endTime": 30.0,
+      "text": "Team retrospective. Discussed what went well and what could be improved. Action items: better documentation, more pair programming sessions, and streamlined deployment process.",
+      "confidence": 0.93,
+      "languageCode": "en",
+      "createdAt": "2025-10-25T10:30:00Z",
+      "sentimentScore": 0.5
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000015",
+      "audioChunkID": "11111111-1111-1111-1111-000000000011",
+      "startTime": 0.0,
+      "endTime": 50.0,
+      "text": "आज बहुत अच्छा दिन था। टीम के साथ नई प्रोजेक्ट पर काम किया। हमने अच्छी प्रगति की है और क्लाइंट बहुत खुश है।",
+      "confidence": 0.87,
+      "languageCode": "hi",
+      "createdAt": "2025-09-10T08:00:00Z",
+      "sentimentScore": 0.85
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000016",
+      "audioChunkID": "11111111-1111-1111-1111-000000000012",
+      "startTime": 0.0,
+      "endTime": 35.0,
+      "text": "Vacation planning. Need to wrap up all the pending tasks before taking time off next month. Creating a comprehensive handover document for the team.",
+      "confidence": 0.94,
+      "languageCode": "en",
+      "createdAt": "2025-08-05T13:00:00Z",
+      "sentimentScore": 0.6
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000017",
+      "audioChunkID": "11111111-1111-1111-1111-000000000013",
+      "startTime": 0.0,
+      "endTime": 40.0,
+      "text": "Performance optimization results are in. We reduced the API response time by 40% through better caching strategies and database query optimization. Great teamwork!",
+      "confidence": 0.96,
+      "languageCode": "en",
+      "createdAt": "2025-07-20T11:00:00Z",
+      "sentimentScore": 0.9
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000018",
+      "audioChunkID": "11111111-1111-1111-1111-000000000014",
+      "startTime": 0.0,
+      "endTime": 30.0,
+      "text": "J'ai terminé la refactorisation du code legacy. C'était un défi mais maintenant le code est beaucoup plus maintenable et testable.",
+      "confidence": 0.89,
+      "languageCode": "fr",
+      "createdAt": "2025-06-15T16:00:00Z",
+      "sentimentScore": 0.75
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000019",
+      "audioChunkID": "11111111-1111-1111-1111-000000000015",
+      "startTime": 0.0,
+      "endTime": 45.0,
+      "text": "Quarterly review preparation. Compiling metrics on feature delivery, bug resolution rates, and customer satisfaction scores. Numbers look strong across the board.",
+      "confidence": 0.95,
+      "languageCode": "en",
+      "createdAt": "2025-05-10T09:30:00Z",
+      "sentimentScore": 0.8
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000020",
+      "audioChunkID": "11111111-1111-1111-1111-000000000016",
+      "startTime": 0.0,
+      "endTime": 35.0,
+      "text": "Innovation brainstorming session. Exploring AI integration possibilities for our product. Some really exciting ideas came up that could differentiate us in the market.",
+      "confidence": 0.92,
+      "languageCode": "en",
+      "createdAt": "2025-04-05T14:00:00Z",
+      "sentimentScore": 0.85
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000021",
+      "audioChunkID": "11111111-1111-1111-1111-000000000017",
+      "startTime": 0.0,
+      "endTime": 40.0,
+      "text": "Security audit findings review. Identified a few vulnerabilities that need immediate attention. Creating tickets and assigning priorities for the fix implementation.",
+      "confidence": 0.91,
+      "languageCode": "en",
+      "createdAt": "2025-03-12T10:00:00Z",
+      "sentimentScore": 0.3
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000022",
+      "audioChunkID": "11111111-1111-1111-1111-000000000018",
+      "startTime": 0.0,
+      "endTime": 30.0,
+      "text": "Valentine's Day surprise planning for the team. Organizing a virtual celebration with games and prizes. Work-life balance is important.",
+      "confidence": 0.93,
+      "languageCode": "en",
+      "createdAt": "2025-02-14T15:00:00Z",
+      "sentimentScore": 0.9
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000023",
+      "audioChunkID": "11111111-1111-1111-1111-000000000019",
+      "startTime": 0.0,
+      "endTime": 45.0,
+      "text": "New year momentum is strong. Team is energized and focused. We've made excellent progress on the roadmap items for Q1. Keeping up the pace.",
+      "confidence": 0.94,
+      "languageCode": "en",
+      "createdAt": "2025-01-25T11:30:00Z",
+      "sentimentScore": 0.8
+    },
+    {
+      "id": "22222222-2222-2222-2222-000000000024",
+      "audioChunkID": "11111111-1111-1111-1111-000000000020",
+      "startTime": 0.0,
+      "endTime": 35.0,
+      "text": "Year-end reflection for 2024. What a year it's been! We've delivered 12 major features, onboarded 5 new team members, and achieved 99.9% uptime. Proud of what we've accomplished.",
+      "confidence": 0.96,
+      "languageCode": "en",
+      "createdAt": "2024-12-20T09:00:00Z",
+      "sentimentScore": 0.95
+    }
+  ],
+  "summaries": [
+    {
+      "id": "33333333-3333-3333-3333-000000000001",
+      "periodType": "session",
+      "periodStart": "2025-12-16T08:00:00Z",
+      "periodEnd": "2025-12-16T08:03:00Z",
+      "text": "Morning standup meeting with the team. Discussed sprint goals, backend API progress, and design collaboration. Key themes: teamwork (8), development (12), planning (6), design (4).",
+      "createdAt": "2025-12-16T08:03:00Z",
+      "sessionId": "aaaa0001-0000-0000-0000-000000000001"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000002",
+      "periodType": "session",
+      "periodStart": "2025-12-16T14:30:00Z",
+      "periodEnd": "2025-12-16T14:32:00Z",
+      "text": "Productive afternoon session implementing OAuth 2.0 authentication flow. Client call went well with positive feedback. Key themes: coding (10), client (7), authentication (5).",
+      "createdAt": "2025-12-16T14:32:00Z",
+      "sessionId": "aaaa0002-0000-0000-0000-000000000002"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000003",
+      "periodType": "session",
+      "periodStart": "2025-12-15T09:00:00Z",
+      "periodEnd": "2025-12-15T09:04:00Z",
+      "text": "Weekend planning and personal tasks organization. Planning side projects and scheduling appointments. Key themes: planning (9), personal (7), organization (5).",
+      "createdAt": "2025-12-15T09:04:00Z",
+      "sessionId": "aaaa0003-0000-0000-0000-000000000003"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000004",
+      "periodType": "session",
+      "periodStart": "2025-12-14T16:00:00Z",
+      "periodEnd": "2025-12-14T16:02:30Z",
+      "text": "Code review session for Sarah's pull request. Solid implementation with attention needed for edge cases. Key themes: code (8), review (6), quality (4).",
+      "createdAt": "2025-12-14T16:02:30Z",
+      "sessionId": "aaaa0004-0000-0000-0000-000000000004"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000005",
+      "periodType": "session",
+      "periodStart": "2025-12-13T11:00:00Z",
+      "periodEnd": "2025-12-13T11:03:15Z",
+      "text": "Friday week reflection. Shipped three major features and resolved critical bugs. Excellent team collaboration throughout the week. Key themes: features (11), bugs (5), teamwork (9), success (7).",
+      "createdAt": "2025-12-13T11:03:15Z",
+      "sessionId": "aaaa0005-0000-0000-0000-000000000005"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000006",
+      "periodType": "session",
+      "periodStart": "2025-12-10T10:00:00Z",
+      "periodEnd": "2025-12-10T10:02:00Z",
+      "text": "Weekly sprint planning meeting. Priorities set for performance optimization, user feedback integration, and technical debt. Key themes: planning (8), optimization (6), priorities (5).",
+      "createdAt": "2025-12-10T10:02:00Z",
+      "sessionId": "aaaa0006-0000-0000-0000-000000000006"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000007",
+      "periodType": "session",
+      "periodStart": "2025-12-05T15:30:00Z",
+      "periodEnd": "2025-12-05T15:33:00Z",
+      "text": "Successful client presentation of new dashboard and analytics features. Received approval for phase two. Key themes: presentation (10), client (8), approval (6), analytics (5).",
+      "createdAt": "2025-12-05T15:33:00Z",
+      "sessionId": "aaaa0007-0000-0000-0000-000000000007"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000008",
+      "periodType": "session",
+      "periodStart": "2025-11-20T09:00:00Z",
+      "periodEnd": "2025-11-20T09:02:30Z",
+      "text": "Microservices architecture workshop attendance. Learned valuable patterns and practices applicable to current projects. Key themes: learning (9), architecture (7), workshop (5).",
+      "createdAt": "2025-11-20T09:02:30Z",
+      "sessionId": "aaaa0008-0000-0000-0000-000000000008"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000009",
+      "periodType": "session",
+      "periodStart": "2025-11-15T14:00:00Z",
+      "periodEnd": "2025-11-15T14:03:00Z",
+      "text": "Debugging session resolving race condition in async event handlers. Challenging but successful resolution. Key themes: debugging (10), async (6), problem-solving (7).",
+      "createdAt": "2025-11-15T14:03:00Z",
+      "sessionId": "aaaa0009-0000-0000-0000-000000000009"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000010",
+      "periodType": "session",
+      "periodStart": "2025-10-25T10:30:00Z",
+      "periodEnd": "2025-10-25T10:32:00Z",
+      "text": "Team retrospective identifying improvements. Action items for better documentation, pair programming, and deployment. Key themes: retrospective (8), improvement (7), documentation (5).",
+      "createdAt": "2025-10-25T10:32:00Z",
+      "sessionId": "aaaa0010-0000-0000-0000-000000000010"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000011",
+      "periodType": "session",
+      "periodStart": "2025-09-10T08:00:00Z",
+      "periodEnd": "2025-09-10T08:04:00Z",
+      "text": "Great progress with team on new project. Client is very satisfied with the work. Positive team collaboration. Key themes: progress (9), teamwork (8), client (6), success (7).",
+      "createdAt": "2025-09-10T08:04:00Z",
+      "sessionId": "aaaa0011-0000-0000-0000-000000000011"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000012",
+      "periodType": "session",
+      "periodStart": "2025-08-05T13:00:00Z",
+      "periodEnd": "2025-08-05T13:02:30Z",
+      "text": "Pre-vacation task wrap-up and handover documentation creation. Preparing for time off. Key themes: vacation (7), documentation (6), handover (5).",
+      "createdAt": "2025-08-05T13:02:30Z",
+      "sessionId": "aaaa0012-0000-0000-0000-000000000012"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000013",
+      "periodType": "session",
+      "periodStart": "2025-07-20T11:00:00Z",
+      "periodEnd": "2025-07-20T11:03:00Z",
+      "text": "Performance optimization success with 40% improvement in API response times. Excellent teamwork on caching and database optimization. Key themes: performance (12), optimization (10), success (8), teamwork (7).",
+      "createdAt": "2025-07-20T11:03:00Z",
+      "sessionId": "aaaa0013-0000-0000-0000-000000000013"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000014",
+      "periodType": "session",
+      "periodStart": "2025-06-15T16:00:00Z",
+      "periodEnd": "2025-06-15T16:02:00Z",
+      "text": "Legacy code refactoring completed. Code is now more maintainable and testable. Challenging but rewarding work. Key themes: refactoring (9), maintainability (7), quality (6).",
+      "createdAt": "2025-06-15T16:02:00Z",
+      "sessionId": "aaaa0014-0000-0000-0000-000000000014"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000015",
+      "periodType": "session",
+      "periodStart": "2025-05-10T09:30:00Z",
+      "periodEnd": "2025-05-10T09:33:00Z",
+      "text": "Quarterly review preparation with strong metrics across delivery, bugs, and satisfaction. Positive results. Key themes: metrics (10), review (8), success (7).",
+      "createdAt": "2025-05-10T09:33:00Z",
+      "sessionId": "aaaa0015-0000-0000-0000-000000000015"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000016",
+      "periodType": "session",
+      "periodStart": "2025-04-05T14:00:00Z",
+      "periodEnd": "2025-04-05T14:02:30Z",
+      "text": "AI integration brainstorming with exciting market differentiation ideas. Innovation session. Key themes: innovation (11), AI (9), ideas (7), future (6).",
+      "createdAt": "2025-04-05T14:02:30Z",
+      "sessionId": "aaaa0016-0000-0000-0000-000000000016"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000017",
+      "periodType": "session",
+      "periodStart": "2025-03-12T10:00:00Z",
+      "periodEnd": "2025-03-12T10:03:00Z",
+      "text": "Security audit review identifying vulnerabilities requiring immediate attention. Creating fix tickets. Key themes: security (12), audit (8), vulnerabilities (6), priorities (5).",
+      "createdAt": "2025-03-12T10:03:00Z",
+      "sessionId": "aaaa0017-0000-0000-0000-000000000017"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000018",
+      "periodType": "session",
+      "periodStart": "2025-02-14T15:00:00Z",
+      "periodEnd": "2025-02-14T15:02:00Z",
+      "text": "Team Valentine's celebration planning with focus on work-life balance. Virtual games and prizes. Key themes: celebration (8), team (7), balance (6).",
+      "createdAt": "2025-02-14T15:02:00Z",
+      "sessionId": "aaaa0018-0000-0000-0000-000000000018"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000019",
+      "periodType": "session",
+      "periodStart": "2025-01-25T11:30:00Z",
+      "periodEnd": "2025-01-25T11:33:00Z",
+      "text": "Strong start to the year with energized team and excellent Q1 roadmap progress. Maintaining momentum. Key themes: momentum (9), progress (8), energy (7), Q1 (5).",
+      "createdAt": "2025-01-25T11:33:00Z",
+      "sessionId": "aaaa0019-0000-0000-0000-000000000019"
+    },
+    {
+      "id": "33333333-3333-3333-3333-000000000020",
+      "periodType": "session",
+      "periodStart": "2024-12-20T09:00:00Z",
+      "periodEnd": "2024-12-20T09:02:30Z",
+      "text": "2024 year-end reflection on major accomplishments. 12 features delivered, 5 team members onboarded, 99.9% uptime achieved. Pride in team success. Key themes: accomplishments (14), success (12), year-end (8), features (10), uptime (6).",
+      "createdAt": "2024-12-20T09:02:30Z",
+      "sessionId": "aaaa0020-0000-0000-0000-000000000020"
+    },
+    {
+      "id": "33333333-3333-3333-3333-100000000001",
+      "periodType": "day",
+      "periodStart": "2025-12-16T00:00:00Z",
+      "periodEnd": "2025-12-17T00:00:00Z",
+      "text": "Productive day with morning standup and afternoon OAuth implementation. Client feedback was positive. Strong development progress across the board. Key themes: development (18), teamwork (10), client (8).",
+      "createdAt": "2025-12-16T23:59:00Z",
+      "sessionId": null
+    },
+    {
+      "id": "33333333-3333-3333-3333-100000000002",
+      "periodType": "day",
+      "periodStart": "2025-12-15T00:00:00Z",
+      "periodEnd": "2025-12-16T00:00:00Z",
+      "text": "Weekend planning and personal organization focus. Balancing work and life priorities. Key themes: planning (12), personal (9), organization (7).",
+      "createdAt": "2025-12-15T23:59:00Z",
+      "sessionId": null
+    },
+    {
+      "id": "33333333-3333-3333-3333-100000000003",
+      "periodType": "day",
+      "periodStart": "2025-12-13T00:00:00Z",
+      "periodEnd": "2025-12-14T00:00:00Z",
+      "text": "Strong Friday with three features shipped and critical bugs resolved. Excellent team collaboration. Key themes: features (15), teamwork (12), success (10).",
+      "createdAt": "2025-12-13T23:59:00Z",
+      "sessionId": null
+    },
+    {
+      "id": "33333333-3333-3333-3333-200000000001",
+      "periodType": "week",
+      "periodStart": "2025-12-09T00:00:00Z",
+      "periodEnd": "2025-12-16T00:00:00Z",
+      "text": "Highly productive week with feature deliveries, successful client presentation, and strong team performance. Planning for next sprint complete. Key themes: features (22), client (15), teamwork (18), planning (14), success (12).",
+      "createdAt": "2025-12-16T23:59:00Z",
+      "sessionId": null
+    },
+    {
+      "id": "33333333-3333-3333-3333-200000000002",
+      "periodType": "week",
+      "periodStart": "2025-11-17T00:00:00Z",
+      "periodEnd": "2025-11-24T00:00:00Z",
+      "text": "Learning-focused week with workshop attendance and complex debugging sessions. Good progress on architecture understanding. Key themes: learning (14), debugging (12), architecture (10).",
+      "createdAt": "2025-11-24T23:59:00Z",
+      "sessionId": null
+    },
+    {
+      "id": "33333333-3333-3333-3333-300000000001",
+      "periodType": "month",
+      "periodStart": "2025-12-01T00:00:00Z",
+      "periodEnd": "2026-01-01T00:00:00Z",
+      "text": "December achievements include multiple feature deliveries, successful client engagements, and strong team retrospectives. Ending year on a high note with excellent progress toward goals. Key themes: features (28), client (22), teamwork (25), success (20), planning (18).",
+      "createdAt": "2025-12-31T23:59:00Z",
+      "sessionId": null
+    },
+    {
+      "id": "33333333-3333-3333-3333-300000000002",
+      "periodType": "month",
+      "periodStart": "2025-11-01T00:00:00Z",
+      "periodEnd": "2025-12-01T00:00:00Z",
+      "text": "November focused on technical depth with learning, debugging, and architectural improvements. Team retrospective identified key improvement areas. Key themes: learning (18), architecture (15), improvement (14), debugging (12).",
+      "createdAt": "2025-11-30T23:59:00Z",
+      "sessionId": null
+    }
+  ]
+}

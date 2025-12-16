@@ -11,8 +11,10 @@ struct DataManagementView: View {
     
     @State private var storageInfo: StorageInfo?
     @State private var isExporting = false
+    @State private var isImporting = false
     @State private var exportFormat: ExportFormat = .json
     @State private var showShareSheet = false
+    @State private var showFilePicker = false
     @State private var exportURL: URL?
     @State private var showDeleteConfirmation = false
     
@@ -91,6 +93,28 @@ struct DataManagementView: View {
                     Text("Export your journal entries and summaries to share or back up.")
                 }
                 
+                // Import Section
+                Section {
+                    Button {
+                        showFilePicker = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "square.and.arrow.down")
+                            Text("Import JSON Data")
+                            
+                            if isImporting {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(isImporting)
+                } header: {
+                    Text("Import")
+                } footer: {
+                    Text("Import data from a JSON export file. Use this to restore backups or load test data.")
+                }
+                
                 // Danger Zone
                 Section {
                     Button(role: .destructive) {
@@ -122,6 +146,15 @@ struct DataManagementView: View {
             .sheet(isPresented: $showShareSheet) {
                 if let url = exportURL {
                     ShareSheet(items: [url])
+                }
+            }
+            .fileImporter(
+                isPresented: $showFilePicker,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false
+            ) { result in
+                Task {
+                    await handleFileImport(result: result)
                 }
             }
             .alert("Delete All Data?", isPresented: $showDeleteConfirmation) {
@@ -190,6 +223,53 @@ struct DataManagementView: View {
             await coordinator.deleteAllData()
             await loadStorageInfo()
             coordinator.showSuccess("All data deleted")
+        }
+    }
+    
+    private func handleFileImport(result: Result<[URL], Error>) async {
+        isImporting = true
+        
+        defer {
+            Task { @MainActor in
+                isImporting = false
+            }
+        }
+        
+        do {
+            let urls = try result.get()
+            guard let url = urls.first else { return }
+            
+            // Start accessing security-scoped resource
+            guard url.startAccessingSecurityScopedResource() else {
+                await MainActor.run {
+                    coordinator.showError("Unable to access file")
+                }
+                return
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            
+            let data = try Data(contentsOf: url)
+            
+            if let dbManager = coordinator.getDatabaseManager() {
+                let importer = DataImporter(databaseManager: dbManager)
+                let result = try await importer.importFromJSON(data: data)
+                
+                await MainActor.run {
+                    if result.isSuccessful {
+                        coordinator.showSuccess("✅ \(result.summary)")
+                    } else if result.hasPartialSuccess {
+                        coordinator.showError("⚠️ Partial import: \(result.summary)")
+                    } else {
+                        coordinator.showError("❌ Import failed: \(result.errors.first ?? "Unknown error")")
+                    }
+                }
+                
+                await loadStorageInfo()
+            }
+        } catch {
+            await MainActor.run {
+                coordinator.showError("Import failed: \(error.localizedDescription)")
+            }
         }
     }
 }

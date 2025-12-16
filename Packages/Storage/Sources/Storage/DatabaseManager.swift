@@ -473,7 +473,7 @@ public actor DatabaseManager {
         let sql = """
             SELECT 
                 session_id,
-                MIN(created_at) as first_chunk_time,
+                MIN(start_time) as first_chunk_time,
                 COUNT(*) as chunk_count
             FROM audio_chunks
             GROUP BY session_id
@@ -515,7 +515,7 @@ public actor DatabaseManager {
         
         let sql = """
             SELECT 
-                CAST(strftime('%H', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as hour,
+                CAST(strftime('%H', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as hour,
                 session_id
             FROM audio_chunks
             WHERE chunk_index = 0
@@ -1362,7 +1362,7 @@ public actor DatabaseManager {
                 periodStart: start,
                 periodEnd: end,
                 text: text,
-                createdAt: Date(),
+                createdAt: start,
                 sessionId: nil
             )
             try insertSummary(summary)
@@ -1379,9 +1379,10 @@ public actor DatabaseManager {
         
         // Get all session IDs for this date
         let sql = """
-            SELECT DISTINCT session_id
+            SELECT session_id
             FROM audio_chunks
             WHERE start_time >= ? AND start_time < ?
+            GROUP BY session_id
             ORDER BY MIN(start_time) ASC
             """
         
@@ -1414,6 +1415,39 @@ public actor DatabaseManager {
         }
         
         return sessions
+    }
+    
+    /// Fetch all daily summaries for a date range
+    public func fetchDailySummaries(from startDate: Date, to endDate: Date) throws -> [Summary] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            FROM summaries
+            WHERE period_type = 'day'
+            AND period_start >= ? AND period_start < ?
+            AND session_id IS NULL
+            ORDER BY period_start ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var summaries: [Summary] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let summary = try? parseSummary(from: stmt) {
+                summaries.append(summary)
+            }
+        }
+        
+        return summaries
     }
     
     public func deleteSummary(id: UUID) throws {

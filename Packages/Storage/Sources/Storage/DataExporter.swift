@@ -21,10 +21,18 @@ public actor DataExporter {
         let chunks = try await databaseManager.fetchAllAudioChunks()
         let summaries = try await databaseManager.fetchAllSummaries()
         
+        // Fetch all transcript segments
+        var allSegments: [TranscriptSegment] = []
+        for chunk in chunks {
+            let segments = try await databaseManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+            allSegments.append(contentsOf: segments)
+        }
+        
         let export = JSONExport(
             exportDate: Date(),
             version: "1.0",
             audioChunks: chunks.map { JSONAudioChunk(from: $0) },
+            transcriptSegments: allSegments.map { JSONTranscriptSegment(from: $0) },
             summaries: summaries.map { JSONSummary(from: $0) }
         )
         
@@ -155,24 +163,55 @@ public struct JSONExport: Codable {
     let exportDate: Date
     let version: String
     let audioChunks: [JSONAudioChunk]
+    let transcriptSegments: [JSONTranscriptSegment]?
     let summaries: [JSONSummary]
 }
 
 public struct JSONAudioChunk: Codable {
     let id: UUID
+    let fileURL: URL
     let startTime: Date
     let endTime: Date
     let format: String
     let sampleRate: Int
     let createdAt: Date
+    let sessionId: UUID
+    let chunkIndex: Int
     
     init(from chunk: AudioChunk) {
         self.id = chunk.id
+        self.fileURL = chunk.fileURL
         self.startTime = chunk.startTime
         self.endTime = chunk.endTime
         self.format = chunk.format.rawValue
         self.sampleRate = chunk.sampleRate
         self.createdAt = chunk.createdAt
+        self.sessionId = chunk.sessionId
+        self.chunkIndex = chunk.chunkIndex
+    }
+}
+
+public struct JSONTranscriptSegment: Codable {
+    let id: UUID
+    let audioChunkID: UUID
+    let startTime: Double
+    let endTime: Double
+    let text: String
+    let confidence: Float
+    let languageCode: String
+    let createdAt: Date
+    let sentimentScore: Double?
+    
+    init(from segment: TranscriptSegment) {
+        self.id = segment.id
+        self.audioChunkID = segment.audioChunkID
+        self.startTime = segment.startTime
+        self.endTime = segment.endTime
+        self.text = segment.text
+        self.confidence = segment.confidence
+        self.languageCode = segment.languageCode ?? "en"
+        self.createdAt = segment.createdAt
+        self.sentimentScore = segment.sentimentScore
     }
 }
 
@@ -183,6 +222,7 @@ public struct JSONSummary: Codable {
     let periodEnd: Date
     let text: String
     let createdAt: Date
+    let sessionId: UUID?
     
     init(from summary: Summary) {
         self.id = summary.id
@@ -191,6 +231,7 @@ public struct JSONSummary: Codable {
         self.periodEnd = summary.periodEnd
         self.text = summary.text
         self.createdAt = summary.createdAt
+        self.sessionId = summary.sessionId
     }
 }
 

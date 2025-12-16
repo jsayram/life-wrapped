@@ -198,7 +198,7 @@ public final class AudioCaptureManager: ObservableObject {
             endTime: endTime,
             format: .m4a,
             sampleRate: 44100,
-            createdAt: Date(),
+            createdAt: startTime,
             sessionId: sessionId,
             chunkIndex: currentChunkIndex
         )

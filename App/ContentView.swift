@@ -6,6 +6,7 @@ import SwiftUI
 import SharedModels
 import Charts
 import Transcription
+import Storage
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -725,7 +726,9 @@ class WordAnalyzer {
 
 struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
-    @State private var summaries: [Summary] = []
+    @State private var periodSummary: Summary?
+    @State private var sessionCount: Int = 0
+    @State private var sessionsInPeriod: [RecordingSession] = []
     @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
     @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
     @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
@@ -744,7 +747,7 @@ struct InsightsTab: View {
             Group {
                 if isLoading {
                     ProgressView("Loading insights...")
-                } else if summaries.isEmpty && sessionsByHour.isEmpty {
+                } else if periodSummary == nil && sessionsByHour.isEmpty {
                     ContentUnavailableView(
                         "No Insights Yet",
                         systemImage: "chart.bar",
@@ -1170,12 +1173,55 @@ struct InsightsTab: View {
                             }
                         }
                         
-                        // Summaries section
-                        if !summaries.isEmpty {
-                            Section("Summaries") {
-                                ForEach(summaries, id: \.id) { summary in
-                                    SummaryRow(summary: summary)
+                        // Period Summary section
+                        if let summary = periodSummary {
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    // Header
+                                    HStack {
+                                        Text("📝 \(periodTitle)")
+                                            .font(.headline)
+                                        Spacer()
+                                        Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    // Summary text
+                                    Text(summary.text)
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                        .padding(.vertical, 4)
+                                    
+                                    // Collapsible session details
+                                    if !sessionsInPeriod.isEmpty {
+                                        DisclosureGroup {
+                                            ForEach(sessionsInPeriod, id: \.sessionId) { session in
+                                                NavigationLink {
+                                                    SessionDetailView(session: session)
+                                                } label: {
+                                                    HStack {
+                                                        VStack(alignment: .leading, spacing: 4) {
+                                                            Text(session.startTime, style: .time)
+                                                                .font(.subheadline)
+                                                                .fontWeight(.medium)
+                                                            Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                                                                .font(.caption)
+                                                                .foregroundStyle(.secondary)
+                                                        }
+                                                        Spacer()
+                                                    }
+                                                }
+                                                .padding(.vertical, 2)
+                                            }
+                                        } label: {
+                                            Text("Show individual sessions (\(sessionsInPeriod.count))")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.blue)
+                                        }
+                                    }
                                 }
+                                .padding(.vertical, 8)
                             }
                         }
                     }
@@ -1260,8 +1306,58 @@ struct InsightsTab: View {
             // Load language distribution
             languageDistribution = try await coordinator.fetchLanguageDistribution()
             
-            // Load summaries
-            summaries = try await coordinator.fetchRecentSummaries(limit: 20)
+            // Load period summary based on selected time range
+            let periodType: PeriodType = {
+                switch selectedTimeRange {
+                case .today: return .day
+                case .week: return .week
+                case .month: return .month
+                case .allTime: return .month // Show most recent month for all-time
+                }
+            }()
+            
+            // Load sessions in this period first
+            if let dbManager = coordinator.getDatabaseManager() {
+                if selectedTimeRange == .today {
+                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: startDate)) ?? []
+                } else {
+                    // For week/month/all, fetch ALL sessions and filter by date range
+                    let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
+                    sessionsInPeriod = allSessions?.filter { session in
+                        session.startTime >= startDate && session.startTime < endDate
+                    } ?? []
+                }
+                sessionCount = sessionsInPeriod.count
+            }
+            
+            // Try to fetch existing period summary, or generate if missing
+            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: startDate)
+            
+            // If no period summary exists but we have sessions with summaries, generate one now
+            if periodSummary == nil && !sessionsInPeriod.isEmpty {
+                print("ℹ️ [InsightsTab] No \(periodType) summary found for \(startDate.formatted()), generating...")
+                
+                switch periodType {
+                case .day:
+                    await coordinator.updateDailySummary(date: startDate)
+                case .week:
+                    await coordinator.updateWeeklySummary(date: startDate)
+                case .month:
+                    await coordinator.updateMonthlySummary(date: startDate)
+                default:
+                    break
+                }
+                
+                // Fetch again after generation
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1s
+                periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: startDate)
+                
+                if periodSummary != nil {
+                    print("✅ [InsightsTab] Successfully generated \(periodType) summary")
+                } else {
+                    print("⚠️ [InsightsTab] Failed to generate \(periodType) summary")
+                }
+            }
         } catch {
             print("❌ [InsightsTab] Failed to load insights: \(error)")
         }
@@ -1444,6 +1540,15 @@ struct InsightsTab: View {
     private func languageColor(index: Int) -> Color {
         let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan]
         return colors[index % colors.count]
+    }
+    
+    private var periodTitle: String {
+        switch selectedTimeRange {
+        case .today: return "Today's Summary"
+        case .week: return "This Week's Summary"
+        case .month: return "This Month's Summary"
+        case .allTime: return "Overall Summary"
+        }
     }
 }
 

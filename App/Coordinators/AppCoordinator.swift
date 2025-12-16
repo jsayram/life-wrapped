@@ -8,6 +8,7 @@ import UIKit
 import AVFoundation
 import Speech
 import SharedModels
+import Summarization
 import Storage
 import AudioCapture
 import Transcription
@@ -722,6 +723,9 @@ public final class AppCoordinator: ObservableObject {
         
         try await dbManager.insertSummary(summary)
         print("✅ [AppCoordinator] Session summary saved")
+        
+        // Update period summaries (daily, weekly, monthly)
+        await updatePeriodSummaries(sessionId: sessionId, sessionDate: periodStart)
     }
     
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
@@ -1097,6 +1101,167 @@ public final class AppCoordinator: ObservableObject {
         }
         
         return try await dbManager.fetchSessionLanguage(sessionId: sessionId)
+    }
+    
+    /// Fetch period summary for a specific date and type
+    public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchPeriodSummary(type: type, date: date)
+    }
+    
+    // MARK: - Period Summary Updates
+    
+    /// Update period summaries after a new session summary is created
+    private func updatePeriodSummaries(sessionId: UUID, sessionDate: Date) async {
+        print("🔄 [AppCoordinator] Updating period summaries for session...")
+        
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: sessionDate)
+        
+        // Update daily summary
+        await updateDailySummary(date: startOfDay)
+        
+        // Update weekly summary
+        await updateWeeklySummary(date: sessionDate)
+        
+        // Update monthly summary
+        await updateMonthlySummary(date: sessionDate)
+    }
+    
+    /// Update or create daily summary by aggregating all session summaries for that day
+    public func updateDailySummary(date: Date) async {
+        guard let dbManager = databaseManager else { return }
+        
+        do {
+            // 1. Fetch all sessions for this day
+            let sessions = try await dbManager.fetchSessionsByDate(date: date)
+            print("📊 [AppCoordinator] Found \(sessions.count) sessions for \(date.formatted(date: .abbreviated, time: .omitted))")
+            
+            guard !sessions.isEmpty else { return }
+            
+            // 2. Fetch all session summaries for this day
+            var summaryTexts: [String] = []
+            for session in sessions {
+                if let summary = try? await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
+                    summaryTexts.append(summary.text)
+                }
+            }
+            
+            guard !summaryTexts.isEmpty else {
+                print("ℹ️ [AppCoordinator] No summaries found for this day")
+                return
+            }
+            
+            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) session summaries...")
+            
+            // 3. Aggregate using BasicAggregator
+            let aggregator = BasicAggregator()
+            let combinedText = aggregator.aggregate(summaries: summaryTexts)
+            
+            // 4. Calculate period end (end of day)
+            let calendar = Calendar.current
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+            
+            // 5. Upsert into database
+            try await dbManager.upsertPeriodSummary(
+                type: .day,
+                text: combinedText,
+                start: date,
+                end: endOfDay
+            )
+            
+            print("✅ [AppCoordinator] Daily summary updated")
+        } catch {
+            print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
+        }
+    }
+    
+    /// Update or create weekly summary by aggregating all daily summaries for that week
+    public func updateWeeklySummary(date: Date) async {
+        guard let dbManager = databaseManager else { return }
+        
+        do {
+            // 1. Get week range (Monday to Sunday)
+            let calendar = Calendar.current
+            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+            components.weekday = 2 // Monday
+            guard let startOfWeek = calendar.date(from: components) else { return }
+            guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
+            
+            print("📊 [AppCoordinator] Updating weekly summary for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)) - \(endOfWeek.formatted(date: .abbreviated, time: .omitted))")
+            
+            // 2. Fetch all daily summaries for this week
+            let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfWeek, to: endOfWeek)
+            
+            guard !dailySummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No daily summaries found for this week")
+                return
+            }
+            
+            let summaryTexts = dailySummaries.map { $0.text }
+            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) daily summaries for week...")
+            
+            // 3. Aggregate using BasicAggregator
+            let aggregator = BasicAggregator()
+            let combinedText = aggregator.aggregate(summaries: summaryTexts)
+            
+            // 4. Upsert into database
+            try await dbManager.upsertPeriodSummary(
+                type: .week,
+                text: combinedText,
+                start: startOfWeek,
+                end: endOfWeek
+            )
+            
+            print("✅ [AppCoordinator] Weekly summary updated")
+        } catch {
+            print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
+        }
+    }
+    
+    /// Update or create monthly summary by aggregating all daily summaries for that month
+    public func updateMonthlySummary(date: Date) async {
+        guard let dbManager = databaseManager else { return }
+        
+        do {
+            // 1. Get month range
+            let calendar = Calendar.current
+            let components = calendar.dateComponents([.year, .month], from: date)
+            guard let startOfMonth = calendar.date(from: components) else { return }
+            guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
+            
+            print("📊 [AppCoordinator] Updating monthly summary for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
+            
+            // 2. Fetch all daily summaries for this month
+            let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
+            
+            guard !dailySummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No daily summaries found for this month")
+                return
+            }
+            
+            let summaryTexts = dailySummaries.map { $0.text }
+            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) daily summaries for month...")
+            
+            // 3. Aggregate using BasicAggregator
+            let aggregator = BasicAggregator()
+            let combinedText = aggregator.aggregate(summaries: summaryTexts)
+            
+            // 4. Upsert into database
+            try await dbManager.upsertPeriodSummary(
+                type: .month,
+                text: combinedText,
+                start: startOfMonth,
+                end: endOfMonth
+            )
+            
+            print("✅ [AppCoordinator] Monthly summary updated")
+        } catch {
+            print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
+        }
     }
     
     /// Delete a recording and its associated data
