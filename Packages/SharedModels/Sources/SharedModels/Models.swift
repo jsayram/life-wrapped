@@ -121,6 +121,7 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
     public let languageCode: String
     public let createdAt: Date
     public let wordCount: Int  // Cached word count
+    public let sentimentScore: Double?  // NEW: Sentiment from -1.0 (negative) to +1.0 (positive)
 
     // Future fields (placeholders)
     public let speakerLabel: String?
@@ -137,7 +138,8 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
         createdAt: Date = Date(),
         speakerLabel: String? = nil,
         entitiesJSON: String? = nil,
-        wordCount: Int? = nil
+        wordCount: Int? = nil,
+        sentimentScore: Double? = nil
     ) {
         self.id = id
         self.audioChunkID = audioChunkID
@@ -151,11 +153,22 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
         self.entitiesJSON = entitiesJSON
         // Calculate word count if not provided
         self.wordCount = wordCount ?? text.split(separator: " ").count
+        self.sentimentScore = sentimentScore
     }
 
     /// Duration of this segment in seconds
     public var duration: TimeInterval {
         endTime - startTime
+    }
+    
+    /// Categorized sentiment label for UI display
+    public var sentimentCategory: String {
+        guard let score = sentimentScore else { return "unknown" }
+        switch score {
+        case ..<(-0.3): return "negative"
+        case -0.3..<0.3: return "neutral"
+        default: return "positive"
+        }
     }
 }
 

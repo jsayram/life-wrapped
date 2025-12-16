@@ -219,6 +219,7 @@ public actor DatabaseManager {
                 speaker_label TEXT,
                 entities_json TEXT,
                 word_count INTEGER NOT NULL DEFAULT 0,
+                sentiment_score REAL,
                 FOREIGN KEY (audio_chunk_id) REFERENCES audio_chunks(id) ON DELETE CASCADE
             )
             """)
@@ -231,6 +232,11 @@ public actor DatabaseManager {
         try execute("""
             CREATE INDEX IF NOT EXISTS idx_transcript_segments_created_at
             ON transcript_segments(created_at)
+            """)
+        
+        try execute("""
+            CREATE INDEX IF NOT EXISTS idx_transcript_segments_sentiment
+            ON transcript_segments(sentiment_score)
             """)
         
         try execute("""
@@ -764,8 +770,8 @@ public actor DatabaseManager {
         
         let sql = """
             INSERT INTO transcript_segments 
-            (id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json, word_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, audio_chunk_id, start_time, end_time, text, confidence, language_code, created_at, speaker_label, entities_json, word_count, sentiment_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         
         var stmt: OpaquePointer?
@@ -797,6 +803,12 @@ public actor DatabaseManager {
         }
         
         sqlite3_bind_int(stmt, 11, Int32(segment.wordCount))
+        
+        if let sentimentScore = segment.sentimentScore {
+            sqlite3_bind_double(stmt, 12, sentimentScore)
+        } else {
+            sqlite3_bind_null(stmt, 12)
+        }
         
         guard sqlite3_step(stmt) == SQLITE_DONE else {
             throw StorageError.stepFailed(lastError())
@@ -995,6 +1007,13 @@ public actor DatabaseManager {
         
         let wordCount = Int(sqlite3_column_int(stmt, 10))
         
+        let sentimentScore: Double?
+        if sqlite3_column_type(stmt, 11) != SQLITE_NULL {
+            sentimentScore = sqlite3_column_double(stmt, 11)
+        } else {
+            sentimentScore = nil
+        }
+        
         return TranscriptSegment(
             id: id,
             audioChunkID: audioChunkID,
@@ -1006,7 +1025,8 @@ public actor DatabaseManager {
             createdAt: createdAt,
             speakerLabel: speakerLabel,
             entitiesJSON: entitiesJSON,
-            wordCount: wordCount
+            wordCount: wordCount,
+            sentimentScore: sentimentScore
         )
     }
     
