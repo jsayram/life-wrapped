@@ -5,6 +5,7 @@
 import SwiftUI
 import SharedModels
 import Charts
+import Transcription
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -716,6 +717,7 @@ struct InsightsTab: View {
     @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
     @State private var topWords: [WordFrequency] = []
     @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
+    @State private var languageDistribution: [(language: String, wordCount: Int)] = []
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var wordLimit: Int = 20
@@ -1097,6 +1099,62 @@ struct InsightsTab: View {
                             }
                         }
                         
+                        // Languages Spoken section
+                        if !languageDistribution.isEmpty {
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Languages Spoken")
+                                        .font(.headline)
+                                        .padding(.bottom, 4)
+                                    
+                                    Text("Distribution of languages in your recordings")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.bottom, 8)
+                                    
+                                    let totalWords = languageDistribution.reduce(0) { $0 + $1.wordCount }
+                                    
+                                    ForEach(languageDistribution.prefix(5), id: \.language) { item in
+                                        let percentage = totalWords > 0 ? (Double(item.wordCount) / Double(totalWords)) * 100 : 0
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            HStack {
+                                                Text(LanguageDetector.displayName(for: item.language))
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                Spacer()
+                                                Text("\(Int(percentage))%")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                                    .monospacedDigit()
+                                            }
+                                            
+                                            GeometryReader { geometry in
+                                                ZStack(alignment: .leading) {
+                                                    RoundedRectangle(cornerRadius: 4)
+                                                        .fill(Color.secondary.opacity(0.2))
+                                                    
+                                                    RoundedRectangle(cornerRadius: 4)
+                                                        .fill(languageColor(index: languageDistribution.firstIndex(where: { $0.language == item.language }) ?? 0))
+                                                        .frame(width: geometry.size.width * (percentage / 100))
+                                                }
+                                            }
+                                            .frame(height: 8)
+                                        }
+                                        .padding(.vertical, 4)
+                                    }
+                                    
+                                    if languageDistribution.count > 1 {
+                                        Text("You speak \(languageDistribution.count) language\(languageDistribution.count == 1 ? "" : "s") in your recordings")
+                                            .font(.callout)
+                                            .foregroundStyle(.secondary)
+                                            .padding(.top, 8)
+                                    }
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                        
                         // Summaries section
                         if !summaries.isEmpty {
                             Section("Summaries") {
@@ -1183,6 +1241,9 @@ struct InsightsTab: View {
             // Load daily sentiment data
             let (startDate, endDate) = getDateRange(for: selectedTimeRange)
             dailySentiment = try await coordinator.fetchDailySentiment(from: startDate, to: endDate)
+            
+            // Load language distribution
+            languageDistribution = try await coordinator.fetchLanguageDistribution()
             
             // Load summaries
             summaries = try await coordinator.fetchRecentSummaries(limit: 20)
@@ -1363,6 +1424,11 @@ struct InsightsTab: View {
         .padding(.vertical, 8)
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    private func languageColor(index: Int) -> Color {
+        let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan]
+        return colors[index % colors.count]
     }
 }
 
@@ -1572,6 +1638,16 @@ struct SettingsTab: View {
                     NavigationLink(destination: ExcludedWordsView()) {
                         Label("Excluded Words", systemImage: "text.badge.xmark")
                     }
+                }
+                
+                Section {
+                    NavigationLink(destination: LanguageSettingsView()) {
+                        Label("Languages", systemImage: "globe")
+                    }
+                } header: {
+                    Text("Languages")
+                } footer: {
+                    Text("Manage which languages Life Wrapped can detect in your recordings. Detected languages are stored locally and used for insights.")
                 }
                 
                 Section("Preferences") {
@@ -2856,6 +2932,74 @@ struct SessionDetailView: View {
         } else {
             return "\(seconds)s"
         }
+    }
+}
+
+// MARK: - Language Settings View
+
+struct LanguageSettingsView: View {
+    @State private var enabledLanguages: Set<String> = []
+    @State private var allLanguages: [String] = []
+    @EnvironmentObject var coordinator: AppCoordinator
+    
+    private let enabledLanguagesKey = "enabledLanguages"
+    
+    var body: some View {
+        List {
+            Section {
+                Text("Select which languages Life Wrapped should detect in your recordings. All processing happens on-device.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Section("Supported Languages (\(allLanguages.count))") {
+                ForEach(allLanguages, id: \.self) { languageCode in
+                    Toggle(isOn: Binding(
+                        get: { enabledLanguages.contains(languageCode) },
+                        set: { isEnabled in
+                            if isEnabled {
+                                enabledLanguages.insert(languageCode)
+                            } else {
+                                enabledLanguages.remove(languageCode)
+                            }
+                            saveEnabledLanguages()
+                        }
+                    )) {
+                        HStack {
+                            Text(LanguageDetector.displayName(for: languageCode))
+                            Spacer()
+                            Text(languageCode)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Languages")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            loadLanguages()
+        }
+    }
+    
+    private func loadLanguages() {
+        allLanguages = LanguageDetector.supportedLanguages()
+        
+        if let savedLanguages = UserDefaults.standard.array(forKey: enabledLanguagesKey) as? [String] {
+            enabledLanguages = Set(savedLanguages)
+        } else {
+            // Default to common languages if no preferences saved
+            let defaultLanguages = ["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko", "ar", "ru"]
+            enabledLanguages = Set(defaultLanguages.filter { allLanguages.contains($0) })
+            saveEnabledLanguages()
+        }
+    }
+    
+    private func saveEnabledLanguages() {
+        UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
+        coordinator.showSuccess("Language preferences saved")
     }
 }
 

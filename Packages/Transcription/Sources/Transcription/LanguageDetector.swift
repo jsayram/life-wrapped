@@ -12,6 +12,26 @@ public actor LanguageDetector {
     
     public init() {}
     
+    /// Get human-readable language name from ISO code
+    /// - Parameter code: ISO language code (e.g., "en", "es")
+    /// - Returns: Localized language name (e.g., "English", "Spanish")
+    public static func displayName(for code: String) -> String {
+        let locale = Locale.current
+        return locale.localizedString(forLanguageCode: code) ?? code.uppercased()
+    }
+    
+    /// Get list of all languages supported by Apple's NL framework
+    /// - Returns: Array of ISO language codes
+    public static func supportedLanguages() -> [String] {
+        // Common languages supported by Apple's Natural Language framework
+        // This list represents the most commonly used languages
+        return [
+            "ar", "zh", "hr", "cs", "da", "nl", "en", "fi", "fr", "de", "el",
+            "he", "hi", "hu", "id", "it", "ja", "ko", "ms", "no", "pl", "pt",
+            "ro", "ru", "sk", "es", "sv", "th", "tr", "uk", "vi"
+        ].sorted()
+    }
+    
     /// Detect the dominant language in text
     /// - Parameter text: Text to analyze
     /// - Returns: Language code (e.g., "en", "es", "fr") or nil if undetermined

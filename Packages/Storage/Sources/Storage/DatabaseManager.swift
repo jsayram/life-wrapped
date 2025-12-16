@@ -1106,6 +1106,37 @@ public actor DatabaseManager {
         return results
     }
     
+    /// Fetch language distribution from all transcript segments
+    public func fetchLanguageDistribution() throws -> [(language: String, wordCount: Int)] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT 
+                language_code,
+                SUM(word_count) as total_words
+            FROM transcript_segments
+            WHERE language_code IS NOT NULL
+            GROUP BY language_code
+            ORDER BY total_words DESC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        var results: [(String, Int)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let language = String(cString: sqlite3_column_text(stmt, 0))
+            let wordCount = Int(sqlite3_column_int64(stmt, 1))
+            results.append((language, wordCount))
+        }
+        
+        return results
+    }
+    
     // MARK: - Summary CRUD
     
     public func insertSummary(_ summary: Summary) throws {

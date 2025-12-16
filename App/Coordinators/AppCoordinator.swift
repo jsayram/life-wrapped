@@ -733,14 +733,16 @@ public final class AppCoordinator: ObservableObject {
             // Step 1: Transcribe audio
             let segments = try await transcriber.transcribe(chunk: chunk)
             
-            // Step 2: Analyze sentiment for each segment (real-time)
+            // Step 2: Analyze sentiment and detect language for each segment (real-time)
             let sentimentAnalyzer = SentimentAnalyzer()
+            let languageDetector = LanguageDetector()
             var enrichedSegments: [TranscriptSegment] = []
             
             for segment in segments {
                 let sentimentScore = await sentimentAnalyzer.analyze(segment: segment)
+                let detectedLanguage = await languageDetector.detectLanguage(in: segment.text)
                 
-                // Create enriched segment with sentiment data
+                // Create enriched segment with sentiment and language data
                 let enrichedSegment = TranscriptSegment(
                     id: segment.id,
                     audioChunkID: segment.audioChunkID,
@@ -748,7 +750,7 @@ public final class AppCoordinator: ObservableObject {
                     endTime: segment.endTime,
                     text: segment.text,
                     confidence: segment.confidence,
-                    languageCode: segment.languageCode,
+                    languageCode: detectedLanguage ?? segment.languageCode,
                     createdAt: segment.createdAt,
                     speakerLabel: segment.speakerLabel,
                     entitiesJSON: segment.entitiesJSON,
@@ -757,10 +759,13 @@ public final class AppCoordinator: ObservableObject {
                 )
                 enrichedSegments.append(enrichedSegment)
                 
-                // Log sentiment analysis for monitoring
+                // Log analysis results for monitoring
                 if let score = sentimentScore {
                     let category = SentimentAnalyzer.categorizeShort(score)
                     print("📊 [AppCoordinator] Segment sentiment: \(category) (\(String(format: "%.2f", score)))")
+                }
+                if let language = detectedLanguage {
+                    print("🌐 [AppCoordinator] Detected language: \(language)")
                 }
             }
             
@@ -1074,6 +1079,15 @@ public final class AppCoordinator: ObservableObject {
         }
         
         return try await dbManager.fetchSessionSentiment(sessionId: sessionId)
+    }
+    
+    /// Fetch language distribution (language code and word count)
+    public func fetchLanguageDistribution() async throws -> [(language: String, wordCount: Int)] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchLanguageDistribution()
     }
     
     /// Delete a recording and its associated data
