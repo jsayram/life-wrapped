@@ -47,8 +47,8 @@ public actor SummarizationCoordinator {
         // Initialize local engine (Phase 2A)
         self.localEngine = LocalEngine(storage: storage)
         
-        // External engine will be initialized in Phase 2C
-        // self.externalEngine = ExternalAPIEngine(storage: storage)
+        // Initialize external API engine (Phase 2C)
+        self.externalEngine = ExternalAPIEngine(storage: storage)
     }
     
     // MARK: - Engine Management

@@ -89,12 +89,88 @@ public actor ModelFileManager {
         return modelsDirectory
     }
     
-    // MARK: - Placeholder for model download
+    // MARK: - Model Download
     
-    /// Download a model file (placeholder - will implement in Phase 3)
+    /// Download URLs for models (Hugging Face)
+    private func downloadURL(for model: ModelSize) -> URL? {
+        switch model {
+        case .phi3Mini4K:
+            // Hugging Face GGUF model URL
+            return URL(string: "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf")
+        case .phi3Mini128K:
+            return URL(string: "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct-gguf/resolve/main/Phi-3-mini-128k-instruct-q4.gguf")
+        }
+    }
+    
+    /// Download a model file with progress tracking
     public func downloadModel(_ model: ModelSize, progress: @Sendable @escaping (Double) -> Void) async throws {
-        // TODO: Implement actual download in Phase 3
-        // For now, throw not implemented error
-        throw LocalLLMError.modelNotFound("Download not yet implemented. Please manually place \(model.rawValue) in \(modelsDirectory.path)")
+        guard let downloadURL = downloadURL(for: model) else {
+            throw LocalLLMError.modelNotFound("No download URL configured for \(model.rawValue)")
+        }
+        
+        let destinationURL = modelsDirectory.appendingPathComponent(model.rawValue)
+        
+        // Check if already exists
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            throw LocalLLMError.configurationError("Model \(model.rawValue) already exists")
+        }
+        
+        // Create download delegate
+        let delegate = DownloadDelegate(progress: progress)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        
+        // Start download
+        let (tempURL, response) = try await session.download(from: downloadURL)
+        
+        // Verify response
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw LocalLLMError.configurationError("Download failed with response: \(response)")
+        }
+        
+        // Move to final location
+        try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+        
+        print("✅ [ModelFileManager] Downloaded \(model.displayName) to \(destinationURL.path)")
+    }
+    
+    /// Cancel an ongoing download
+    public func cancelDownload() {
+        // Downloads are managed by caller's Task cancellation
+        print("⚠️ [ModelFileManager] Download cancellation requested")
+    }
+}
+
+// MARK: - Download Delegate
+
+private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    
+    private let progressHandler: @Sendable (Double) -> Void
+    
+    init(progress: @Sendable @escaping (Double) -> Void) {
+        self.progressHandler = progress
+        super.init()
+    }
+    
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        
+        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        progressHandler(progress)
+    }
+    
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        // Final 100% progress
+        progressHandler(1.0)
     }
 }

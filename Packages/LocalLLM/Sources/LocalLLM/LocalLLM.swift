@@ -46,6 +46,8 @@ public enum LocalLLMError: Error, Sendable {
     case generationFailed(String)
     case invalidOutput
     case notInitialized
+    case configurationError(String)
+    case downloadFailed(String)
 }
 
 extension LocalLLMError: LocalizedError {
@@ -63,6 +65,10 @@ extension LocalLLMError: LocalizedError {
             return "Model generated invalid output"
         case .notInitialized:
             return "LLM context not initialized"
+        case .configurationError(let message):
+            return "Configuration error: \(message)"
+        case .downloadFailed(let message):
+            return "Download failed: \(message)"
         }
     }
 }

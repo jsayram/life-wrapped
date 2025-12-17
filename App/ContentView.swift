@@ -3451,7 +3451,7 @@ struct ExternalAIView: View {
     @State private var activeEngine: EngineTier?
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
-    @State private var showUnavailableAlert = false
+    @State private var showConfigSheet = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -3474,15 +3474,40 @@ struct ExternalAIView: View {
                 .onTapGesture {
                     selectEngine(.external)
                 }
+                
+                Divider()
+                    .padding(.leading, 48)
+                
+                // Configuration button
+                Button {
+                    showConfigSheet = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "key.fill")
+                            .font(.body)
+                            .foregroundStyle(.orange)
+                            .frame(width: 32, height: 32)
+                        
+                        Text("Configure API Keys")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
             }
         }
         .task {
             await loadEngineStatus()
         }
-        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("External API engine is not yet configured. You'll need to provide your own API key in a future update.")
+        .sheet(isPresented: $showConfigSheet) {
+            ExternalAPIConfigView()
+                .environmentObject(coordinator)
         }
     }
     
@@ -3499,7 +3524,7 @@ struct ExternalAIView: View {
     private func selectEngine(_ tier: EngineTier) {
         // Check if available
         guard availableEngines.contains(tier) else {
-            showUnavailableAlert = true
+            showConfigSheet = true  // Open config if not available
             return
         }
         
@@ -3514,6 +3539,128 @@ struct ExternalAIView: View {
             UserDefaults.standard.set(tier.rawValue, forKey: "preferredIntelligenceEngine")
             
             coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+}
+
+// MARK: - External API Configuration View
+
+struct ExternalAPIConfigView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var coordinator: AppCoordinator
+    
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var openaiKey: String = ""
+    @State private var anthropicKey: String = ""
+    @State private var isSaving = false
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Provider", selection: $selectedProvider) {
+                        Text("OpenAI").tag("OpenAI")
+                        Text("Anthropic").tag("Anthropic")
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("AI Provider")
+                } footer: {
+                    Text("Select which external AI service you want to use")
+                }
+                
+                if selectedProvider == "OpenAI" {
+                    Section {
+                        SecureField("API Key", text: $openaiKey)
+                            .textContentType(.password)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                        
+                        Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                            Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
+                        }
+                    } header: {
+                        Text("OpenAI Configuration")
+                    } footer: {
+                        Text("Your API key is stored securely in Keychain. Never shared with anyone.\n\nNote: Using OpenAI sends your transcript data to their servers. Standard API rates apply.")
+                    }
+                } else {
+                    Section {
+                        SecureField("API Key", text: $anthropicKey)
+                            .textContentType(.password)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                        
+                        Link(destination: URL(string: "https://console.anthropic.com/account/keys")!) {
+                            Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
+                        }
+                    } header: {
+                        Text("Anthropic Configuration")
+                    } footer: {
+                        Text("Your API key is stored securely in Keychain. Never shared with anyone.\n\nNote: Using Anthropic sends your transcript data to their servers. Standard API rates apply.")
+                    }
+                }
+                
+                Section {
+                    Button {
+                        saveConfiguration()
+                    } label: {
+                        if isSaving {
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("Saving...")
+                            }
+                        } else {
+                            Text("Save Configuration")
+                        }
+                    }
+                    .disabled(isSaving || (selectedProvider == "OpenAI" ? openaiKey.isEmpty : anthropicKey.isEmpty))
+                }
+            }
+            .navigationTitle("External AI Setup")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .task {
+                await loadExistingKeys()
+            }
+        }
+    }
+    
+    private func loadExistingKeys() async {
+        // Load existing keys from Keychain
+        let keychain = KeychainManager.shared
+        if let openaiExisting = await keychain.getAPIKey(for: .openai) {
+            openaiKey = openaiExisting
+        }
+        if let anthropicExisting = await keychain.getAPIKey(for: .anthropic) {
+            anthropicKey = anthropicExisting
+        }
+    }
+    
+    private func saveConfiguration() {
+        isSaving = true
+        
+        Task {
+            let keychain = KeychainManager.shared
+            
+            if selectedProvider == "OpenAI" && !openaiKey.isEmpty {
+                await keychain.setAPIKey(openaiKey, for: .openai)
+                UserDefaults.standard.set("OpenAI", forKey: "externalAPIProvider")
+            } else if selectedProvider == "Anthropic" && !anthropicKey.isEmpty {
+                await keychain.setAPIKey(anthropicKey, for: .anthropic)
+                UserDefaults.standard.set("Anthropic", forKey: "externalAPIProvider")
+            }
+            
+            isSaving = false
+            coordinator.showSuccess("API key saved successfully")
+            dismiss()
         }
     }
 }
@@ -3571,8 +3718,8 @@ struct ModelManagementView: View {
         defer { isLoading = false }
         
         // Check which models are available
-        // TODO: Access ModelFileManager through coordinator when exposed
-        availableModels = [] // Placeholder for now
+        let manager = LocalLLM.ModelFileManager()
+        availableModels = await manager.availableModels()
     }
 }
 
@@ -3582,7 +3729,9 @@ struct ModelRowView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var isDownloading = false
     @State private var downloadProgress: Double = 0.0
+    @State private var downloadTask: Task<Void, Never>?
     @State private var showDownloadAlert = false
+    @State private var showDeleteAlert = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3601,12 +3750,41 @@ struct ModelRowView: View {
                 Spacer()
                 
                 if isDownloaded {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.green)
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.green)
+                        
+                        Button(role: .destructive) {
+                            showDeleteAlert = true
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.subheadline)
+                        }
+                    }
                 } else if isDownloading {
-                    ProgressView(value: downloadProgress, total: 1.0)
-                        .frame(width: 60)
+                    VStack(spacing: 4) {
+                        HStack(spacing: 8) {
+                            ProgressView(value: downloadProgress, total: 1.0)
+                                .frame(width: 60)
+                            
+                            Text("\(Int(downloadProgress * 100))%")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            
+                            Button {
+                                cancelDownload()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        
+                        Text("Downloading...")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     Button {
                         showDownloadAlert = true
@@ -3624,7 +3802,7 @@ struct ModelRowView: View {
                 DetailRow(icon: "cpu", text: "On-Device Processing")
                 DetailRow(icon: "memorychip", text: "\(modelSize.contextLength.formatted()) tokens context")
                 
-                if !isDownloaded {
+                if !isDownloaded && !isDownloading {
                     DetailRow(icon: "wifi", text: "Requires WiFi")
                         .foregroundStyle(.orange)
                 }
@@ -3634,16 +3812,72 @@ struct ModelRowView: View {
         .alert("Download Model", isPresented: $showDownloadAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Download") {
-                downloadModel()
+                startDownload()
             }
         } message: {
-            Text("This will download \(modelSize.approximateSizeMB) MB. Make sure you're connected to WiFi. Model download is not yet implemented in this version.")
+            Text("This will download \(modelSize.approximateSizeMB) MB. Make sure you're connected to WiFi.")
+        }
+        .alert("Delete Model", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteModel()
+            }
+        } message: {
+            Text("Are you sure you want to delete \(modelSize.displayName)? You'll need to download it again to use it.")
         }
     }
     
-    private func downloadModel() {
-        // Placeholder for actual download
-        coordinator.showError("Model download coming in Phase 3. For now, please manually place \(modelSize.rawValue) in Documents/Models/ folder.")
+    private func startDownload() {
+        isDownloading = true
+        downloadProgress = 0.0
+        
+        downloadTask = Task {
+            do {
+                let manager = LocalLLM.ModelFileManager()
+                
+                try await manager.downloadModel(modelSize) { progress in
+                    Task { @MainActor in
+                        downloadProgress = progress
+                    }
+                }
+                
+                await MainActor.run {
+                    isDownloading = false
+                    coordinator.showSuccess("\(modelSize.displayName) downloaded successfully!")
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    isDownloading = false
+                    downloadProgress = 0.0
+                    coordinator.showError("Download cancelled")
+                }
+            } catch {
+                await MainActor.run {
+                    isDownloading = false
+                    downloadProgress = 0.0
+                    coordinator.showError("Download failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    private func cancelDownload() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        isDownloading = false
+        downloadProgress = 0.0
+    }
+    
+    private func deleteModel() {
+        Task {
+            do {
+                let manager = LocalLLM.ModelFileManager()
+                try await manager.deleteModel(modelSize)
+                coordinator.showSuccess("\(modelSize.displayName) deleted successfully")
+            } catch {
+                coordinator.showError("Failed to delete model: \(error.localizedDescription)")
+            }
+        }
     }
 }
 
