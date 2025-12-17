@@ -38,7 +38,7 @@ public actor LlamaContext {
         print("📥 [LlamaContext] Loading model: \(configuration.modelName)")
         
         // Check if model file exists
-        let modelSize = ModelFileManager.ModelSize.phi3Mini4K  // Default for now
+        let modelSize = ModelFileManager.ModelSize.phi35Mini  // Default for now
         guard await modelFileManager.isModelAvailable(modelSize) else {
             throw LocalLLMError.modelNotFound(configuration.modelName)
         }

@@ -15,28 +15,18 @@ public actor ModelFileManager {
     
     /// Supported model configurations
     public enum ModelSize: String, CaseIterable, Sendable {
-        case phi3Mini4K = "phi-3-mini-4k-instruct-q4.gguf"  // ~2.4GB quantized
-        case phi3Mini128K = "phi-3-mini-128k-instruct-q4.gguf"  // ~2.4GB with longer context
+        case phi35Mini = "Phi-3.5-mini-instruct-Q4_K_M.gguf"  // ~2.4GB quantized
         
         public var displayName: String {
-            switch self {
-            case .phi3Mini4K: return "Phi-3 Mini (4K context)"
-            case .phi3Mini128K: return "Phi-3 Mini (128K context)"
-            }
+            return "Phi-3.5 Mini Instruct"
         }
         
         public var approximateSizeMB: Int {
-            switch self {
-            case .phi3Mini4K: return 2400
-            case .phi3Mini128K: return 2400
-            }
+            return 2390
         }
         
         public var contextLength: Int {
-            switch self {
-            case .phi3Mini4K: return 4096
-            case .phi3Mini128K: return 131072
-            }
+            return 131072  // 128K context
         }
     }
     
@@ -93,13 +83,8 @@ public actor ModelFileManager {
     
     /// Download URLs for models (Hugging Face)
     private func downloadURL(for model: ModelSize) -> URL? {
-        switch model {
-        case .phi3Mini4K:
-            // Hugging Face GGUF model URL
-            return URL(string: "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf")
-        case .phi3Mini128K:
-            return URL(string: "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct-gguf/resolve/main/Phi-3-mini-128k-instruct-q4.gguf")
-        }
+        // Using bartowski's GGUF conversions (no auth required)
+        return URL(string: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf")
     }
     
     /// Download a model file with progress tracking
