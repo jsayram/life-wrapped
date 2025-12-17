@@ -246,7 +246,10 @@ public actor DatabaseManager {
                 period_start REAL NOT NULL,
                 period_end REAL NOT NULL,
                 text TEXT NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                topics_json TEXT,
+                entities_json TEXT,
+                engine_tier TEXT
             )
             """)
         
@@ -1177,8 +1180,8 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         
         var stmt: OpaquePointer?
@@ -1201,6 +1204,24 @@ public actor DatabaseManager {
             sqlite3_bind_null(stmt, 7)
         }
         
+        if let topicsJSON = summary.topicsJSON {
+            sqlite3_bind_text(stmt, 8, topicsJSON, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 8)
+        }
+        
+        if let entitiesJSON = summary.entitiesJSON {
+            sqlite3_bind_text(stmt, 9, entitiesJSON, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 9)
+        }
+        
+        if let engineTier = summary.engineTier {
+            sqlite3_bind_text(stmt, 10, engineTier, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 10)
+        }
+        
         guard sqlite3_step(stmt) == SQLITE_DONE else {
             throw StorageError.stepFailed(lastError())
         }
@@ -1210,7 +1231,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
             FROM summaries
             WHERE id = ?
             """
@@ -1235,7 +1256,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         var sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
             FROM summaries
             """
         
@@ -1304,7 +1325,7 @@ public actor DatabaseManager {
         // For week/month, find the summary where the date falls within the period range
         // For day, match the exact day
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
             FROM summaries
             WHERE period_type = ?
             AND ? >= period_start
@@ -1426,7 +1447,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
             FROM summaries
             WHERE period_type = 'day'
             AND period_start >= ? AND period_start < ?
@@ -1498,6 +1519,30 @@ public actor DatabaseManager {
             sessionId = nil
         }
         
+        // Parse optional topics_json
+        let topicsJSON: String?
+        if let topicsText = sqlite3_column_text(stmt, 7) {
+            topicsJSON = String(cString: topicsText)
+        } else {
+            topicsJSON = nil
+        }
+        
+        // Parse optional entities_json
+        let entitiesJSON: String?
+        if let entitiesText = sqlite3_column_text(stmt, 8) {
+            entitiesJSON = String(cString: entitiesText)
+        } else {
+            entitiesJSON = nil
+        }
+        
+        // Parse optional engine_tier
+        let engineTier: String?
+        if let engineText = sqlite3_column_text(stmt, 9) {
+            engineTier = String(cString: engineText)
+        } else {
+            engineTier = nil
+        }
+        
         return Summary(
             id: id,
             periodType: periodType,
@@ -1505,7 +1550,10 @@ public actor DatabaseManager {
             periodEnd: periodEnd,
             text: text,
             createdAt: createdAt,
-            sessionId: sessionId
+            sessionId: sessionId,
+            topicsJSON: topicsJSON,
+            entitiesJSON: entitiesJSON,
+            engineTier: engineTier
         )
     }
     

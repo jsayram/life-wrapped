@@ -183,6 +183,9 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
     public let text: String
     public let createdAt: Date
     public let sessionId: UUID?  // Optional: set for session summaries
+    public let topicsJSON: String?  // JSON array of topics
+    public let entitiesJSON: String?  // JSON array of entities
+    public let engineTier: String?  // "basic", "apple", "local", "external"
 
     public init(
         id: UUID = UUID(),
@@ -191,7 +194,10 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         periodEnd: Date,
         text: String,
         createdAt: Date = Date(),
-        sessionId: UUID? = nil
+        sessionId: UUID? = nil,
+        topicsJSON: String? = nil,
+        entitiesJSON: String? = nil,
+        engineTier: String? = nil
     ) {
         self.id = id
         self.periodType = periodType
@@ -200,6 +206,9 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         self.text = text
         self.createdAt = createdAt
         self.sessionId = sessionId
+        self.topicsJSON = topicsJSON
+        self.entitiesJSON = entitiesJSON
+        self.engineTier = engineTier
     }
 }
 
