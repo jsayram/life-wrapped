@@ -118,7 +118,7 @@ public final class AppCoordinator: ObservableObject {
     public let audioCapture: AudioCaptureManager
     public let audioPlayback: AudioPlaybackManager
     private var transcriptionManager: TranscriptionManager?
-    private var summarizationManager: SummarizationManager?
+    private var summarizationCoordinator: SummarizationCoordinator?
     private var insightsManager: InsightsManager?
     private let widgetDataManager: WidgetDataManager
     
@@ -214,10 +214,8 @@ public final class AppCoordinator: ObservableObject {
             // Initialize managers that need storage
             print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)
-            print("📝 [AppCoordinator] Initializing SummarizationManager...")
-            // Use config with no word minimum - all content should generate summaries
-            let summaryConfig = SummarizationConfig(minimumWords: 1)
-            self.summarizationManager = SummarizationManager(storage: dbManager, config: summaryConfig)
+            print("📝 [AppCoordinator] Initializing SummarizationCoordinator...")
+            self.summarizationCoordinator = SummarizationCoordinator(storage: dbManager)
             print("📊 [AppCoordinator] Initializing InsightsManager...")
             self.insightsManager = InsightsManager(storage: dbManager)
             print("✅ [AppCoordinator] All managers initialized")
@@ -691,7 +689,7 @@ public final class AppCoordinator: ObservableObject {
     /// Generate a summary for an entire session
     private func generateSessionSummary(sessionId: UUID) async throws {
         guard let dbManager = databaseManager,
-              let summarizer = summarizationManager else {
+              let coordinator = summarizationCoordinator else {
             throw AppCoordinatorError.notInitialized
         }
         
@@ -705,9 +703,6 @@ public final class AppCoordinator: ObservableObject {
         print("📊 [AppCoordinator] Session transcript: \(allSegments.count) segments, \(wordCount) words")
         print("📝 [AppCoordinator] First 100 chars: \(fullText.prefix(100))...")
         
-        // Always generate summaries regardless of word count
-        // Even short recordings should be aggregated into daily/weekly/monthly summaries
-        
         // Get session time range
         let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
         guard let firstChunk = chunks.first, let lastChunk = chunks.last else { return }
@@ -715,22 +710,27 @@ public final class AppCoordinator: ObservableObject {
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
-        // Generate summary using the date range method
+        // Generate summary using coordinator (returns Summary with structured data)
         print("📝 [AppCoordinator] Summarizing \(wordCount) words from session...")
-        let generatedSummary = try await summarizer.generateSummary(from: periodStart, to: periodEnd)
-        let summaryText = generatedSummary.text
+        var generatedSummary = try await coordinator.generateSessionSummary(sessionId: sessionId, segments: allSegments)
         
-        // Save session summary
-        let summary = Summary(
+        // Update time range
+        generatedSummary = Summary(
+            id: generatedSummary.id,
             periodType: .session,
             periodStart: periodStart,
             periodEnd: periodEnd,
-            text: summaryText,
-            sessionId: sessionId
+            text: generatedSummary.text,
+            createdAt: generatedSummary.createdAt,
+            sessionId: sessionId,
+            topicsJSON: generatedSummary.topicsJSON,
+            entitiesJSON: generatedSummary.entitiesJSON,
+            engineTier: generatedSummary.engineTier
         )
         
-        try await dbManager.insertSummary(summary)
-        print("✅ [AppCoordinator] Session summary saved")
+        // Save session summary
+        try await dbManager.insertSummary(generatedSummary)
+        print("✅ [AppCoordinator] Session summary saved (topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none"))")
         
         // Update period summaries (daily, weekly, monthly)
         await updatePeriodSummaries(sessionId: sessionId, sessionDate: periodStart)
@@ -787,28 +787,8 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
-    private func generateSummaryIfNeeded(segments: [TranscriptSegment]) async {
-        guard let summarizer = summarizationManager else { return }
-        
-        // Combine all segment text
-        let fullText = segments.map { $0.text }.joined(separator: " ")
-        
-        // Only summarize if there's enough content (at least 50 words)
-        let wordCount = fullText.split(separator: " ").count
-        guard wordCount >= 50 else { return }
-        
-        do {
-            // Generate daily summary for today
-            let today = Calendar.current.startOfDay(for: Date())
-            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
-            
-            _ = try await summarizer.generateSummary(from: today, to: tomorrow)
-            
-        } catch {
-            // Log but don't fail the recording flow for summarization errors
-            print("Summarization failed: \(error)")
-        }
-    }
+    // Note: Summary generation is now handled per-session in checkAndGenerateSessionSummary()
+    // This old per-chunk method is no longer needed
     
     private func updateRollupsAndStats() async {
         guard let insights = insightsManager else { return }
