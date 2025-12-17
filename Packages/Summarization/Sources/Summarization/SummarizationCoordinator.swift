@@ -39,11 +39,15 @@ public actor SummarizationCoordinator {
         self.basicEngine = BasicEngine(storage: storage)
         self.activeEngine = basicEngine
         
+        // Initialize Apple Intelligence engine (Phase 2B - iOS 18.1+)
+        if #available(iOS 18.1, *) {
+            self.appleEngine = AppleEngine(storage: storage)
+        }
+        
         // Initialize local engine (Phase 2A)
         self.localEngine = LocalEngine(storage: storage)
         
-        // Other engines will be initialized when their implementations are added
-        // self.appleEngine = AppleEngine(storage: storage)
+        // External engine will be initialized in Phase 2C
         // self.externalEngine = ExternalAPIEngine(storage: storage)
     }
     
