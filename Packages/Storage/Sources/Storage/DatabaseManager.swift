@@ -1301,11 +1301,14 @@ public actor DatabaseManager {
     public func fetchPeriodSummary(type: PeriodType, date: Date) throws -> Summary? {
         guard let db = db else { throw StorageError.notOpen }
         
+        // For week/month, find the summary where the date falls within the period range
+        // For day, match the exact day
         let sql = """
             SELECT id, period_type, period_start, period_end, text, created_at, session_id
             FROM summaries
             WHERE period_type = ?
-            AND DATE(period_start, 'unixepoch') = DATE(?, 'unixepoch')
+            AND ? >= period_start
+            AND ? < period_end
             AND session_id IS NULL
             LIMIT 1
             """
@@ -1319,6 +1322,7 @@ public actor DatabaseManager {
         
         sqlite3_bind_text(stmt, 1, type.rawValue, -1, SQLITE_TRANSIENT)
         sqlite3_bind_double(stmt, 2, date.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 3, date.timeIntervalSince1970)
         
         if sqlite3_step(stmt) == SQLITE_ROW {
             return try parseSummary(from: stmt)

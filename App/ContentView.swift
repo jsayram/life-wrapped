@@ -1337,25 +1337,28 @@ struct InsightsTab: View {
             if periodSummary == nil && !sessionsInPeriod.isEmpty {
                 print("ℹ️ [InsightsTab] No \(periodType) summary found for \(startDate.formatted()), generating...")
                 
+                // Use Date() (today) for week/month calculations, startDate for day
+                let dateForGeneration = (periodType == .day) ? startDate : Date()
+                
                 switch periodType {
                 case .day:
-                    await coordinator.updateDailySummary(date: startDate)
+                    await coordinator.updateDailySummary(date: dateForGeneration)
                 case .week:
-                    await coordinator.updateWeeklySummary(date: startDate)
+                    await coordinator.updateWeeklySummary(date: dateForGeneration)
                 case .month:
-                    await coordinator.updateMonthlySummary(date: startDate)
+                    await coordinator.updateMonthlySummary(date: dateForGeneration)
                 default:
                     break
                 }
                 
-                // Fetch again after generation
+                // Fetch again after generation using the same date we used for generation
                 try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1s
-                periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: startDate)
+                periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
                 
                 if periodSummary != nil {
                     print("✅ [InsightsTab] Successfully generated \(periodType) summary")
                 } else {
-                    print("⚠️ [InsightsTab] Failed to generate \(periodType) summary")
+                    print("⚠️ [InsightsTab] Failed to generate \(periodType) summary (generated with date: \(dateForGeneration.formatted()), fetching with same date)")
                 }
             }
         } catch {

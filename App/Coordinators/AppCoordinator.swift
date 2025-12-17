@@ -1229,8 +1229,17 @@ public final class AppCoordinator: ObservableObject {
             let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfWeek, to: endOfWeek)
             print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this week")
             
-            guard !dailySummaries.isEmpty else {
-                print("ℹ️ [AppCoordinator] No daily summaries found for this week (startOfWeek: \(startOfWeek), endOfWeek: \(endOfWeek))")
+            if dailySummaries.isEmpty {
+                print("ℹ️ [AppCoordinator] No daily summaries found for this week")
+                print("   Query range: \(startOfWeek.ISO8601Format()) to \(endOfWeek.ISO8601Format())")
+                
+                // Debug: List all daily summaries to see what exists
+                if let allDailies = try? await dbManager.fetchSummaries(periodType: .day) {
+                    print("   Available daily summaries: \(allDailies.count)")
+                    for daily in allDailies {
+                        print("   - Daily: \(daily.periodStart.ISO8601Format()) to \(daily.periodEnd.ISO8601Format())")
+                    }
+                }
                 return
             }
             
@@ -1272,8 +1281,17 @@ public final class AppCoordinator: ObservableObject {
             let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
             print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this month")
             
-            guard !dailySummaries.isEmpty else {
-                print("ℹ️ [AppCoordinator] No daily summaries found for this month (startOfMonth: \(startOfMonth), endOfMonth: \(endOfMonth))")
+            if dailySummaries.isEmpty {
+                print("ℹ️ [AppCoordinator] No daily summaries found for this month")
+                print("   Query range: \(startOfMonth.ISO8601Format()) to \(endOfMonth.ISO8601Format())")
+                
+                // Debug: List all daily summaries to see what exists
+                if let allDailies = try? await dbManager.fetchSummaries(periodType: .day) {
+                    print("   Available daily summaries: \(allDailies.count)")
+                    for daily in allDailies.prefix(5) {
+                        print("   - Daily: \(daily.periodStart.ISO8601Format()) to \(daily.periodEnd.ISO8601Format())")
+                    }
+                }
                 return
             }
             

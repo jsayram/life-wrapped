@@ -3,6 +3,7 @@
 // =============================================================================
 
 import Foundation
+import NaturalLanguage
 
 /// Protocol for aggregating multiple summaries into one
 public protocol SummaryAggregator {
@@ -34,11 +35,20 @@ public class BasicAggregator: SummaryAggregator {
             return summaries[0]
         }
         
+        // Step 0: Strip existing "Key themes:" sections to avoid duplication
+        let cleanedSummaries = summaries.map { summary in
+            // Remove everything from "Key themes:" onward
+            if let range = summary.range(of: "Key themes:", options: .caseInsensitive) {
+                return String(summary[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+            }
+            return summary
+        }
+        
         // Step 1: Combine and deduplicate sentences
         var allSentences: [String] = []
         var seenSentences = Set<String>()
         
-        for summary in summaries {
+        for summary in cleanedSummaries {
             let sentences = splitIntoSentences(summary)
             for sentence in sentences {
                 let normalized = sentence.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -52,8 +62,8 @@ public class BasicAggregator: SummaryAggregator {
         // Step 2: Join sentences
         let combinedText = allSentences.joined(separator: ". ")
         
-        // Step 3: Extract key themes using word frequency
-        let themes = extractKeyThemes(from: summaries)
+        // Step 3: Extract key themes using word frequency from cleaned summaries
+        let themes = extractKeyThemes(from: cleanedSummaries)
         
         // Step 4: Format final summary
         var result = combinedText
@@ -99,17 +109,24 @@ public class BasicAggregator: SummaryAggregator {
     private func extractKeyThemes(from summaries: [String]) -> [(word: String, count: Int)] {
         var wordCounts: [String: Int] = [:]
         
-        // Count word frequencies across all summaries
+        // Use NaturalLanguage to extract only meaningful nouns
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        
         for summary in summaries {
-            let words = summary
-                .lowercased()
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .filter { word in
-                    word.count > 3 && !stopwords.contains(word)
-                }
+            tagger.string = summary
+            let options: NLTagger.Options = [.omitPunctuation, .omitWhitespace]
             
-            for word in words {
+            tagger.enumerateTags(in: summary.startIndex..<summary.endIndex, unit: .word, scheme: .lexicalClass, options: options) { tag, tokenRange in
+                // Only count nouns (actual topics/things)
+                guard let tag = tag, tag == .noun else { return true }
+                
+                let word = String(summary[tokenRange]).lowercased()
+                
+                // Filter: must be 4+ characters and not a stopword
+                guard word.count >= 4, !stopwords.contains(word) else { return true }
+                
                 wordCounts[word, default: 0] += 1
+                return true
             }
         }
         
