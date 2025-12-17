@@ -3344,7 +3344,7 @@ struct EngineRow: View {
             // Icon
             Image(systemName: iconName)
                 .font(.title2)
-                .foregroundStyle(iconColor)
+                .foregroundStyle(isAvailable ? iconColor : iconColor.opacity(0.3))
                 .frame(width: 32, height: 32)
             
             // Name and description
@@ -3353,6 +3353,7 @@ struct EngineRow: View {
                     Text(tier.displayName)
                         .font(.body)
                         .fontWeight(isActive ? .semibold : .regular)
+                        .foregroundStyle(isAvailable ? .primary : .secondary)
                     
                     if isActive {
                         Text("Active")
@@ -3363,6 +3364,15 @@ struct EngineRow: View {
                             .padding(.vertical, 2)
                             .background(.green.gradient)
                             .clipShape(Capsule())
+                    } else if isAvailable && !isActive {
+                        Text("Available")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.green.opacity(0.1))
+                            .clipShape(Capsule())
                     } else if !isAvailable {
                         Text("Unavailable")
                             .font(.caption)
@@ -3370,14 +3380,14 @@ struct EngineRow: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(.gray.opacity(0.1))
+                            .background(.gray.opacity(0.08))
                             .clipShape(Capsule())
                     }
                 }
                 
                 Text(tier.description)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isAvailable ? .secondary : .tertiary)
                     .lineLimit(2)
                 
                 // Attributes
@@ -3385,14 +3395,16 @@ struct EngineRow: View {
                     AttributeBadge(
                         icon: tier.isPrivacyPreserving ? "lock.fill" : "lock.open.fill",
                         text: tier.isPrivacyPreserving ? "Private" : "Cloud",
-                        color: tier.isPrivacyPreserving ? .green : .orange
+                        color: tier.isPrivacyPreserving ? .green : .orange,
+                        isAvailable: isAvailable
                     )
                     
                     if tier.requiresInternet {
                         AttributeBadge(
                             icon: "wifi",
                             text: "Internet",
-                            color: .blue
+                            color: .blue,
+                            isAvailable: isAvailable
                         )
                     }
                 }
@@ -3400,9 +3412,26 @@ struct EngineRow: View {
             }
             
             Spacer()
+            
+            // Chevron for available engines
+            if isAvailable && !isActive {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isActive ? Color.green.opacity(0.12) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 2)
+        )
         .contentShape(Rectangle())
+        .opacity(isAvailable ? 1.0 : 0.5)
     }
     
     private var iconName: String {
@@ -3428,6 +3457,7 @@ struct AttributeBadge: View {
     let icon: String
     let text: String
     let color: Color
+    var isAvailable: Bool = true
     
     var body: some View {
         HStack(spacing: 4) {
@@ -3436,10 +3466,10 @@ struct AttributeBadge: View {
             Text(text)
                 .font(.system(size: 10, weight: .medium))
         }
-        .foregroundStyle(color)
+        .foregroundStyle(isAvailable ? color : color.opacity(0.4))
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .background(color.opacity(0.1))
+        .background(isAvailable ? color.opacity(0.1) : color.opacity(0.05))
         .clipShape(Capsule())
     }
 }
@@ -3827,6 +3857,7 @@ struct ModelRowView: View {
         }
     }
     
+    @MainActor
     private func startDownload() {
         isDownloading = true
         downloadProgress = 0.0
@@ -3835,10 +3866,8 @@ struct ModelRowView: View {
             do {
                 let manager = LocalLLM.ModelFileManager()
                 
-                try await manager.downloadModel(modelSize) { progress in
-                    Task { @MainActor in
-                        downloadProgress = progress
-                    }
+                try await manager.downloadModel(modelSize) { @MainActor progress in
+                    self.downloadProgress = progress
                 }
                 
                 await MainActor.run {
@@ -3873,6 +3902,16 @@ struct ModelRowView: View {
             do {
                 let manager = LocalLLM.ModelFileManager()
                 try await manager.deleteModel(modelSize)
+                
+                // If Local AI was active, switch back to Basic
+                if let summCoord = coordinator.summarizationCoordinator {
+                    let activeEngine = await summCoord.getActiveEngine()
+                    if activeEngine == .local {
+                        await summCoord.setPreferredEngine(.basic)
+                        coordinator.showSuccess("Switched to Basic engine")
+                    }
+                }
+                
                 coordinator.showSuccess("\(modelSize.displayName) deleted successfully")
             } catch {
                 coordinator.showError("Failed to delete model: \(error.localizedDescription)")

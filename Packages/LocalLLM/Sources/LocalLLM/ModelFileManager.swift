@@ -88,7 +88,7 @@ public actor ModelFileManager {
     }
     
     /// Download a model file with progress tracking
-    public func downloadModel(_ model: ModelSize, progress: @Sendable @escaping (Double) -> Void) async throws {
+    public func downloadModel(_ model: ModelSize, progress: @MainActor @Sendable @escaping (Double) -> Void) async throws {
         guard let downloadURL = downloadURL(for: model) else {
             throw LocalLLMError.modelNotFound("No download URL configured for \(model.rawValue)")
         }
@@ -130,9 +130,9 @@ public actor ModelFileManager {
 
 private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     
-    private let progressHandler: @Sendable (Double) -> Void
+    private let progressHandler: @MainActor @Sendable (Double) -> Void
     
-    init(progress: @Sendable @escaping (Double) -> Void) {
+    init(progress: @MainActor @Sendable @escaping (Double) -> Void) {
         self.progressHandler = progress
         super.init()
     }
@@ -147,7 +147,10 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked
         guard totalBytesExpectedToWrite > 0 else { return }
         
         let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        progressHandler(progress)
+        print("📥 [ModelFileManager] Download progress: \(Int(progress * 100))% (\(totalBytesWritten)/\(totalBytesExpectedToWrite) bytes)")
+        MainActor.assumeIsolated {
+            progressHandler(progress)
+        }
     }
     
     func urlSession(
@@ -156,6 +159,9 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked
         didFinishDownloadingTo location: URL
     ) {
         // Final 100% progress
-        progressHandler(1.0)
+        print("✅ [ModelFileManager] Download complete!")
+        MainActor.assumeIsolated {
+            progressHandler(1.0)
+        }
     }
 }
