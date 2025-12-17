@@ -17,6 +17,11 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     case local      // Local LLM (llama.cpp, Phi-3-mini)
     case external   // External API (OpenAI, Anthropic with user keys)
     
+    /// Private/on-device tiers only (excludes external)
+    public static var privateTiers: [EngineTier] {
+        [.basic, .apple, .local]
+    }
+    
     public var displayName: String {
         switch self {
         case .basic: return "Basic"

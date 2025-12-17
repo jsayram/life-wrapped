@@ -8,6 +8,7 @@ import Charts
 import Transcription
 import Storage
 import Summarization
+import LocalLLM
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -1785,7 +1786,15 @@ struct SettingsTab: View {
                 } header: {
                     Text("Intelligence Engine")
                 } footer: {
-                    Text("Choose how Life Wrapped generates summaries and extracts insights from your audio. Privacy-first options process everything on your device.")
+                    Text("On-device intelligence options. All processing happens locally on your device for maximum privacy.")
+                }
+                
+                Section {
+                    ExternalAIView()
+                } header: {
+                    Text("External AI")
+                } footer: {
+                    Text("Premium AI using external services. Requires API key and sends data to third-party servers.")
                 }
                 
                 Section("Preferences") {
@@ -3211,7 +3220,7 @@ struct IntelligenceEngineView: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                ForEach(EngineTier.allCases, id: \.self) { tier in
+                ForEach(EngineTier.privateTiers, id: \.self) { tier in
                     EngineRow(
                         tier: tier,
                         isActive: tier == activeEngine,
@@ -3221,7 +3230,34 @@ struct IntelligenceEngineView: View {
                     .onTapGesture {
                         selectEngine(tier)
                     }
-                    if tier != EngineTier.allCases.last {
+                    
+                    // Add "Manage Local Models" link after Local AI tier
+                    if tier == .local {
+                        Divider()
+                            .padding(.leading, 48)
+                        
+                        NavigationLink(destination: ModelManagementView()) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "cube.box")
+                                    .font(.body)
+                                    .foregroundStyle(.purple)
+                                    .frame(width: 32, height: 32)
+                                
+                                Text("Manage Local Models")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    
+                    if tier != EngineTier.privateTiers.last {
                         Divider()
                             .padding(.leading, 48)
                     }
@@ -3405,6 +3441,225 @@ struct AttributeBadge: View {
         .padding(.vertical, 3)
         .background(color.opacity(0.1))
         .clipShape(Capsule())
+    }
+}
+
+// MARK: - External AI View
+
+struct ExternalAIView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showUnavailableAlert = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            } else {
+                EngineRow(
+                    tier: .external,
+                    isActive: activeEngine == .external,
+                    isAvailable: availableEngines.contains(.external)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectEngine(.external)
+                }
+            }
+        }
+        .task {
+            await loadEngineStatus()
+        }
+        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("External API engine is not yet configured. You'll need to provide your own API key in a future update.")
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // Check if available
+        guard availableEngines.contains(tier) else {
+            showUnavailableAlert = true
+            return
+        }
+        
+        // Set preferred engine
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            
+            // Save preference
+            UserDefaults.standard.set(tier.rawValue, forKey: "preferredIntelligenceEngine")
+            
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+}
+
+// MARK: - Model Management View
+
+struct ModelManagementView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var availableModels: [LocalLLM.ModelFileManager.ModelSize] = []
+    @State private var isLoading = true
+    
+    var body: some View {
+        List {
+            Section {
+                Text("Local LLM models enable on-device summarization with enhanced intelligence. Models are large (2-3GB) and require WiFi to download.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Section("Available Models") {
+                ForEach(LocalLLM.ModelFileManager.ModelSize.allCases, id: \.rawValue) { modelSize in
+                    ModelRowView(
+                        modelSize: modelSize,
+                        isDownloaded: availableModels.contains(modelSize)
+                    )
+                }
+            }
+            
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Privacy-First", systemImage: "lock.shield.fill")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.green)
+                    
+                    Text("Models run entirely on your device. No data is sent to external servers.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .navigationTitle("Local Models")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadModels()
+        }
+        .refreshable {
+            await loadModels()
+        }
+    }
+    
+    private func loadModels() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        // Check which models are available
+        // TODO: Access ModelFileManager through coordinator when exposed
+        availableModels = [] // Placeholder for now
+    }
+}
+
+struct ModelRowView: View {
+    let modelSize: LocalLLM.ModelFileManager.ModelSize
+    let isDownloaded: Bool
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var isDownloading = false
+    @State private var downloadProgress: Double = 0.0
+    @State private var showDownloadAlert = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(modelSize.displayName)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                    
+                    Text("\(modelSize.approximateSizeMB) MB")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if isDownloaded {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.green)
+                } else if isDownloading {
+                    ProgressView(value: downloadProgress, total: 1.0)
+                        .frame(width: 60)
+                } else {
+                    Button {
+                        showDownloadAlert = true
+                    } label: {
+                        Label("Download", systemImage: "arrow.down.circle")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            
+            // Details
+            VStack(alignment: .leading, spacing: 4) {
+                DetailRow(icon: "cpu", text: "On-Device Processing")
+                DetailRow(icon: "memorychip", text: "\(modelSize.contextLength.formatted()) tokens context")
+                
+                if !isDownloaded {
+                    DetailRow(icon: "wifi", text: "Requires WiFi")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .alert("Download Model", isPresented: $showDownloadAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Download") {
+                downloadModel()
+            }
+        } message: {
+            Text("This will download \(modelSize.approximateSizeMB) MB. Make sure you're connected to WiFi. Model download is not yet implemented in this version.")
+        }
+    }
+    
+    private func downloadModel() {
+        // Placeholder for actual download
+        coordinator.showError("Model download coming in Phase 3. For now, please manually place \(modelSize.rawValue) in Documents/Models/ folder.")
+    }
+}
+
+struct DetailRow: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .frame(width: 16)
+            Text(text)
+                .font(.caption)
+        }
+        .foregroundStyle(.secondary)
     }
 }
 

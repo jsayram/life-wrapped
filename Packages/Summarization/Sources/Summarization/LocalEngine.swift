@@ -9,6 +9,9 @@ import Foundation
 import SharedModels
 import Storage
 import LocalLLM
+#if canImport(Darwin)
+import Darwin
+#endif
 
 /// Local LLM-based summarization engine (Tier B)
 /// Uses on-device llama.cpp with quantized models for privacy-preserving inference
@@ -243,9 +246,42 @@ public actor LocalEngine: SummarizationEngine {
         )
     }
     
-    public func getStatistics() -> (generated: Int, avgTime: TimeInterval) {
+    // MARK: - Performance Monitoring
+    
+    /// Get performance statistics
+    public func getStatistics() -> (generated: Int, avgTime: TimeInterval, totalTime: TimeInterval) {
         let avgTime = summariesGenerated > 0 ? totalProcessingTime / Double(summariesGenerated) : 0
-        return (summariesGenerated, avgTime)
+        return (summariesGenerated, avgTime, totalProcessingTime)
+    }
+    
+    /// Log current performance metrics
+    public func logPerformanceMetrics() {
+        let stats = getStatistics()
+        let memoryUsage = getMemoryUsage()
+        
+        print("📊 [LocalEngine] Performance Metrics:")
+        print("   - Summaries generated: \(stats.generated)")
+        print("   - Average time: \(String(format: "%.2f", stats.avgTime))s")
+        print("   - Total processing time: \(String(format: "%.2f", stats.totalTime))s")
+        print("   - Memory usage: \(String(format: "%.1f", memoryUsage)) MB")
+    }
+    
+    /// Get current memory usage in MB
+    private func getMemoryUsage() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        
+        guard result == KERN_SUCCESS else {
+            return 0.0
+        }
+        
+        return Double(info.resident_size) / 1_048_576.0 // Convert bytes to MB
     }
 }
 
