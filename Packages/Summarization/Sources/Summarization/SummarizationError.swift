@@ -13,6 +13,8 @@ public enum SummarizationError: LocalizedError, Sendable {
     case storageError(String)
     case templateNotFound(String)
     case configurationError(String)
+    case encodingFailed(String)
+    case decodingFailed(String)
     
     public var errorDescription: String? {
         switch self {
@@ -36,6 +38,12 @@ public enum SummarizationError: LocalizedError, Sendable {
             
         case .configurationError(let reason):
             return "Configuration error: \(reason)"
+            
+        case .encodingFailed(let reason):
+            return "JSON encoding failed: \(reason)"
+            
+        case .decodingFailed(let reason):
+            return "JSON decoding failed: \(reason)"
         }
     }
 }
