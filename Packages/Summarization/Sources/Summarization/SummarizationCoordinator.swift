@@ -8,6 +8,7 @@
 import Foundation
 import SharedModels
 import Storage
+import LocalLLM  // Required for LocalEngine
 
 /// Orchestrates summarization across multiple engines (Basic, Apple, Local, External)
 /// Selects the appropriate engine based on availability and user settings
@@ -38,9 +39,11 @@ public actor SummarizationCoordinator {
         self.basicEngine = BasicEngine(storage: storage)
         self.activeEngine = basicEngine
         
+        // Initialize local engine (Phase 2A)
+        self.localEngine = LocalEngine(storage: storage)
+        
         // Other engines will be initialized when their implementations are added
         // self.appleEngine = AppleEngine(storage: storage)
-        // self.localEngine = LocalModelEngine(storage: storage)
         // self.externalEngine = ExternalAPIEngine(storage: storage)
     }
     

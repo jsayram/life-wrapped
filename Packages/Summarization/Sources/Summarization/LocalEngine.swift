@@ -1,0 +1,268 @@
+//
+//  LocalEngine.swift
+//  Summarization
+//
+//  Created by Life Wrapped on 12/17/2025.
+//
+
+import Foundation
+import SharedModels
+import Storage
+import LocalLLM
+
+/// Local LLM-based summarization engine (Tier B)
+/// Uses on-device llama.cpp with quantized models for privacy-preserving inference
+public actor LocalEngine: SummarizationEngine {
+    
+    public let tier: EngineTier = .local
+    
+    private let storage: DatabaseManager
+    private let configuration: EngineConfiguration
+    private let llamaContext: LlamaContext
+    private let modelFileManager: ModelFileManager
+    
+    // Statistics
+    private var summariesGenerated: Int = 0
+    private var totalProcessingTime: TimeInterval = 0
+    
+    // MARK: - Initialization
+    
+    public init(storage: DatabaseManager, configuration: EngineConfiguration? = nil) {
+        self.storage = storage
+        self.configuration = configuration ?? .defaults(for: .local)
+        self.llamaContext = LlamaContext()
+        self.modelFileManager = ModelFileManager()
+        
+        print("🧠 [LocalEngine] Initialized")
+    }
+    
+    // MARK: - SummarizationEngine Protocol
+    
+    public func isAvailable() async -> Bool {
+        // Check if model file is present
+        let hasModel = await modelFileManager.availableModels().isEmpty == false
+        
+        // Check if llama context is ready
+        let isReady = await llamaContext.isReady()
+        
+        print("ℹ️ [LocalEngine] Availability check: hasModel=\(hasModel), isReady=\(isReady)")
+        
+        return hasModel || isReady  // Available if model exists (can be loaded) or already loaded
+    }
+    
+    public func summarizeSession(
+        sessionId: UUID,
+        transcriptText: String,
+        duration: TimeInterval,
+        languageCodes: [String]
+    ) async throws -> SessionIntelligence {
+        let startTime = Date()
+        
+        print("🤖 [LocalEngine] Summarizing session \(sessionId)")
+        
+        // Ensure model is loaded
+        try await ensureModelLoaded()
+        
+        let wordCount = transcriptText.split(separator: " ").count
+        
+        // Guard against empty or too-short transcripts
+        guard wordCount >= configuration.minimumWords else {
+            print("⚠️ [LocalEngine] Transcript too short (\(wordCount) words), using extractive fallback")
+            return try await extractiveFallback(sessionId: sessionId, transcriptText: transcriptText, duration: duration)
+        }
+        
+        // Generate prompt
+        let prompt = PromptTemplate.sessionSummary(
+            transcript: transcriptText,
+            duration: duration,
+            wordCount: wordCount
+        )
+        
+        // Call LLM
+        let response = try await llamaContext.generate(prompt: prompt)
+        
+        // Parse JSON response
+        let intelligence = try await parseSessionResponse(response, sessionId: sessionId, transcriptText: transcriptText, duration: duration)
+        
+        // Update statistics
+        let processingTime = Date().timeIntervalSince(startTime)
+        summariesGenerated += 1
+        totalProcessingTime += processingTime
+        
+        print("✅ [LocalEngine] Session summary generated in \(String(format: "%.2f", processingTime))s")
+        
+        return intelligence
+    }
+    
+    public func summarizePeriod(
+        periodType: PeriodType,
+        sessionSummaries: [SessionIntelligence],
+        periodStart: Date,
+        periodEnd: Date
+    ) async throws -> PeriodIntelligence {
+        let startTime = Date()
+        
+        print("🤖 [LocalEngine] Summarizing \(periodType.rawValue) period with \(sessionSummaries.count) sessions")
+        
+        // Ensure model is loaded
+        try await ensureModelLoaded()
+        
+        guard !sessionSummaries.isEmpty else {
+            throw SummarizationError.insufficientContent(minimumWords: 1, actualWords: 0)
+        }
+        
+        // Extract session summary texts
+        let summaryTexts = sessionSummaries.map { $0.summary }
+        
+        // Generate prompt
+        let prompt = PromptTemplate.periodSummary(
+            sessionSummaries: summaryTexts,
+            periodType: periodType,
+            sessionCount: sessionSummaries.count
+        )
+        
+        // Call LLM
+        let response = try await llamaContext.generate(prompt: prompt)
+        
+        // Parse JSON response
+        let intelligence = try parsePeriodResponse(
+            response,
+            periodType: periodType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            sessionSummaries: sessionSummaries
+        )
+        
+        // Update statistics
+        let processingTime = Date().timeIntervalSince(startTime)
+        summariesGenerated += 1
+        totalProcessingTime += processingTime
+        
+        print("✅ [LocalEngine] Period summary generated in \(String(format: "%.2f", processingTime))s")
+        
+        return intelligence
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func ensureModelLoaded() async throws {
+        guard await llamaContext.isReady() else {
+            print("📥 [LocalEngine] Loading model...")
+            try await llamaContext.loadModel()
+            return
+        }
+    }
+    
+    private func extractiveFallback(sessionId: UUID, transcriptText: String, duration: TimeInterval) async throws -> SessionIntelligence {
+        print("🔄 [LocalEngine] Using extractive fallback for session \(sessionId)")
+        
+        // Use basic extractive summarization
+        let fullText = transcriptText
+        
+        // Simple sentence extraction
+        let sentences = fullText.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        
+        let summary = sentences.prefix(3).joined(separator: ". ")
+        
+        // Extract basic topics (nouns)
+        let words = fullText.lowercased().split(separator: " ")
+        let topics = Array(Set(words.map(String.init).filter { $0.count > 4 })).prefix(5)
+        
+        return SessionIntelligence(
+            sessionId: sessionId,
+            summary: summary.isEmpty ? "No summary available" : summary,
+            topics: Array(topics),
+            entities: [],
+            sentiment: 0.0,
+            duration: duration,
+            wordCount: fullText.split(separator: " ").count,
+            languageCodes: [],
+            keyMoments: []
+        )
+    }
+    
+    private func parseSessionResponse(_ response: String, sessionId: UUID, transcriptText: String, duration: TimeInterval) async throws -> SessionIntelligence {
+        // Parse JSON response from LLM
+        guard let jsonData = response.data(using: .utf8) else {
+            throw LocalLLMError.invalidOutput
+        }
+        
+        let decoder = JSONDecoder()
+        
+        do {
+            let parsed = try decoder.decode(LLMSessionResponse.self, from: jsonData)
+            
+            return SessionIntelligence(
+                sessionId: sessionId,
+                summary: parsed.summary,
+                topics: parsed.topics,
+                entities: parsed.entities,
+                sentiment: parsed.sentiment,
+                duration: duration,
+                wordCount: transcriptText.split(separator: " ").count,
+                languageCodes: [],
+                keyMoments: parsed.keyMoments
+            )
+        } catch {
+            print("⚠️ [LocalEngine] JSON parsing failed: \(error), using fallback")
+            return try await extractiveFallback(sessionId: sessionId, transcriptText: transcriptText, duration: duration)
+        }
+    }
+    
+    private func parsePeriodResponse(
+        _ response: String,
+        periodType: PeriodType,
+        periodStart: Date,
+        periodEnd: Date,
+        sessionSummaries: [SessionIntelligence]
+    ) throws -> PeriodIntelligence {
+        guard let jsonData = response.data(using: .utf8) else {
+            throw LocalLLMError.invalidOutput
+        }
+        
+        let decoder = JSONDecoder()
+        let parsed = try decoder.decode(LLMPeriodResponse.self, from: jsonData)
+        
+        let totalDuration = sessionSummaries.reduce(0.0) { $0 + $1.duration }
+        let totalWordCount = sessionSummaries.reduce(0) { $0 + $1.wordCount }
+        
+        return PeriodIntelligence(
+            periodType: periodType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            summary: parsed.summary,
+            topics: parsed.topics,
+            entities: parsed.entities,
+            sentiment: parsed.sentiment,
+            sessionCount: sessionSummaries.count,
+            totalDuration: totalDuration,
+            totalWordCount: totalWordCount,
+            trends: parsed.trends ?? []
+        )
+    }
+    
+    public func getStatistics() -> (generated: Int, avgTime: TimeInterval) {
+        let avgTime = summariesGenerated > 0 ? totalProcessingTime / Double(summariesGenerated) : 0
+        return (summariesGenerated, avgTime)
+    }
+}
+
+// MARK: - Response Models
+
+private struct LLMSessionResponse: Codable {
+    let summary: String
+    let topics: [String]
+    let entities: [Entity]
+    let sentiment: Double
+    let keyMoments: [KeyMoment]
+}
+
+private struct LLMPeriodResponse: Codable {
+    let summary: String
+    let topics: [String]
+    let entities: [Entity]
+    let sentiment: Double
+    let trends: [String]?
+}

@@ -209,7 +209,7 @@ public struct JSONTranscriptSegment: Codable {
         self.endTime = segment.endTime
         self.text = segment.text
         self.confidence = segment.confidence
-        self.languageCode = segment.languageCode ?? "en"
+        self.languageCode = segment.languageCode
         self.createdAt = segment.createdAt
         self.sentimentScore = segment.sentimentScore
     }

@@ -18,11 +18,12 @@ let package = Package(
     dependencies: [
         .package(path: "../SharedModels"),
         .package(path: "../Storage"),
+        .package(path: "../LocalLLM"),
     ],
     targets: [
         .target(
             name: "Summarization",
-            dependencies: ["SharedModels", "Storage"],
+            dependencies: ["SharedModels", "Storage", "LocalLLM"],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]

@@ -478,7 +478,7 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.noActiveRecording
         }
         
-        guard let dbManager = databaseManager else {
+        guard databaseManager != nil else {
             print("❌ [AppCoordinator] Cannot stop: not initialized")
             throw AppCoordinatorError.notInitialized
         }
@@ -556,7 +556,7 @@ public final class AppCoordinator: ObservableObject {
         print("🔄 [AppCoordinator] Retrying transcription for chunk: \(chunkId)")
         
         // Remove from failed set
-        await MainActor.run {
+        _ = await MainActor.run {
             failedChunkIds.remove(chunkId)
         }
         
