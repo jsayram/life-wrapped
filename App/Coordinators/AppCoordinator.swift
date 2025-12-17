@@ -215,7 +215,9 @@ public final class AppCoordinator: ObservableObject {
             print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)
             print("📝 [AppCoordinator] Initializing SummarizationManager...")
-            self.summarizationManager = SummarizationManager(storage: dbManager)
+            // Use config with no word minimum - all content should generate summaries
+            let summaryConfig = SummarizationConfig(minimumWords: 1)
+            self.summarizationManager = SummarizationManager(storage: dbManager, config: summaryConfig)
             print("📊 [AppCoordinator] Initializing InsightsManager...")
             self.insightsManager = InsightsManager(storage: dbManager)
             print("✅ [AppCoordinator] All managers initialized")
@@ -658,22 +660,28 @@ public final class AppCoordinator: ObservableObject {
         do {
             // Check if all chunks are transcribed
             let isComplete = try await isSessionTranscriptionComplete(sessionId: sessionId)
+            print("🔍 [AppCoordinator] Session \(sessionId) completion check: \(isComplete)")
+            
             guard isComplete else {
                 print("⏳ [AppCoordinator] Session \(sessionId) not yet complete, skipping summary")
                 return
             }
             
             // Check if summary already exists
-            guard let dbManager = databaseManager else { return }
+            guard let dbManager = databaseManager else {
+                print("❌ [AppCoordinator] DatabaseManager not available")
+                return
+            }
+            
             if let existingSummary = try await dbManager.fetchSummaryForSession(sessionId: sessionId) {
-                print("ℹ️ [AppCoordinator] Summary already exists for session \(sessionId)")
+                print("ℹ️ [AppCoordinator] Summary already exists for session \(sessionId): \(existingSummary.text.prefix(50))...")
                 return
             }
             
             // Generate session summary
             print("📝 [AppCoordinator] Generating summary for session \(sessionId)...")
             try await generateSessionSummary(sessionId: sessionId)
-            print("✅ [AppCoordinator] Session summary generated")
+            print("✅ [AppCoordinator] Session summary generated and period summaries updated")
             
         } catch {
             print("❌ [AppCoordinator] Failed to check/generate session summary: \(error)")
@@ -694,11 +702,11 @@ public final class AppCoordinator: ObservableObject {
         let fullText = allSegments.map { $0.text }.joined(separator: " ")
         let wordCount = fullText.split(separator: " ").count
         
-        // Only summarize if there's enough content (at least 50 words)
-        guard wordCount >= 50 else {
-            print("ℹ️ [AppCoordinator] Session has only \(wordCount) words, skipping summary")
-            return
-        }
+        print("📊 [AppCoordinator] Session transcript: \(allSegments.count) segments, \(wordCount) words")
+        print("📝 [AppCoordinator] First 100 chars: \(fullText.prefix(100))...")
+        
+        // Always generate summaries regardless of word count
+        // Even short recordings should be aggregated into daily/weekly/monthly summaries
         
         // Get session time range
         let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
@@ -1140,22 +1148,46 @@ public final class AppCoordinator: ObservableObject {
             let sessions = try await dbManager.fetchSessionsByDate(date: date)
             print("📊 [AppCoordinator] Found \(sessions.count) sessions for \(date.formatted(date: .abbreviated, time: .omitted))")
             
-            guard !sessions.isEmpty else { return }
+            guard !sessions.isEmpty else {
+                print("ℹ️ [AppCoordinator] No sessions found for this day")
+                return
+            }
             
-            // 2. Fetch all session summaries for this day
+            // 2. Fetch all session summaries for this day, generate if missing
             var summaryTexts: [String] = []
             for session in sessions {
-                if let summary = try? await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                    summaryTexts.append(summary.text)
+                do {
+                    if let summary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
+                        summaryTexts.append(summary.text)
+                    } else {
+                        // No summary exists - check if we can generate one
+                        print("⚠️ [AppCoordinator] Session \(session.sessionId) has no summary, attempting to generate...")
+                        let isComplete = try await isSessionTranscriptionComplete(sessionId: session.sessionId)
+                        
+                        if isComplete {
+                            // Generate summary now
+                            try await generateSessionSummary(sessionId: session.sessionId)
+                            
+                            // Fetch the newly created summary
+                            if let newSummary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
+                                summaryTexts.append(newSummary.text)
+                                print("✅ [AppCoordinator] Generated summary for session \(session.sessionId)")
+                            }
+                        } else {
+                            print("⏳ [AppCoordinator] Session \(session.sessionId) transcription not complete, skipping")
+                        }
+                    }
+                } catch {
+                    print("❌ [AppCoordinator] Failed to process session \(session.sessionId): \(error)")
                 }
             }
             
             guard !summaryTexts.isEmpty else {
-                print("ℹ️ [AppCoordinator] No summaries found for this day")
+                print("ℹ️ [AppCoordinator] No summaries found for this day (found \(sessions.count) sessions, none have transcripts)")
                 return
             }
             
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) session summaries...")
+            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) session summaries for day...")
             
             // 3. Aggregate using BasicAggregator
             let aggregator = BasicAggregator()
@@ -1195,9 +1227,10 @@ public final class AppCoordinator: ObservableObject {
             
             // 2. Fetch all daily summaries for this week
             let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfWeek, to: endOfWeek)
+            print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this week")
             
             guard !dailySummaries.isEmpty else {
-                print("ℹ️ [AppCoordinator] No daily summaries found for this week")
+                print("ℹ️ [AppCoordinator] No daily summaries found for this week (startOfWeek: \(startOfWeek), endOfWeek: \(endOfWeek))")
                 return
             }
             
@@ -1237,9 +1270,10 @@ public final class AppCoordinator: ObservableObject {
             
             // 2. Fetch all daily summaries for this month
             let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
+            print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this month")
             
             guard !dailySummaries.isEmpty else {
-                print("ℹ️ [AppCoordinator] No daily summaries found for this month")
+                print("ℹ️ [AppCoordinator] No daily summaries found for this month (startOfMonth: \(startOfMonth), endOfMonth: \(endOfMonth))")
                 return
             }
             
