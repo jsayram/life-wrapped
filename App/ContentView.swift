@@ -7,6 +7,7 @@ import SharedModels
 import Charts
 import Transcription
 import Storage
+import Summarization
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -1193,6 +1194,12 @@ struct InsightsTab: View {
                                         .foregroundStyle(.primary)
                                         .padding(.vertical, 4)
                                     
+                                    // Topics tags
+                                    if let topicsJSON = summary.topicsJSON {
+                                        TopicTagsView(topicsJSON: topicsJSON)
+                                            .padding(.vertical, 4)
+                                    }
+                                    
                                     // Collapsible session details
                                     if !sessionsInPeriod.isEmpty {
                                         DisclosureGroup {
@@ -1771,6 +1778,14 @@ struct SettingsTab: View {
                     Text("Languages")
                 } footer: {
                     Text("Manage which languages Life Wrapped can detect in your recordings. Detected languages are stored locally and used for insights.")
+                }
+                
+                Section {
+                    IntelligenceEngineView()
+                } header: {
+                    Text("Intelligence Engine")
+                } footer: {
+                    Text("Choose how Life Wrapped generates summaries and extracts insights from your audio. Privacy-first options process everything on your device.")
                 }
                 
                 Section("Preferences") {
@@ -3125,6 +3140,271 @@ struct LanguageSettingsView: View {
     private func saveEnabledLanguages() {
         UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
         coordinator.showSuccess("Language preferences saved")
+    }
+}
+
+// MARK: - Topic Tags View
+
+struct TopicTagsView: View {
+    let topicsJSON: String
+    @State private var topics: [String] = []
+    
+    var body: some View {
+        if !topics.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Topics")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                
+                FlowLayout(spacing: 8) {
+                    ForEach(topics, id: \.self) { topic in
+                        Text(topic.capitalized)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            .task {
+                parseTopics()
+            }
+        }
+    }
+    
+    private func parseTopics() {
+        do {
+            let parsed = try [String].fromTopicsJSON(topicsJSON)
+            // Limit to top 10 topics for display
+            topics = Array(parsed.prefix(10))
+        } catch {
+            print("⚠️ [TopicTagsView] Failed to parse topics: \(error)")
+        }
+    }
+}
+
+// MARK: - Intelligence Engine View
+
+struct IntelligenceEngineView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showUnavailableAlert = false
+    @State private var selectedUnavailableTier: EngineTier?
+    
+    private let preferredEngineKey = "preferredIntelligenceEngine"
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading engines...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            } else {
+                ForEach(EngineTier.allCases, id: \.self) { tier in
+                    EngineRow(
+                        tier: tier,
+                        isActive: tier == activeEngine,
+                        isAvailable: availableEngines.contains(tier)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectEngine(tier)
+                    }
+                    if tier != EngineTier.allCases.last {
+                        Divider()
+                            .padding(.leading, 48)
+                    }
+                }
+            }
+        }
+        .task {
+            await loadEngineStatus()
+        }
+        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let tier = selectedUnavailableTier {
+                Text(unavailableMessage(for: tier))
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else {
+            print("⚠️ [IntelligenceEngineView] No summarization coordinator available")
+            return
+        }
+        
+        // Get active engine
+        activeEngine = await summCoord.getActiveEngine()
+        
+        // Get available engines
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // Check if already active
+        if tier == activeEngine {
+            return
+        }
+        
+        // Check if available
+        guard availableEngines.contains(tier) else {
+            selectedUnavailableTier = tier
+            showUnavailableAlert = true
+            return
+        }
+        
+        // Set preferred engine
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()  // Refresh UI
+            
+            // Save preference
+            UserDefaults.standard.set(tier.rawValue, forKey: preferredEngineKey)
+            
+            // Show success toast
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func unavailableMessage(for tier: EngineTier) -> String {
+        switch tier {
+        case .basic:
+            return "Basic engine should always be available. Please restart the app."
+        case .apple:
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. This feature will be available in a future update."
+        case .local:
+            return "Local LLM engine is not yet implemented. This feature will be available in a future update."
+        case .external:
+            return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
+        }
+    }
+}
+
+struct EngineRow: View {
+    let tier: EngineTier
+    let isActive: Bool
+    let isAvailable: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: iconName)
+                .font(.title2)
+                .foregroundStyle(iconColor)
+                .frame(width: 32, height: 32)
+            
+            // Name and description
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .fontWeight(isActive ? .semibold : .regular)
+                    
+                    if isActive {
+                        Text("Active")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.green.gradient)
+                            .clipShape(Capsule())
+                    } else if !isAvailable {
+                        Text("Unavailable")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.gray.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                }
+                
+                Text(tier.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                
+                // Attributes
+                HStack(spacing: 12) {
+                    AttributeBadge(
+                        icon: tier.isPrivacyPreserving ? "lock.fill" : "lock.open.fill",
+                        text: tier.isPrivacyPreserving ? "Private" : "Cloud",
+                        color: tier.isPrivacyPreserving ? .green : .orange
+                    )
+                    
+                    if tier.requiresInternet {
+                        AttributeBadge(
+                            icon: "wifi",
+                            text: "Internet",
+                            color: .blue
+                        )
+                    }
+                }
+                .padding(.top, 4)
+            }
+            
+            Spacer()
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+    
+    private var iconName: String {
+        switch tier {
+        case .basic: return "text.alignleft"
+        case .apple: return "apple.logo"
+        case .local: return "cpu"
+        case .external: return "cloud"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch tier {
+        case .basic: return .gray
+        case .apple: return .blue
+        case .local: return .purple
+        case .external: return .orange
+        }
+    }
+}
+
+struct AttributeBadge: View {
+    let icon: String
+    let text: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.1))
+        .clipShape(Capsule())
     }
 }
 

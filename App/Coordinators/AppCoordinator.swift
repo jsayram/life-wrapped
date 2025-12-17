@@ -118,7 +118,7 @@ public final class AppCoordinator: ObservableObject {
     public let audioCapture: AudioCaptureManager
     public let audioPlayback: AudioPlaybackManager
     private var transcriptionManager: TranscriptionManager?
-    private var summarizationCoordinator: SummarizationCoordinator?
+    public private(set) var summarizationCoordinator: SummarizationCoordinator?
     private var insightsManager: InsightsManager?
     private let widgetDataManager: WidgetDataManager
     
