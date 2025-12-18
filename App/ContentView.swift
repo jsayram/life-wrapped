@@ -1246,7 +1246,8 @@ struct InsightsTab: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 300)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
                 }
             }
             .task {
@@ -3947,25 +3948,16 @@ struct ModelRowView: View {
                         }
                     }
                 } else if isDownloading {
-                    VStack(spacing: 4) {
+                    VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
-                            ProgressView(value: downloadProgress, total: 1.0)
-                                .frame(width: 60)
-                            
-                            Text("\(Int(downloadProgress * 100))%")
-                                .font(.caption2)
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Downloading in background...")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                            
-                            Button {
-                                cancelDownload()
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.red)
-                            }
                         }
                         
-                        Text("Downloading...")
+                        Text("Continue using the app")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

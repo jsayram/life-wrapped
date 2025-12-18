@@ -313,7 +313,9 @@ public final class AppCoordinator: ObservableObject {
     /// Called when user completes permission flow
     public func permissionsGranted() async {
         print("✅ [AppCoordinator] Permissions granted, initializing...")
+        // Immediately close the permissions sheet (already on MainActor)
         needsPermissions = false
+        // Then initialize
         await initialize()
     }
     

@@ -5,6 +5,7 @@
 import SwiftUI
 import AVFoundation
 import Speech
+import LocalLLM
 
 /// Permission request view shown on first launch or when permissions are needed
 struct PermissionsView: View {
@@ -118,6 +119,9 @@ struct PermissionsView: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)
+                            
+                            // Download button
+                            ModelDownloadButton()
                         }
                         .padding()
                         .background(Color.purple.opacity(0.08))
@@ -135,10 +139,7 @@ struct PermissionsView: View {
                     VStack(spacing: 12) {
                         if allPermissionsGranted {
                             Button {
-                                Task {
-                                    await coordinator.permissionsGranted()
-                                    dismiss()
-                                }
+                                finishSetup()
                             } label: {
                                 Text("Get Started")
                                     .font(.headline)
@@ -264,6 +265,149 @@ struct PermissionsView: View {
     private func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
+        }
+    }
+    
+    private func finishSetup() {
+        Task { @MainActor in
+            print("🚀 [PermissionsView] Finishing setup...")
+            await coordinator.permissionsGranted()
+            print("✅ [PermissionsView] Setup complete, permissions sheet should close")
+        }
+    }
+}
+
+// MARK: - Model Download Button
+
+struct ModelDownloadButton: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var isDownloaded = false
+    @State private var isDownloading = false
+    @State private var downloadProgress: Double = 0.0
+    @State private var downloadTask: Task<Void, Never>?
+    
+    private let modelSize = LocalLLM.ModelFileManager.ModelSize.phi35Mini
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            if isDownloaded {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Model Downloaded")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else if isDownloading {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.9)
+                        Text("Downloading in background...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Text("Continue using the app. You'll be notified when complete.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 2)
+                }
+                .padding(.vertical, 8)
+            } else {
+                Button {
+                    startDownload()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text("Download Now (Optional)")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.purple.gradient)
+                    .cornerRadius(8)
+                }
+            }
+        }
+        .task {
+            await checkIfDownloaded()
+        }
+    }
+    
+    private func checkIfDownloaded() async {
+        let manager = LocalLLM.ModelFileManager()
+        let downloaded = await manager.isModelAvailable(modelSize)
+        let downloading = await manager.isDownloading(modelSize)
+        await MainActor.run {
+            isDownloaded = downloaded
+            isDownloading = downloading
+        }
+    }
+    
+    @MainActor
+    private func startDownload() {
+        Task {
+            let manager = LocalLLM.ModelFileManager()
+            let alreadyDownloading = await manager.isDownloading(modelSize)
+            
+            guard !alreadyDownloading else {
+                coordinator.showError("\(modelSize.displayName) is already downloading")
+                return
+            }
+            
+            isDownloading = true
+            downloadProgress = 0.0
+            
+            downloadTask = Task {
+                do {
+                    try await manager.downloadModel(modelSize) { @MainActor progress in
+                        self.downloadProgress = progress
+                    }
+                    
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            isDownloaded = true
+                        }
+                        coordinator.showSuccess("✅ \(modelSize.displayName) is ready!")
+                        
+                        // Refresh engine availability
+                        if let summCoord = coordinator.summarizationCoordinator {
+                            Task {
+                                _ = await summCoord.getAvailableEngines()
+                            }
+                        }
+                    }
+                } catch is CancellationError {
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            downloadProgress = 0.0
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            downloadProgress = 0.0
+                        }
+                        coordinator.showError("Download failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+    
+    private func cancelDownload() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        withAnimation {
+            isDownloading = false
+            downloadProgress = 0.0
         }
     }
 }
