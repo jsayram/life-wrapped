@@ -935,7 +935,10 @@ struct InsightsTab: View {
                                     periodTitle: periodTitle,
                                     sessionCount: sessionCount,
                                     sessionsInPeriod: sessionsInPeriod,
-                                    coordinator: coordinator
+                                    coordinator: coordinator,
+                                    onRegenerate: {
+                                        await regeneratePeriodSummary()
+                                    }
                                 )
                             }
                         }
@@ -1500,6 +1503,46 @@ struct InsightsTab: View {
             print("❌ [InsightsTab] Failed to load insights: \(error)")
         }
         isLoading = false
+    }
+    
+    private func regeneratePeriodSummary() async {
+        let (startDate, _) = getDateRange(for: selectedTimeRange)
+        
+        let periodType: PeriodType = {
+            switch selectedTimeRange {
+            case .yesterday: return .day
+            case .today: return .day
+            case .week: return .week
+            case .month: return .month
+            case .allTime: return .month
+            }
+        }()
+        
+        // Use Date() (today) for week/month calculations, startDate for day
+        let dateForGeneration = (periodType == .day) ? startDate : Date()
+        
+        print("🔄 [InsightsTab] Regenerating \(periodType) summary...")
+        
+        switch periodType {
+        case .day:
+            await coordinator.updateDailySummary(date: dateForGeneration)
+        case .week:
+            await coordinator.updateWeeklySummary(date: dateForGeneration)
+        case .month:
+            await coordinator.updateMonthlySummary(date: dateForGeneration)
+        default:
+            break
+        }
+        
+        // Fetch again after regeneration
+        try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s
+        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
+        
+        if periodSummary != nil {
+            coordinator.showSuccess("Summary regenerated")
+        } else {
+            coordinator.showError("Failed to regenerate summary")
+        }
     }
     
     private func formatHour(_ hour: Int) -> String {
@@ -3760,19 +3803,89 @@ struct TranscriptChunkView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header with actions (always show for edit/copy access)
-            chunkHeader
+        VStack(alignment: .leading, spacing: 4) {
+            // Action buttons row at top right
+            HStack {
+                // Left side: Part label for multi-chunk, or edited badge
+                if session.chunkCount > 1 {
+                    HStack(spacing: 6) {
+                        Text("Part \(chunkIndex + 1)")
+                            .font(.caption)
+                            .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                            .fontWeight(isCurrentChunk ? .semibold : .regular)
+                        
+                        if let chunkId = chunkId {
+                            transcriptionStatusBadge(for: chunkId)
+                        }
+                        
+                        if isEdited {
+                            HStack(spacing: 2) {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.caption2)
+                                Text("Edited")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.orange)
+                        }
+                    }
+                } else if isEdited {
+                    HStack(spacing: 2) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.caption2)
+                        Text("Edited")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.orange)
+                }
+                
+                Spacer()
+                
+                // Action buttons - compact
+                if !isEditing && !combinedText.isEmpty {
+                    HStack(spacing: 8) {
+                        Button {
+                            UIPasteboard.general.string = combinedText
+                            coordinator.showSuccess("Copied")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            editedText = combinedText
+                            isEditing = true
+                            isTextFocused = true
+                        } label: {
+                            HStack(spacing: 2) {
+                                Image(systemName: "pencil")
+                                Text("Edit")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
             
+            // Content
             chunkContent
         }
-        .padding(12)
+        .padding(10)
         .background(chunkBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(chunkBorderColor, lineWidth: 2)
         )
+        .onTapGesture {
+            if !isEditing {
+                onSeekToChunk()
+            }
+        }
         .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
         .animation(.easeInOut(duration: 0.3), value: isEdited)
     }
@@ -3794,89 +3907,6 @@ struct TranscriptChunkView: View {
             return Color.blue.opacity(0.5)
         } else {
             return Color.clear
-        }
-    }
-    
-    private var chunkHeader: some View {
-        HStack(spacing: 8) {
-            // Only show divider and part label for multi-chunk sessions
-            if session.chunkCount > 1 {
-                Divider()
-                    .frame(width: 40)
-            }
-            
-            HStack(spacing: 6) {
-                // Part label only for multi-chunk sessions
-                if session.chunkCount > 1 {
-                    Text("Part \(chunkIndex + 1)")
-                        .font(.caption)
-                        .foregroundStyle(isCurrentChunk ? .blue : .secondary)
-                        .fontWeight(isCurrentChunk ? .semibold : .regular)
-                    
-                    if let chunkId = chunkId {
-                        transcriptionStatusBadge(for: chunkId)
-                    }
-                }
-                
-                // Show edited badge
-                if isEdited {
-                    HStack(spacing: 4) {
-                        Image(systemName: "pencil.circle.fill")
-                            .font(.caption)
-                        Text("Edited")
-                            .font(.caption2)
-                    }
-                    .foregroundStyle(.orange)
-                }
-                
-                Spacer()
-                
-                // Action buttons with larger tap targets
-                HStack(spacing: 12) {
-                    // Copy button (always show if there's text)
-                    if !combinedText.isEmpty {
-                        Button {
-                            UIPasteboard.general.string = combinedText
-                            coordinator.showSuccess("Copied to clipboard")
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
-                    // Edit button - prominent with text
-                    if !isEditing && !combinedText.isEmpty {
-                        Button {
-                            editedText = combinedText
-                            isEditing = true
-                            isTextFocused = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "pencil")
-                                Text("EDIT")
-                                    .fontWeight(.semibold)
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.blue)
-                            .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            
-            // Only show divider for multi-chunk sessions
-            if session.chunkCount > 1 {
-                Divider()
-                    .frame(width: 40)
-            }
         }
     }
     
@@ -4285,29 +4315,60 @@ struct SessionDetailView: View {
     // MARK: - Transcription Section
     
     private var transcriptionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Transcription")
-                    .font(.headline)
-                
-                Spacer()
-                
-                if !transcriptSegments.isEmpty {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header - just the title
+            Text("Transcription")
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            
+            // Content directly below header
+            transcriptionContent
+                .padding(.horizontal, 12)
+            
+            // Action buttons at the bottom (only if there's content)
+            if !transcriptSegments.isEmpty {
+                HStack(spacing: 12) {
+                    Spacer()
+                    
+                    // Copy all button
                     Button {
                         UIPasteboard.general.string = transcriptText
                         coordinator.showSuccess("Transcript copied")
                     } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.body)
-                            .foregroundStyle(.blue)
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.on.doc")
+                            Text("Copy All")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
+                    
+                    // Share button
+                    ShareLink(item: transcriptText) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Share")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+            } else {
+                Spacer().frame(height: 12)
             }
-            
-            transcriptionContent
         }
-        .padding()
         .background(Color(.secondarySystemBackground))
         .cornerRadius(12)
     }
@@ -4317,12 +4378,12 @@ struct SessionDetailView: View {
         if isLoading {
             ProgressView("Loading transcription...")
                 .frame(maxWidth: .infinity)
-                .padding()
+                .padding(.vertical, 16)
         } else if let error = loadError {
             Text("Error: \(error)")
                 .foregroundStyle(.red)
                 .font(.subheadline)
-                .padding()
+                .padding(.vertical, 8)
         } else if transcriptSegments.isEmpty {
             transcriptionEmptyState
         } else {
@@ -4342,26 +4403,26 @@ struct SessionDetailView: View {
                 systemImage: "waveform.path",
                 description: Text("Your audio is being processed. This may take a moment.")
             )
-            .padding()
+            .padding(.vertical, 8)
         } else if hasFailed {
             ContentUnavailableView(
                 "Transcription Failed",
                 systemImage: "exclamationmark.triangle",
                 description: Text("Unable to transcribe this recording. Try recording again.")
             )
-            .padding()
+            .padding(.vertical, 8)
         } else {
             ContentUnavailableView(
                 "No Transcript",
                 systemImage: "doc.text.slash",
                 description: Text("No transcription available for this recording.")
             )
-            .padding()
+            .padding(.vertical, 8)
         }
     }
     
     private var transcriptionSegmentsList: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(groupedSegmentsByChunk, id: \.chunkIndex) { group in
                 let chunkId = session.chunks[safe: group.chunkIndex]?.id
                 TranscriptChunkView(
@@ -4387,7 +4448,6 @@ struct SessionDetailView: View {
                 regenerateSummaryPrompt
             }
         }
-        .padding()
     }
     
     private var regenerateSummaryPrompt: some View {
@@ -5091,6 +5151,7 @@ struct InsightsSummaryCard: View {
     @State private var showingSessions = false
     @State private var visibleSessionCount = 3
     @State private var isRegenerating = false
+    @State private var selectedSession: RecordingSession?
     
     private var visibleSessions: [RecordingSession] {
         Array(sessionsInPeriod.prefix(visibleSessionCount))
@@ -5240,10 +5301,36 @@ struct InsightsSummaryCard: View {
             .buttonStyle(.plain)
             
             if showingSessions {
-                // Session rows - each individually navigable
-                LazyVStack(spacing: 8) {
+                // Session rows - each individually tappable with Button
+                VStack(spacing: 8) {
                     ForEach(visibleSessions, id: \.sessionId) { session in
-                        sessionRowLink(session: session)
+                        Button {
+                            selectedSession = session
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(session.startTime, style: .time)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                    Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 
@@ -5270,38 +5357,11 @@ struct InsightsSummaryCard: View {
                 }
             }
         }
-    }
-    
-    // MARK: - Session Row Link
-    
-    @ViewBuilder
-    private func sessionRowLink(session: RecordingSession) -> some View {
-        NavigationLink {
-            SessionDetailView(session: session)
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.startTime, style: .time)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-                    Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+        .sheet(item: $selectedSession) { session in
+            NavigationStack {
+                SessionDetailView(session: session)
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(10)
         }
-        .buttonStyle(PlainButtonStyle())
     }
     
     // MARK: - Helpers
