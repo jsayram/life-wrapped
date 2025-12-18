@@ -374,16 +374,31 @@ struct StatItem: View {
 struct HistoryTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var sessions: [RecordingSession] = []
-    @State private var sessionWordCounts: [UUID: Int] = [:] // Cache word counts
-    @State private var sessionSentiments: [UUID: Double] = [:] // Cache sentiments
-    @State private var sessionLanguages: [UUID: String] = [:] // Cache languages
+    @State private var sessionWordCounts: [UUID: Int] = [:]
+    @State private var sessionHasSummary: [UUID: Bool] = [:]
     @State private var isLoading = true
     @State private var playbackError: String?
+    @State private var searchText = ""
+    
+    private var filteredSessions: [RecordingSession] {
+        if searchText.isEmpty {
+            return sessions
+        }
+        // Filter by date or time containing search text
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return sessions.filter { session in
+            let dateString = formatter.string(from: session.startTime).lowercased()
+            return dateString.contains(searchText.lowercased())
+        }
+    }
     
     var body: some View {
         NavigationStack {
             contentView
                 .navigationTitle("History")
+                .searchable(text: $searchText, prompt: "Search by date")
                 .task {
                     await loadSessions()
                 }
@@ -405,12 +420,24 @@ struct HistoryTab: View {
     @ViewBuilder
     private var contentView: some View {
         if isLoading {
-            ProgressView("Loading sessions...")
+            VStack(spacing: 16) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                Text("Loading recordings...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         } else if sessions.isEmpty {
             ContentUnavailableView(
                 "No Recordings Yet",
                 systemImage: "mic.slash",
-                description: Text("Start recording to see your journal entries here.")
+                description: Text("Tap the record button on the Home tab to start your first journal entry.")
+            )
+        } else if filteredSessions.isEmpty {
+            ContentUnavailableView(
+                "No Results",
+                systemImage: "magnifyingglass",
+                description: Text("No recordings match '\(searchText)'")
             )
         } else {
             sessionsList
@@ -419,33 +446,56 @@ struct HistoryTab: View {
     
     private var sessionsList: some View {
         List {
+            // Stats summary at top
+            if !searchText.isEmpty {
+                Section {
+                    Text("\(filteredSessions.count) recording\(filteredSessions.count == 1 ? "" : "s") found")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
             ForEach(sortedDates, id: \.self) { date in
-                Section(header: Text(formatSectionDate(date))) {
-                    ForEach(groupedSessions[date] ?? [], id: \.id) { session in
+                Section {
+                    ForEach(sessionsForDate(date), id: \.id) { session in
                         NavigationLink(destination: sessionDetailView(for: session)) {
-                            SessionRow(
+                            SessionRowClean(
                                 session: session,
                                 wordCount: sessionWordCounts[session.sessionId],
-                                sentiment: sessionSentiments[session.sessionId],
-                                language: sessionLanguages[session.sessionId]
+                                hasSummary: sessionHasSummary[session.sessionId] ?? false
                             )
                         }
                     }
                     .onDelete { offsets in
                         deleteSession(at: offsets, in: date)
                     }
+                } header: {
+                    HStack {
+                        Text(formatSectionDate(date))
+                        Spacer()
+                        Text("\(sessionsForDate(date).count) recording\(sessionsForDate(date).count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
         }
+        .listStyle(.insetGrouped)
     }
     
     private func sessionDetailView(for session: RecordingSession) -> some View {
         SessionDetailView(session: session)
     }
     
+    private func sessionsForDate(_ date: Date) -> [RecordingSession] {
+        filteredSessions.filter { session in
+            Calendar.current.isDate(session.startTime, inSameDayAs: date)
+        }
+    }
+    
     /// Group sessions by date
     private var groupedSessions: [Date: [RecordingSession]] {
-        Dictionary(grouping: sessions) { session in
+        Dictionary(grouping: filteredSessions) { session in
             Calendar.current.startOfDay(for: session.startTime)
         }
     }
@@ -461,6 +511,10 @@ struct HistoryTab: View {
             return "Today"
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE" // Day name like "Monday"
+            return formatter.string(from: date)
         } else {
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
@@ -471,32 +525,25 @@ struct HistoryTab: View {
     private func loadSessions() async {
         isLoading = true
         do {
-            sessions = try await coordinator.fetchRecentSessions(limit: 50)
+            sessions = try await coordinator.fetchRecentSessions(limit: 100)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
             
-            // Load word counts, sentiments, and languages in parallel for all sessions
+            // Load word counts and summary status in parallel
             guard let dbManager = coordinator.getDatabaseManager() else { return }
-            await withTaskGroup(of: (UUID, Int, Double?, String?).self) { group in
+            await withTaskGroup(of: (UUID, Int, Bool).self) { group in
                 for session in sessions {
                     group.addTask {
                         let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
-                        let sentiment = try? await dbManager.fetchSessionSentiment(sessionId: session.sessionId)
-                        let language = try? await dbManager.fetchSessionLanguage(sessionId: session.sessionId)
-                        return (session.sessionId, count, sentiment, language)
+                        let hasSummary = (try? dbManager.fetchSummaryForSession(sessionId: session.sessionId)) != nil
+                        return (session.sessionId, count, hasSummary)
                     }
                 }
                 
-                for await (sessionId, wordCount, sentiment, language) in group {
+                for await (sessionId, wordCount, hasSummary) in group {
                     sessionWordCounts[sessionId] = wordCount
-                    if let sentiment = sentiment {
-                        sessionSentiments[sessionId] = sentiment
-                    }
-                    if let language = language {
-                        sessionLanguages[sessionId] = language
-                    }
+                    sessionHasSummary[sessionId] = hasSummary
                 }
             }
-            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions, \(sessionSentiments.count) sentiments, and \(sessionLanguages.count) languages")
         } catch {
             print("❌ [HistoryTab] Failed to load sessions: \(error)")
         }
@@ -504,7 +551,7 @@ struct HistoryTab: View {
     }
     
     private func deleteSession(at offsets: IndexSet, in date: Date) {
-        guard let sessionsForDate = groupedSessions[date] else { return }
+        let sessionsForDate = self.sessionsForDate(date)
         
         Task {
             for index in offsets {
@@ -520,6 +567,7 @@ struct HistoryTab: View {
                     try await coordinator.deleteSession(session.sessionId)
                     sessions.removeAll { $0.sessionId == session.sessionId }
                     sessionWordCounts.removeValue(forKey: session.sessionId)
+                    sessionHasSummary.removeValue(forKey: session.sessionId)
                 } catch {
                     print("Failed to delete session: \(error)")
                 }
@@ -528,77 +576,66 @@ struct HistoryTab: View {
     }
 }
 
-struct SessionRow: View {
+// MARK: - Clean Session Row
+
+struct SessionRowClean: View {
     let session: RecordingSession
     let wordCount: Int?
-    let sentiment: Double?
-    let language: String?
+    let hasSummary: Bool
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Icon
-            Image(systemName: session.chunkCount > 1 ? "waveform.circle.fill" : "waveform.circle")
-                .font(.title2)
-                .foregroundStyle(session.chunkCount > 1 ? .blue : .gray)
-            
-            VStack(alignment: .leading, spacing: 6) {
-                // Time
-                Text(session.startTime, style: .time)
+        HStack(spacing: 14) {
+            // Time badge
+            VStack(spacing: 2) {
+                Text(session.startTime, format: .dateTime.hour().minute())
                     .font(.headline)
+                    .monospacedDigit()
                 
-                // Stats row
-                HStack(spacing: 16) {
-                    // Duration
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                        Text(formatDuration(session.totalDuration))
-                    }
-                    .font(.subheadline)
+                Text(session.startTime, format: .dateTime.hour(.conversationalDefaultDigits(amPM: .abbreviated)).minute())
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-                    
-                    // Word count (if available)
-                    if let words = wordCount, words > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "text.word.spacing")
-                            Text("\(words) words")
-                        }
+                    .hidden() // Hide AM/PM since it's shown above
+            }
+            .frame(width: 60, alignment: .leading)
+            
+            // Divider
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(width: 1, height: 36)
+            
+            // Content
+            VStack(alignment: .leading, spacing: 4) {
+                // Duration and word count
+                HStack(spacing: 12) {
+                    Label(formatDuration(session.totalDuration), systemImage: "clock")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    
+                    if let words = wordCount, words > 0 {
+                        Label("\(words) words", systemImage: "doc.text")
+                            .font(.subheadline)
+                    }
+                }
+                .foregroundStyle(.secondary)
+                
+                // Status indicators
+                HStack(spacing: 8) {
+                    if session.chunkCount > 1 {
+                        StatusPill(text: "\(session.chunkCount) parts", color: .blue)
                     }
                     
-                    // Chunk count (if multi-chunk)
-                    if session.chunkCount > 1 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.stack.3d.up")
-                            Text("\(session.chunkCount) parts")
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    if hasSummary {
+                        StatusPill(text: "Summarized", color: .green)
+                    }
+                    
+                    if wordCount == nil || wordCount == 0 {
+                        StatusPill(text: "Processing", color: .orange)
                     }
                 }
             }
             
             Spacer()
-            
-            HStack(spacing: 8) {
-                // Language flag
-                if let language = language {
-                    Text(LanguageDetector.flagEmoji(for: language))
-                        .font(.title3)
-                }
-                
-                // Sentiment badge
-                if let sentiment = sentiment {
-                    Text(sentimentEmoji(sentiment))
-                        .font(.title3)
-                }
-            }
-            
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -610,15 +647,40 @@ struct SessionRow: View {
             return "\(seconds)s"
         }
     }
+}
+
+// MARK: - Status Pill
+
+struct StatusPill: View {
+    let text: String
+    let color: Color
     
-    private func sentimentEmoji(_ score: Double) -> String {
-        switch score {
-        case ..<(-0.5): return "😢"
-        case -0.5..<(-0.2): return "😔"
-        case -0.2..<0.2: return "😐"
-        case 0.2..<0.5: return "🙂"
-        default: return "😊"
-        }
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15))
+            .clipShape(Capsule())
+    }
+}
+
+// MARK: - Legacy SessionRow (kept for compatibility)
+
+struct SessionRow: View {
+    let session: RecordingSession
+    let wordCount: Int?
+    let sentiment: Double?
+    let language: String?
+    
+    var body: some View {
+        SessionRowClean(
+            session: session,
+            wordCount: wordCount,
+            hasSummary: false
+        )
     }
 }
 
