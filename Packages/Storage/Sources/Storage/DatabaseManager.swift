@@ -929,6 +929,42 @@ public actor DatabaseManager {
         
         logger.debug("Updated transcript segment \(id) text, new word count: \(wordCount)")
     }
+    
+    /// Search for sessions containing text in transcripts
+    /// Returns session IDs that have matching transcript text
+    public func searchSessionsByTranscript(query: String) throws -> Set<UUID> {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT DISTINCT ac.session_id
+            FROM transcript_segments ts
+            INNER JOIN audio_chunks ac ON ts.audio_chunk_id = ac.id
+            WHERE ts.text LIKE ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        // Use wildcards for partial matching
+        let searchPattern = "%\(query)%"
+        sqlite3_bind_text(stmt, 1, searchPattern, -1, SQLITE_TRANSIENT)
+        
+        var sessionIds: Set<UUID> = []
+        
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let sessionIdCStr = sqlite3_column_text(stmt, 0),
+               let sessionId = UUID(uuidString: String(cString: sessionIdCStr)) {
+                sessionIds.insert(sessionId)
+            }
+        }
+        
+        logger.debug("Found \(sessionIds.count) sessions matching transcript query: \(query)")
+        return sessionIds
+    }
 
     /// Check if all chunks in a session have been transcribed
     public func isSessionTranscriptionComplete(sessionId: UUID) throws -> Bool {

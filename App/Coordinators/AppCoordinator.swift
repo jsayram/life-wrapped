@@ -714,7 +714,7 @@ public final class AppCoordinator: ObservableObject {
     }
     
     /// Generate a summary for an entire session
-    private func generateSessionSummary(sessionId: UUID) async throws {
+    public func generateSessionSummary(sessionId: UUID) async throws {
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else {
             throw AppCoordinatorError.notInitialized
@@ -1118,6 +1118,69 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSessionLanguage(sessionId: sessionId)
     }
     
+    // MARK: - Session Metadata
+    
+    /// Update session title
+    public func updateSessionTitle(sessionId: UUID, title: String?) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        try await dbManager.updateSessionTitle(sessionId: sessionId, title: title)
+        print("📝 [AppCoordinator] Updated session title: \(title ?? "nil")")
+    }
+    
+    /// Update session notes
+    public func updateSessionNotes(sessionId: UUID, notes: String?) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        try await dbManager.updateSessionNotes(sessionId: sessionId, notes: notes)
+        print("📝 [AppCoordinator] Updated session notes")
+    }
+    
+    /// Toggle session favorite status
+    public func toggleSessionFavorite(sessionId: UUID) async throws -> Bool {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        let isFavorite = try await dbManager.toggleSessionFavorite(sessionId: sessionId)
+        print("⭐ [AppCoordinator] Session favorite: \(isFavorite)")
+        return isFavorite
+    }
+    
+    /// Fetch session metadata
+    public func fetchSessionMetadata(sessionId: UUID) async throws -> DatabaseManager.SessionMetadata? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+    }
+    
+    // MARK: - Transcript Editing
+    
+    /// Update transcript segment text (for user edits)
+    public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        try await dbManager.updateTranscriptSegmentText(id: segmentId, newText: newText)
+        print("✏️ [AppCoordinator] Updated transcript segment: \(segmentId)")
+    }
+    
+    /// Search for sessions by transcript text
+    public func searchSessionsByTranscript(query: String) async throws -> Set<UUID> {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.searchSessionsByTranscript(query: query)
+    }
+
     /// Fetch period summary for a specific date and type
     public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
         guard let dbManager = databaseManager else {

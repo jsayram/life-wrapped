@@ -379,26 +379,83 @@ struct HistoryTab: View {
     @State private var isLoading = true
     @State private var playbackError: String?
     @State private var searchText = ""
+    @State private var showFavoritesOnly = false
+    @State private var transcriptMatchingSessionIds: Set<UUID> = []
+    @State private var isSearchingTranscripts = false
+    @State private var searchDebounceTask: Task<Void, Never>?
     
     private var filteredSessions: [RecordingSession] {
-        if searchText.isEmpty {
-            return sessions
+        var result = sessions
+        
+        // Filter by favorites if enabled
+        if showFavoritesOnly {
+            result = result.filter { $0.isFavorite }
         }
-        // Filter by date or time containing search text
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return sessions.filter { session in
-            let dateString = formatter.string(from: session.startTime).lowercased()
-            return dateString.contains(searchText.lowercased())
+        
+        // Filter by search text
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            
+            result = result.filter { session in
+                // Search in title
+                if let title = session.title, title.lowercased().contains(query) {
+                    return true
+                }
+                // Search in notes
+                if let notes = session.notes, notes.lowercased().contains(query) {
+                    return true
+                }
+                // Search in date
+                let dateString = formatter.string(from: session.startTime).lowercased()
+                if dateString.contains(query) {
+                    return true
+                }
+                // Search in transcripts (from cached results)
+                return transcriptMatchingSessionIds.contains(session.sessionId)
+            }
         }
+        
+        return result
     }
     
     var body: some View {
         NavigationStack {
             contentView
                 .navigationTitle("History")
-                .searchable(text: $searchText, prompt: "Search by date")
+                .searchable(text: $searchText, prompt: "Search titles, notes, transcripts...")
+                .onChange(of: searchText) { _, newValue in
+                    // Debounce transcript search
+                    searchDebounceTask?.cancel()
+                    if newValue.count >= 2 {
+                        searchDebounceTask = Task {
+                            try? await Task.sleep(for: .milliseconds(300))
+                            guard !Task.isCancelled else { return }
+                            await searchTranscripts(query: newValue)
+                        }
+                    } else {
+                        transcriptMatchingSessionIds = []
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 12) {
+                            if isSearchingTranscripts {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            }
+                            
+                            Button {
+                                showFavoritesOnly.toggle()
+                            } label: {
+                                Image(systemName: showFavoritesOnly ? "star.fill" : "star")
+                                    .foregroundStyle(showFavoritesOnly ? .yellow : .secondary)
+                            }
+                        }
+                    }
+                }
                 .task {
                     await loadSessions()
                 }
@@ -550,6 +607,23 @@ struct HistoryTab: View {
         isLoading = false
     }
     
+    private func searchTranscripts(query: String) async {
+        guard query.count >= 2 else {
+            transcriptMatchingSessionIds = []
+            return
+        }
+        
+        isSearchingTranscripts = true
+        do {
+            transcriptMatchingSessionIds = try await coordinator.searchSessionsByTranscript(query: query)
+            print("🔍 [HistoryTab] Found \(transcriptMatchingSessionIds.count) sessions matching '\(query)' in transcripts")
+        } catch {
+            print("❌ [HistoryTab] Transcript search failed: \(error)")
+            transcriptMatchingSessionIds = []
+        }
+        isSearchingTranscripts = false
+    }
+    
     private func deleteSession(at offsets: IndexSet, in date: Date) {
         let sessionsForDate = self.sessionsForDate(date)
         
@@ -605,14 +679,30 @@ struct SessionRowClean: View {
             
             // Content
             VStack(alignment: .leading, spacing: 4) {
+                // Title (if available) or duration
+                HStack(spacing: 8) {
+                    if let title = session.title, !title.isEmpty {
+                        Text(title)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                    }
+                    
+                    if session.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.caption)
+                            .foregroundStyle(.yellow)
+                    }
+                }
+                
                 // Duration and word count
                 HStack(spacing: 12) {
                     Label(formatDuration(session.totalDuration), systemImage: "clock")
-                        .font(.subheadline)
+                        .font(.caption)
                     
                     if let words = wordCount, words > 0 {
                         Label("\(words) words", systemImage: "doc.text")
-                            .font(.subheadline)
+                            .font(.caption)
                     }
                 }
                 .foregroundStyle(.secondary)
@@ -3689,6 +3779,111 @@ struct InfoRow: View {
     }
 }
 
+// MARK: - Transcript Chunk View
+
+struct TranscriptChunkView: View {
+    let group: (chunkIndex: Int, text: String)
+    let session: RecordingSession
+    let isCurrentChunk: Bool
+    let chunkId: UUID?
+    let coordinator: AppCoordinator
+    let onSeekToChunk: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if session.chunkCount > 1 {
+                chunkHeader
+            }
+            
+            chunkContent
+        }
+        .padding(12)
+        .background(isCurrentChunk ? Color.blue.opacity(0.1) : Color.clear)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isCurrentChunk ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
+        )
+        .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
+        .onTapGesture {
+            onSeekToChunk()
+        }
+    }
+    
+    private var chunkHeader: some View {
+        HStack(spacing: 8) {
+            Divider()
+                .frame(width: 40)
+            
+            HStack(spacing: 6) {
+                Text("Part \(group.chunkIndex + 1)")
+                    .font(.caption)
+                    .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                    .fontWeight(isCurrentChunk ? .semibold : .regular)
+                
+                if let chunkId = chunkId {
+                    transcriptionStatusBadge(for: chunkId)
+                }
+            }
+            
+            Divider()
+        }
+    }
+    
+    @ViewBuilder
+    private func transcriptionStatusBadge(for chunkId: UUID) -> some View {
+        if coordinator.transcribingChunkIds.contains(chunkId) {
+            HStack(spacing: 4) {
+                ProgressView()
+                    .scaleEffect(0.6)
+                Text("Transcribing...")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+            }
+        } else if coordinator.transcribedChunkIds.contains(chunkId) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundColor(.green)
+        } else if coordinator.failedChunkIds.contains(chunkId) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundColor(.orange)
+        }
+    }
+    
+    @ViewBuilder
+    private var chunkContent: some View {
+        if let chunkId = chunkId, coordinator.failedChunkIds.contains(chunkId) {
+            VStack(spacing: 12) {
+                Text("Transcription failed for this part")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                Button {
+                    Task {
+                        await coordinator.retryTranscription(chunkId: chunkId)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Retry Transcription")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        } else {
+            Text(group.text)
+                .font(.body)
+                .foregroundStyle(isCurrentChunk ? .primary : .secondary)
+        }
+    }
+}
+
 // MARK: - Session Detail View
 
 struct SessionDetailView: View {
@@ -3706,323 +3901,57 @@ struct SessionDetailView: View {
     @State private var sessionSummary: Summary?
     @State private var scrubbedTime: TimeInterval = 0
     
+    // Session metadata
+    @State private var sessionTitle: String = ""
+    @State private var sessionNotes: String = ""
+    @State private var isFavorite: Bool = false
+    @State private var isEditingTitle: Bool = false
+    @State private var isEditingNotes: Bool = false
+    
+    // Transcript editing
+    @State private var editingSegmentId: UUID?
+    @State private var editedText: String = ""
+    @FocusState private var isTextFieldFocused: Bool
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // Session Title Section (Editable)
+                sessionTitleSection
+                
                 // Transcription Processing Banner
-                if !isTranscriptionComplete {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Processing Transcription...")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text("\(session.chunkCount - transcriptSegments.map({ $0.audioChunkID }).uniqueCount) of \(session.chunkCount) chunks pending")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Button {
-                            Task {
-                                await refreshSession()
-                            }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.body)
-                                .foregroundStyle(.blue)
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                    )
-                }
+                processingBannerSection
                 
                 // Session Info Card
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Session Details")
-                        .font(.headline)
-                    
-                    InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
-                    InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
-                    InfoRow(label: "Parts", value: "\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
-                    
-                    if !transcriptSegments.isEmpty {
-                        let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
-                        InfoRow(label: "Word Count", value: "\(wordCount) words")
-                    }
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
+                sessionInfoSection
                 
                 // Playback Controls
-                VStack(spacing: 16) {
-                    // Waveform/Progress visualization
-                    VStack(spacing: 12) {
-                        // Progress bar with scrubbing
-                        ZStack {
-                            GeometryReader { geometry in
-                                ZStack(alignment: .leading) {
-                                    // Background waveform
-                                    HStack(spacing: 2) {
-                                        ForEach(0..<50, id: \.self) { index in
-                                            RoundedRectangle(cornerRadius: 2)
-                                                .fill(Color.gray.opacity(0.3))
-                                                .frame(height: waveformHeight(for: index))
-                                        }
-                                    }
-                                    .padding(.horizontal, 4)
-                                    .background(Color(.tertiarySystemBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    
-                                    // Playhead indicator (white line)
-                                    let progress = session.totalDuration > 0
-                                        ? totalElapsedTime / session.totalDuration
-                                        : 0
-                                    
-                                    if isPlayingThisSession {
-                                        Rectangle()
-                                            .fill(Color.white)
-                                            .frame(width: 3, height: 60)
-                                            .shadow(color: .black.opacity(0.5), radius: 3)
-                                            .offset(x: geometry.size.width * progress)
-                                            .animation(.linear(duration: 0.1), value: progress)
-                                    }
-                                }
-                            }
-                            .frame(height: 60)
-                        }
-                        
-                        // Slider for scrubbing across entire session
-                        Slider(
-                            value: Binding(
-                                get: { 
-                                    isPlayingThisSession ? totalElapsedTime : scrubbedTime 
-                                },
-                                set: { newValue in
-                                    if isPlayingThisSession {
-                                        seekToTotalTime(newValue)
-                                    } else {
-                                        scrubbedTime = newValue
-                                    }
-                                }
-                            ),
-                            in: 0...session.totalDuration
-                        )
-                        .tint(.blue)
-                        
-                        // Time display
-                        HStack {
-                            Text(formatTime(isPlayingThisSession ? totalElapsedTime : scrubbedTime))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                            
-                            Spacer()
-                            
-                            // Show current chunk in session
-                            if isPlayingThisSession, let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
-                               let currentChunkIndex = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
-                                Text("Part \(currentChunkIndex + 1) of \(session.chunkCount)")
-                                    .font(.caption)
-                                    .foregroundStyle(.blue)
-                                    .fontWeight(.medium)
-                            }
-                            
-                            Spacer()
-                            
-                            Text(formatTime(session.totalDuration))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                    
-                    // Play/Pause button
-                    Button {
-                        playSession()
-                    } label: {
-                        HStack(spacing: 12) {
-                            let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
-                            Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.title)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                if isCurrentlyPlaying {
-                                    Text("Pause")
-                                        .font(.headline)
-                                } else if isPlayingThisSession {
-                                    Text("Resume")
-                                        .font(.headline)
-                                } else {
-                                    Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
-                                        .font(.headline)
-                                }
-                            }
-                            
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
+                playbackControlsSection
                 
                 // Transcription Section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Transcription")
-                        .font(.headline)
-                    
-                    if isLoading {
-                        ProgressView("Loading transcription...")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                    } else if let error = loadError {
-                        Text("Error: \(error)")
-                            .foregroundStyle(.red)
-                            .font(.subheadline)
-                            .padding()
-                    } else if transcriptSegments.isEmpty {
-                        // Empty state with different messages based on transcription status
-                        let chunkIds = Set(session.chunks.map { $0.id })
-                        let hasTranscribing = !chunkIds.isDisjoint(with: coordinator.transcribingChunkIds)
-                        let hasFailed = !chunkIds.isDisjoint(with: coordinator.failedChunkIds)
-                        
-                        if hasTranscribing {
-                            ContentUnavailableView(
-                                "Transcribing Audio...",
-                                systemImage: "waveform.path",
-                                description: Text("Your audio is being processed. This may take a moment.")
-                            )
-                            .padding()
-                        } else if hasFailed {
-                            ContentUnavailableView(
-                                "Transcription Failed",
-                                systemImage: "exclamationmark.triangle",
-                                description: Text("Unable to transcribe this recording. Try recording again.")
-                            )
-                            .padding()
-                        } else {
-                            ContentUnavailableView(
-                                "No Transcript",
-                                systemImage: "doc.text.slash",
-                                description: Text("No transcription available for this recording.")
-                            )
-                            .padding()
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 16) {
-                            ForEach(groupedByChunk, id: \.chunkIndex) { group in
-                                let isCurrentChunk = isPlayingThisSession && currentChunkIndex == group.chunkIndex
-                                let chunkId = session.chunks[safe: group.chunkIndex]?.id
-                                
-                                VStack(alignment: .leading, spacing: 8) {
-                                    if session.chunkCount > 1 {
-                                        // Show chunk marker for multi-chunk sessions with status indicator
-                                        HStack(spacing: 8) {
-                                            Divider()
-                                                .frame(width: 40)
-                                            
-                                            HStack(spacing: 6) {
-                                                Text("Part \(group.chunkIndex + 1)")
-                                                    .font(.caption)
-                                                    .foregroundStyle(isCurrentChunk ? .blue : .secondary)
-                                                    .fontWeight(isCurrentChunk ? .semibold : .regular)
-                                                
-                                                // Transcription status badge
-                                                if let chunkId = chunkId {
-                                                    if coordinator.transcribingChunkIds.contains(chunkId) {
-                                                        HStack(spacing: 4) {
-                                                            ProgressView()
-                                                                .scaleEffect(0.6)
-                                                            Text("Transcribing...")
-                                                                .font(.caption2)
-                                                                .foregroundStyle(.blue)
-                                                        }
-                                                    } else if coordinator.transcribedChunkIds.contains(chunkId) {
-                                                        Image(systemName: "checkmark.circle.fill")
-                                                            .font(.caption)
-                                                            .foregroundColor(.green)
-                                                    } else if coordinator.failedChunkIds.contains(chunkId) {
-                                                        Image(systemName: "exclamationmark.triangle.fill")
-                                                            .font(.caption)
-                                                            .foregroundColor(.orange)
-                                                    }
-                                                }
-                                            }
-                                            
-                                            Divider()
-                                        }
-                                    }
-                                    
-                                    // Show text or retry button for failed chunks
-                                    if let chunkId = chunkId, coordinator.failedChunkIds.contains(chunkId) {
-                                        VStack(spacing: 12) {
-                                            Text("Transcription failed for this part")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                            
-                                            Button {
-                                                Task {
-                                                    await coordinator.retryTranscription(chunkId: chunkId)
-                                                }
-                                            } label: {
-                                                HStack(spacing: 6) {
-                                                    Image(systemName: "arrow.clockwise")
-                                                    Text("Retry Transcription")
-                                                }
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            }
-                                            .buttonStyle(.borderedProminent)
-                                            .tint(.orange)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
-                                    } else {
-                                        Text(group.text)
-                                            .font(.body)
-                                            .foregroundStyle(isCurrentChunk ? .primary : .secondary)
-                                    }
-                                }
-                                .padding(12)
-                                .background(isCurrentChunk ? Color.blue.opacity(0.1) : Color.clear)
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isCurrentChunk ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
-                                )
-                                .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
-                            }
-                        }
-                        .padding()
-                    }
+                transcriptionSection
+                
+                // Session Summary Section (if available)
+                if let summary = sessionSummary {
+                    sessionSummarySection(summary: summary)
                 }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
+                
+                // Personal Notes Section
+                personalNotesSection
             }
             .padding()
         }
-        .navigationTitle("Recording")
+        .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                toolbarButtons
+            }
+        }
         .task {
+            await loadSessionMetadata()
             await loadTranscription()
-            // Check status immediately after loading transcription
+            await loadSessionSummary()
             checkTranscriptionStatus()
         }
         .onAppear {
@@ -4032,11 +3961,314 @@ struct SessionDetailView: View {
         .onDisappear {
             stopPlaybackUpdateTimer()
             stopTranscriptionCheckTimer()
-            // Stop playback when leaving this view
             if isPlayingThisSession {
                 coordinator.audioPlayback.stop()
             }
         }
+    }
+    
+    // MARK: - Processing Banner
+    
+    @ViewBuilder
+    private var processingBannerSection: some View {
+        if !isTranscriptionComplete {
+            let pendingCount = session.chunkCount - transcriptSegments.map({ $0.audioChunkID }).uniqueCount
+            HStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(0.8)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Processing Transcription...")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("\(pendingCount) of \(session.chunkCount) chunks pending")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Button {
+                    Task { await refreshSession() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+    
+    // MARK: - Session Info Section
+    
+    private var sessionInfoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Session Details")
+                .font(.headline)
+            
+            InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
+            InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
+            InfoRow(label: "Parts", value: "\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
+            
+            if !transcriptSegments.isEmpty {
+                let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+                InfoRow(label: "Word Count", value: "\(wordCount) words")
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Toolbar Buttons
+    
+    private var toolbarButtons: some View {
+        HStack(spacing: 16) {
+            Button {
+                Task {
+                    do {
+                        isFavorite = try await coordinator.toggleSessionFavorite(sessionId: session.sessionId)
+                    } catch {
+                        print("❌ Failed to toggle favorite: \(error)")
+                    }
+                }
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(isFavorite ? .yellow : .secondary)
+            }
+            
+            ShareLink(item: transcriptText) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .disabled(transcriptSegments.isEmpty)
+        }
+    }
+    
+    // MARK: - Playback Controls Section
+    
+    private var playbackControlsSection: some View {
+        VStack(spacing: 16) {
+            waveformView
+            scrubberSlider
+            timeDisplayRow
+            playPauseButton
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    private var waveformView: some View {
+        ZStack {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    HStack(spacing: 2) {
+                        ForEach(0..<50, id: \.self) { index in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: waveformHeight(for: index))
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .background(Color(.tertiarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    if isPlayingThisSession {
+                        let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
+                        Rectangle()
+                            .fill(Color.white)
+                            .frame(width: 3, height: 60)
+                            .shadow(color: .black.opacity(0.5), radius: 3)
+                            .offset(x: geometry.size.width * progress)
+                            .animation(.linear(duration: 0.1), value: progress)
+                    }
+                }
+            }
+            .frame(height: 60)
+        }
+    }
+    
+    private var scrubberSlider: some View {
+        Slider(
+            value: Binding(
+                get: { isPlayingThisSession ? totalElapsedTime : scrubbedTime },
+                set: { newValue in
+                    if isPlayingThisSession {
+                        seekToTotalTime(newValue)
+                    } else {
+                        scrubbedTime = newValue
+                    }
+                }
+            ),
+            in: 0...max(session.totalDuration, 0.1)
+        )
+        .tint(.blue)
+    }
+    
+    private var timeDisplayRow: some View {
+        HStack {
+            Text(formatTime(isPlayingThisSession ? totalElapsedTime : scrubbedTime))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            
+            Spacer()
+            
+            if isPlayingThisSession, let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
+               let idx = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
+                Text("Part \(idx + 1) of \(session.chunkCount)")
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                    .fontWeight(.medium)
+            }
+            
+            Spacer()
+            
+            Text(formatTime(session.totalDuration))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+    }
+    
+    private var playPauseButton: some View {
+        Button { playSession() } label: {
+            HStack(spacing: 12) {
+                let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
+                Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    if isCurrentlyPlaying {
+                        Text("Pause")
+                            .font(.headline)
+                    } else if isPlayingThisSession {
+                        Text("Resume")
+                            .font(.headline)
+                    } else {
+                        Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
+                            .font(.headline)
+                    }
+                }
+                
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Transcription Section
+    
+    private var transcriptionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Transcription")
+                    .font(.headline)
+                
+                Spacer()
+                
+                if !transcriptSegments.isEmpty {
+                    Button {
+                        UIPasteboard.general.string = transcriptText
+                        coordinator.showSuccess("Transcript copied")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.body)
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            transcriptionContent
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    @ViewBuilder
+    private var transcriptionContent: some View {
+        if isLoading {
+            ProgressView("Loading transcription...")
+                .frame(maxWidth: .infinity)
+                .padding()
+        } else if let error = loadError {
+            Text("Error: \(error)")
+                .foregroundStyle(.red)
+                .font(.subheadline)
+                .padding()
+        } else if transcriptSegments.isEmpty {
+            transcriptionEmptyState
+        } else {
+            transcriptionSegmentsList
+        }
+    }
+    
+    @ViewBuilder
+    private var transcriptionEmptyState: some View {
+        let chunkIds = Set(session.chunks.map { $0.id })
+        let hasTranscribing = !chunkIds.isDisjoint(with: coordinator.transcribingChunkIds)
+        let hasFailed = !chunkIds.isDisjoint(with: coordinator.failedChunkIds)
+        
+        if hasTranscribing {
+            ContentUnavailableView(
+                "Transcribing Audio...",
+                systemImage: "waveform.path",
+                description: Text("Your audio is being processed. This may take a moment.")
+            )
+            .padding()
+        } else if hasFailed {
+            ContentUnavailableView(
+                "Transcription Failed",
+                systemImage: "exclamationmark.triangle",
+                description: Text("Unable to transcribe this recording. Try recording again.")
+            )
+            .padding()
+        } else {
+            ContentUnavailableView(
+                "No Transcript",
+                systemImage: "doc.text.slash",
+                description: Text("No transcription available for this recording.")
+            )
+            .padding()
+        }
+    }
+    
+    private var transcriptionSegmentsList: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ForEach(groupedByChunk, id: \.chunkIndex) { group in
+                TranscriptChunkView(
+                    group: group,
+                    session: session,
+                    isCurrentChunk: isPlayingThisSession && currentChunkIndex == group.chunkIndex,
+                    chunkId: session.chunks[safe: group.chunkIndex]?.id,
+                    coordinator: coordinator,
+                    onSeekToChunk: { seekToChunk(group.chunkIndex) }
+                )
+            }
+        }
+        .padding()
+    }
+    
+    private func seekToChunk(_ chunkIndex: Int) {
+        var targetTime: TimeInterval = 0
+        for i in 0..<chunkIndex {
+            targetTime += session.chunks[i].duration
+        }
+        seekToTotalTime(targetTime)
     }
     
     private func startPlaybackUpdateTimer() {
@@ -4125,6 +4357,235 @@ struct SessionDetailView: View {
         }
     }
     
+    // Combined transcript text for sharing
+    private var transcriptText: String {
+        groupedByChunk.map { $0.text }.joined(separator: "\n\n")
+    }
+    
+    // MARK: - Session Title Section
+    
+    private var sessionTitleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if isEditingTitle {
+                HStack {
+                    TextField("Session Title", text: $sessionTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.title2)
+                        .focused($isTextFieldFocused)
+                    
+                    Button("Save") {
+                        isEditingTitle = false
+                        saveTitle()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Button("Cancel") {
+                        isEditingTitle = false
+                        sessionTitle = session.title ?? ""
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !sessionTitle.isEmpty {
+                            Text(sessionTitle)
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        Text(session.startTime.formatted(date: .abbreviated, time: .shortened))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        isEditingTitle = true
+                        isTextFieldFocused = true
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                            .font(.title2)
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Session Summary Section
+    
+    private func sessionSummarySection(summary: Summary) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("AI Summary")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Copy button
+                Button {
+                    UIPasteboard.general.string = summary.text
+                    coordinator.showSuccess("Summary copied to clipboard")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+                
+                // Regenerate button
+                Button {
+                    Task {
+                        await regenerateSummary()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Text(summary.text)
+                .font(.body)
+                .foregroundStyle(.primary)
+            
+            // Show engine tier if available
+            if let engineTier = summary.engineTier {
+                HStack {
+                    Image(systemName: engineIcon(for: engineTier))
+                        .font(.caption)
+                    Text("Generated by \(engineTier.capitalized)")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Personal Notes Section
+    
+    private var personalNotesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Personal Notes")
+                    .font(.headline)
+                
+                Spacer()
+                
+                if isEditingNotes {
+                    Button("Done") {
+                        isEditingNotes = false
+                        saveNotes()
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        isEditingNotes = true
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                            .font(.body)
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            if isEditingNotes {
+                TextEditor(text: $sessionNotes)
+                    .frame(minHeight: 100)
+                    .padding(8)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(8)
+            } else if sessionNotes.isEmpty {
+                Text("Tap the pencil to add personal notes...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                Text(sessionNotes)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func engineIcon(for tier: String) -> String {
+        switch tier.lowercased() {
+        case "local": return "cpu"
+        case "openai": return "brain"
+        case "anthropic": return "sparkles"
+        default: return "cpu"
+        }
+    }
+    
+    private func loadSessionMetadata() async {
+        do {
+            if let metadata = try await coordinator.fetchSessionMetadata(sessionId: session.sessionId) {
+                sessionTitle = metadata.title ?? ""
+                sessionNotes = metadata.notes ?? ""
+                isFavorite = metadata.isFavorite
+            } else {
+                sessionTitle = session.title ?? ""
+                sessionNotes = session.notes ?? ""
+                isFavorite = session.isFavorite
+            }
+        } catch {
+            print("❌ [SessionDetailView] Failed to load metadata: \(error)")
+            sessionTitle = session.title ?? ""
+            sessionNotes = session.notes ?? ""
+            isFavorite = session.isFavorite
+        }
+    }
+    
+    private func saveTitle() {
+        Task {
+            do {
+                let titleToSave = sessionTitle.isEmpty ? nil : sessionTitle
+                try await coordinator.updateSessionTitle(sessionId: session.sessionId, title: titleToSave)
+                coordinator.showSuccess("Title saved")
+            } catch {
+                print("❌ [SessionDetailView] Failed to save title: \(error)")
+            }
+        }
+    }
+    
+    private func saveNotes() {
+        Task {
+            do {
+                let notesToSave = sessionNotes.isEmpty ? nil : sessionNotes
+                try await coordinator.updateSessionNotes(sessionId: session.sessionId, notes: notesToSave)
+                coordinator.showSuccess("Notes saved")
+            } catch {
+                print("❌ [SessionDetailView] Failed to save notes: \(error)")
+            }
+        }
+    }
+    
+    private func regenerateSummary() async {
+        do {
+            try await coordinator.generateSessionSummary(sessionId: session.sessionId)
+            await loadSessionSummary()
+            coordinator.showSuccess("Summary regenerated")
+        } catch {
+            print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
+        }
+    }
+
     private var isPlayingThisSession: Bool {
         // Check if any chunk from this session is currently playing
         guard let currentURL = coordinator.audioPlayback.currentlyPlayingURL else { return false }
@@ -5365,7 +5826,7 @@ struct ModelRowView: View {
                 Task {
                     // Small delay to let file system sync
                     try? await Task.sleep(for: .milliseconds(500))
-                    await coordinator.objectWillChange.send()
+                    coordinator.objectWillChange.send()
                 }
             } else if !downloading && isDownloading {
                 // Download was cancelled or failed (only log if we were actively downloading)
@@ -5908,23 +6369,16 @@ struct YearInsightsView: View {
     
     private func deleteYearData() {
         Task {
-            do {
-                for session in sessions {
-                    try? await coordinator.deleteSession(session.sessionId)
-                }
-                
-                await MainActor.run {
-                    coordinator.showSuccess("\(year) data deleted successfully")
-                }
-                
-                // Reload to show empty state
-                await loadYearData()
-                
-            } catch {
-                await MainActor.run {
-                    coordinator.showError("Failed to delete data: \(error.localizedDescription)")
-                }
+            for session in sessions {
+                try? await coordinator.deleteSession(session.sessionId)
             }
+            
+            await MainActor.run {
+                coordinator.showSuccess("\(year) data deleted successfully")
+            }
+            
+            // Reload to show empty state
+            await loadYearData()
         }
     }
     
