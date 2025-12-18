@@ -422,11 +422,18 @@ public final class AppCoordinator: ObservableObject {
         // Get session metadata
         let sessionMetadata = try await dbManager.fetchSessions(limit: limit)
         
-        // Fetch chunks for each session and build RecordingSession objects
+        // Fetch chunks and metadata for each session and build RecordingSession objects
         var sessions: [RecordingSession] = []
         for (sessionId, _, _) in sessionMetadata {
             let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
-            let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+            let metadata = try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+            let session = RecordingSession(
+                sessionId: sessionId, 
+                chunks: chunks,
+                title: metadata?.title,
+                notes: metadata?.notes,
+                isFavorite: metadata?.isFavorite ?? false
+            )
             sessions.append(session)
         }
         
@@ -439,12 +446,19 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         
-        // Fetch chunks for each session and build RecordingSession objects
+        // Fetch chunks and metadata for each session and build RecordingSession objects
         var sessions: [RecordingSession] = []
         for sessionId in ids {
             let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
             if !chunks.isEmpty {
-                let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+                let metadata = try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+                let session = RecordingSession(
+                    sessionId: sessionId, 
+                    chunks: chunks,
+                    title: metadata?.title,
+                    notes: metadata?.notes,
+                    isFavorite: metadata?.isFavorite ?? false
+                )
                 sessions.append(session)
             }
         }

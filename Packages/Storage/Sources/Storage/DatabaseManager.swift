@@ -22,7 +22,7 @@ public actor DatabaseManager {
     private let fileManager = FileManager.default
     
     /// Current database schema version
-    private static let currentSchemaVersion = 2
+    private static let currentSchemaVersion = 1
     
     /// Public accessor for database path
     public func getDatabasePath() -> String {
@@ -158,9 +158,7 @@ public actor DatabaseManager {
             do {
                 switch version {
                 case 1:
-                    try applyMigrationV1()
-                case 2:
-                    try applyMigrationV2()
+                    try applySchema()
                 default:
                     throw StorageError.unknownMigrationVersion(version)
                 }
@@ -179,9 +177,11 @@ public actor DatabaseManager {
         }
     }
     
-    // MARK: - Schema (Migration V1)
+    // MARK: - Database Schema (V1 - Greenfield)
     
-    private func applyMigrationV1() throws {
+    /// Complete database schema for Life Wrapped V1
+    private func applySchema() throws {
+        // Audio chunks table
         try execute("""
             CREATE TABLE IF NOT EXISTS audio_chunks (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -206,6 +206,7 @@ public actor DatabaseManager {
             ON audio_chunks(session_id, chunk_index)
             """)
         
+        // Transcript segments table
         try execute("""
             CREATE TABLE IF NOT EXISTS transcript_segments (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -239,6 +240,7 @@ public actor DatabaseManager {
             ON transcript_segments(sentiment_score)
             """)
         
+        // Summaries table (includes session_id for session-level summaries)
         try execute("""
             CREATE TABLE IF NOT EXISTS summaries (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -247,6 +249,7 @@ public actor DatabaseManager {
                 period_end REAL NOT NULL,
                 text TEXT NOT NULL,
                 created_at REAL NOT NULL,
+                session_id TEXT,
                 topics_json TEXT,
                 entities_json TEXT,
                 engine_tier TEXT
@@ -258,6 +261,29 @@ public actor DatabaseManager {
             ON summaries(period_type, period_start, period_end)
             """)
         
+        try execute("""
+            CREATE INDEX IF NOT EXISTS idx_summaries_session
+            ON summaries(session_id)
+            """)
+        
+        // Session metadata table (titles, notes, favorites)
+        try execute("""
+            CREATE TABLE IF NOT EXISTS session_metadata (
+                session_id TEXT PRIMARY KEY,
+                title TEXT,
+                notes TEXT,
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """)
+        
+        try execute("""
+            CREATE INDEX IF NOT EXISTS idx_session_metadata_favorite
+            ON session_metadata(is_favorite)
+            """)
+        
+        // Insights rollups table
         try execute("""
             CREATE TABLE IF NOT EXISTS insights_rollups (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -276,6 +302,7 @@ public actor DatabaseManager {
             ON insights_rollups(bucket_type, bucket_start, bucket_end)
             """)
         
+        // Control events table
         try execute("""
             CREATE TABLE IF NOT EXISTS control_events (
                 id TEXT PRIMARY KEY NOT NULL,
@@ -291,24 +318,7 @@ public actor DatabaseManager {
             ON control_events(timestamp)
             """)
         
-        logger.info("Schema v1 created successfully")
-    }
-    
-    // MARK: - Schema (Migration V2)
-    
-    private func applyMigrationV2() throws {
-        // Add session_id column to summaries table for session-level summaries
-        try execute("""
-            ALTER TABLE summaries ADD COLUMN session_id TEXT
-            """)
-        
-        // Create index for session_id lookups
-        try execute("""
-            CREATE INDEX IF NOT EXISTS idx_summaries_session
-            ON summaries(session_id)
-            """)
-        
-        logger.info("Schema v2 applied successfully: Added session_id to summaries")
+        logger.info("✅ Database schema V1 created successfully")
     }
     
     // MARK: - Utilities
@@ -889,6 +899,37 @@ public actor DatabaseManager {
         }
     }
     
+    /// Update transcript segment text (for user edits)
+    /// Also recalculates word count automatically
+    public func updateTranscriptSegmentText(id: UUID, newText: String) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let wordCount = newText.split(separator: " ").count
+        
+        let sql = """
+            UPDATE transcript_segments 
+            SET text = ?, word_count = ?
+            WHERE id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, newText, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt, 2, Int32(wordCount))
+        sqlite3_bind_text(stmt, 3, id.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+        
+        logger.debug("Updated transcript segment \(id) text, new word count: \(wordCount)")
+    }
+
     /// Check if all chunks in a session have been transcribed
     public func isSessionTranscriptionComplete(sessionId: UUID) throws -> Bool {
         guard let db = db else { throw StorageError.notOpen }
@@ -1174,6 +1215,199 @@ public actor DatabaseManager {
         return nil
     }
     
+    // MARK: - Session Metadata CRUD
+    
+    /// Session metadata model for title, notes, favorites
+    public struct SessionMetadata: Sendable {
+        public let sessionId: UUID
+        public var title: String?
+        public var notes: String?
+        public var isFavorite: Bool
+        public let createdAt: Date
+        public var updatedAt: Date
+        
+        public init(sessionId: UUID, title: String? = nil, notes: String? = nil, isFavorite: Bool = false, createdAt: Date = Date(), updatedAt: Date = Date()) {
+            self.sessionId = sessionId
+            self.title = title
+            self.notes = notes
+            self.isFavorite = isFavorite
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+        }
+    }
+    
+    /// Insert or update session metadata
+    public func upsertSessionMetadata(_ metadata: SessionMetadata) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            INSERT INTO session_metadata (session_id, title, notes, is_favorite, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                title = excluded.title,
+                notes = excluded.notes,
+                is_favorite = excluded.is_favorite,
+                updated_at = excluded.updated_at
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, metadata.sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if let title = metadata.title {
+            sqlite3_bind_text(stmt, 2, title, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 2)
+        }
+        
+        if let notes = metadata.notes {
+            sqlite3_bind_text(stmt, 3, notes, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 3)
+        }
+        
+        sqlite3_bind_int(stmt, 4, metadata.isFavorite ? 1 : 0)
+        sqlite3_bind_double(stmt, 5, metadata.createdAt.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 6, metadata.updatedAt.timeIntervalSince1970)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+        
+        logger.debug("Upserted session metadata for: \(metadata.sessionId)")
+    }
+    
+    /// Fetch session metadata by session ID
+    public func fetchSessionMetadata(sessionId: UUID) throws -> SessionMetadata? {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT session_id, title, notes, is_favorite, created_at, updated_at
+            FROM session_metadata
+            WHERE session_id = ?
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return parseSessionMetadata(from: stmt)
+        }
+        
+        return nil
+    }
+    
+    /// Update session title
+    public func updateSessionTitle(sessionId: UUID, title: String?) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        // First check if metadata exists
+        if let existing = try fetchSessionMetadata(sessionId: sessionId) {
+            var updated = existing
+            updated.title = title
+            updated.updatedAt = Date()
+            try upsertSessionMetadata(updated)
+        } else {
+            // Create new metadata with just the title
+            let metadata = SessionMetadata(sessionId: sessionId, title: title)
+            try upsertSessionMetadata(metadata)
+        }
+    }
+    
+    /// Update session notes
+    public func updateSessionNotes(sessionId: UUID, notes: String?) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        if let existing = try fetchSessionMetadata(sessionId: sessionId) {
+            var updated = existing
+            updated.notes = notes
+            updated.updatedAt = Date()
+            try upsertSessionMetadata(updated)
+        } else {
+            let metadata = SessionMetadata(sessionId: sessionId, notes: notes)
+            try upsertSessionMetadata(metadata)
+        }
+    }
+    
+    /// Toggle session favorite status
+    public func toggleSessionFavorite(sessionId: UUID) throws -> Bool {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        if let existing = try fetchSessionMetadata(sessionId: sessionId) {
+            var updated = existing
+            updated.isFavorite = !existing.isFavorite
+            updated.updatedAt = Date()
+            try upsertSessionMetadata(updated)
+            return updated.isFavorite
+        } else {
+            let metadata = SessionMetadata(sessionId: sessionId, isFavorite: true)
+            try upsertSessionMetadata(metadata)
+            return true
+        }
+    }
+    
+    /// Delete session metadata
+    public func deleteSessionMetadata(sessionId: UUID) throws {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = "DELETE FROM session_metadata WHERE session_id = ?"
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+        
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            throw StorageError.stepFailed(lastError())
+        }
+    }
+    
+    /// Parse session metadata from SQLite statement
+    private func parseSessionMetadata(from stmt: OpaquePointer?) -> SessionMetadata? {
+        guard let stmt = stmt else { return nil }
+        
+        guard let sessionIdCStr = sqlite3_column_text(stmt, 0),
+              let sessionId = UUID(uuidString: String(cString: sessionIdCStr)) else {
+            return nil
+        }
+        
+        let title: String? = sqlite3_column_type(stmt, 1) != SQLITE_NULL 
+            ? String(cString: sqlite3_column_text(stmt, 1))
+            : nil
+        
+        let notes: String? = sqlite3_column_type(stmt, 2) != SQLITE_NULL
+            ? String(cString: sqlite3_column_text(stmt, 2))
+            : nil
+        
+        let isFavorite = sqlite3_column_int(stmt, 3) != 0
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
+        let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 5))
+        
+        return SessionMetadata(
+            sessionId: sessionId,
+            title: title,
+            notes: notes,
+            isFavorite: isFavorite,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+    
     // MARK: - Summary CRUD
     
     public func insertSummary(_ summary: Summary) throws {
@@ -1429,12 +1663,19 @@ public actor DatabaseManager {
             }
         }
         
-        // Fetch full sessions with chunks
+        // Fetch full sessions with chunks and metadata
         var sessions: [RecordingSession] = []
         for sessionId in sessionIds {
             let chunks = try fetchChunksBySession(sessionId: sessionId)
             if !chunks.isEmpty {
-                let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+                let metadata = try fetchSessionMetadata(sessionId: sessionId)
+                let session = RecordingSession(
+                    sessionId: sessionId, 
+                    chunks: chunks,
+                    title: metadata?.title,
+                    notes: metadata?.notes,
+                    isFavorite: metadata?.isFavorite ?? false
+                )
                 sessions.append(session)
             }
         }

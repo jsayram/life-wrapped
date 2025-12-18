@@ -55,11 +55,30 @@ public struct RecordingSession: Identifiable, Sendable, Hashable {
     public let sessionId: UUID
     public let chunks: [AudioChunk]
     
+    // Optional metadata (loaded from session_metadata table)
+    public var title: String?
+    public var notes: String?
+    public var isFavorite: Bool
+    
     public var id: UUID { sessionId }
     
-    public init(sessionId: UUID, chunks: [AudioChunk]) {
+    public init(sessionId: UUID, chunks: [AudioChunk], title: String? = nil, notes: String? = nil, isFavorite: Bool = false) {
         self.sessionId = sessionId
         self.chunks = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
+        self.title = title
+        self.notes = notes
+        self.isFavorite = isFavorite
+    }
+    
+    /// Display name: title if set, otherwise formatted time
+    public var displayName: String {
+        if let title = title, !title.isEmpty {
+            return title
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: startTime)
     }
     
     /// Total duration of all chunks combined
