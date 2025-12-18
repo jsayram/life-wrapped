@@ -232,6 +232,9 @@ try await generateSessionSummary(sessionId: sessionId)
 - Share transcript via system share sheet
 - Copy transcript/summary to clipboard
 - Tap chunk to seek playback position
+- **Transcript Editing**: Edit transcript text directly with text selection support
+- **Selectable Text**: Select and copy individual words from transcripts
+- **Edit-aware Summary**: Prompt to regenerate summary after transcript edits
 
 **History Tab Features:**
 

@@ -658,57 +658,55 @@ struct SessionRowClean: View {
     let hasSummary: Bool
     
     var body: some View {
-        HStack(spacing: 14) {
-            // Time badge
-            VStack(spacing: 2) {
-                Text(session.startTime, format: .dateTime.hour().minute())
-                    .font(.headline)
-                    .monospacedDigit()
-                
-                Text(session.startTime, format: .dateTime.hour(.conversationalDefaultDigits(amPM: .abbreviated)).minute())
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .hidden() // Hide AM/PM since it's shown above
-            }
-            .frame(width: 60, alignment: .leading)
+        HStack(spacing: 12) {
+            // Time badge - fixed width to prevent wrapping
+            Text(timeString)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .monospacedDigit()
+                .frame(width: 70, alignment: .leading)
             
             // Divider
             Rectangle()
                 .fill(Color.secondary.opacity(0.3))
-                .frame(width: 1, height: 36)
+                .frame(width: 1, height: 40)
             
             // Content
-            VStack(alignment: .leading, spacing: 4) {
-                // Title (if available) or duration
-                HStack(spacing: 8) {
-                    if let title = session.title, !title.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                // Title row (if available)
+                if let title = session.title, !title.isEmpty {
+                    HStack(spacing: 6) {
                         Text(title)
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .lineLimit(1)
-                    }
-                    
-                    if session.isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.caption)
-                            .foregroundStyle(.yellow)
+                        
+                        if session.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                        }
                     }
                 }
                 
-                // Duration and word count
-                HStack(spacing: 12) {
+                // Duration and word count - always show
+                HStack(spacing: 10) {
                     Label(formatDuration(session.totalDuration), systemImage: "clock")
-                        .font(.caption)
                     
                     if let words = wordCount, words > 0 {
                         Label("\(words) words", systemImage: "doc.text")
-                            .font(.caption)
+                    }
+                    
+                    if session.isFavorite && (session.title == nil || session.title?.isEmpty == true) {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
                     }
                 }
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 
                 // Status indicators
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     if session.chunkCount > 1 {
                         StatusPill(text: "\(session.chunkCount) parts", color: .blue)
                     }
@@ -726,6 +724,12 @@ struct SessionRowClean: View {
             Spacer()
         }
         .padding(.vertical, 6)
+    }
+    
+    private var timeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: session.startTime)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -926,58 +930,13 @@ struct InsightsTab: View {
                         // Period Summary section (at the top)
                         if let summary = periodSummary {
                             Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    // Header
-                                    HStack {
-                                        Text("📝 \(periodTitle)")
-                                            .font(.headline)
-                                        Spacer()
-                                        Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    // Summary text
-                                    Text(summary.text)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                        .padding(.vertical, 4)
-                                    
-                                    // Topics tags
-                                    if let topicsJSON = summary.topicsJSON {
-                                        TopicTagsView(topicsJSON: topicsJSON)
-                                            .padding(.vertical, 4)
-                                    }
-                                    
-                                    // Collapsible session details
-                                    if !sessionsInPeriod.isEmpty {
-                                        DisclosureGroup {
-                                            ForEach(sessionsInPeriod, id: \.sessionId) { session in
-                                                NavigationLink {
-                                                    SessionDetailView(session: session)
-                                                } label: {
-                                                    HStack {
-                                                        VStack(alignment: .leading, spacing: 4) {
-                                                            Text(session.startTime, style: .time)
-                                                                .font(.subheadline)
-                                                                .fontWeight(.medium)
-                                                            Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
-                                                                .font(.caption)
-                                                                .foregroundStyle(.secondary)
-                                                        }
-                                                        Spacer()
-                                                    }
-                                                }
-                                                .padding(.vertical, 2)
-                                            }
-                                        } label: {
-                                            Text("Show individual sessions (\(sessionsInPeriod.count))")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.blue)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 8)
+                                InsightsSummaryCard(
+                                    summary: summary,
+                                    periodTitle: periodTitle,
+                                    sessionCount: sessionCount,
+                                    sessionsInPeriod: sessionsInPeriod,
+                                    coordinator: coordinator
+                                )
                             }
                         }
                         
@@ -3782,51 +3741,142 @@ struct InfoRow: View {
 // MARK: - Transcript Chunk View
 
 struct TranscriptChunkView: View {
-    let group: (chunkIndex: Int, text: String)
+    let chunkIndex: Int
+    let segments: [TranscriptSegment]
     let session: RecordingSession
     let isCurrentChunk: Bool
     let chunkId: UUID?
     let coordinator: AppCoordinator
+    let isEdited: Bool  // Track if this chunk was edited
     let onSeekToChunk: () -> Void
+    let onTextEdited: (UUID, String) -> Void
+    
+    @State private var isEditing = false
+    @State private var editedText: String = ""
+    @FocusState private var isTextFocused: Bool
+    
+    private var combinedText: String {
+        segments.map { $0.text }.joined(separator: " ")
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if session.chunkCount > 1 {
-                chunkHeader
-            }
+            // Header with actions (always show for edit/copy access)
+            chunkHeader
             
             chunkContent
         }
         .padding(12)
-        .background(isCurrentChunk ? Color.blue.opacity(0.1) : Color.clear)
+        .background(chunkBackground)
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isCurrentChunk ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
+                .stroke(chunkBorderColor, lineWidth: 2)
         )
         .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
-        .onTapGesture {
-            onSeekToChunk()
+        .animation(.easeInOut(duration: 0.3), value: isEdited)
+    }
+    
+    private var chunkBackground: Color {
+        if isEdited {
+            return Color.orange.opacity(0.08)
+        } else if isCurrentChunk {
+            return Color.blue.opacity(0.1)
+        } else {
+            return Color.clear
+        }
+    }
+    
+    private var chunkBorderColor: Color {
+        if isEdited {
+            return Color.orange.opacity(0.5)
+        } else if isCurrentChunk {
+            return Color.blue.opacity(0.5)
+        } else {
+            return Color.clear
         }
     }
     
     private var chunkHeader: some View {
         HStack(spacing: 8) {
-            Divider()
-                .frame(width: 40)
+            // Only show divider and part label for multi-chunk sessions
+            if session.chunkCount > 1 {
+                Divider()
+                    .frame(width: 40)
+            }
             
             HStack(spacing: 6) {
-                Text("Part \(group.chunkIndex + 1)")
-                    .font(.caption)
-                    .foregroundStyle(isCurrentChunk ? .blue : .secondary)
-                    .fontWeight(isCurrentChunk ? .semibold : .regular)
+                // Part label only for multi-chunk sessions
+                if session.chunkCount > 1 {
+                    Text("Part \(chunkIndex + 1)")
+                        .font(.caption)
+                        .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                        .fontWeight(isCurrentChunk ? .semibold : .regular)
+                    
+                    if let chunkId = chunkId {
+                        transcriptionStatusBadge(for: chunkId)
+                    }
+                }
                 
-                if let chunkId = chunkId {
-                    transcriptionStatusBadge(for: chunkId)
+                // Show edited badge
+                if isEdited {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.caption)
+                        Text("Edited")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.orange)
+                }
+                
+                Spacer()
+                
+                // Action buttons with larger tap targets
+                HStack(spacing: 12) {
+                    // Copy button (always show if there's text)
+                    if !combinedText.isEmpty {
+                        Button {
+                            UIPasteboard.general.string = combinedText
+                            coordinator.showSuccess("Copied to clipboard")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    // Edit button - prominent with text
+                    if !isEditing && !combinedText.isEmpty {
+                        Button {
+                            editedText = combinedText
+                            isEditing = true
+                            isTextFocused = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "pencil")
+                                Text("EDIT")
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.blue)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             
-            Divider()
+            // Only show divider for multi-chunk sessions
+            if session.chunkCount > 1 {
+                Divider()
+                    .frame(width: 40)
+            }
         }
     }
     
@@ -3876,11 +3926,72 @@ struct TranscriptChunkView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
+        } else if isEditing {
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $editedText)
+                    .font(.body)
+                    .frame(minHeight: 200, maxHeight: 400)
+                    .padding(12)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(12)
+                    .focused($isTextFocused)
+                    .scrollContentBackground(.hidden)
+                
+                HStack(spacing: 12) {
+                    Button {
+                        isEditing = false
+                        editedText = ""
+                    } label: {
+                        Text("Cancel")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.tertiarySystemBackground))
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        saveEdit()
+                    } label: {
+                        Text("Save")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
         } else {
-            Text(group.text)
+            // Selectable text - user can select and copy individual words
+            Text(combinedText)
                 .font(.body)
                 .foregroundStyle(isCurrentChunk ? .primary : .secondary)
+                .textSelection(.enabled)
+                .onTapGesture {
+                    onSeekToChunk()
+                }
         }
+    }
+    
+    private func saveEdit() {
+        let trimmedText = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty, let firstSegment = segments.first else {
+            isEditing = false
+            return
+        }
+        
+        // Save the edited text to the first segment (we combine all segments into one for simplicity)
+        onTextEdited(firstSegment.id, trimmedText)
+        isEditing = false
+        editedText = ""
     }
 }
 
@@ -3911,6 +4022,8 @@ struct SessionDetailView: View {
     // Transcript editing
     @State private var editingSegmentId: UUID?
     @State private var editedText: String = ""
+    @State private var transcriptWasEdited: Bool = false
+    @State private var editedChunkIds: Set<UUID> = []  // Track which chunks were edited
     @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
@@ -4249,18 +4362,81 @@ struct SessionDetailView: View {
     
     private var transcriptionSegmentsList: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ForEach(groupedByChunk, id: \.chunkIndex) { group in
+            ForEach(groupedSegmentsByChunk, id: \.chunkIndex) { group in
+                let chunkId = session.chunks[safe: group.chunkIndex]?.id
                 TranscriptChunkView(
-                    group: group,
+                    chunkIndex: group.chunkIndex,
+                    segments: group.segments,
                     session: session,
                     isCurrentChunk: isPlayingThisSession && currentChunkIndex == group.chunkIndex,
-                    chunkId: session.chunks[safe: group.chunkIndex]?.id,
+                    chunkId: chunkId,
                     coordinator: coordinator,
-                    onSeekToChunk: { seekToChunk(group.chunkIndex) }
+                    isEdited: chunkId.map { editedChunkIds.contains($0) } ?? false,
+                    onSeekToChunk: { seekToChunk(group.chunkIndex) },
+                    onTextEdited: { segmentId, newText in
+                        if let chunkId = chunkId {
+                            editedChunkIds.insert(chunkId)
+                        }
+                        saveTranscriptEdit(segmentId: segmentId, newText: newText)
+                    }
                 )
+            }
+            
+            // Show regenerate prompt if transcript was edited
+            if transcriptWasEdited && sessionSummary != nil {
+                regenerateSummaryPrompt
             }
         }
         .padding()
+    }
+    
+    private var regenerateSummaryPrompt: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(.orange)
+                Text("Transcript was edited")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+            
+            Text("The summary may be outdated. Would you like to regenerate it?")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Button {
+                Task {
+                    await regenerateSummary()
+                    transcriptWasEdited = false
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "sparkles")
+                    Text("Regenerate Summary")
+                }
+                .font(.subheadline)
+                .fontWeight(.medium)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+    }
+    
+    private func saveTranscriptEdit(segmentId: UUID, newText: String) {
+        Task {
+            do {
+                try await coordinator.updateTranscriptText(segmentId: segmentId, newText: newText)
+                transcriptWasEdited = true
+                await loadTranscription()  // Refresh the segments
+                coordinator.showSuccess("Transcript updated")
+            } catch {
+                print("❌ [SessionDetailView] Failed to save transcript edit: \(error)")
+                coordinator.showError("Failed to save edit")
+            }
+        }
     }
     
     private func seekToChunk(_ chunkIndex: Int) {
@@ -4354,6 +4530,24 @@ struct SessionDetailView: View {
             let segments = groups[chunkIndex] ?? []
             let text = segments.map { $0.text }.joined(separator: " ")
             return (chunkIndex, text)
+        }
+    }
+    
+    private var groupedSegmentsByChunk: [(chunkIndex: Int, segments: [TranscriptSegment])] {
+        // Group segments by chunk, preserving segment objects for editing
+        var groups: [Int: [TranscriptSegment]] = [:]
+        
+        for segment in transcriptSegments {
+            for (index, chunk) in session.chunks.enumerated() {
+                if segment.audioChunkID == chunk.id {
+                    groups[index, default: []].append(segment)
+                    break
+                }
+            }
+        }
+        
+        return groups.keys.sorted().map { chunkIndex in
+            (chunkIndex, groups[chunkIndex] ?? [])
         }
     }
     
@@ -4580,6 +4774,9 @@ struct SessionDetailView: View {
         do {
             try await coordinator.generateSessionSummary(sessionId: session.sessionId)
             await loadSessionSummary()
+            // Reset edit tracking after summary is regenerated
+            editedChunkIds.removeAll()
+            transcriptWasEdited = false
             coordinator.showSuccess("Summary regenerated")
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
@@ -4878,6 +5075,274 @@ struct LanguageSettingsView: View {
     private func saveEnabledLanguages() {
         UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
         coordinator.showSuccess("Language preferences saved")
+    }
+}
+
+// MARK: - Insights Summary Card
+
+struct InsightsSummaryCard: View {
+    let summary: Summary
+    let periodTitle: String
+    let sessionCount: Int
+    let sessionsInPeriod: [RecordingSession]
+    let coordinator: AppCoordinator
+    let onRegenerate: () async -> Void
+    
+    @State private var showingSessions = false
+    @State private var visibleSessionCount = 3
+    @State private var isRegenerating = false
+    
+    private var visibleSessions: [RecordingSession] {
+        Array(sessionsInPeriod.prefix(visibleSessionCount))
+    }
+    
+    private var hasMoreSessions: Bool {
+        visibleSessionCount < sessionsInPeriod.count
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header with action buttons
+            headerSection
+            
+            // Summary text - larger, selectable, in its own container
+            summaryTextSection
+            
+            // Topics tags
+            if let topicsJSON = summary.topicsJSON {
+                TopicTagsView(topicsJSON: topicsJSON)
+            }
+            
+            // Engine tier badge
+            if let engineTier = summary.engineTier {
+                engineBadge(tier: engineTier)
+            }
+            
+            Divider()
+            
+            // Sessions list - individually tappable
+            if !sessionsInPeriod.isEmpty {
+                sessionsSection
+            }
+        }
+        .padding(.vertical, 8)
+    }
+    
+    // MARK: - Header Section
+    
+    private var headerSection: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("📝 \(periodTitle)")
+                    .font(.headline)
+                Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            // Copy button
+            Button {
+                UIPasteboard.general.string = summary.text
+                coordinator.showSuccess("Summary copied")
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
+                    .frame(width: 44, height: 44)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+            
+            // Regenerate button
+            Button {
+                Task {
+                    isRegenerating = true
+                    await onRegenerate()
+                    isRegenerating = false
+                }
+            } label: {
+                if isRegenerating {
+                    ProgressView()
+                        .frame(width: 44, height: 44)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                        .frame(width: 44, height: 44)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(8)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isRegenerating)
+        }
+    }
+    
+    // MARK: - Summary Text Section
+    
+    private var summaryTextSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // The summary text in a scrollable, selectable container
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 120, maxHeight: 200)
+            .padding(16)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(12)
+        }
+    }
+    
+    // MARK: - Engine Badge
+    
+    private func engineBadge(tier: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: engineIcon(for: tier))
+                .font(.caption)
+            Text("Generated by \(tier.capitalized)")
+                .font(.caption)
+        }
+        .foregroundStyle(.secondary)
+    }
+    
+    // MARK: - Sessions Section
+    
+    private var sessionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Toggle button
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingSessions.toggle()
+                    if !showingSessions {
+                        visibleSessionCount = 3 // Reset when closing
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(showingSessions ? "Hide sessions" : "Show individual sessions (\(sessionsInPeriod.count))")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Spacer()
+                    Image(systemName: showingSessions ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundStyle(.blue)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            if showingSessions {
+                // Session rows - each individually navigable
+                LazyVStack(spacing: 8) {
+                    ForEach(visibleSessions, id: \.sessionId) { session in
+                        sessionRowLink(session: session)
+                    }
+                }
+                
+                // Load more button
+                if hasMoreSessions {
+                    Button {
+                        withAnimation {
+                            visibleSessionCount += 5
+                        }
+                    } label: {
+                        HStack {
+                            Text("Show more (\(sessionsInPeriod.count - visibleSessionCount) remaining)")
+                                .font(.caption)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Session Row Link
+    
+    @ViewBuilder
+    private func sessionRowLink(session: RecordingSession) -> some View {
+        NavigationLink {
+            SessionDetailView(session: session)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.startTime, style: .time)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                    Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(10)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    // MARK: - Helpers
+    
+    private func engineIcon(for tier: String) -> String {
+        switch tier.lowercased() {
+        case "local": return "cpu"
+        case "openai": return "brain"
+        case "anthropic": return "sparkles"
+        default: return "cpu"
+        }
+    }
+}
+
+// MARK: - Insight Session Row
+
+struct InsightSessionRow: View {
+    let session: RecordingSession
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.startTime, style: .time)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(8)
     }
 }
 
