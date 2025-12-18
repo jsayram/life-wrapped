@@ -10,6 +10,9 @@ import Foundation
 /// Manages local LLM model files (GGUF format)
 public actor ModelFileManager {
     
+    /// Shared singleton instance - use this to track downloads across view recreations
+    public static let shared = ModelFileManager()
+    
     /// Directory where models are stored
     private let modelsDirectory: URL
     

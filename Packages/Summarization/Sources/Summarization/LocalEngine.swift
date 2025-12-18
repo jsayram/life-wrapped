@@ -34,7 +34,7 @@ public actor LocalEngine: SummarizationEngine {
         self.storage = storage
         self.configuration = configuration ?? .defaults(for: .local)
         self.llamaContext = LlamaContext()
-        self.modelFileManager = ModelFileManager()
+        self.modelFileManager = ModelFileManager.shared
         
         print("🧠 [LocalEngine] Initialized")
     }

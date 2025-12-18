@@ -3917,8 +3917,8 @@ struct ModelManagementView: View {
         isLoading = true
         defer { isLoading = false }
         
-        // Check which models are available
-        let manager = LocalLLM.ModelFileManager()
+        // Check which models are available (use shared instance to track download state)
+        let manager = LocalLLM.ModelFileManager.shared
         availableModels = await manager.availableModels()
     }
 }
@@ -4054,9 +4054,9 @@ struct ModelRowView: View {
     
     @MainActor
     private func startDownload() {
-        // Step 1: Check if already downloading FIRST
+        // Step 1: Check if already downloading FIRST (use shared instance)
         Task {
-            let manager = LocalLLM.ModelFileManager()
+            let manager = LocalLLM.ModelFileManager.shared
             let alreadyDownloading = await manager.isDownloading(modelSize)
             
             guard !alreadyDownloading else {
@@ -4122,7 +4122,8 @@ struct ModelRowView: View {
     }
     
     private func syncDownloadState() async {
-        let manager = LocalLLM.ModelFileManager()
+        // Use shared instance to get accurate download state across view recreations
+        let manager = LocalLLM.ModelFileManager.shared
         let downloading = await manager.isDownloading(modelSize)
         let available = await manager.isModelAvailable(modelSize)
         
@@ -4150,19 +4151,13 @@ struct ModelRowView: View {
                     await coordinator.objectWillChange.send()
                 }
             } else if !downloading && isDownloading {
-                // Download was cancelled or failed
-                print("⚠️ [ModelRowView] Download stopped: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = false
-                }
-            } else {
-                // Not downloading and not available - show download button
-                // Download was cancelled or failed
+                // Download was cancelled or failed (only log if we were actively downloading)
                 print("⚠️ [ModelRowView] Download stopped: \(modelSize.displayName)")
                 withAnimation {
                     isDownloading = false
                 }
             }
+            // else: Not downloading and wasn't downloading - normal idle state, no log needed
         }
     }
     
@@ -4178,7 +4173,7 @@ struct ModelRowView: View {
     private func deleteModel() {
         Task {
             do {
-                let manager = LocalLLM.ModelFileManager()
+                let manager = LocalLLM.ModelFileManager.shared
                 try await manager.deleteModel(modelSize)
                 
                 // If Local AI was active, switch back to Basic

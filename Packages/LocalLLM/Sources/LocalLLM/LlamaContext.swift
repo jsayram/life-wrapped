@@ -21,7 +21,7 @@ public actor LlamaContext {
     
     public init(configuration: LocalLLMConfiguration = .default) {
         self.configuration = configuration
-        self.modelFileManager = ModelFileManager()
+        self.modelFileManager = ModelFileManager.shared
         
         print("🧠 [LlamaContext] Initialized with model: \(configuration.modelName)")
     }
