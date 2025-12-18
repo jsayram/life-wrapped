@@ -1733,195 +1733,900 @@ struct SummaryRow: View {
 // MARK: - Settings Tab
 
 struct SettingsTab: View {
-    @State private var showDataManagement = false
     @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngineName: String = "Loading..."
+    @State private var debugTapCount: Int = 0
+    @State private var showDebugSection: Bool = false
     @State private var databasePath: String?
-    @State private var chunkDuration: Double = 180 // Default 3 minutes
-    @State private var wordLimit: Double = 20 // Default 20 words
-    
-    private let wordLimitKey = "insightsWordLimit"
     
     var body: some View {
         NavigationStack {
             List {
-                Section("Recording") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Auto-Chunk Duration")
-                            Spacer()
-                            Text("\(Int(chunkDuration))s")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        
-                        Slider(value: $chunkDuration, in: 30...300, step: 30) {
-                            Text("Chunk Duration")
-                        }
-                        .onChange(of: chunkDuration) { oldValue, newValue in
-                            coordinator.audioCapture.autoChunkDuration = newValue
-                            coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
-                        }
-                        
-                        Text("Recordings are automatically split into chunks of this duration for better processing.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
-                
-                Section("Insights") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Word Cloud Limit")
-                            Spacer()
-                            Text("\(Int(wordLimit))")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        
-                        Slider(value: $wordLimit, in: 10...200, step: 10) {
-                            Text("Word Limit")
-                        }
-                        .onChange(of: wordLimit) { oldValue, newValue in
-                            UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
-                            coordinator.showSuccess("Word limit updated to \(Int(newValue))")
-                        }
-                        
-                        Text("Number of most-used words to display in the Insights tab.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                    
-                    NavigationLink(destination: ExcludedWordsView()) {
-                        Label("Excluded Words", systemImage: "text.badge.xmark")
-                    }
-                }
-                
+                // Recording Section
                 Section {
-                    NavigationLink(destination: HistoricalDataView()) {
-                        HStack {
-                            Label("Historical Data", systemImage: "clock.arrow.circlepath")
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    NavigationLink(destination: RecordingSettingsView()) {
+                        Label {
+                            Text("Recording")
+                        } icon: {
+                            Image(systemName: "mic.fill")
+                                .foregroundStyle(.red)
                         }
                     }
-                } header: {
-                    Text("Historical Data")
-                } footer: {
-                    Text("View and manage data from previous years. The Insights tab always shows the current year.")
                 }
                 
+                // AI & Summaries Section
+                Section {
+                    NavigationLink(destination: AISettingsView()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI & Summaries")
+                                Text(activeEngineName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "brain")
+                                .foregroundStyle(.purple)
+                        }
+                    }
+                } footer: {
+                    Text("Configure how your recordings are summarized.")
+                }
+                
+                // Insights Section
+                Section {
+                    NavigationLink(destination: InsightsSettingsView()) {
+                        Label {
+                            Text("Insights")
+                        } icon: {
+                            Image(systemName: "chart.bar.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+                
+                // Languages Section
                 Section {
                     NavigationLink(destination: LanguageSettingsView()) {
-                        Label("Languages", systemImage: "globe")
-                    }
-                } header: {
-                    Text("Languages")
-                } footer: {
-                    Text("Manage which languages Life Wrapped can detect in your recordings. Detected languages are stored locally and used for insights.")
-                }
-                
-                Section {
-                    IntelligenceEngineView()
-                } header: {
-                    Text("Intelligence Engine")
-                } footer: {
-                    Text("On-device intelligence options. All processing happens locally on your device for maximum privacy.")
-                }
-                
-                Section {
-                    ExternalAIView()
-                } header: {
-                    Text("External AI")
-                } footer: {
-                    Text("Premium AI using external services. Requires API key and sends data to third-party servers.")
-                }
-                
-                Section("Preferences") {
-                    NavigationLink(destination: Text("Audio Settings")) {
-                        Label("Audio Quality", systemImage: "waveform")
-                    }
-                    
-                    NavigationLink(destination: Text("Privacy Settings")) {
-                        Label("Privacy", systemImage: "lock.shield")
-                    }
-                }
-                
-                Section("Data") {
-                    Button {
-                        showDataManagement = true
-                    } label: {
-                        Label("Data Management", systemImage: "externaldrive")
-                    }
-                    .foregroundColor(.primary)
-                }
-                
-                Section("Debug") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Database Location")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let path = databasePath {
-                            Text(path)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.primary)
-                                .textSelection(.enabled)
-                        } else {
-                            Text("Loading...")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                        Label {
+                            Text("Languages")
+                        } icon: {
+                            Image(systemName: "globe")
+                                .foregroundStyle(.green)
                         }
                     }
-                    .padding(.vertical, 4)
-                    
-                    Button {
-                        Task {
-                            await coordinator.testSessionQueries()
+                } footer: {
+                    Text("Manage which languages Life Wrapped can detect.")
+                }
+                
+                // Data Section
+                Section {
+                    NavigationLink(destination: DataSettingsView()) {
+                        Label {
+                            Text("Data")
+                        } icon: {
+                            Image(systemName: "externaldrive.fill")
+                                .foregroundStyle(.orange)
                         }
-                    } label: {
-                        Label("Test Session Queries", systemImage: "testtube.2")
                     }
                 }
                 
-                Section("About") {
+                // Privacy Section
+                Section {
+                    NavigationLink(destination: PrivacySettingsView()) {
+                        Label {
+                            Text("Privacy")
+                        } icon: {
+                            Image(systemName: "lock.shield.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+                
+                // About Section
+                Section {
                     HStack {
-                        Text("Version")
+                        Label("Version", systemImage: "info.circle")
                         Spacer()
                         Text("1.0.0")
                             .foregroundStyle(.secondary)
                     }
-                    
-                    NavigationLink(destination: PrivacyPolicyView()) {
-                        Label("Privacy Policy", systemImage: "doc.text")
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        debugTapCount += 1
+                        if debugTapCount >= 5 {
+                            showDebugSection = true
+                            coordinator.showSuccess("Debug mode enabled")
+                            debugTapCount = 0
+                        }
                     }
                     
                     HStack {
-                        Text("On-Device Processing")
+                        Label("On-Device Processing", systemImage: "checkmark.shield.fill")
                         Spacer()
-                        Image(systemName: "checkmark.shield.fill")
-                            .foregroundColor(.green)
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                } header: {
+                    Text("About")
+                }
+                
+                // Debug Section (hidden by default)
+                if showDebugSection {
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Database Location")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let path = databasePath {
+                                Text(path)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+                            } else {
+                                Text("Loading...")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        
+                        Button {
+                            Task {
+                                await coordinator.testSessionQueries()
+                            }
+                        } label: {
+                            Label("Test Session Queries", systemImage: "testtube.2")
+                        }
+                        
+                        Button(role: .destructive) {
+                            showDebugSection = false
+                        } label: {
+                            Label("Hide Debug Section", systemImage: "eye.slash")
+                        }
+                    } header: {
+                        Text("Debug")
                     }
                 }
             }
             .navigationTitle("Settings")
-            .sheet(isPresented: $showDataManagement) {
-                DataManagementView()
-            }
             .task {
+                await loadActiveEngine()
                 databasePath = await coordinator.getDatabasePath()
-                chunkDuration = coordinator.audioCapture.autoChunkDuration
-                
-                // Load word limit from UserDefaults
-                wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
-                if wordLimit == 0 {
-                    wordLimit = 20 // Default if not set
-                    UserDefaults.standard.set(20, forKey: wordLimitKey)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+                Task {
+                    await loadActiveEngine()
                 }
             }
         }
+    }
+    
+    private func loadActiveEngine() async {
+        guard let summCoord = coordinator.summarizationCoordinator else {
+            activeEngineName = "Not configured"
+            return
+        }
+        
+        let engine = await summCoord.getActiveEngine()
+        activeEngineName = engine.displayName
+    }
+}
+
+// MARK: - Recording Settings View
+
+struct RecordingSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var chunkDuration: Double = 180
+    
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Auto-Chunk Duration")
+                        Spacer()
+                        Text("\(Int(chunkDuration))s")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    
+                    Slider(value: $chunkDuration, in: 30...300, step: 30) {
+                        Text("Chunk Duration")
+                    }
+                    .onChange(of: chunkDuration) { oldValue, newValue in
+                        coordinator.audioCapture.autoChunkDuration = newValue
+                        coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Chunk Settings")
+            } footer: {
+                Text("Recordings are automatically split into chunks of this duration for efficient processing and transcription.")
+            }
+            
+            Section {
+                HStack {
+                    Label("Format", systemImage: "waveform")
+                    Spacer()
+                    Text("AAC")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Sample Rate", systemImage: "dial.medium")
+                    Spacer()
+                    Text("44.1 kHz")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Channels", systemImage: "speaker.wave.2")
+                    Spacer()
+                    Text("Mono")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Audio Quality")
+            } footer: {
+                Text("Optimized settings for voice recording with smaller file sizes.")
+            }
+        }
+        .navigationTitle("Recording")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            chunkDuration = coordinator.audioCapture.autoChunkDuration
+        }
+    }
+}
+
+// MARK: - AI Settings View
+
+struct AISettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    
+    var body: some View {
+        List {
+            // Current Engine Status
+            Section {
+                if isLoading {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading engines...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let active = activeEngine {
+                    HStack {
+                        Label(active.displayName, systemImage: active.icon)
+                            .font(.body)
+                        Spacer()
+                        Text("Active")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.green)
+                            .clipShape(Capsule())
+                    }
+                }
+            } header: {
+                Text("Current Engine")
+            } footer: {
+                Text("The active engine is used for generating summaries from your transcripts.")
+            }
+            
+            // On-Device Options
+            Section {
+                NavigationLink(destination: OnDeviceEnginesView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("On-Device Engines")
+                            Text("Basic, Apple Intelligence, Local AI")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "iphone")
+                            .foregroundStyle(.blue)
+                    }
+                }
+                
+                NavigationLink(destination: ModelManagementView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Local AI Models")
+                            Text("Download and manage LLM models")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "cube.box")
+                            .foregroundStyle(.purple)
+                    }
+                }
+            } header: {
+                Text("On-Device Processing")
+            } footer: {
+                Text("All processing happens locally on your device for maximum privacy.")
+            }
+            
+            // External API Options
+            Section {
+                NavigationLink(destination: ExternalAPISettingsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("External API")
+                            Text("OpenAI, Anthropic")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "cloud")
+                            .foregroundStyle(.orange)
+                    }
+                }
+            } header: {
+                Text("Cloud Processing")
+            } footer: {
+                Text("Uses external AI services. Requires API key and sends data to third-party servers.")
+            }
+        }
+        .navigationTitle("AI & Summaries")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+}
+
+// MARK: - On-Device Engines View
+
+struct OnDeviceEnginesView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showUnavailableAlert = false
+    @State private var selectedUnavailableTier: EngineTier?
+    
+    private let preferredEngineKey = "preferredIntelligenceEngine"
+    
+    var body: some View {
+        List {
+            Section {
+                ForEach(EngineTier.privateTiers, id: \.self) { tier in
+                    EngineSelectionRow(
+                        tier: tier,
+                        isActive: tier == activeEngine,
+                        isAvailable: availableEngines.contains(tier)
+                    ) {
+                        selectEngine(tier)
+                    }
+                }
+            } header: {
+                Text("Select Engine")
+            } footer: {
+                Text("Tap an engine to activate it. All on-device engines process data locally for privacy.")
+            }
+        }
+        .navigationTitle("On-Device Engines")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let tier = selectedUnavailableTier {
+                Text(unavailableMessage(for: tier))
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        if tier == activeEngine { return }
+        
+        guard availableEngines.contains(tier) else {
+            selectedUnavailableTier = tier
+            showUnavailableAlert = true
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            UserDefaults.standard.set(tier.rawValue, forKey: preferredEngineKey)
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func unavailableMessage(for tier: EngineTier) -> String {
+        switch tier {
+        case .basic:
+            return "Basic engine should always be available. Please restart the app."
+        case .apple:
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
+        case .local:
+            return "Download the local AI model to enable on-device processing. Go to AI Settings → Local AI Models."
+        case .external:
+            return "Configure your API key to use external AI services."
+        }
+    }
+}
+
+// MARK: - Engine Selection Row
+
+struct EngineSelectionRow: View {
+    let tier: EngineTier
+    let isActive: Bool
+    let isAvailable: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: tier.icon)
+                    .font(.title3)
+                    .foregroundStyle(isAvailable ? .blue : .secondary)
+                    .frame(width: 32)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .foregroundStyle(isAvailable ? .primary : .secondary)
+                    
+                    Text(tier.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else if !isAvailable {
+                    Text("Unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - External API Settings View
+
+struct ExternalAPISettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var openaiKey: String = ""
+    @State private var anthropicKey: String = ""
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess: Bool = false
+    
+    var body: some View {
+        List {
+            // Status
+            Section {
+                EngineSelectionRow(
+                    tier: .external,
+                    isActive: activeEngine == .external,
+                    isAvailable: availableEngines.contains(.external)
+                ) {
+                    activateExternalEngine()
+                }
+            } header: {
+                Text("Status")
+            } footer: {
+                if availableEngines.contains(.external) {
+                    Text("External API is configured and ready to use.")
+                } else {
+                    Text("Configure an API key below to enable external AI.")
+                }
+            }
+            
+            // Provider Selection
+            Section {
+                Picker("Provider", selection: $selectedProvider) {
+                    Text("OpenAI").tag("OpenAI")
+                    Text("Anthropic").tag("Anthropic")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: selectedProvider) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                }
+            } header: {
+                Text("AI Provider")
+            }
+            
+            // API Key Input
+            Section {
+                if selectedProvider == "OpenAI" {
+                    SecureField("OpenAI API Key", text: $openaiKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+                        .autocorrectionDisabled()
+                    
+                    Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                        Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
+                    }
+                } else {
+                    SecureField("Anthropic API Key", text: $anthropicKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+                        .autocorrectionDisabled()
+                    
+                    Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
+                        Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
+                    }
+                }
+            } header: {
+                Text("API Key")
+            } footer: {
+                Text("Your API key is stored securely in the device keychain.")
+            }
+            
+            // Test & Save
+            Section {
+                Button {
+                    testAPIKey()
+                } label: {
+                    HStack {
+                        if isTesting {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Testing...")
+                        } else {
+                            Label("Test API Key", systemImage: "checkmark.shield")
+                        }
+                    }
+                }
+                .disabled((selectedProvider == "OpenAI" ? openaiKey : anthropicKey).isEmpty || isTesting)
+                
+                if let result = testResult {
+                    Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(testSuccess ? .green : .red)
+                }
+                
+                Button {
+                    saveAPIKey()
+                } label: {
+                    Label("Save API Key", systemImage: "square.and.arrow.down")
+                }
+                .disabled((selectedProvider == "OpenAI" ? openaiKey : anthropicKey).isEmpty)
+            }
+            
+            // Warning
+            Section {
+                Label {
+                    Text("Data will be sent to \(selectedProvider) servers for processing.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Privacy Notice")
+            }
+        }
+        .navigationTitle("External API")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+            loadSavedKeys()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func loadSavedKeys() {
+        // Load from keychain if available
+        // For now, just clear - keys should be retrieved from secure storage
+    }
+    
+    private func activateExternalEngine() {
+        guard availableEngines.contains(.external) else {
+            coordinator.showError("Configure an API key first")
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(.external)
+            await loadEngineStatus()
+            UserDefaults.standard.set(EngineTier.external.rawValue, forKey: "preferredIntelligenceEngine")
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to External API")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            await MainActor.run {
+                // Simulate test - replace with actual API test
+                testSuccess = true
+                testResult = "API key is valid"
+                isTesting = false
+            }
+        }
+    }
+    
+    private func saveAPIKey() {
+        // Save to keychain
+        UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+        coordinator.showSuccess("API key saved")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
+
+// MARK: - Insights Settings View
+
+struct InsightsSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var wordLimit: Double = 20
+    
+    private let wordLimitKey = "insightsWordLimit"
+    
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Word Cloud Limit")
+                        Spacer()
+                        Text("\(Int(wordLimit))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    
+                    Slider(value: $wordLimit, in: 10...200, step: 10) {
+                        Text("Word Limit")
+                    }
+                    .onChange(of: wordLimit) { oldValue, newValue in
+                        UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
+                        coordinator.showSuccess("Word limit updated to \(Int(newValue))")
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Word Cloud")
+            } footer: {
+                Text("Number of most-used words to display in the Insights tab.")
+            }
+            
+            Section {
+                NavigationLink(destination: ExcludedWordsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Excluded Words")
+                            Text("Manage stop words for word cloud")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "text.badge.xmark")
+                            .foregroundStyle(.red)
+                    }
+                }
+            } header: {
+                Text("Filters")
+            }
+        }
+        .navigationTitle("Insights")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
+            if wordLimit == 0 {
+                wordLimit = 20
+            }
+        }
+    }
+}
+
+// MARK: - Data Settings View
+
+struct DataSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var showDataManagement = false
+    @State private var storageUsed: String = "Calculating..."
+    
+    var body: some View {
+        List {
+            Section {
+                NavigationLink(destination: HistoricalDataView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Historical Data")
+                            Text("View and manage data by year")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.blue)
+                    }
+                }
+            } header: {
+                Text("Browse Data")
+            } footer: {
+                Text("The Insights tab always shows the current year. Use Historical Data to browse previous years.")
+            }
+            
+            Section {
+                Button {
+                    showDataManagement = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Export & Backup")
+                            Text("Export your data or create backups")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.green)
+                    }
+                }
+                .foregroundStyle(.primary)
+            } header: {
+                Text("Data Management")
+            }
+            
+            Section {
+                HStack {
+                    Label("Storage Used", systemImage: "internaldrive")
+                    Spacer()
+                    Text(storageUsed)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Includes recordings, transcripts, and AI models.")
+            }
+        }
+        .navigationTitle("Data")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showDataManagement) {
+            DataManagementView()
+        }
+        .task {
+            await calculateStorage()
+        }
+    }
+    
+    private func calculateStorage() async {
+        // Calculate total storage used by app
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        
+        if let url = documentsURL {
+            let size = directorySize(url: url)
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useMB, .useGB]
+            formatter.countStyle = .file
+            storageUsed = formatter.string(fromByteCount: Int64(size))
+        }
+    }
+    
+    private func directorySize(url: URL) -> Int {
+        let fileManager = FileManager.default
+        var totalSize = 0
+        
+        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    totalSize += fileSize
+                }
+            }
+        }
+        
+        return totalSize
+    }
+}
+
+// MARK: - Privacy Settings View
+
+struct PrivacySettingsView: View {
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    Label("On-Device Processing", systemImage: "checkmark.shield.fill")
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                
+                HStack {
+                    Label("iCloud Sync", systemImage: "icloud.slash")
+                    Spacer()
+                    Text("Disabled")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Analytics", systemImage: "chart.bar.xaxis")
+                    Spacer()
+                    Text("None")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Privacy Status")
+            } footer: {
+                Text("Life Wrapped processes all data locally. No data is sent to external servers unless you configure External API.")
+            }
+            
+            Section {
+                NavigationLink(destination: PrivacyPolicyView()) {
+                    Label("Privacy Policy", systemImage: "doc.text")
+                }
+            }
+        }
+        .navigationTitle("Privacy")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -31,6 +31,24 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         }
     }
     
+    public var subtitle: String {
+        switch self {
+        case .basic: return "Fast, simple summarization"
+        case .apple: return "Apple's on-device AI (iOS 18.1+)"
+        case .local: return "Phi-3.5 Mini running locally"
+        case .external: return "OpenAI, Anthropic APIs"
+        }
+    }
+    
+    public var icon: String {
+        switch self {
+        case .basic: return "bolt.fill"
+        case .apple: return "apple.intelligence"
+        case .local: return "cpu.fill"
+        case .external: return "cloud.fill"
+        }
+    }
+    
     public var description: String {
         switch self {
         case .basic:
