@@ -3906,6 +3906,11 @@ struct ModelManagementView: View {
         .refreshable {
             await loadModels()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
+            Task {
+                await loadModels()
+            }
+        }
     }
     
     private func loadModels() async {
@@ -4088,6 +4093,9 @@ struct ModelRowView: View {
                                 // Auto-switch to Local AI
                                 await summCoord.setPreferredEngine(.local)
                                 coordinator.showSuccess("✅ Now using Local AI for summaries!")
+                                
+                                // Trigger parent view refresh via notification
+                                NotificationCenter.default.post(name: NSNotification.Name("ModelDownloadCompleted"), object: nil)
                             }
                         }
                     }
@@ -4115,6 +4123,7 @@ struct ModelRowView: View {
     private func syncDownloadState() async {
         let manager = LocalLLM.ModelFileManager()
         let downloading = await manager.isDownloading(modelSize)
+        let available = await manager.isModelAvailable(modelSize)
         
         await MainActor.run {
             // If download is active in ModelFileManager, sync local state
@@ -4123,13 +4132,24 @@ struct ModelRowView: View {
                 withAnimation {
                     isDownloading = true
                 }
-            } else if isDownloading {
-                // ModelFileManager says not downloading but local state says yes
-                // This means download completed while view was away
-                print("✅ [ModelRowView] Download completed while away: \(modelSize.displayName)")
+            } else if available && isDownloading {
+                // Download completed! Show completion banner
+                print("✅ [ModelRowView] Download completed: \(modelSize.displayName)")
                 withAnimation {
                     isDownloading = false
                     justCompleted = true
+                }
+                // Trigger parent refresh to update isDownloaded prop
+                Task {
+                    // Small delay to let file system sync
+                    try? await Task.sleep(for: .milliseconds(500))
+                    await coordinator.objectWillChange.send()
+                }
+            } else if !downloading && isDownloading {
+                // Download was cancelled or failed
+                print("⚠️ [ModelRowView] Download stopped: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = false
                 }
             }
         }
