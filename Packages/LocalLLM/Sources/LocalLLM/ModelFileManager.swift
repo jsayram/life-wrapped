@@ -13,12 +13,19 @@ public actor ModelFileManager {
     /// Directory where models are stored
     private let modelsDirectory: URL
     
+    /// Track which models are currently being downloaded
+    private var activeDownloads: Set<ModelSize> = []
+    
     /// Supported model configurations
     public enum ModelSize: String, CaseIterable, Sendable {
         case phi35Mini = "Phi-3.5-mini-instruct-Q4_K_M.gguf"  // ~2.4GB quantized
         
         public var displayName: String {
-            return "Phi-3.5 Mini Instruct"
+            return "Phi-3.5 Mini (4-bit)"
+        }
+        
+        public var fullDisplayName: String {
+            return "Microsoft Phi-3.5 Mini Instruct (Q4_K_M)"
         }
         
         public var approximateSizeMB: Int {
@@ -74,6 +81,11 @@ public actor ModelFileManager {
         ModelSize.allCases.filter { isModelAvailable($0) }
     }
     
+    /// Check if a model is currently being downloaded
+    public func isDownloading(_ model: ModelSize) -> Bool {
+        return activeDownloads.contains(model)
+    }
+    
     /// Get the models directory URL for external downloads
     public func getModelsDirectory() -> URL {
         return modelsDirectory
@@ -98,6 +110,17 @@ public actor ModelFileManager {
         // Check if already exists
         if FileManager.default.fileExists(atPath: destinationURL.path) {
             throw LocalLLMError.configurationError("Model \(model.rawValue) already exists")
+        }
+        
+        // Check if already downloading
+        if activeDownloads.contains(model) {
+            throw LocalLLMError.configurationError("Model \(model.displayName) is already being downloaded")
+        }
+        
+        // Mark as downloading
+        activeDownloads.insert(model)
+        defer {
+            activeDownloads.remove(model)
         }
         
         // Create download delegate

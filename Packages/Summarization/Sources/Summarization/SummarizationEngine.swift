@@ -38,7 +38,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .apple:
             return "Advanced AI using Apple's on-device Foundation Models (iOS 18.1+, Apple Intelligence enabled)"
         case .local:
-            return "High-quality AI using local models (Phi-3-mini, ~2GB). Processing happens entirely on your device"
+            return "High-quality AI using local models (Phi-3.5 Mini, ~2.4GB). Processing happens entirely on your device"
         case .external:
             return "Premium AI using external services (OpenAI, Anthropic). Requires API key and internet connection"
         }

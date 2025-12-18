@@ -3267,6 +3267,18 @@ struct IntelligenceEngineView: View {
         .task {
             await loadEngineStatus()
         }
+        .onAppear {
+            // Refresh engine status when view appears to catch changes
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            // Refresh when engine changes from any view
+            Task {
+                await loadEngineStatus()
+            }
+        }
         .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -3314,6 +3326,9 @@ struct IntelligenceEngineView: View {
             
             // Save preference
             UserDefaults.standard.set(tier.rawValue, forKey: preferredEngineKey)
+            
+            // Notify other views to refresh
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             
             // Show success toast
             coordinator.showSuccess("Switched to \(tier.displayName)")
@@ -3535,7 +3550,18 @@ struct ExternalAIView: View {
         .task {
             await loadEngineStatus()
         }
-        .sheet(isPresented: $showConfigSheet) {
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            // Refresh when engine changes from any view
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .sheet(isPresented: $showConfigSheet, onDismiss: {
+            // Refresh engine status after config sheet dismisses
+            Task {
+                await loadEngineStatus()
+            }
+        }) {
             ExternalAPIConfigView()
                 .environmentObject(coordinator)
         }
@@ -3568,6 +3594,9 @@ struct ExternalAIView: View {
             // Save preference
             UserDefaults.standard.set(tier.rawValue, forKey: "preferredIntelligenceEngine")
             
+            // Notify other views to refresh
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            
             coordinator.showSuccess("Switched to \(tier.displayName)")
         }
     }
@@ -3583,6 +3612,9 @@ struct ExternalAPIConfigView: View {
     @State private var openaiKey: String = ""
     @State private var anthropicKey: String = ""
     @State private var isSaving = false
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -3606,6 +3638,27 @@ struct ExternalAPIConfigView: View {
                             .autocapitalization(.none)
                             .autocorrectionDisabled()
                         
+                        Button {
+                            testAPIKey()
+                        } label: {
+                            HStack {
+                                if isTesting {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Testing Key...")
+                                } else {
+                                    Label("Test API Key", systemImage: "checkmark.shield")
+                                }
+                            }
+                        }
+                        .disabled(openaiKey.isEmpty || isTesting)
+                        
+                        if let result = testResult {
+                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        }
+                        
                         Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
                             Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
                         }
@@ -3620,6 +3673,27 @@ struct ExternalAPIConfigView: View {
                             .textContentType(.password)
                             .autocapitalization(.none)
                             .autocorrectionDisabled()
+                        
+                        Button {
+                            testAPIKey()
+                        } label: {
+                            HStack {
+                                if isTesting {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Testing Key...")
+                                } else {
+                                    Label("Test API Key", systemImage: "checkmark.shield")
+                                }
+                            }
+                        }
+                        .disabled(anthropicKey.isEmpty || isTesting)
+                        
+                        if let result = testResult {
+                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        }
                         
                         Link(destination: URL(string: "https://console.anthropic.com/account/keys")!) {
                             Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
@@ -3660,6 +3734,15 @@ struct ExternalAPIConfigView: View {
             .task {
                 await loadExistingKeys()
             }
+            .onChange(of: selectedProvider) { _, _ in
+                testResult = nil  // Clear test result when switching providers
+            }
+            .onChange(of: openaiKey) { _, _ in
+                testResult = nil  // Clear test result when key changes
+            }
+            .onChange(of: anthropicKey) { _, _ in
+                testResult = nil  // Clear test result when key changes
+            }
         }
     }
     
@@ -3671,6 +3754,40 @@ struct ExternalAPIConfigView: View {
         }
         if let anthropicExisting = await keychain.getAPIKey(for: .anthropic) {
             anthropicKey = anthropicExisting
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            do {
+                // Simple test: check if key format looks valid
+                let currentKey = selectedProvider == "OpenAI" ? openaiKey : anthropicKey
+                
+                if selectedProvider == "OpenAI" {
+                    // OpenAI keys start with "sk-"
+                    if currentKey.hasPrefix("sk-") && currentKey.count > 20 {
+                        testSuccess = true
+                        testResult = "Key format looks valid"
+                    } else {
+                        testSuccess = false
+                        testResult = "Invalid key format (should start with 'sk-')"
+                    }
+                } else {
+                    // Anthropic keys start with "sk-ant-"
+                    if currentKey.hasPrefix("sk-ant-") && currentKey.count > 20 {
+                        testSuccess = true
+                        testResult = "Key format looks valid"
+                    } else {
+                        testSuccess = false
+                        testResult = "Invalid key format (should start with 'sk-ant-')"
+                    }
+                }
+                
+                isTesting = false
+            }
         }
     }
     
@@ -3688,8 +3805,13 @@ struct ExternalAPIConfigView: View {
                 UserDefaults.standard.set("Anthropic", forKey: "externalAPIProvider")
             }
             
+            // Immediately refresh available engines so External AI becomes available
+            if let summCoord = coordinator.summarizationCoordinator {
+                _ = await summCoord.getAvailableEngines()
+            }
+            
             isSaving = false
-            coordinator.showSuccess("API key saved successfully")
+            coordinator.showSuccess("API key saved! External AI is now available.")
             dismiss()
         }
     }
@@ -3762,6 +3884,7 @@ struct ModelRowView: View {
     @State private var downloadTask: Task<Void, Never>?
     @State private var showDownloadAlert = false
     @State private var showDeleteAlert = false
+    @State private var justCompleted = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3827,6 +3950,26 @@ struct ModelRowView: View {
                 }
             }
             
+            // Show when download just completed
+            if justCompleted {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Download complete! Model is ready to use.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .onAppear {
+                    Task {
+                        try? await Task.sleep(for: .seconds(3))
+                        withAnimation {
+                            justCompleted = false
+                        }
+                    }
+                }
+            }
+            
             // Details
             VStack(alignment: .leading, spacing: 4) {
                 DetailRow(icon: "cpu", text: "On-Device Processing")
@@ -3845,7 +3988,7 @@ struct ModelRowView: View {
                 startDownload()
             }
         } message: {
-            Text("This will download \(modelSize.approximateSizeMB) MB. Make sure you're connected to WiFi.")
+            Text("Download \(modelSize.fullDisplayName)? This will use \(modelSize.approximateSizeMB) MB. Download continues in the background if you navigate away.")
         }
         .alert("Delete Model", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }
@@ -3853,38 +3996,101 @@ struct ModelRowView: View {
                 deleteModel()
             }
         } message: {
-            Text("Are you sure you want to delete \(modelSize.displayName)? You'll need to download it again to use it.")
+            Text("Delete \(modelSize.fullDisplayName)? You'll need to download \(modelSize.approximateSizeMB) MB again to use Local AI.")
+        }
+        .onAppear {
+            // Sync download state when view appears
+            syncDownloadState()
+        }
+        .onDisappear {
+            // Keep download task running in background when navigating away
+            // Don't cancel - let it continue
         }
     }
     
     @MainActor
     private func startDownload() {
-        isDownloading = true
-        downloadProgress = 0.0
-        
-        downloadTask = Task {
-            do {
-                let manager = LocalLLM.ModelFileManager()
-                
-                try await manager.downloadModel(modelSize) { @MainActor progress in
-                    self.downloadProgress = progress
-                }
-                
+        // Step 1: Check if already downloading FIRST
+        Task {
+            let manager = LocalLLM.ModelFileManager()
+            let alreadyDownloading = await manager.isDownloading(modelSize)
+            
+            guard !alreadyDownloading else {
                 await MainActor.run {
-                    isDownloading = false
-                    coordinator.showSuccess("\(modelSize.displayName) downloaded successfully!")
+                    coordinator.showError("\(modelSize.displayName) is already downloading")
                 }
-            } catch is CancellationError {
-                await MainActor.run {
-                    isDownloading = false
-                    downloadProgress = 0.0
-                    coordinator.showError("Download cancelled")
+                return
+            }
+            
+            // Step 2: Mark as downloading locally
+            await MainActor.run {
+                isDownloading = true
+                downloadProgress = 0.0
+                coordinator.showSuccess("Downloading \(modelSize.displayName)... Continue using the app.")
+            }
+            
+            // Step 3: Start actual download
+            downloadTask = Task {
+                do {
+                    try await manager.downloadModel(modelSize) { @MainActor progress in
+                        self.downloadProgress = progress
+                    }
+                    
+                    // Step 4: Download complete - cleanup
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            justCompleted = true
+                        }
+                        coordinator.showSuccess("✅ \(modelSize.displayName) is ready! You can now use Local AI.")
+                        
+                        // Refresh engine availability
+                        if let summCoord = coordinator.summarizationCoordinator {
+                            Task {
+                                _ = await summCoord.getAvailableEngines()
+                            }
+                        }
+                    }
+                } catch is CancellationError {
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            downloadProgress = 0.0
+                        }
+                        coordinator.showError("Download cancelled")
+                    }
+                } catch {
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            downloadProgress = 0.0
+                        }
+                        coordinator.showError("Download failed: \(error.localizedDescription)")
+                    }
                 }
-            } catch {
-                await MainActor.run {
-                    isDownloading = false
-                    downloadProgress = 0.0
-                    coordinator.showError("Download failed: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func syncDownloadState() {
+        Task {
+            let manager = LocalLLM.ModelFileManager()
+            let downloading = await manager.isDownloading(modelSize)
+            
+            await MainActor.run {
+                if downloading && !isDownloading {
+                    // Download is active but local state is out of sync
+                    print("📥 [ModelRowView] Syncing download state: \(modelSize.displayName) is downloading")
+                    withAnimation {
+                        isDownloading = true
+                    }
+                } else if !downloading && isDownloading && downloadTask == nil {
+                    // Download completed while view was away
+                    print("✅ [ModelRowView] Download completed while away: \(modelSize.displayName)")
+                    withAnimation {
+                        isDownloading = false
+                        justCompleted = true
+                    }
                 }
             }
         }
@@ -3893,8 +4099,10 @@ struct ModelRowView: View {
     private func cancelDownload() {
         downloadTask?.cancel()
         downloadTask = nil
-        isDownloading = false
-        downloadProgress = 0.0
+        withAnimation {
+            isDownloading = false
+            downloadProgress = 0.0
+        }
     }
     
     private func deleteModel() {
@@ -3912,7 +4120,7 @@ struct ModelRowView: View {
                     }
                 }
                 
-                coordinator.showSuccess("\(modelSize.displayName) deleted successfully")
+                coordinator.showSuccess("\(modelSize.displayName) deleted")
             } catch {
                 coordinator.showError("Failed to delete model: \(error.localizedDescription)")
             }
