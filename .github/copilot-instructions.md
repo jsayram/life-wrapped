@@ -99,6 +99,7 @@ Database schema lives in `Packages/Storage/Sources/Storage/DatabaseManager.swift
 - `control_events` — App control events
 
 **Session Metadata Features:**
+
 - User-editable session titles
 - Personal notes per session
 - Favorites system with star toggle
