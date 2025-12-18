@@ -534,7 +534,7 @@ struct HistoryTab: View {
                 for session in sessions {
                     group.addTask {
                         let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
-                        let hasSummary = (try? dbManager.fetchSummaryForSession(sessionId: session.sessionId)) != nil
+                        let hasSummary = await ((try? dbManager.fetchSummaryForSession(sessionId: session.sessionId)) != nil)
                         return (session.sessionId, count, hasSummary)
                     }
                 }
