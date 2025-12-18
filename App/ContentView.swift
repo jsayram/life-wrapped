@@ -3928,6 +3928,7 @@ struct ModelRowView: View {
     @State private var showDownloadAlert = false
     @State private var showDeleteAlert = false
     @State private var justCompleted = false
+    @State private var hasCheckedInitialState = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -4032,9 +4033,12 @@ struct ModelRowView: View {
         } message: {
             Text("Delete \(modelSize.fullDisplayName)? You'll need to download \(modelSize.approximateSizeMB) MB again to use Local AI.")
         }
-        .onAppear {
-            // Sync download state when view appears
-            syncDownloadState()
+        .task {
+            // Check download state immediately when view appears - runs before body is evaluated
+            if !hasCheckedInitialState {
+                await syncDownloadState()
+                hasCheckedInitialState = true
+            }
         }
         .onDisappear {
             // Keep download task running in background when navigating away
@@ -4070,18 +4074,20 @@ struct ModelRowView: View {
                         self.downloadProgress = progress
                     }
                     
-                    // Step 4: Download complete - cleanup
+                    // Step 4: Download complete - cleanup and auto-switch to Local AI
                     await MainActor.run {
                         withAnimation {
                             isDownloading = false
                             justCompleted = true
                         }
-                        coordinator.showSuccess("✅ \(modelSize.displayName) is ready! You can now use Local AI.")
                         
-                        // Refresh engine availability
+                        // Refresh engine availability and switch to Local AI
                         if let summCoord = coordinator.summarizationCoordinator {
                             Task {
                                 _ = await summCoord.getAvailableEngines()
+                                // Auto-switch to Local AI
+                                await summCoord.setPreferredEngine(.local)
+                                coordinator.showSuccess("✅ Now using Local AI for summaries!")
                             }
                         }
                     }
@@ -4106,25 +4112,24 @@ struct ModelRowView: View {
         }
     }
     
-    private func syncDownloadState() {
-        Task {
-            let manager = LocalLLM.ModelFileManager()
-            let downloading = await manager.isDownloading(modelSize)
-            
-            await MainActor.run {
-                if downloading && !isDownloading {
-                    // Download is active but local state is out of sync
-                    print("📥 [ModelRowView] Syncing download state: \(modelSize.displayName) is downloading")
-                    withAnimation {
-                        isDownloading = true
-                    }
-                } else if !downloading && isDownloading && downloadTask == nil {
-                    // Download completed while view was away
-                    print("✅ [ModelRowView] Download completed while away: \(modelSize.displayName)")
-                    withAnimation {
-                        isDownloading = false
-                        justCompleted = true
-                    }
+    private func syncDownloadState() async {
+        let manager = LocalLLM.ModelFileManager()
+        let downloading = await manager.isDownloading(modelSize)
+        
+        await MainActor.run {
+            // If download is active in ModelFileManager, sync local state
+            if downloading {
+                print("📥 [ModelRowView] Download in progress: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = true
+                }
+            } else if isDownloading {
+                // ModelFileManager says not downloading but local state says yes
+                // This means download completed while view was away
+                print("✅ [ModelRowView] Download completed while away: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = false
+                    justCompleted = true
                 }
             }
         }
