@@ -29,8 +29,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
         
         public var defaultModel: String {
             switch self {
-            case .openai: return "gpt-4-turbo-preview"
-            case .anthropic: return "claude-3-5-sonnet-20241022"
+            case .openai: return "gpt-4.1"
+            case .anthropic: return "claude-sonnet-4-5"
             }
         }
         
@@ -673,9 +673,17 @@ public actor KeychainManager {
     
     private init() {}
     
+    /// Maps provider to the keychain account key used by the UI
+    private func keychainAccount(for provider: ExternalAPIEngine.Provider) -> String {
+        switch provider {
+        case .openai: return "openai_api_key"
+        case .anthropic: return "anthropic_api_key"
+        }
+    }
+    
     public func setAPIKey(_ key: String, for provider: ExternalAPIEngine.Provider) async {
-        let service = "com.lifewrapped.apikeys"
-        let account = provider.rawValue
+        let service = "com.jsayram.lifewrapped"
+        let account = keychainAccount(for: provider)
         
         // Delete existing key
         let deleteQuery: [String: Any] = [
@@ -691,14 +699,14 @@ public actor KeychainManager {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: key.data(using: .utf8)!,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
         SecItemAdd(addQuery as CFDictionary, nil)
     }
     
     public func getAPIKey(for provider: ExternalAPIEngine.Provider) async -> String? {
-        let service = "com.lifewrapped.apikeys"
-        let account = provider.rawValue
+        let service = "com.jsayram.lifewrapped"
+        let account = keychainAccount(for: provider)
         
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -725,8 +733,8 @@ public actor KeychainManager {
     }
     
     public func deleteAPIKey(for provider: ExternalAPIEngine.Provider) async {
-        let service = "com.lifewrapped.apikeys"
-        let account = provider.rawValue
+        let service = "com.jsayram.lifewrapped"
+        let account = keychainAccount(for: provider)
         
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

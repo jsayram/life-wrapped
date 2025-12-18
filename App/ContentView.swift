@@ -1468,36 +1468,18 @@ struct InsightsTab: View {
                 sessionCount = sessionsInPeriod.count
             }
             
-            // Try to fetch existing period summary, or generate if missing
-            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: startDate)
+            // Try to fetch existing period summary (don't auto-generate on view load)
+            // For week/month/year, use Date() to get current period, for day use startDate
+            let dateForFetch = (periodType == .day) ? startDate : Date()
+            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
             
-            // If no period summary exists but we have sessions with summaries, generate one now
+            // Debug logging
             if periodSummary == nil && !sessionsInPeriod.isEmpty {
-                print("ℹ️ [InsightsTab] No \(periodType) summary found for \(startDate.formatted()), generating...")
-                
-                // Use Date() (today) for week/month calculations, startDate for day
-                let dateForGeneration = (periodType == .day) ? startDate : Date()
-                
-                switch periodType {
-                case .day:
-                    await coordinator.updateDailySummary(date: dateForGeneration)
-                case .week:
-                    await coordinator.updateWeeklySummary(date: dateForGeneration)
-                case .month:
-                    await coordinator.updateMonthlySummary(date: dateForGeneration)
-                default:
-                    break
-                }
-                
-                // Fetch again after generation using the same date we used for generation
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1s
-                periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
-                
-                if periodSummary != nil {
-                    print("✅ [InsightsTab] Successfully generated \(periodType) summary")
-                } else {
-                    print("⚠️ [InsightsTab] Failed to generate \(periodType) summary (generated with date: \(dateForGeneration.formatted()), fetching with same date)")
-                }
+                print("ℹ️ [InsightsTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
+                print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
+                print("   Sessions in period: \(sessionsInPeriod.count)")
+            } else if periodSummary != nil {
+                print("✅ [InsightsTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
             }
         } catch {
             print("❌ [InsightsTab] Failed to load insights: \(error)")
@@ -1525,11 +1507,11 @@ struct InsightsTab: View {
         
         switch periodType {
         case .day:
-            await coordinator.updateDailySummary(date: dateForGeneration)
+            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
         case .week:
-            await coordinator.updateWeeklySummary(date: dateForGeneration)
+            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
         case .month:
-            await coordinator.updateMonthlySummary(date: dateForGeneration)
+            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
         default:
             break
         }
@@ -2150,7 +2132,7 @@ struct AISettingsView: View {
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4o"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
     @State private var apiKey: String = ""
     @State private var showAPIKeyField = false
     
@@ -2161,17 +2143,19 @@ struct AISettingsView: View {
     
     // Available models per provider
     private let openaiModels = [
+        ("gpt-4.1", "GPT-4.1 (Recommended)"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
         ("gpt-4o", "GPT-4o"),
         ("gpt-4o-mini", "GPT-4o Mini"),
-        ("gpt-4-turbo", "GPT-4 Turbo"),
-        ("gpt-3.5-turbo", "GPT-3.5 Turbo")
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
     ]
     
     private let anthropicModels = [
-        ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
-        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
-        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),
-        ("claude-3-opus-20240229", "Claude 3 Opus")
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
+        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
     ]
     
     private var currentModels: [(String, String)] {
@@ -2262,7 +2246,7 @@ struct AISettingsView: View {
                     .onChange(of: selectedProvider) { _, newValue in
                         UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
                         // Reset to default model for new provider
-                        let defaultModel = newValue == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-20250514"
+                        let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
                         selectedModel = defaultModel
                         UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
                         // Load the appropriate key
@@ -2766,7 +2750,7 @@ struct ExternalAPISettingsView: View {
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4o"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
     @State private var openaiKey: String = ""
     @State private var anthropicKey: String = ""
     @State private var isTesting = false
@@ -2775,17 +2759,19 @@ struct ExternalAPISettingsView: View {
     
     // Available models per provider
     private let openaiModels = [
-        ("gpt-4o", "GPT-4o (Recommended)"),
-        ("gpt-4o-mini", "GPT-4o Mini (Faster)"),
-        ("gpt-4-turbo", "GPT-4 Turbo"),
+        ("gpt-4.1", "GPT-4.1 (Recommended)"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4o-mini", "GPT-4o Mini"),
         ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
     ]
     
     private let anthropicModels = [
-        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Recommended)"),
-        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
-        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku (Faster)"),
-        ("claude-3-opus-20240229", "Claude 3 Opus (Most Capable)")
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
+        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
     ]
     
     private var currentModels: [(String, String)] {
@@ -2827,7 +2813,7 @@ struct ExternalAPISettingsView: View {
                 .onChange(of: selectedProvider) { _, newValue in
                     UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
                     // Reset to default model for new provider
-                    let defaultModel = newValue == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-20250514"
+                    let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
                     selectedModel = defaultModel
                     UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
                 }

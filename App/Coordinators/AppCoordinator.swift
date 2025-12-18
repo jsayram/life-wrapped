@@ -140,6 +140,11 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var transcribedChunkIds: Set<UUID> = []   // Successfully completed
     @Published public private(set) var failedChunkIds: Set<UUID> = []         // Failed transcription
     
+    // MARK: - Period Summary Generation Guards
+    
+    /// Tracks which period summaries are currently being generated to prevent duplicate concurrent calls
+    private var generatingPeriodSummaries: Set<String> = []
+    
     // MARK: - Initialization
     
     public init(
@@ -1215,9 +1220,31 @@ public final class AppCoordinator: ObservableObject {
     
     /// Update or create daily summary by aggregating all session summaries for that day
     /// Uses the user-selected LLM engine for hierarchical summarization
-    public func updateDailySummary(date: Date) async {
+    public func updateDailySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else { return }
+        
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let periodKey = "day-\(startOfDay.timeIntervalSince1970)"
+        
+        // Guard: Skip if already generating this period
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Daily summary already being generated, skipping...")
+            return
+        }
+        
+        // Guard: Skip if summary exists and forceRegenerate is false
+        if !forceRegenerate {
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay), !existing.text.isEmpty {
+                print("⏭️ [AppCoordinator] Daily summary already exists for \(date.formatted(date: .abbreviated, time: .omitted)), skipping...")
+                return
+            }
+        }
+        
+        // Mark as in-progress
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
         
         do {
             // 1. Fetch all sessions for this day
@@ -1319,18 +1346,38 @@ public final class AppCoordinator: ObservableObject {
     
     /// Update or create weekly summary by aggregating all daily summaries for that week
     /// Uses the user-selected LLM engine for hierarchical summarization
-    public func updateWeeklySummary(date: Date) async {
+    public func updateWeeklySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else { return }
         
+        // 1. Get week range (Monday to Sunday)
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        components.weekday = 2 // Monday
+        guard let startOfWeek = calendar.date(from: components) else { return }
+        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
+        
+        let periodKey = "week-\(startOfWeek.timeIntervalSince1970)"
+        
+        // Guard: Skip if already generating this period
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Weekly summary already being generated, skipping...")
+            return
+        }
+        
+        // Guard: Skip if summary exists and forceRegenerate is false
+        if !forceRegenerate {
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek), !existing.text.isEmpty {
+                print("⏭️ [AppCoordinator] Weekly summary already exists for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)), skipping...")
+                return
+            }
+        }
+        
+        // Mark as in-progress
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+        
         do {
-            // 1. Get week range (Monday to Sunday)
-            let calendar = Calendar.current
-            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-            components.weekday = 2 // Monday
-            guard let startOfWeek = calendar.date(from: components) else { return }
-            guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
-            
             print("📊 [AppCoordinator] Updating weekly summary for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)) - \(endOfWeek.formatted(date: .abbreviated, time: .omitted))")
             
             // 2. Fetch all daily summaries for this week
@@ -1375,17 +1422,37 @@ public final class AppCoordinator: ObservableObject {
     
     /// Update or create monthly summary by aggregating all weekly summaries for that month
     /// Uses the user-selected LLM engine for hierarchical summarization
-    public func updateMonthlySummary(date: Date) async {
+    public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else { return }
         
+        // 1. Get month range
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: date)
+        guard let startOfMonth = calendar.date(from: components) else { return }
+        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
+        
+        let periodKey = "month-\(startOfMonth.timeIntervalSince1970)"
+        
+        // Guard: Skip if already generating this period
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Monthly summary already being generated, skipping...")
+            return
+        }
+        
+        // Guard: Skip if summary exists and forceRegenerate is false
+        if !forceRegenerate {
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth), !existing.text.isEmpty {
+                print("⏭️ [AppCoordinator] Monthly summary already exists for \(startOfMonth.formatted(date: .abbreviated, time: .omitted)), skipping...")
+                return
+            }
+        }
+        
+        // Mark as in-progress
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+        
         do {
-            // 1. Get month range
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month], from: date)
-            guard let startOfMonth = calendar.date(from: components) else { return }
-            guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
-            
             print("📊 [AppCoordinator] Updating monthly summary for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
             
             // 2. Fetch all weekly summaries for this month (hierarchical rollup)
@@ -1429,21 +1496,41 @@ public final class AppCoordinator: ObservableObject {
     
     /// Update or create yearly summary by aggregating all monthly summaries for that year
     /// Uses the user-selected LLM engine for hierarchical summarization
-    public func updateYearlySummary(date: Date) async {
+    public func updateYearlySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else { return }
         
+        // 1. Get year range
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        var startComponents = DateComponents()
+        startComponents.year = year
+        startComponents.month = 1
+        startComponents.day = 1
+        guard let startOfYear = calendar.date(from: startComponents) else { return }
+        guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
+        
+        let periodKey = "year-\(startOfYear.timeIntervalSince1970)"
+        
+        // Guard: Skip if already generating this period
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Yearly summary already being generated, skipping...")
+            return
+        }
+        
+        // Guard: Skip if summary exists and forceRegenerate is false
+        if !forceRegenerate {
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .year, date: startOfYear), !existing.text.isEmpty {
+                print("⏭️ [AppCoordinator] Yearly summary already exists for \(year), skipping...")
+                return
+            }
+        }
+        
+        // Mark as in-progress
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+        
         do {
-            // 1. Get year range
-            let calendar = Calendar.current
-            let year = calendar.component(.year, from: date)
-            var startComponents = DateComponents()
-            startComponents.year = year
-            startComponents.month = 1
-            startComponents.day = 1
-            guard let startOfYear = calendar.date(from: startComponents) else { return }
-            guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
-            
             print("📊 [AppCoordinator] Updating yearly summary for \(year)")
             
             // 2. Fetch all monthly summaries for this year (hierarchical rollup)
