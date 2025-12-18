@@ -1622,16 +1622,24 @@ public actor DatabaseManager {
         return nil
     }
     
-    /// Upsert (insert or update) a period summary
-    public func upsertPeriodSummary(type: PeriodType, text: String, start: Date, end: Date) throws {
+    /// Upsert (insert or update) a period summary with full structured data
+    public func upsertPeriodSummary(
+        type: PeriodType,
+        text: String,
+        start: Date,
+        end: Date,
+        topicsJSON: String? = nil,
+        entitiesJSON: String? = nil,
+        engineTier: String? = nil
+    ) throws {
         guard let db = db else { throw StorageError.notOpen }
         
         // Check if summary exists
         if let existing = try fetchPeriodSummary(type: type, date: start) {
-            // Update existing
+            // Update existing with structured data
             let sql = """
                 UPDATE summaries
-                SET text = ?, period_end = ?
+                SET text = ?, period_end = ?, topics_json = ?, entities_json = ?, engine_tier = ?
                 WHERE id = ?
                 """
             
@@ -1644,13 +1652,32 @@ public actor DatabaseManager {
             
             sqlite3_bind_text(stmt, 1, text, -1, SQLITE_TRANSIENT)
             sqlite3_bind_double(stmt, 2, end.timeIntervalSince1970)
-            sqlite3_bind_text(stmt, 3, existing.id.uuidString, -1, SQLITE_TRANSIENT)
+            
+            if let topics = topicsJSON {
+                sqlite3_bind_text(stmt, 3, topics, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 3)
+            }
+            
+            if let entities = entitiesJSON {
+                sqlite3_bind_text(stmt, 4, entities, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 4)
+            }
+            
+            if let tier = engineTier {
+                sqlite3_bind_text(stmt, 5, tier, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 5)
+            }
+            
+            sqlite3_bind_text(stmt, 6, existing.id.uuidString, -1, SQLITE_TRANSIENT)
             
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw StorageError.stepFailed(lastError())
             }
         } else {
-            // Insert new
+            // Insert new with structured data
             let summary = Summary(
                 id: UUID(),
                 periodType: type,
@@ -1658,7 +1685,10 @@ public actor DatabaseManager {
                 periodEnd: end,
                 text: text,
                 createdAt: start,
-                sessionId: nil
+                sessionId: nil,
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier
             )
             try insertSummary(summary)
         }
@@ -1727,6 +1757,72 @@ public actor DatabaseManager {
             SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
             FROM summaries
             WHERE period_type = 'day'
+            AND period_start >= ? AND period_start < ?
+            AND session_id IS NULL
+            ORDER BY period_start ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var summaries: [Summary] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let summary = try? parseSummary(from: stmt) {
+                summaries.append(summary)
+            }
+        }
+        
+        return summaries
+    }
+    
+    /// Fetch all weekly summaries for a date range
+    public func fetchWeeklySummaries(from startDate: Date, to endDate: Date) throws -> [Summary] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            FROM summaries
+            WHERE period_type = 'week'
+            AND period_start >= ? AND period_start < ?
+            AND session_id IS NULL
+            ORDER BY period_start ASC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var summaries: [Summary] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let summary = try? parseSummary(from: stmt) {
+                summaries.append(summary)
+            }
+        }
+        
+        return summaries
+    }
+    
+    /// Fetch all monthly summaries for a date range
+    public func fetchMonthlySummaries(from startDate: Date, to endDate: Date) throws -> [Summary] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            FROM summaries
+            WHERE period_type = 'month'
             AND period_start >= ? AND period_start < ?
             AND session_id IS NULL
             ORDER BY period_start ASC
@@ -1958,6 +2054,8 @@ public actor DatabaseManager {
             bucketEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: bucketStart) ?? bucketStart
         case .month:
             bucketEnd = calendar.date(byAdding: .month, value: 1, to: bucketStart) ?? bucketStart
+        case .year:
+            bucketEnd = calendar.date(byAdding: .year, value: 1, to: bucketStart) ?? bucketStart
         }
         
         let sql = """

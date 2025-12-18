@@ -113,6 +113,18 @@ public actor SummarizationCoordinator {
         return available
     }
     
+    /// Validate an external API key by making a test request
+    /// - Parameters:
+    ///   - apiKey: The API key to validate
+    ///   - provider: The provider (OpenAI or Anthropic)
+    /// - Returns: Validation result with success message or error
+    public func validateExternalAPIKey(_ apiKey: String, for provider: ExternalAPIEngine.Provider) async -> ExternalAPIEngine.APIKeyValidationResult {
+        guard let external = externalEngine as? ExternalAPIEngine else {
+            return .invalid(reason: "External API engine not available")
+        }
+        return await external.validateAPIKey(apiKey, for: provider)
+    }
+    
     /// Set the preferred engine tier
     /// Will fall back to basic if preferred tier is unavailable
     /// Persists the preference to UserDefaults
@@ -260,6 +272,31 @@ public actor SummarizationCoordinator {
             periodType: .month,
             startDate: startOfMonth,
             endDate: endOfMonth
+        )
+    }
+    
+    /// Generate a yearly summary by aggregating monthly summaries
+    /// - Parameter date: A date within the year to summarize
+    /// - Returns: Summary object ready for database storage
+    /// - Throws: SummarizationError if generation fails
+    public func generateYearlySummary(for date: Date) async throws -> Summary {
+        let calendar = Calendar.current
+        
+        // Get start of year
+        let components = calendar.dateComponents([.year], from: date)
+        guard let startOfYear = calendar.date(from: components) else {
+            throw SummarizationError.invalidDateRange(start: date, end: date)
+        }
+        
+        // Get end of year (start of next year)
+        guard let endOfYear = calendar.date(byAdding: .year, value: 1, to: startOfYear) else {
+            throw SummarizationError.invalidDateRange(start: startOfYear, end: date)
+        }
+        
+        return try await generatePeriodSummary(
+            periodType: .year,
+            startDate: startOfYear,
+            endDate: endOfYear
         )
     }
     

@@ -1193,6 +1193,7 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Period Summary Updates
     
     /// Update period summaries after a new session summary is created
+    /// Follows hierarchical rollup: Session → Day → Week → Month → Year
     private func updatePeriodSummaries(sessionId: UUID, sessionDate: Date) async {
         print("🔄 [AppCoordinator] Updating period summaries for session...")
         
@@ -1207,11 +1208,16 @@ public final class AppCoordinator: ObservableObject {
         
         // Update monthly summary
         await updateMonthlySummary(date: sessionDate)
+        
+        // Update yearly summary
+        await updateYearlySummary(date: sessionDate)
     }
     
     /// Update or create daily summary by aggregating all session summaries for that day
+    /// Uses the user-selected LLM engine for hierarchical summarization
     public func updateDailySummary(date: Date) async {
-        guard let dbManager = databaseManager else { return }
+        guard let dbManager = databaseManager,
+              let coordinator = summarizationCoordinator else { return }
         
         do {
             // 1. Fetch all sessions for this day
@@ -1224,11 +1230,25 @@ public final class AppCoordinator: ObservableObject {
             }
             
             // 2. Fetch all session summaries for this day, generate if missing
-            var summaryTexts: [String] = []
+            var sessionIntelligences: [SessionIntelligence] = []
             for session in sessions {
                 do {
                     if let summary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                        summaryTexts.append(summary.text)
+                        // Convert Summary to SessionIntelligence for the coordinator
+                        let topics = (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? []
+                        let entities = (try? [Entity].fromEntitiesJSON(summary.entitiesJSON)) ?? []
+                        
+                        let intelligence = SessionIntelligence(
+                            sessionId: session.sessionId,
+                            summary: summary.text,
+                            topics: topics,
+                            entities: entities,
+                            sentiment: 0.0,
+                            duration: session.totalDuration ?? 0,
+                            wordCount: summary.text.split(separator: " ").count,
+                            languageCodes: ["en-US"]
+                        )
+                        sessionIntelligences.append(intelligence)
                     } else {
                         // No summary exists - check if we can generate one
                         print("⚠️ [AppCoordinator] Session \(session.sessionId) has no summary, attempting to generate...")
@@ -1240,7 +1260,20 @@ public final class AppCoordinator: ObservableObject {
                             
                             // Fetch the newly created summary
                             if let newSummary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                                summaryTexts.append(newSummary.text)
+                                let topics = (try? [String].fromTopicsJSON(newSummary.topicsJSON)) ?? []
+                                let entities = (try? [Entity].fromEntitiesJSON(newSummary.entitiesJSON)) ?? []
+                                
+                                let intelligence = SessionIntelligence(
+                                    sessionId: session.sessionId,
+                                    summary: newSummary.text,
+                                    topics: topics,
+                                    entities: entities,
+                                    sentiment: 0.0,
+                                    duration: session.totalDuration ?? 0,
+                                    wordCount: newSummary.text.split(separator: " ").count,
+                                    languageCodes: ["en-US"]
+                                )
+                                sessionIntelligences.append(intelligence)
                                 print("✅ [AppCoordinator] Generated summary for session \(session.sessionId)")
                             }
                         } else {
@@ -1252,38 +1285,43 @@ public final class AppCoordinator: ObservableObject {
                 }
             }
             
-            guard !summaryTexts.isEmpty else {
+            guard !sessionIntelligences.isEmpty else {
                 print("ℹ️ [AppCoordinator] No summaries found for this day (found \(sessions.count) sessions, none have transcripts)")
                 return
             }
             
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) session summaries for day...")
+            print("📝 [AppCoordinator] Generating daily summary from \(sessionIntelligences.count) session summaries using LLM...")
             
-            // 3. Aggregate using BasicAggregator
-            let aggregator = BasicAggregator()
-            let combinedText = aggregator.aggregate(summaries: summaryTexts)
-            
-            // 4. Calculate period end (end of day)
+            // 3. Calculate period boundaries
             let calendar = Calendar.current
-            let endOfDay = calendar.date(byAdding: .day, value: 1, to: date) ?? date
+            let startOfDay = calendar.startOfDay(for: date)
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
             
-            // 5. Upsert into database
+            // 4. Generate daily summary using user-selected LLM engine via coordinator
+            let dailySummary = try await coordinator.generateDailySummary(for: date)
+            
+            // 5. Upsert into database (generateDailySummary returns a Summary object)
             try await dbManager.upsertPeriodSummary(
                 type: .day,
-                text: combinedText,
-                start: date,
-                end: endOfDay
+                text: dailySummary.text,
+                start: startOfDay,
+                end: endOfDay,
+                topicsJSON: dailySummary.topicsJSON,
+                entitiesJSON: dailySummary.entitiesJSON,
+                engineTier: dailySummary.engineTier
             )
             
-            print("✅ [AppCoordinator] Daily summary updated")
+            print("✅ [AppCoordinator] Daily summary updated (engine: \(dailySummary.engineTier ?? "unknown"))")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
     }
     
     /// Update or create weekly summary by aggregating all daily summaries for that week
+    /// Uses the user-selected LLM engine for hierarchical summarization
     public func updateWeeklySummary(date: Date) async {
-        guard let dbManager = databaseManager else { return }
+        guard let dbManager = databaseManager,
+              let coordinator = summarizationCoordinator else { return }
         
         do {
             // 1. Get week range (Monday to Sunday)
@@ -1313,30 +1351,33 @@ public final class AppCoordinator: ObservableObject {
                 return
             }
             
-            let summaryTexts = dailySummaries.map { $0.text }
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) daily summaries for week...")
+            print("📝 [AppCoordinator] Generating weekly summary from \(dailySummaries.count) daily summaries using LLM...")
             
-            // 3. Aggregate using BasicAggregator
-            let aggregator = BasicAggregator()
-            let combinedText = aggregator.aggregate(summaries: summaryTexts)
+            // 3. Generate weekly summary using user-selected LLM engine via coordinator
+            let weeklySummary = try await coordinator.generateWeeklySummary(for: date)
             
             // 4. Upsert into database
             try await dbManager.upsertPeriodSummary(
                 type: .week,
-                text: combinedText,
+                text: weeklySummary.text,
                 start: startOfWeek,
-                end: endOfWeek
+                end: endOfWeek,
+                topicsJSON: weeklySummary.topicsJSON,
+                entitiesJSON: weeklySummary.entitiesJSON,
+                engineTier: weeklySummary.engineTier
             )
             
-            print("✅ [AppCoordinator] Weekly summary updated")
+            print("✅ [AppCoordinator] Weekly summary updated (engine: \(weeklySummary.engineTier ?? "unknown"))")
         } catch {
             print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
         }
     }
     
-    /// Update or create monthly summary by aggregating all daily summaries for that month
+    /// Update or create monthly summary by aggregating all weekly summaries for that month
+    /// Uses the user-selected LLM engine for hierarchical summarization
     public func updateMonthlySummary(date: Date) async {
-        guard let dbManager = databaseManager else { return }
+        guard let dbManager = databaseManager,
+              let coordinator = summarizationCoordinator else { return }
         
         do {
             // 1. Get month range
@@ -1347,42 +1388,100 @@ public final class AppCoordinator: ObservableObject {
             
             print("📊 [AppCoordinator] Updating monthly summary for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
             
-            // 2. Fetch all daily summaries for this month
-            let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
-            print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this month")
+            // 2. Fetch all weekly summaries for this month (hierarchical rollup)
+            let weeklySummaries = try await dbManager.fetchWeeklySummaries(from: startOfMonth, to: endOfMonth)
+            print("📊 [AppCoordinator] Found \(weeklySummaries.count) weekly summaries for this month")
             
-            if dailySummaries.isEmpty {
-                print("ℹ️ [AppCoordinator] No daily summaries found for this month")
-                print("   Query range: \(startOfMonth.ISO8601Format()) to \(endOfMonth.ISO8601Format())")
+            // Fall back to daily summaries if no weekly summaries exist
+            if weeklySummaries.isEmpty {
+                print("ℹ️ [AppCoordinator] No weekly summaries found, checking daily summaries...")
+                let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
                 
-                // Debug: List all daily summaries to see what exists
-                if let allDailies = try? await dbManager.fetchSummaries(periodType: .day) {
-                    print("   Available daily summaries: \(allDailies.count)")
-                    for daily in allDailies.prefix(5) {
-                        print("   - Daily: \(daily.periodStart.ISO8601Format()) to \(daily.periodEnd.ISO8601Format())")
-                    }
+                if dailySummaries.isEmpty {
+                    print("ℹ️ [AppCoordinator] No daily summaries found for this month")
+                    return
                 }
-                return
+                
+                print("📝 [AppCoordinator] Using \(dailySummaries.count) daily summaries for month (no weekly available)")
             }
             
-            let summaryTexts = dailySummaries.map { $0.text }
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) daily summaries for month...")
+            print("📝 [AppCoordinator] Generating monthly summary using LLM...")
             
-            // 3. Aggregate using BasicAggregator
-            let aggregator = BasicAggregator()
-            let combinedText = aggregator.aggregate(summaries: summaryTexts)
+            // 3. Generate monthly summary using user-selected LLM engine via coordinator
+            let monthlySummary = try await coordinator.generateMonthlySummary(for: date)
             
             // 4. Upsert into database
             try await dbManager.upsertPeriodSummary(
                 type: .month,
-                text: combinedText,
+                text: monthlySummary.text,
                 start: startOfMonth,
-                end: endOfMonth
+                end: endOfMonth,
+                topicsJSON: monthlySummary.topicsJSON,
+                entitiesJSON: monthlySummary.entitiesJSON,
+                engineTier: monthlySummary.engineTier
             )
             
-            print("✅ [AppCoordinator] Monthly summary updated")
+            print("✅ [AppCoordinator] Monthly summary updated (engine: \(monthlySummary.engineTier ?? "unknown"))")
         } catch {
             print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
+        }
+    }
+    
+    /// Update or create yearly summary by aggregating all monthly summaries for that year
+    /// Uses the user-selected LLM engine for hierarchical summarization
+    public func updateYearlySummary(date: Date) async {
+        guard let dbManager = databaseManager,
+              let coordinator = summarizationCoordinator else { return }
+        
+        do {
+            // 1. Get year range
+            let calendar = Calendar.current
+            let year = calendar.component(.year, from: date)
+            var startComponents = DateComponents()
+            startComponents.year = year
+            startComponents.month = 1
+            startComponents.day = 1
+            guard let startOfYear = calendar.date(from: startComponents) else { return }
+            guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
+            
+            print("📊 [AppCoordinator] Updating yearly summary for \(year)")
+            
+            // 2. Fetch all monthly summaries for this year (hierarchical rollup)
+            let monthlySummaries = try await dbManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+            print("📊 [AppCoordinator] Found \(monthlySummaries.count) monthly summaries for this year")
+            
+            // Fall back to weekly summaries if no monthly summaries exist
+            if monthlySummaries.isEmpty {
+                print("ℹ️ [AppCoordinator] No monthly summaries found, checking weekly summaries...")
+                let weeklySummaries = try await dbManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
+                
+                if weeklySummaries.isEmpty {
+                    print("ℹ️ [AppCoordinator] No weekly summaries found for this year")
+                    return
+                }
+                
+                print("📝 [AppCoordinator] Using \(weeklySummaries.count) weekly summaries for year (no monthly available)")
+            }
+            
+            print("📝 [AppCoordinator] Generating yearly summary using LLM...")
+            
+            // 3. Generate yearly summary using user-selected LLM engine via coordinator
+            let yearlySummary = try await coordinator.generateYearlySummary(for: date)
+            
+            // 4. Upsert into database
+            try await dbManager.upsertPeriodSummary(
+                type: .year,
+                text: yearlySummary.text,
+                start: startOfYear,
+                end: endOfYear,
+                topicsJSON: yearlySummary.topicsJSON,
+                entitiesJSON: yearlySummary.entitiesJSON,
+                engineTier: yearlySummary.engineTier
+            )
+            
+            print("✅ [AppCoordinator] Yearly summary updated (engine: \(yearlySummary.engineTier ?? "unknown"))")
+        } catch {
+            print("❌ [AppCoordinator] Failed to update yearly summary: \(error)")
         }
     }
     

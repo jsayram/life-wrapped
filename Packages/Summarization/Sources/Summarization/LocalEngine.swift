@@ -67,7 +67,17 @@ public actor LocalEngine: SummarizationEngine {
     ) async throws -> SessionIntelligence {
         let startTime = Date()
         
-        print("🤖 [LocalEngine] Summarizing session \(sessionId)")
+        // Log summarization request
+        SummarizationLogger.log(
+            level: .session,
+            engine: .local,
+            provider: "SwiftLlama",
+            model: "qwen2-0.5b-instruct",
+            temperature: configuration.temperature,
+            maxTokens: configuration.maxTokens,
+            inputSize: transcriptText.count,
+            sessionId: sessionId
+        )
         
         // Ensure model is loaded
         try await ensureModelLoaded()
@@ -80,11 +90,11 @@ public actor LocalEngine: SummarizationEngine {
             return try await extractiveFallback(sessionId: sessionId, transcriptText: transcriptText, duration: duration)
         }
         
-        // Generate prompt
-        let prompt = PromptTemplate.sessionSummary(
-            transcript: transcriptText,
-            duration: duration,
-            wordCount: wordCount
+        // Generate prompt using universal template
+        let prompt = UniversalPrompt.build(
+            level: .session,
+            input: transcriptText,
+            metadata: ["duration": Int(duration), "wordCount": wordCount]
         )
         
         // Call LLM
@@ -111,7 +121,19 @@ public actor LocalEngine: SummarizationEngine {
     ) async throws -> PeriodIntelligence {
         let startTime = Date()
         
-        print("🤖 [LocalEngine] Summarizing \(periodType.rawValue) period with \(sessionSummaries.count) sessions")
+        let summaryLevel = SummaryLevel.from(periodType: periodType)
+        
+        // Log summarization request
+        SummarizationLogger.log(
+            level: summaryLevel,
+            engine: .local,
+            provider: "SwiftLlama",
+            model: "qwen2-0.5b-instruct",
+            temperature: configuration.temperature,
+            maxTokens: configuration.maxTokens,
+            inputSize: sessionSummaries.count,
+            sessionId: nil
+        )
         
         // Ensure model is loaded
         try await ensureModelLoaded()
@@ -120,14 +142,22 @@ public actor LocalEngine: SummarizationEngine {
             throw SummarizationError.insufficientContent(minimumWords: 1, actualWords: 0)
         }
         
-        // Extract session summary texts
-        let summaryTexts = sessionSummaries.map { $0.summary }
+        // Prepare input as structured JSON for hierarchical summarization
+        let inputData = sessionSummaries.map { session in
+            [
+                "summary": session.summary,
+                "topics": session.topics,
+                "sentiment": session.sentiment
+            ] as [String: Any]
+        }
+        let inputJSON = (try? JSONSerialization.data(withJSONObject: inputData))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? sessionSummaries.map { $0.summary }.joined(separator: "\n\n")
         
-        // Generate prompt
-        let prompt = PromptTemplate.periodSummary(
-            sessionSummaries: summaryTexts,
-            periodType: periodType,
-            sessionCount: sessionSummaries.count
+        // Generate prompt using universal template
+        let prompt = UniversalPrompt.build(
+            level: summaryLevel,
+            input: inputJSON,
+            metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue]
         )
         
         // Call LLM

@@ -2154,6 +2154,11 @@ struct AISettingsView: View {
     @State private var apiKey: String = ""
     @State private var showAPIKeyField = false
     
+    // API Key testing state
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess = false
+    
     // Available models per provider
     private let openaiModels = [
         ("gpt-4o", "GPT-4o"),
@@ -2312,6 +2317,29 @@ struct AISettingsView: View {
                                 .autocapitalization(.none)
                                 .autocorrectionDisabled()
                                 .textFieldStyle(.roundedBorder)
+                                .onChange(of: apiKey) { _, newValue in
+                                    // Normalize: trim whitespace and newlines
+                                    let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if normalized != newValue {
+                                        apiKey = normalized
+                                    }
+                                    // Reset test state when key changes
+                                    testResult = nil
+                                }
+                            
+                            Button {
+                                testAPIKey()
+                            } label: {
+                                if isTesting {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                } else {
+                                    Text("Test")
+                                        .fontWeight(.medium)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(apiKey.isEmpty || isTesting)
                             
                             Button {
                                 saveAPIKey()
@@ -2347,6 +2375,18 @@ struct AISettingsView: View {
                                     .font(.caption)
                             }
                         }
+                    }
+                    
+                    // Test result
+                    if let result = testResult {
+                        HStack {
+                            Image(systemName: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(testSuccess ? .green : .red)
+                            Text(result)
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        }
+                        .padding(.top, 4)
                     }
                 }
                 .padding(.vertical, 4)
@@ -2462,6 +2502,40 @@ struct AISettingsView: View {
             }
         } else {
             coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            guard !apiKey.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(apiKey, for: provider)
+            
+            await MainActor.run {
+                testSuccess = result.isValid
+                testResult = result.message
+                isTesting = false
+            }
         }
     }
     
@@ -2785,6 +2859,13 @@ struct ExternalAPISettingsView: View {
                         .textContentType(.password)
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
+                        .onChange(of: openaiKey) { _, newValue in
+                            // Normalize: trim whitespace and newlines
+                            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if normalized != newValue {
+                                openaiKey = normalized
+                            }
+                        }
                     
                     if !openaiKey.isEmpty {
                         HStack {
@@ -2804,6 +2885,13 @@ struct ExternalAPISettingsView: View {
                         .textContentType(.password)
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
+                        .onChange(of: anthropicKey) { _, newValue in
+                            // Normalize: trim whitespace and newlines
+                            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if normalized != newValue {
+                                anthropicKey = normalized
+                            }
+                        }
                     
                     if !anthropicKey.isEmpty {
                         HStack {
@@ -2931,17 +3019,32 @@ struct ExternalAPISettingsView: View {
         testResult = nil
         
         Task {
-            // TODO: Implement actual API test
-            try? await Task.sleep(for: .seconds(1))
+            let key = currentKey
+            guard !key.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            // Use the ExternalAPIEngine to validate the key with a real API request
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(key, for: provider)
+            
             await MainActor.run {
-                // For now, just validate format
-                let key = currentKey
-                let isValid = selectedProvider == "OpenAI" 
-                    ? key.hasPrefix("sk-") && key.count > 20
-                    : key.hasPrefix("sk-ant-") && key.count > 20
-                
-                testSuccess = isValid
-                testResult = isValid ? "API key format is valid" : "Invalid API key format"
+                testSuccess = result.isValid
+                testResult = result.message
                 isTesting = false
             }
         }

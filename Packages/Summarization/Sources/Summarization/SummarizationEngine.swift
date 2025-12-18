@@ -130,17 +130,23 @@ public struct EngineConfiguration: Sendable {
     public let minimumWords: Int
     public let maxContextLength: Int
     public let timeoutSeconds: TimeInterval
+    public let temperature: Double
+    public let maxTokens: Int
     
     public init(
         tier: EngineTier,
         minimumWords: Int = 1,
         maxContextLength: Int = 4000,
-        timeoutSeconds: TimeInterval = 30.0
+        timeoutSeconds: TimeInterval = 30.0,
+        temperature: Double = 0.3,
+        maxTokens: Int = 2000
     ) {
         self.tier = tier
         self.minimumWords = minimumWords
         self.maxContextLength = maxContextLength
         self.timeoutSeconds = timeoutSeconds
+        self.temperature = temperature
+        self.maxTokens = maxTokens
     }
     
     /// Default configuration for each tier
@@ -151,28 +157,36 @@ public struct EngineConfiguration: Sendable {
                 tier: .basic,
                 minimumWords: 1,
                 maxContextLength: 10000,
-                timeoutSeconds: 5.0
+                timeoutSeconds: 5.0,
+                temperature: 0.0,  // Basic engine doesn't use temperature
+                maxTokens: 500
             )
         case .apple:
             return EngineConfiguration(
                 tier: .apple,
                 minimumWords: 1,
                 maxContextLength: 8000,
-                timeoutSeconds: 30.0
+                timeoutSeconds: 30.0,
+                temperature: 0.3,
+                maxTokens: 2000
             )
         case .local:
             return EngineConfiguration(
                 tier: .local,
                 minimumWords: 1,
                 maxContextLength: 4000,
-                timeoutSeconds: 60.0
+                timeoutSeconds: 60.0,
+                temperature: 0.2,  // Low temperature for deterministic summaries
+                maxTokens: 1024
             )
         case .external:
             return EngineConfiguration(
                 tier: .external,
                 minimumWords: 1,
                 maxContextLength: 16000,
-                timeoutSeconds: 30.0
+                timeoutSeconds: 30.0,
+                temperature: 0.3,
+                maxTokens: 2000
             )
         }
     }

@@ -42,6 +42,26 @@ public actor ExternalAPIEngine: SummarizationEngine {
         }
     }
     
+    /// Result of API key validation
+    public enum APIKeyValidationResult: Sendable {
+        case valid(message: String)
+        case invalid(reason: String)
+        
+        public var isValid: Bool {
+            switch self {
+            case .valid: return true
+            case .invalid: return false
+            }
+        }
+        
+        public var message: String {
+            switch self {
+            case .valid(let message): return message
+            case .invalid(let reason): return reason
+            }
+        }
+    }
+    
     // MARK: - Properties
     
     private let storage: DatabaseManager
@@ -102,13 +122,26 @@ public actor ExternalAPIEngine: SummarizationEngine {
             summariesGenerated += 1
         }
         
+        // Log summarization request details
+        logSummarizationRequest(
+            level: .session,
+            provider: selectedProvider,
+            model: selectedModel,
+            inputSize: transcriptText.count,
+            sessionId: sessionId
+        )
+        
         // Get API key
         guard let apiKey = await keychainManager.getAPIKey(for: selectedProvider) else {
             throw SummarizationError.configurationError("No API key configured for \(selectedProvider.displayName)")
         }
         
-        // Build prompt
-        let prompt = buildSessionPrompt(transcriptText: transcriptText, duration: duration)
+        // Build prompt using universal schema
+        let prompt = UniversalPrompt.build(
+            level: .session,
+            input: transcriptText,
+            metadata: ["duration": Int(duration), "wordCount": transcriptText.split(separator: " ").count]
+        )
         
         // Call API
         let response = try await callAPI(prompt: prompt, apiKey: apiKey)
@@ -143,13 +176,40 @@ public actor ExternalAPIEngine: SummarizationEngine {
             summariesGenerated += 1
         }
         
+        // Convert PeriodType to SummaryLevel for logging
+        let summaryLevel = SummaryLevel.from(periodType: periodType)
+        
+        // Log summarization request details
+        logSummarizationRequest(
+            level: summaryLevel,
+            provider: selectedProvider,
+            model: selectedModel,
+            inputSize: sessionSummaries.count,
+            sessionId: nil
+        )
+        
         // Get API key
         guard let apiKey = await keychainManager.getAPIKey(for: selectedProvider) else {
             throw SummarizationError.configurationError("No API key configured for \(selectedProvider.displayName)")
         }
         
-        // Build prompt
-        let prompt = buildPeriodPrompt(periodType: periodType, sessionSummaries: sessionSummaries)
+        // Prepare input JSON from session summaries
+        let inputData = sessionSummaries.map { session in
+            [
+                "summary": session.summary,
+                "topics": session.topics,
+                "sentiment": session.sentiment
+            ] as [String: Any]
+        }
+        let inputJSON = (try? JSONSerialization.data(withJSONObject: inputData))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        
+        // Build prompt using universal schema
+        let prompt = UniversalPrompt.build(
+            level: summaryLevel,
+            input: inputJSON,
+            metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue]
+        )
         
         // Call API
         let response = try await callAPI(prompt: prompt, apiKey: apiKey)
@@ -450,6 +510,139 @@ public actor ExternalAPIEngine: SummarizationEngine {
             return (response as? HTTPURLResponse)?.statusCode == 200
         } catch {
             return false
+        }
+    }
+    
+    // MARK: - API Key Validation
+    
+    /// Validates an API key by making a minimal test request to the provider
+    /// - Parameters:
+    ///   - apiKey: The API key to validate
+    ///   - provider: The provider (OpenAI or Anthropic)
+    /// - Returns: A validation result with success message or error description
+    public func validateAPIKey(_ apiKey: String, for provider: Provider) async -> APIKeyValidationResult {
+        // First, check format
+        let formatValid: Bool
+        switch provider {
+        case .openai:
+            formatValid = apiKey.hasPrefix("sk-") && apiKey.count > 20
+        case .anthropic:
+            formatValid = apiKey.hasPrefix("sk-ant-") && apiKey.count > 20
+        }
+        
+        guard formatValid else {
+            return .invalid(reason: "Invalid API key format for \(provider.displayName)")
+        }
+        
+        // Make a minimal API request to validate the key
+        do {
+            switch provider {
+            case .openai:
+                return try await validateOpenAIKey(apiKey)
+            case .anthropic:
+                return try await validateAnthropicKey(apiKey)
+            }
+        } catch {
+            return .invalid(reason: "Network error: \(error.localizedDescription)")
+        }
+    }
+    
+    private func validateOpenAIKey(_ apiKey: String) async throws -> APIKeyValidationResult {
+        // Use the models endpoint - minimal request, just lists available models
+        guard let url = URL(string: "https://api.openai.com/v1/models") else {
+            return .invalid(reason: "Invalid URL")
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return .invalid(reason: "Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            // Parse to get model count for a nice message
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let models = json["data"] as? [[String: Any]] {
+                return .valid(message: "✅ Valid! Access to \(models.count) models")
+            }
+            return .valid(message: "✅ API key is valid")
+        case 401:
+            return .invalid(reason: "Invalid API key - authentication failed")
+        case 403:
+            return .invalid(reason: "API key lacks required permissions")
+        case 429:
+            return .valid(message: "✅ Valid (rate limited, but key works)")
+        default:
+            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = errorData["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                return .invalid(reason: "API Error: \(message)")
+            }
+            return .invalid(reason: "HTTP \(httpResponse.statusCode)")
+        }
+    }
+    
+    private func validateAnthropicKey(_ apiKey: String) async throws -> APIKeyValidationResult {
+        // Anthropic doesn't have a models endpoint, so we make a minimal completion request
+        guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
+            return .invalid(reason: "Invalid URL")
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 10
+        
+        // Minimal request - 1 token max to minimize cost
+        let body: [String: Any] = [
+            "model": "claude-3-haiku-20240307",  // Cheapest model
+            "max_tokens": 1,
+            "messages": [
+                ["role": "user", "content": "Hi"]
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return .invalid(reason: "Invalid response")
+        }
+        
+        switch httpResponse.statusCode {
+        case 200:
+            return .valid(message: "✅ API key is valid")
+        case 401:
+            return .invalid(reason: "Invalid API key - authentication failed")
+        case 403:
+            return .invalid(reason: "API key lacks required permissions")
+        case 429:
+            return .valid(message: "✅ Valid (rate limited, but key works)")
+        case 400:
+            // Check if it's a billing/quota error (key is valid but account issue)
+            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = errorData["error"] as? [String: Any],
+               let errorType = error["type"] as? String {
+                if errorType == "invalid_request_error" {
+                    return .valid(message: "✅ API key is valid (request validation passed)")
+                }
+            }
+            return .invalid(reason: "Bad request")
+        default:
+            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let error = errorData["error"] as? [String: Any],
+               let message = error["message"] as? String {
+                return .invalid(reason: "API Error: \(message)")
+            }
+            return .invalid(reason: "HTTP \(httpResponse.statusCode)")
         }
     }
     

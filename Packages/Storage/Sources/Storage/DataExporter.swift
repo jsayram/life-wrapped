@@ -112,6 +112,9 @@ public actor DataExporter {
         case .month:
             formatter.dateFormat = "MMMM yyyy"
             return formatter.string(from: start)
+        case .year:
+            formatter.dateFormat = "yyyy"
+            return "Year \(formatter.string(from: start))"
         }
     }
 

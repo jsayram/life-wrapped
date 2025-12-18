@@ -239,6 +239,7 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case day
     case week
     case month
+    case year
 
     public var displayName: String {
         switch self {
@@ -252,6 +253,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Week"
         case .month:
             return "Month"
+        case .year:
+            return "Year"
         }
     }
 }
