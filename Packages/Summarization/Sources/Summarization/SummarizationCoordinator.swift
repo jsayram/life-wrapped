@@ -30,6 +30,9 @@ public actor SummarizationCoordinator {
     // User preference for engine tier (can be overridden by availability)
     private var preferredTier: EngineTier = .basic
     
+    // Key for persisting engine preference
+    private static let preferredEngineKey = "preferredIntelligenceEngine"
+    
     // MARK: - Initialization
     
     public init(storage: DatabaseManager) {
@@ -49,6 +52,35 @@ public actor SummarizationCoordinator {
         
         // Initialize external API engine (Phase 2C)
         self.externalEngine = ExternalAPIEngine(storage: storage)
+        
+        // Load saved preference synchronously (will apply properly in restoreSavedPreference)
+        if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
+           let tier = EngineTier(rawValue: savedPreference) {
+            self.preferredTier = tier
+            print("📝 [SummarizationCoordinator] Loaded saved preference: \(tier.displayName)")
+        }
+    }
+    
+    /// Restore saved preference and select appropriate engine
+    /// Call this after initialization to properly set up the active engine
+    public func restoreSavedPreference() async {
+        // Check if Local AI model is available - if so, always prefer it
+        let modelManager = ModelFileManager.shared
+        let localModelAvailable = await modelManager.availableModels().isEmpty == false
+        
+        if localModelAvailable {
+            // Local AI should ALWAYS be the default when model is downloaded
+            preferredTier = .local
+            UserDefaults.standard.set(EngineTier.local.rawValue, forKey: Self.preferredEngineKey)
+            print("🧠 [SummarizationCoordinator] Local AI model available - setting as default")
+        } else if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
+                  let tier = EngineTier(rawValue: savedPreference) {
+            preferredTier = tier
+            print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
+        }
+        
+        await selectBestAvailableEngine()
+        print("✅ [SummarizationCoordinator] Active engine: \(activeEngine.tier.displayName)")
     }
     
     // MARK: - Engine Management
@@ -83,8 +115,11 @@ public actor SummarizationCoordinator {
     
     /// Set the preferred engine tier
     /// Will fall back to basic if preferred tier is unavailable
+    /// Persists the preference to UserDefaults
     public func setPreferredEngine(_ tier: EngineTier) async {
         preferredTier = tier
+        UserDefaults.standard.set(tier.rawValue, forKey: Self.preferredEngineKey)
+        print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
         await selectBestAvailableEngine()
     }
     

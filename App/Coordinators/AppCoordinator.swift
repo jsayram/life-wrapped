@@ -216,7 +216,10 @@ public final class AppCoordinator: ObservableObject {
             print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)
             print("📝 [AppCoordinator] Initializing SummarizationCoordinator...")
-            self.summarizationCoordinator = SummarizationCoordinator(storage: dbManager)
+            let coordinator = SummarizationCoordinator(storage: dbManager)
+            self.summarizationCoordinator = coordinator
+            // Restore saved engine preference (auto-selects Local AI if available)
+            await coordinator.restoreSavedPreference()
             print("📊 [AppCoordinator] Initializing InsightsManager...")
             self.insightsManager = InsightsManager(storage: dbManager)
             print("✅ [AppCoordinator] All managers initialized")
