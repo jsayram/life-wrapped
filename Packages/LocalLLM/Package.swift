@@ -16,15 +16,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../SharedModels"),
-        // TODO: Add llama.cpp Swift wrapper in Phase 2A.2
-        // .package(url: "https://github.com/ggerganov/llama.cpp.git", branch: "master"),
+        .package(url: "https://github.com/ShenghaiWang/SwiftLlama.git", from: "0.4.0"),
     ],
     targets: [
         .target(
             name: "LocalLLM",
             dependencies: [
                 "SharedModels",
-                // TODO: Add llama dependency when wrapper is ready
+                "SwiftLlama",
             ],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
