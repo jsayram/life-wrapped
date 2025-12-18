@@ -1990,106 +1990,254 @@ struct AISettingsView: View {
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     
+    // Local AI state
+    @State private var localModelAvailable = false
+    @State private var isDownloadingModel = false
+    
+    // External API state
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4o"
+    @State private var apiKey: String = ""
+    @State private var showAPIKeyField = false
+    
+    // Available models per provider
+    private let openaiModels = [
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4o-mini", "GPT-4o Mini"),
+        ("gpt-4-turbo", "GPT-4 Turbo"),
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo")
+    ]
+    
+    private let anthropicModels = [
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
+        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),
+        ("claude-3-opus-20240229", "Claude 3 Opus")
+    ]
+    
+    private var currentModels: [(String, String)] {
+        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    }
+    
     var body: some View {
         List {
-            // Current Engine Status
+            // MARK: - On-Device Engines Section
             Section {
-                if isLoading {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Loading engines...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if let active = activeEngine {
-                    HStack {
-                        Label(active.displayName, systemImage: active.icon)
-                            .font(.body)
-                        Spacer()
-                        Text("Active")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.green)
-                            .clipShape(Capsule())
-                    }
-                }
-            } header: {
-                Text("Current Engine")
-            } footer: {
-                Text("The active engine is used for generating summaries from your transcripts.")
-            }
-            
-            // On-Device Options
-            Section {
-                NavigationLink(destination: OnDeviceEnginesView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("On-Device Engines")
-                            Text("Basic, Apple Intelligence, Local AI")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "iphone")
-                            .foregroundStyle(.blue)
-                    }
-                }
+                // Basic Engine
+                EngineOptionCard(
+                    tier: .basic,
+                    isSelected: activeEngine == .basic,
+                    isAvailable: true,
+                    subtitle: "Simple word-based summaries",
+                    onSelect: { selectEngine(.basic) }
+                )
                 
-                NavigationLink(destination: ModelManagementView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Local AI Models")
-                            Text("Download and manage LLM models")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                // Apple Intelligence
+                EngineOptionCard(
+                    tier: .apple,
+                    isSelected: activeEngine == .apple,
+                    isAvailable: availableEngines.contains(.apple),
+                    subtitle: "Requires iOS 18.1+ & compatible device",
+                    onSelect: { selectEngine(.apple) }
+                )
+                
+                // Local AI
+                VStack(alignment: .leading, spacing: 12) {
+                    EngineOptionCard(
+                        tier: .local,
+                        isSelected: activeEngine == .local,
+                        isAvailable: localModelAvailable,
+                        subtitle: localModelAvailable ? "On-device LLM ready" : "Download model to enable",
+                        onSelect: { selectEngine(.local) }
+                    )
+                    
+                    // Show download button if no model
+                    if !localModelAvailable {
+                        NavigationLink(destination: ModelManagementView()) {
+                            HStack {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .foregroundStyle(.purple)
+                                Text("Download Local AI Model")
+                                    .font(.subheadline)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(Color.purple.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                    } icon: {
-                        Image(systemName: "cube.box")
-                            .foregroundStyle(.purple)
+                        .buttonStyle(.plain)
                     }
                 }
             } header: {
-                Text("On-Device Processing")
+                Label("On-Device Processing", systemImage: "lock.shield.fill")
             } footer: {
-                Text("All processing happens locally on your device for maximum privacy.")
+                Text("All processing happens locally. Your data never leaves your device.")
             }
             
-            // External API Options
+            // MARK: - External API Section
             Section {
-                NavigationLink(destination: ExternalAPISettingsView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("External API")
-                            Text("OpenAI, Anthropic")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                // External API Engine Toggle
+                EngineOptionCard(
+                    tier: .external,
+                    isSelected: activeEngine == .external,
+                    isAvailable: hasValidAPIKey(),
+                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "Configure API key below",
+                    onSelect: { selectEngine(.external) }
+                )
+                
+                // Provider Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Provider")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Picker("Provider", selection: $selectedProvider) {
+                        Text("OpenAI").tag("OpenAI")
+                        Text("Anthropic").tag("Anthropic")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedProvider) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                        // Reset to default model for new provider
+                        let defaultModel = newValue == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-20250514"
+                        selectedModel = defaultModel
+                        UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
+                        // Load the appropriate key
+                        loadAPIKey()
+                    }
+                }
+                .padding(.vertical, 4)
+                .opacity(activeEngine == .external ? 1.0 : 0.6)
+                
+                // Model Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Model")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Picker("Model", selection: $selectedModel) {
+                        ForEach(currentModels, id: \.0) { model in
+                            Text(model.1).tag(model.0)
                         }
-                    } icon: {
-                        Image(systemName: "cloud")
-                            .foregroundStyle(.orange)
+                    }
+                    .onChange(of: selectedModel) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
+                    }
+                }
+                .padding(.vertical, 4)
+                .opacity(activeEngine == .external ? 1.0 : 0.6)
+                
+                // API Key Input
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("API Key")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        if hasValidAPIKey() {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Configured")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                    }
+                    
+                    HStack {
+                        if showAPIKeyField {
+                            SecureField("Enter \(selectedProvider) API Key", text: $apiKey)
+                                .textContentType(.password)
+                                .autocapitalization(.none)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
+                            
+                            Button {
+                                saveAPIKey()
+                            } label: {
+                                Text("Save")
+                                    .fontWeight(.medium)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(apiKey.isEmpty)
+                        } else {
+                            Button {
+                                showAPIKeyField = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: hasValidAPIKey() ? "pencil" : "plus.circle.fill")
+                                    Text(hasValidAPIKey() ? "Change API Key" : "Add API Key")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    
+                    // Help links
+                    HStack(spacing: 16) {
+                        if selectedProvider == "OpenAI" {
+                            Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                                Text("Get OpenAI Key")
+                                    .font(.caption)
+                            }
+                        } else {
+                            Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
+                                Text("Get Anthropic Key")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+                
+                // Clear key option
+                if hasValidAPIKey() {
+                    Button(role: .destructive) {
+                        clearAPIKey()
+                    } label: {
+                        Label("Remove API Key", systemImage: "trash")
+                            .font(.subheadline)
                     }
                 }
             } header: {
-                Text("Cloud Processing")
+                Label("Cloud Processing", systemImage: "cloud.fill")
             } footer: {
-                Text("Uses external AI services. Requires API key and sends data to third-party servers.")
+                Label {
+                    Text("Data is sent to \(selectedProvider) servers for processing.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
             }
         }
         .navigationTitle("AI & Summaries")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadEngineStatus()
+            await checkLocalModelAvailability()
+            loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
             Task {
                 await loadEngineStatus()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
+            Task {
+                await checkLocalModelAvailability()
+                await loadEngineStatus()
+            }
+        }
     }
+    
+    // MARK: - Helper Methods
     
     private func loadEngineStatus() async {
         isLoading = true
@@ -2099,9 +2247,160 @@ struct AISettingsView: View {
         activeEngine = await summCoord.getActiveEngine()
         availableEngines = await summCoord.getAvailableEngines()
     }
+    
+    private func checkLocalModelAvailability() async {
+        let modelManager = LocalLLM.ModelFileManager.shared
+        let models = await modelManager.availableModels()
+        await MainActor.run {
+            localModelAvailable = !models.isEmpty
+        }
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // Check availability
+        if tier == .local && !localModelAvailable {
+            coordinator.showError("Download a Local AI model first")
+            return
+        }
+        if tier == .apple && !availableEngines.contains(.apple) {
+            coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
+            return
+        }
+        if tier == .external && !hasValidAPIKey() {
+            coordinator.showError("Configure an API key first")
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func hasValidAPIKey() -> Bool {
+        let key = selectedProvider == "OpenAI" 
+            ? KeychainHelper.load(key: "openai_api_key")
+            : KeychainHelper.load(key: "anthropic_api_key")
+        return key != nil && !key!.isEmpty
+    }
+    
+    private func loadAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        apiKey = KeychainHelper.load(key: keychainKey) ?? ""
+        showAPIKeyField = false
+    }
+    
+    private func saveAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        
+        if KeychainHelper.save(key: keychainKey, value: apiKey) {
+            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+            showAPIKeyField = false
+            coordinator.showSuccess("API key saved")
+            
+            Task {
+                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func clearAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        KeychainHelper.delete(key: keychainKey)
+        apiKey = ""
+        showAPIKeyField = false
+        
+        // If external was active, switch to basic
+        if activeEngine == .external {
+            selectEngine(.basic)
+        }
+        
+        coordinator.showSuccess("API key removed")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
 }
 
-// MARK: - On-Device Engines View
+// MARK: - Engine Option Card
+
+struct EngineOptionCard: View {
+    let tier: EngineTier
+    let isSelected: Bool
+    let isAvailable: Bool
+    let subtitle: String
+    let onSelect: () -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Radio button indicator
+                ZStack {
+                    Circle()
+                        .strokeBorder(isSelected ? Color.green : Color.gray.opacity(0.5), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                    
+                    if isSelected {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 14, height: 14)
+                    }
+                }
+                
+                // Engine icon
+                Image(systemName: tier.icon)
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? .primary : (isAvailable ? .secondary : .tertiary))
+                    .frame(width: 28)
+                
+                // Text content
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .foregroundStyle(isSelected ? .primary : (isAvailable ? .primary : .secondary))
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // Status indicator
+                if isSelected {
+                    Text("Active")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green)
+                        .clipShape(Capsule())
+                } else if !isAvailable {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isAvailable || isSelected ? 1.0 : 0.5)
+    }
+}
+
+// MARK: - On-Device Engines View (Keep for backward compatibility)
 
 struct OnDeviceEnginesView: View {
     @EnvironmentObject var coordinator: AppCoordinator
