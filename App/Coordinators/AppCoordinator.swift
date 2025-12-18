@@ -111,6 +111,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var initializationError: Error?
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
+    @Published public var showLocalAIWelcomeTip: Bool = false
     
     // MARK: - Dependencies
     
@@ -238,6 +239,13 @@ public final class AppCoordinator: ObservableObject {
             isInitialized = true
             initializationError = nil
             print("🎉 [AppCoordinator] Initialization complete!")
+            
+            // Show Local AI welcome tip once after first setup
+            let hasShownWelcomeTip = UserDefaults.standard.bool(forKey: "hasShownLocalAIWelcomeTip")
+            if !hasShownWelcomeTip {
+                showLocalAIWelcomeTip = true
+                UserDefaults.standard.set(true, forKey: "hasShownLocalAIWelcomeTip")
+            }
             
         } catch {
             print("❌ [AppCoordinator] Initialization failed: \(error.localizedDescription)")

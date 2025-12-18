@@ -115,13 +115,10 @@ struct PermissionsView: View {
                             }
                             .padding(.top, 4)
                             
-                            Text("~2.4GB download • Optional • Can be added later in Settings")
+                            Text("~2.4GB download • Optional • Available in Settings after setup")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)
-                            
-                            // Download button
-                            ModelDownloadButton()
                         }
                         .padding()
                         .background(Color.purple.opacity(0.08))

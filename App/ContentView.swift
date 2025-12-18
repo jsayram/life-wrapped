@@ -48,6 +48,17 @@ struct ContentView: View {
             PermissionsView()
                 .interactiveDismissDisabled()
         }
+        .alert("Enhance with Local AI", isPresented: $coordinator.showLocalAIWelcomeTip) {
+            Button("Open Settings") {
+                coordinator.showLocalAIWelcomeTip = false
+                selectedTab = 3 // Switch to Settings tab
+            }
+            Button("Maybe Later", role: .cancel) {
+                coordinator.showLocalAIWelcomeTip = false
+            }
+        } message: {
+            Text("Get AI-powered summaries similar to ChatGPT, but running entirely on your device for maximum privacy. Available in Settings → Local AI.")
+        }
         .toast($coordinator.currentToast)
         .overlay {
             if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
