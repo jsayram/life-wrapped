@@ -9,24 +9,19 @@ import Foundation
 import SharedModels
 @preconcurrency import SwiftLlama
 
-/// Wrapper to make SwiftLlama Sendable for Swift 6
-/// SwiftLlama uses its own actor isolation (@SwiftLlamaActor) which is compatible
-private final class SwiftLlamaWrapper: @unchecked Sendable {
-    let llama: SwiftLlama
-    
-    init(modelPath: String, configuration: Configuration) throws {
-        self.llama = try SwiftLlama(modelPath: modelPath, modelConfiguration: configuration)
-    }
-}
-
 /// Actor wrapping SwiftLlama for thread-safe LLM inference
+/// Note: SwiftLlama uses @SwiftLlamaActor internally, so all inference
+/// happens on that actor's thread, not blocking the main thread.
 public actor LlamaContext {
     
     private let configuration: LocalLLMConfiguration
     private let modelFileManager: ModelFileManager
     private var isLoaded: Bool = false
     private var modelPath: URL?
-    private var llamaWrapper: SwiftLlamaWrapper?
+    
+    // SwiftLlama instance - marked nonisolated(unsafe) because SwiftLlama
+    // manages its own thread safety via @SwiftLlamaActor
+    private nonisolated(unsafe) var swiftLlama: SwiftLlama?
     
     // MARK: - Initialization
     
@@ -40,7 +35,6 @@ public actor LlamaContext {
     // MARK: - Model Loading
     
     /// Load the model from disk
-    /// Model loading is CPU-intensive and runs on a background thread
     public func loadModel() async throws {
         guard !isLoaded else {
             print("ℹ️ [LlamaContext] Model already loaded")
@@ -68,16 +62,16 @@ public actor LlamaContext {
             stopTokens: StopToken.phi
         )
         
-        // Run model loading on background thread to prevent UI freezing
-        // Loading a 2.4GB model can take several seconds
-        let path = url.path
-        let wrapper = try await Task.detached(priority: .userInitiated) {
-            try SwiftLlamaWrapper(modelPath: path, configuration: modelConfig)
-        }.value
-        
-        self.llamaWrapper = wrapper
-        isLoaded = true
-        print("✅ [LlamaContext] Model loaded successfully from: \(url.path)")
+        do {
+            // SwiftLlama handles its own threading via @SwiftLlamaActor
+            let llama = try SwiftLlama(modelPath: url.path, modelConfiguration: modelConfig)
+            self.swiftLlama = llama
+            isLoaded = true
+            print("✅ [LlamaContext] Model loaded successfully from: \(url.path)")
+        } catch {
+            print("❌ [LlamaContext] Failed to load model: \(error)")
+            throw LocalLLMError.modelLoadFailed(error.localizedDescription)
+        }
     }
     
     /// Unload the model to free memory
@@ -86,7 +80,7 @@ public actor LlamaContext {
         
         print("📤 [LlamaContext] Unloading model")
         
-        llamaWrapper = nil
+        swiftLlama = nil
         isLoaded = false
         modelPath = nil
         
@@ -96,9 +90,9 @@ public actor LlamaContext {
     // MARK: - Text Generation
     
     /// Generate text completion from prompt
-    /// Runs inference on a background thread to avoid blocking the main thread
+    /// SwiftLlama runs inference on @SwiftLlamaActor, so this won't block the main thread
     public func generate(prompt: String) async throws -> String {
-        guard isLoaded, let wrapper = llamaWrapper else {
+        guard isLoaded, let llama = swiftLlama else {
             throw LocalLLMError.notInitialized
         }
         
@@ -114,11 +108,8 @@ public actor LlamaContext {
             userMessage: prompt
         )
         
-        // Run LLM inference on a background thread to prevent UI freezing
-        // SwiftLlama's inference is CPU-intensive and can block for seconds
-        let response = try await Task.detached(priority: .userInitiated) {
-            try await wrapper.llama.start(for: llamaPrompt)
-        }.value
+        // SwiftLlama.start runs on @SwiftLlamaActor, not blocking main thread
+        let response: String = try await llama.start(for: llamaPrompt)
         
         let elapsed = Date().timeIntervalSince(startTime)
         print("✅ [LlamaContext] Generated \(response.count) characters in \(String(format: "%.2f", elapsed))s")
@@ -127,9 +118,8 @@ public actor LlamaContext {
     }
     
     /// Generate text with streaming (returns AsyncThrowingStream)
-    /// Runs inference on a background thread to avoid blocking the main thread
     public func generateStream(prompt: String) async throws -> AsyncThrowingStream<String, Error> {
-        guard isLoaded, let wrapper = llamaWrapper else {
+        guard isLoaded, let llama = swiftLlama else {
             throw LocalLLMError.notInitialized
         }
         
@@ -144,12 +134,12 @@ public actor LlamaContext {
         )
         
         // Return SwiftLlama's async stream (runs on SwiftLlamaActor)
-        return await wrapper.llama.start(for: llamaPrompt)
+        return await llama.start(for: llamaPrompt)
     }
     
     /// Check if context is ready for inference
     public func isReady() -> Bool {
-        return isLoaded && llamaWrapper != nil
+        return isLoaded && swiftLlama != nil
     }
     
     /// Get current configuration

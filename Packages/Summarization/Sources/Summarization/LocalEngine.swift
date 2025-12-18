@@ -42,6 +42,11 @@ public actor LocalEngine: SummarizationEngine {
     // MARK: - SummarizationEngine Protocol
     
     public func isAvailable() async -> Bool {
+        // Don't use local LLM on simulator - it's too slow and may crash
+        #if targetEnvironment(simulator)
+        print("⚠️ [LocalEngine] Local LLM disabled on simulator")
+        return false
+        #else
         // Check if model file is present
         let hasModel = await modelFileManager.availableModels().isEmpty == false
         
@@ -51,6 +56,7 @@ public actor LocalEngine: SummarizationEngine {
         print("ℹ️ [LocalEngine] Availability check: hasModel=\(hasModel), isReady=\(isReady)")
         
         return hasModel || isReady  // Available if model exists (can be loaded) or already loaded
+        #endif
     }
     
     public func summarizeSession(
