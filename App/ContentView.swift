@@ -661,19 +661,21 @@ struct RecordingRow: View {
 // MARK: - Insights Tab
 
 enum TimeRange: String, CaseIterable, Identifiable {
+    case yesterday = "Yesterday"
     case today = "Today"
     case week = "Week"
     case month = "Month"
-    case allTime = "All"
+    case allTime = "Year"
     
     var id: String { rawValue }
     
     var fullName: String {
         switch self {
+        case .yesterday: return "Yesterday"
         case .today: return "Today"
         case .week: return "This Week"
         case .month: return "This Month"
-        case .allTime: return "All Time"
+        case .allTime: return "This Year"
         }
     }
 }
@@ -757,6 +759,64 @@ struct InsightsTab: View {
                     )
                 } else {
                     List {
+                        // Period Summary section (at the top)
+                        if let summary = periodSummary {
+                            Section {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    // Header
+                                    HStack {
+                                        Text("📝 \(periodTitle)")
+                                            .font(.headline)
+                                        Spacer()
+                                        Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    
+                                    // Summary text
+                                    Text(summary.text)
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                        .padding(.vertical, 4)
+                                    
+                                    // Topics tags
+                                    if let topicsJSON = summary.topicsJSON {
+                                        TopicTagsView(topicsJSON: topicsJSON)
+                                            .padding(.vertical, 4)
+                                    }
+                                    
+                                    // Collapsible session details
+                                    if !sessionsInPeriod.isEmpty {
+                                        DisclosureGroup {
+                                            ForEach(sessionsInPeriod, id: \.sessionId) { session in
+                                                NavigationLink {
+                                                    SessionDetailView(session: session)
+                                                } label: {
+                                                    HStack {
+                                                        VStack(alignment: .leading, spacing: 4) {
+                                                            Text(session.startTime, style: .time)
+                                                                .font(.subheadline)
+                                                                .fontWeight(.medium)
+                                                            Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                                                                .font(.caption)
+                                                                .foregroundStyle(.secondary)
+                                                        }
+                                                        Spacer()
+                                                    }
+                                                }
+                                                .padding(.vertical, 2)
+                                            }
+                                        } label: {
+                                            Text("Show individual sessions (\(sessionsInPeriod.count))")
+                                                .font(.subheadline)
+                                                .foregroundStyle(.blue)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                        
                         // Key Statistics section
                         Section("Key Statistics") {
                             // Longest session
@@ -1174,64 +1234,6 @@ struct InsightsTab: View {
                                 .padding(.vertical, 8)
                             }
                         }
-                        
-                        // Period Summary section
-                        if let summary = periodSummary {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    // Header
-                                    HStack {
-                                        Text("📝 \(periodTitle)")
-                                            .font(.headline)
-                                        Spacer()
-                                        Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    // Summary text
-                                    Text(summary.text)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                        .padding(.vertical, 4)
-                                    
-                                    // Topics tags
-                                    if let topicsJSON = summary.topicsJSON {
-                                        TopicTagsView(topicsJSON: topicsJSON)
-                                            .padding(.vertical, 4)
-                                    }
-                                    
-                                    // Collapsible session details
-                                    if !sessionsInPeriod.isEmpty {
-                                        DisclosureGroup {
-                                            ForEach(sessionsInPeriod, id: \.sessionId) { session in
-                                                NavigationLink {
-                                                    SessionDetailView(session: session)
-                                                } label: {
-                                                    HStack {
-                                                        VStack(alignment: .leading, spacing: 4) {
-                                                            Text(session.startTime, style: .time)
-                                                                .font(.subheadline)
-                                                                .fontWeight(.medium)
-                                                            Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
-                                                                .font(.caption)
-                                                                .foregroundStyle(.secondary)
-                                                        }
-                                                        Spacer()
-                                                    }
-                                                }
-                                                .padding(.vertical, 2)
-                                            }
-                                        } label: {
-                                            Text("Show individual sessions (\(sessionsInPeriod.count))")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.blue)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
                     }
                 }
             }
@@ -1317,16 +1319,17 @@ struct InsightsTab: View {
             // Load period summary based on selected time range
             let periodType: PeriodType = {
                 switch selectedTimeRange {
+                case .yesterday: return .day
                 case .today: return .day
                 case .week: return .week
                 case .month: return .month
-                case .allTime: return .month // Show most recent month for all-time
+                case .allTime: return .month // Show most recent month for current year
                 }
             }()
             
             // Load sessions in this period first
             if let dbManager = coordinator.getDatabaseManager() {
-                if selectedTimeRange == .today {
+                if selectedTimeRange == .today || selectedTimeRange == .yesterday {
                     sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: startDate)) ?? []
                 } else {
                     // For week/month/all, fetch ALL sessions and filter by date range
@@ -1410,6 +1413,11 @@ struct InsightsTab: View {
         let now = Date()
         
         switch timeRange {
+        case .yesterday:
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+            let start = calendar.startOfDay(for: yesterday)
+            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now
+            return (start, end)
         case .today:
             let start = calendar.startOfDay(for: now)
             return (start, now)
@@ -1420,7 +1428,10 @@ struct InsightsTab: View {
             let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
             return (start, now)
         case .allTime:
-            return (Date.distantPast, Date.distantFuture)
+            // Show only current year (e.g., 2025) up to today
+            let currentYear = calendar.component(.year, from: now)
+            let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
+            return (startOfYear, now)
         }
     }
     
@@ -1555,10 +1566,14 @@ struct InsightsTab: View {
     
     private var periodTitle: String {
         switch selectedTimeRange {
+        case .yesterday: return "Yesterday's Summary"
         case .today: return "Today's Summary"
         case .week: return "This Week's Summary"
         case .month: return "This Month's Summary"
-        case .allTime: return "Overall Summary"
+        case .allTime:
+            let calendar = Calendar.current
+            let currentYear = calendar.component(.year, from: Date())
+            return "\(currentYear) Summary"
         }
     }
 }
@@ -1769,6 +1784,22 @@ struct SettingsTab: View {
                     NavigationLink(destination: ExcludedWordsView()) {
                         Label("Excluded Words", systemImage: "text.badge.xmark")
                     }
+                }
+                
+                Section {
+                    NavigationLink(destination: HistoricalDataView()) {
+                        HStack {
+                            Label("Historical Data", systemImage: "clock.arrow.circlepath")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Historical Data")
+                } footer: {
+                    Text("View and manage data from previous years. The Insights tab always shows the current year.")
                 }
                 
                 Section {
@@ -4141,6 +4172,280 @@ struct DetailRow: View {
                 .font(.caption)
         }
         .foregroundStyle(.secondary)
+    }
+}
+
+// MARK: - Historical Data View
+
+struct HistoricalDataView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var yearlyData: [(year: Int, sessionCount: Int, totalDuration: TimeInterval)] = []
+    @State private var isLoading = true
+    @State private var showDeleteAlert = false
+    @State private var selectedYear: Int?
+    
+    var body: some View {
+        List {
+            if isLoading {
+                Section {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading historical data...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+            } else if yearlyData.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No Historical Data",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Start recording to build your history.")
+                    )
+                }
+            } else {
+                Section {
+                    Text("View insights from previous years or delete old data to free up space.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                ForEach(yearlyData, id: \.year) { data in
+                    Section {
+                        NavigationLink(destination: YearInsightsView(year: data.year)) {
+                            HStack(spacing: 16) {
+                                // Year icon
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.blue.opacity(0.1))
+                                        .frame(width: 50, height: 50)
+                                    
+                                    Text(String(data.year))
+                                        .font(.headline)
+                                        .foregroundStyle(.blue)
+                                }
+                                
+                                // Stats
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(data.year)")
+                                        .font(.headline)
+                                    
+                                    HStack(spacing: 12) {
+                                        Label("\(data.sessionCount)", systemImage: "mic.circle")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Label(formatDuration(data.totalDuration), systemImage: "timer")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                Spacer()
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                selectedYear = data.year
+                                showDeleteAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Historical Data")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadYearlyData()
+        }
+        .refreshable {
+            await loadYearlyData()
+        }
+        .alert("Delete \(selectedYear ?? 0) Data?", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                if let year = selectedYear {
+                    deleteYear(year)
+                }
+            }
+        } message: {
+            if let year = selectedYear {
+                Text("This will permanently delete all recordings and data from \(year). This action cannot be undone.")
+            }
+        }
+    }
+    
+    private func loadYearlyData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            // Fetch all sessions
+            let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+            
+            // Group by year
+            let calendar = Calendar.current
+            var yearlyStats: [Int: (sessionCount: Int, totalDuration: TimeInterval)] = [:]
+            
+            for session in allSessions {
+                let year = calendar.component(.year, from: session.startTime)
+                let existing = yearlyStats[year] ?? (sessionCount: 0, totalDuration: 0)
+                yearlyStats[year] = (
+                    sessionCount: existing.sessionCount + 1,
+                    totalDuration: existing.totalDuration + session.totalDuration
+                )
+            }
+            
+            // Convert to array and sort by year descending
+            yearlyData = yearlyStats.map { (year: $0.key, sessionCount: $0.value.sessionCount, totalDuration: $0.value.totalDuration) }
+                .sorted { $0.year > $1.year }
+            
+        } catch {
+            print("❌ [HistoricalDataView] Failed to load yearly data: \(error)")
+            coordinator.showError("Failed to load historical data")
+        }
+    }
+    
+    private func deleteYear(_ year: Int) {
+        Task {
+            do {
+                // Fetch all sessions for this year
+                let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+                let calendar = Calendar.current
+                let sessionsToDelete = allSessions.filter { calendar.component(.year, from: $0.startTime) == year }
+                
+                // Delete each session using coordinator's delete method (handles cascading)
+                for session in sessionsToDelete {
+                    try? await coordinator.deleteSession(session.sessionId)
+                }
+                
+                await MainActor.run {
+                    coordinator.showSuccess("\(year) data deleted successfully")
+                }
+                
+                // Reload data
+                await loadYearlyData()
+                
+            } catch {
+                await MainActor.run {
+                    coordinator.showError("Failed to delete \(year) data: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+}
+
+// MARK: - Year Insights View
+
+struct YearInsightsView: View {
+    let year: Int
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var periodSummary: Summary?
+    @State private var sessionCount: Int = 0
+    @State private var totalDuration: TimeInterval = 0
+    @State private var isLoading = true
+    
+    var body: some View {
+        List {
+            if isLoading {
+                Section {
+                    ProgressView("Loading \(year) insights...")
+                }
+            } else {
+                // Summary section
+                if let summary = periodSummary {
+                    Section("\(year) Summary") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(summary.text)
+                                .font(.body)
+                            
+                            if let topicsJSON = summary.topicsJSON {
+                                TopicTagsView(topicsJSON: topicsJSON)
+                                    .padding(.top, 4)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                
+                // Stats section
+                Section("Statistics") {
+                    HStack {
+                        Label("Total Sessions", systemImage: "mic.circle")
+                        Spacer()
+                        Text("\(sessionCount)")
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    HStack {
+                        Label("Total Duration", systemImage: "timer")
+                        Spacer()
+                        Text(formatDuration(totalDuration))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("\(year)")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadYearData()
+        }
+    }
+    
+    private func loadYearData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        let calendar = Calendar.current
+        guard let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
+              let endOfYear = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1)) else {
+            return
+        }
+        
+        do {
+            // Fetch sessions for this year
+            let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+            let yearSessions = allSessions.filter { $0.startTime >= startOfYear && $0.startTime < endOfYear }
+            
+            sessionCount = yearSessions.count
+            totalDuration = yearSessions.reduce(0) { $0 + $1.totalDuration }
+            
+            // Try to find a summary for this year (using month period type as proxy)
+            if let dbManager = coordinator.getDatabaseManager() {
+                periodSummary = try? await dbManager.fetchPeriodSummary(type: PeriodType.month, date: startOfYear)
+            }
+            
+        } catch {
+            print("❌ [YearInsightsView] Failed to load year data: \(error)")
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
     }
 }
 
