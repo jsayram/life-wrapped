@@ -248,8 +248,11 @@ struct PermissionsView: View {
     
     private func requestSpeechRecognitionPermission() async {
         let status = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
+            // SFSpeechRecognizer.requestAuthorization must be called from main thread
+            DispatchQueue.main.async {
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status)
+                }
             }
         }
         
