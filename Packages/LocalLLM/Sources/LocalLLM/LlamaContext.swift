@@ -44,7 +44,7 @@ public actor LlamaContext {
         print("📥 [LlamaContext] Loading model: \(configuration.modelName)")
         
         // Check if model file exists
-        let modelSize = ModelFileManager.ModelSize.phi35Mini
+        let modelSize = ModelFileManager.ModelSize.qwen2_05b
         guard await modelFileManager.isModelAvailable(modelSize) else {
             throw LocalLLMError.modelNotFound(configuration.modelName)
         }
@@ -54,12 +54,12 @@ public actor LlamaContext {
         modelPath = url
         
         // Initialize SwiftLlama with the model
-        // Configure for Phi-3.5 model with appropriate stop tokens
+        // Configure for Qwen2 model with ChatML stop tokens
         let modelConfig = Configuration(
             nCTX: configuration.contextSize,
             temperature: configuration.temperature,
             maxTokenCount: configuration.maxTokens,
-            stopTokens: StopToken.phi
+            stopTokens: StopToken.chatML
         )
         
         do {
@@ -101,9 +101,9 @@ public actor LlamaContext {
         
         let startTime = Date()
         
-        // Create a Phi-format prompt for the model
+        // Create a ChatML-format prompt for Qwen2 model
         let llamaPrompt = Prompt(
-            type: .phi,
+            type: .chatML,
             systemPrompt: "You are an AI assistant that creates concise summaries of audio journal entries. Always respond with valid JSON only, no explanations.",
             userMessage: prompt
         )
@@ -126,9 +126,9 @@ public actor LlamaContext {
         print("🤖 [LlamaContext] Starting streaming generation...")
         print("📝 [LlamaContext] Prompt length: \(prompt.count) characters")
         
-        // Create a Phi-format prompt for the model
+        // Create a ChatML-format prompt for Qwen2 model
         let llamaPrompt = Prompt(
-            type: .phi,
+            type: .chatML,
             systemPrompt: "You are an AI assistant that creates concise summaries of audio journal entries. Always respond with valid JSON only, no explanations.",
             userMessage: prompt
         )

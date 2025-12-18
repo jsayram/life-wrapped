@@ -21,22 +21,22 @@ public actor ModelFileManager {
     
     /// Supported model configurations
     public enum ModelSize: String, CaseIterable, Sendable {
-        case phi35Mini = "Phi-3.5-mini-instruct-Q4_K_M.gguf"  // ~2.4GB quantized
+        case qwen2_05b = "qwen2-0_5b-instruct-q4_k_m.gguf"  // ~352MB quantized
         
         public var displayName: String {
-            return "Phi-3.5 Mini (4-bit)"
+            return "Qwen2 0.5B (4-bit)"
         }
         
         public var fullDisplayName: String {
-            return "Microsoft Phi-3.5 Mini Instruct (Q4_K_M)"
+            return "Qwen2 0.5B Instruct (Q4_K_M)"
         }
         
         public var approximateSizeMB: Int {
-            return 2390
+            return 352
         }
         
         public var contextLength: Int {
-            return 131072  // 128K context
+            return 32768  // 32K context
         }
     }
     
@@ -98,8 +98,11 @@ public actor ModelFileManager {
     
     /// Download URLs for models (Hugging Face)
     private func downloadURL(for model: ModelSize) -> URL? {
-        // Using bartowski's GGUF conversions (no auth required)
-        return URL(string: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf")
+        switch model {
+        case .qwen2_05b:
+            // Qwen2-0.5B - small, fast, good for summarization
+            return URL(string: "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_k_m.gguf")
+        }
     }
     
     /// Download a model file with progress tracking
