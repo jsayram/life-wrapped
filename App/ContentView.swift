@@ -9,6 +9,7 @@ import Transcription
 import Storage
 import Summarization
 import LocalLLM
+import Security
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -2238,11 +2239,35 @@ struct ExternalAPISettingsView: View {
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4o"
     @State private var openaiKey: String = ""
     @State private var anthropicKey: String = ""
     @State private var isTesting = false
     @State private var testResult: String?
     @State private var testSuccess: Bool = false
+    
+    // Available models per provider
+    private let openaiModels = [
+        ("gpt-4o", "GPT-4o (Recommended)"),
+        ("gpt-4o-mini", "GPT-4o Mini (Faster)"),
+        ("gpt-4-turbo", "GPT-4 Turbo"),
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
+    ]
+    
+    private let anthropicModels = [
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Recommended)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet"),
+        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku (Faster)"),
+        ("claude-3-opus-20240229", "Claude 3 Opus (Most Capable)")
+    ]
+    
+    private var currentModels: [(String, String)] {
+        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    }
+    
+    private var currentKey: String {
+        selectedProvider == "OpenAI" ? openaiKey : anthropicKey
+    }
     
     var body: some View {
         List {
@@ -2274,9 +2299,30 @@ struct ExternalAPISettingsView: View {
                 .pickerStyle(.segmented)
                 .onChange(of: selectedProvider) { _, newValue in
                     UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                    // Reset to default model for new provider
+                    let defaultModel = newValue == "OpenAI" ? "gpt-4o" : "claude-sonnet-4-20250514"
+                    selectedModel = defaultModel
+                    UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
                 }
             } header: {
                 Text("AI Provider")
+            }
+            
+            // Model Selection
+            Section {
+                Picker("Model", selection: $selectedModel) {
+                    ForEach(currentModels, id: \.0) { model in
+                        Text(model.1).tag(model.0)
+                    }
+                }
+                .onChange(of: selectedModel) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
+                    coordinator.showSuccess("Model updated to \(newValue)")
+                }
+            } header: {
+                Text("Model")
+            } footer: {
+                Text("Different models have varying capabilities, speed, and cost.")
             }
             
             // API Key Input
@@ -2287,6 +2333,16 @@ struct ExternalAPISettingsView: View {
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
                     
+                    if !openaiKey.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("API key configured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
                     Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
                         Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
                     }
@@ -2295,6 +2351,16 @@ struct ExternalAPISettingsView: View {
                         .textContentType(.password)
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
+                    
+                    if !anthropicKey.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("API key configured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     
                     Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
                         Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
@@ -2321,7 +2387,7 @@ struct ExternalAPISettingsView: View {
                         }
                     }
                 }
-                .disabled((selectedProvider == "OpenAI" ? openaiKey : anthropicKey).isEmpty || isTesting)
+                .disabled(currentKey.isEmpty || isTesting)
                 
                 if let result = testResult {
                     Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -2333,7 +2399,18 @@ struct ExternalAPISettingsView: View {
                 } label: {
                     Label("Save API Key", systemImage: "square.and.arrow.down")
                 }
-                .disabled((selectedProvider == "OpenAI" ? openaiKey : anthropicKey).isEmpty)
+                .disabled(currentKey.isEmpty)
+            }
+            
+            // Clear Keys
+            if !openaiKey.isEmpty || !anthropicKey.isEmpty {
+                Section {
+                    Button(role: .destructive) {
+                        clearAPIKeys()
+                    } label: {
+                        Label("Clear All API Keys", systemImage: "trash")
+                    }
+                }
             }
             
             // Warning
@@ -2371,8 +2448,14 @@ struct ExternalAPISettingsView: View {
     }
     
     private func loadSavedKeys() {
-        // Load from keychain if available
-        // For now, just clear - keys should be retrieved from secure storage
+        // Load from keychain
+        openaiKey = KeychainHelper.load(key: "openai_api_key") ?? ""
+        anthropicKey = KeychainHelper.load(key: "anthropic_api_key") ?? ""
+        
+        // Load saved model selection
+        if let savedModel = UserDefaults.standard.string(forKey: "externalAPIModel") {
+            selectedModel = savedModel
+        }
     }
     
     private func activateExternalEngine() {
@@ -2395,11 +2478,17 @@ struct ExternalAPISettingsView: View {
         testResult = nil
         
         Task {
+            // TODO: Implement actual API test
             try? await Task.sleep(for: .seconds(1))
             await MainActor.run {
-                // Simulate test - replace with actual API test
-                testSuccess = true
-                testResult = "API key is valid"
+                // For now, just validate format
+                let key = currentKey
+                let isValid = selectedProvider == "OpenAI" 
+                    ? key.hasPrefix("sk-") && key.count > 20
+                    : key.hasPrefix("sk-ant-") && key.count > 20
+                
+                testSuccess = isValid
+                testResult = isValid ? "API key format is valid" : "Invalid API key format"
                 isTesting = false
             }
         }
@@ -2407,13 +2496,87 @@ struct ExternalAPISettingsView: View {
     
     private func saveAPIKey() {
         // Save to keychain
-        UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
-        coordinator.showSuccess("API key saved")
+        let key = currentKey
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        
+        if KeychainHelper.save(key: keychainKey, value: key) {
+            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+            coordinator.showSuccess("API key saved securely")
+            
+            Task {
+                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func clearAPIKeys() {
+        KeychainHelper.delete(key: "openai_api_key")
+        KeychainHelper.delete(key: "anthropic_api_key")
+        openaiKey = ""
+        anthropicKey = ""
+        coordinator.showSuccess("API keys cleared")
         
         Task {
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
         }
+    }
+}
+
+// MARK: - Keychain Helper
+
+enum KeychainHelper {
+    static func save(key: String, value: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        
+        // Delete existing item first
+        delete(key: key)
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.jsayram.lifewrapped",
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+    
+    static func load(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.jsayram.lifewrapped",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        
+        return value
+    }
+    
+    static func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.jsayram.lifewrapped"
+        ]
+        
+        SecItemDelete(query as CFDictionary)
     }
 }
 
