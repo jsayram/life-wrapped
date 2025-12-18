@@ -687,15 +687,21 @@ public final class AppCoordinator: ObservableObject {
     
     /// Check if all chunks in a session are transcribed and generate session summary
     private func checkAndGenerateSessionSummary(for sessionId: UUID) async {
+        print("🔔 [AppCoordinator] === CHECK AND GENERATE SESSION SUMMARY TRIGGERED ===")
+        print("📌 [AppCoordinator] Session ID: \(sessionId)")
+        
         do {
             // Check if all chunks are transcribed
+            print("1️⃣ [AppCoordinator] Checking if session transcription is complete...")
             let isComplete = try await isSessionTranscriptionComplete(sessionId: sessionId)
-            print("🔍 [AppCoordinator] Session \(sessionId) completion check: \(isComplete)")
+            print("🔍 [AppCoordinator] Session \(sessionId) transcription complete: \(isComplete)")
             
             guard isComplete else {
-                print("⏳ [AppCoordinator] Session \(sessionId) not yet complete, skipping summary")
+                print("⏳ [AppCoordinator] ⏸️  Session \(sessionId) not yet complete, skipping summary generation")
                 return
             }
+            
+            print("✅ [AppCoordinator] Session transcription is complete!")
             
             // Check if summary already exists
             guard let dbManager = databaseManager else {
@@ -703,29 +709,42 @@ public final class AppCoordinator: ObservableObject {
                 return
             }
             
+            print("2️⃣ [AppCoordinator] Checking if summary already exists...")
             if let existingSummary = try await dbManager.fetchSummaryForSession(sessionId: sessionId) {
-                print("ℹ️ [AppCoordinator] Summary already exists for session \(sessionId): \(existingSummary.text.prefix(50))...")
+                print("ℹ️ [AppCoordinator] ✋ Summary already exists for session \(sessionId)")
+                print("📝 [AppCoordinator] Existing summary: \(existingSummary.text.prefix(50))...")
+                print("🚫 [AppCoordinator] Skipping regeneration (summary already exists)")
                 return
             }
             
+            print("✅ [AppCoordinator] No existing summary found - will generate new one")
+            
             // Generate session summary
-            print("📝 [AppCoordinator] Generating summary for session \(sessionId)...")
+            print("3️⃣ [AppCoordinator] 🚀 Triggering session summary generation...")
             try await generateSessionSummary(sessionId: sessionId)
-            print("✅ [AppCoordinator] Session summary generated and period summaries updated")
+            print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
             
         } catch {
-            print("❌ [AppCoordinator] Failed to check/generate session summary: \(error)")
+            print("❌ [AppCoordinator] ⚠️ Failed to check/generate session summary: \(error)")
+            print("❌ [AppCoordinator] Error details: \(error.localizedDescription)")
         }
     }
     
     /// Generate a summary for an entire session
     public func generateSessionSummary(sessionId: UUID) async throws {
+        print("🚀 [AppCoordinator] === GENERATING SESSION SUMMARY ===")
+        print("📌 [AppCoordinator] Session ID: \(sessionId)")
+        
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else {
+            print("❌ [AppCoordinator] Missing dependencies - dbManager: \(databaseManager != nil), coordinator: \(summarizationCoordinator != nil)")
             throw AppCoordinatorError.notInitialized
         }
         
+        print("✅ [AppCoordinator] Dependencies initialized")
+        
         // Get all transcript segments for the session
+        print("🔍 [AppCoordinator] Fetching transcript segments...")
         let allSegments = try await fetchSessionTranscript(sessionId: sessionId)
         
         // Combine all text
@@ -735,16 +754,31 @@ public final class AppCoordinator: ObservableObject {
         print("📊 [AppCoordinator] Session transcript: \(allSegments.count) segments, \(wordCount) words")
         print("📝 [AppCoordinator] First 100 chars: \(fullText.prefix(100))...")
         
+        guard wordCount > 0 else {
+            print("❌ [AppCoordinator] No transcript text found - cannot generate summary")
+            throw AppCoordinatorError.transcriptionFailed(NSError(domain: "AppCoordinator", code: -1, userInfo: [NSLocalizedDescriptionKey: "No transcript text"]))
+        }
+        
         // Get session time range
         let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
-        guard let firstChunk = chunks.first, let lastChunk = chunks.last else { return }
+        guard let firstChunk = chunks.first, let lastChunk = chunks.last else {
+            print("❌ [AppCoordinator] No chunks found for session")
+            return
+        }
         
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
+        // Check active engine
+        let activeEngine = await coordinator.getActiveEngine()
+        print("🧠 [AppCoordinator] Active summarization engine: \(activeEngine.displayName)")
+        
         // Generate summary using coordinator (returns Summary with structured data)
-        print("📝 [AppCoordinator] Summarizing \(wordCount) words from session...")
+        print("🌐 [AppCoordinator] 🚀 CALLING LLM API - Summarizing \(wordCount) words from session...")
         var generatedSummary = try await coordinator.generateSessionSummary(sessionId: sessionId, segments: allSegments)
+        
+        print("✅ [AppCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
+        print("📝 [AppCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
         
         // Update time range
         generatedSummary = Summary(
@@ -761,11 +795,15 @@ public final class AppCoordinator: ObservableObject {
         )
         
         // Save session summary
+        print("💾 [AppCoordinator] Saving summary to database...")
         try await dbManager.insertSummary(generatedSummary)
-        print("✅ [AppCoordinator] Session summary saved (topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none"))")
+        print("✅ [AppCoordinator] Session summary saved successfully!")
+        print("📊 [AppCoordinator] Summary details - topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none")")
         
         // Update period summaries (daily, weekly, monthly)
+        print("📅 [AppCoordinator] Updating period summaries...")
         await updatePeriodSummaries(sessionId: sessionId, sessionDate: periodStart)
+        print("🎉 [AppCoordinator] === SESSION SUMMARY COMPLETE ===")
     }
     
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
@@ -1228,18 +1266,10 @@ public final class AppCoordinator: ObservableObject {
         let startOfDay = calendar.startOfDay(for: date)
         let periodKey = "day-\(startOfDay.timeIntervalSince1970)"
         
-        // Guard: Skip if already generating this period
+        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
         guard !generatingPeriodSummaries.contains(periodKey) else {
-            print("⏭️ [AppCoordinator] Daily summary already being generated, skipping...")
+            print("⏭️ [AppCoordinator] Daily summary already being generated, skipping duplicate call...")
             return
-        }
-        
-        // Guard: Skip if summary exists and forceRegenerate is false
-        if !forceRegenerate {
-            if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay), !existing.text.isEmpty {
-                print("⏭️ [AppCoordinator] Daily summary already exists for \(date.formatted(date: .abbreviated, time: .omitted)), skipping...")
-                return
-            }
         }
         
         // Mark as in-progress
@@ -1256,78 +1286,73 @@ public final class AppCoordinator: ObservableObject {
                 return
             }
             
-            // 2. Fetch all session summaries for this day, generate if missing
-            var sessionIntelligences: [SessionIntelligence] = []
+            // 2. Ensure all sessions have summaries (generate if missing)
+            var sessionsWithSummaries = 0
+            var sessionsNeedingSummaries = 0
+            
             for session in sessions {
-                do {
-                    if let summary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                        // Convert Summary to SessionIntelligence for the coordinator
-                        let topics = (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? []
-                        let entities = (try? [Entity].fromEntitiesJSON(summary.entitiesJSON)) ?? []
-                        
-                        let intelligence = SessionIntelligence(
-                            sessionId: session.sessionId,
-                            summary: summary.text,
-                            topics: topics,
-                            entities: entities,
-                            sentiment: 0.0,
-                            duration: session.totalDuration ?? 0,
-                            wordCount: summary.text.split(separator: " ").count,
-                            languageCodes: ["en-US"]
-                        )
-                        sessionIntelligences.append(intelligence)
+                if let _ = try? await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
+                    sessionsWithSummaries += 1
+                } else {
+                    // Check if transcription is complete
+                    let isComplete = try await isSessionTranscriptionComplete(sessionId: session.sessionId)
+                    if isComplete {
+                        print("⚠️ [AppCoordinator] Session \(session.sessionId) missing summary, generating...")
+                        try await generateSessionSummary(sessionId: session.sessionId)
+                        sessionsWithSummaries += 1
                     } else {
-                        // No summary exists - check if we can generate one
-                        print("⚠️ [AppCoordinator] Session \(session.sessionId) has no summary, attempting to generate...")
-                        let isComplete = try await isSessionTranscriptionComplete(sessionId: session.sessionId)
-                        
-                        if isComplete {
-                            // Generate summary now
-                            try await generateSessionSummary(sessionId: session.sessionId)
-                            
-                            // Fetch the newly created summary
-                            if let newSummary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                                let topics = (try? [String].fromTopicsJSON(newSummary.topicsJSON)) ?? []
-                                let entities = (try? [Entity].fromEntitiesJSON(newSummary.entitiesJSON)) ?? []
-                                
-                                let intelligence = SessionIntelligence(
-                                    sessionId: session.sessionId,
-                                    summary: newSummary.text,
-                                    topics: topics,
-                                    entities: entities,
-                                    sentiment: 0.0,
-                                    duration: session.totalDuration ?? 0,
-                                    wordCount: newSummary.text.split(separator: " ").count,
-                                    languageCodes: ["en-US"]
-                                )
-                                sessionIntelligences.append(intelligence)
-                                print("✅ [AppCoordinator] Generated summary for session \(session.sessionId)")
-                            }
-                        } else {
-                            print("⏳ [AppCoordinator] Session \(session.sessionId) transcription not complete, skipping")
-                        }
+                        print("⏳ [AppCoordinator] Session \(session.sessionId) transcription incomplete, skipping")
+                        sessionsNeedingSummaries += 1
                     }
-                } catch {
-                    print("❌ [AppCoordinator] Failed to process session \(session.sessionId): \(error)")
                 }
             }
             
-            guard !sessionIntelligences.isEmpty else {
-                print("ℹ️ [AppCoordinator] No summaries found for this day (found \(sessions.count) sessions, none have transcripts)")
+            guard sessionsWithSummaries > 0 else {
+                print("ℹ️ [AppCoordinator] No sessions with summaries for this day (\(sessions.count) total, \(sessionsNeedingSummaries) pending transcription)")
                 return
             }
             
-            print("📝 [AppCoordinator] Generating daily summary from \(sessionIntelligences.count) session summaries using LLM...")
+            print("📊 [AppCoordinator] Found \(sessionsWithSummaries) sessions with summaries (of \(sessions.count) total)")
             
             // 3. Calculate period boundaries
             let calendar = Calendar.current
             let startOfDay = calendar.startOfDay(for: date)
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
             
-            // 4. Generate daily summary using user-selected LLM engine via coordinator
+            // 4. Fetch session summaries for input hash computation
+            let sessionSummaries = try await dbManager.fetchSummaries(periodType: .session)
+                .filter { $0.sessionId != nil && $0.periodStart >= startOfDay && $0.periodStart < endOfDay }
+            
+            let sessionIds = sessionSummaries.compactMap { $0.sessionId }
+            let sessionTexts = sessionSummaries.map { $0.text }
+            
+            // 5. Compute input hash for change detection
+            let sourceIds = await dbManager.sourceIdsToJSON(sessionIds)
+            let inputHash = await dbManager.computeInputHash(sessionTexts)
+            
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(sessionTexts.count) session summaries")
+            
+            // 6. Check if summary exists with same input hash (cache hit)
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay) {
+                print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Daily summary unchanged, skipping API call")
+                    return
+                } else if forceRegenerate {
+                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
+                } else {
+                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate daily summary")
+                }
+            } else {
+                print("📝 [AppCoordinator] No existing daily summary found, will generate new one")
+            }
+            
+            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating daily summary from \(sessionTexts.count) session summaries using LLM...")
+            
+            // 7. Generate daily summary using user-selected LLM engine via coordinator
             let dailySummary = try await coordinator.generateDailySummary(for: date)
             
-            // 5. Upsert into database (generateDailySummary returns a Summary object)
+            // 8. Upsert into database (generateDailySummary returns a Summary object)
             try await dbManager.upsertPeriodSummary(
                 type: .day,
                 text: dailySummary.text,
@@ -1335,10 +1360,12 @@ public final class AppCoordinator: ObservableObject {
                 end: endOfDay,
                 topicsJSON: dailySummary.topicsJSON,
                 entitiesJSON: dailySummary.entitiesJSON,
-                engineTier: dailySummary.engineTier
+                engineTier: dailySummary.engineTier,
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
             
-            print("✅ [AppCoordinator] Daily summary updated (engine: \(dailySummary.engineTier ?? "unknown"))")
+            print("✅ [AppCoordinator] ✨ Daily summary saved to database (engine: \(dailySummary.engineTier ?? "unknown"), \(dailySummary.text.count) chars)")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
@@ -1359,18 +1386,10 @@ public final class AppCoordinator: ObservableObject {
         
         let periodKey = "week-\(startOfWeek.timeIntervalSince1970)"
         
-        // Guard: Skip if already generating this period
+        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
         guard !generatingPeriodSummaries.contains(periodKey) else {
-            print("⏭️ [AppCoordinator] Weekly summary already being generated, skipping...")
+            print("⏭️ [AppCoordinator] Weekly summary already being generated, skipping duplicate call...")
             return
-        }
-        
-        // Guard: Skip if summary exists and forceRegenerate is false
-        if !forceRegenerate {
-            if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek), !existing.text.isEmpty {
-                print("⏭️ [AppCoordinator] Weekly summary already exists for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)), skipping...")
-                return
-            }
         }
         
         // Mark as in-progress
@@ -1398,12 +1417,35 @@ public final class AppCoordinator: ObservableObject {
                 return
             }
             
-            print("📝 [AppCoordinator] Generating weekly summary from \(dailySummaries.count) daily summaries using LLM...")
+            // 3. Compute input hash for change detection
+            let dailyIds = dailySummaries.map { $0.id }
+            let dailyTexts = dailySummaries.map { $0.text }
+            let sourceIds = await dbManager.sourceIdsToJSON(dailyIds)
+            let inputHash = await dbManager.computeInputHash(dailyTexts)
             
-            // 3. Generate weekly summary using user-selected LLM engine via coordinator
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
+            
+            // 4. Check if summary exists with same input hash (cache hit)
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek) {
+                print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly summary unchanged, skipping API call")
+                    return
+                } else if forceRegenerate {
+                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
+                } else {
+                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate weekly summary")
+                }
+            } else {
+                print("📝 [AppCoordinator] No existing weekly summary found, will generate new one")
+            }
+            
+            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating weekly summary from \(dailySummaries.count) daily summaries using LLM...")
+            
+            // 5. Generate weekly summary using user-selected LLM engine via coordinator
             let weeklySummary = try await coordinator.generateWeeklySummary(for: date)
             
-            // 4. Upsert into database
+            // 5. Upsert into database
             try await dbManager.upsertPeriodSummary(
                 type: .week,
                 text: weeklySummary.text,
@@ -1411,7 +1453,9 @@ public final class AppCoordinator: ObservableObject {
                 end: endOfWeek,
                 topicsJSON: weeklySummary.topicsJSON,
                 entitiesJSON: weeklySummary.entitiesJSON,
-                engineTier: weeklySummary.engineTier
+                engineTier: weeklySummary.engineTier,
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
             
             print("✅ [AppCoordinator] Weekly summary updated (engine: \(weeklySummary.engineTier ?? "unknown"))")
@@ -1434,18 +1478,10 @@ public final class AppCoordinator: ObservableObject {
         
         let periodKey = "month-\(startOfMonth.timeIntervalSince1970)"
         
-        // Guard: Skip if already generating this period
+        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
         guard !generatingPeriodSummaries.contains(periodKey) else {
-            print("⏭️ [AppCoordinator] Monthly summary already being generated, skipping...")
+            print("⏭️ [AppCoordinator] Monthly summary already being generated, skipping duplicate call...")
             return
-        }
-        
-        // Guard: Skip if summary exists and forceRegenerate is false
-        if !forceRegenerate {
-            if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth), !existing.text.isEmpty {
-                print("⏭️ [AppCoordinator] Monthly summary already exists for \(startOfMonth.formatted(date: .abbreviated, time: .omitted)), skipping...")
-                return
-            }
         }
         
         // Mark as in-progress
@@ -1472,12 +1508,35 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] Using \(dailySummaries.count) daily summaries for month (no weekly available)")
             }
             
-            print("📝 [AppCoordinator] Generating monthly summary using LLM...")
+            // 3. Compute input hash for change detection (use weekly summaries as source)
+            let weeklyIds = weeklySummaries.map { $0.id }
+            let weeklyTexts = weeklySummaries.map { $0.text }
+            let sourceIds = await dbManager.sourceIdsToJSON(weeklyIds)
+            let inputHash = await dbManager.computeInputHash(weeklyTexts)
             
-            // 3. Generate monthly summary using user-selected LLM engine via coordinator
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) weekly summaries")
+            
+            // 4. Check if summary exists with same input hash (cache hit)
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
+                print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly summary unchanged, skipping API call")
+                    return
+                } else if forceRegenerate {
+                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
+                } else {
+                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate monthly summary")
+                }
+            } else {
+                print("📝 [AppCoordinator] No existing monthly summary found, will generate new one")
+            }
+            
+            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating monthly summary from \(weeklySummaries.count) weekly summaries using LLM...")
+            
+            // 5. Generate monthly summary using user-selected LLM engine via coordinator
             let monthlySummary = try await coordinator.generateMonthlySummary(for: date)
             
-            // 4. Upsert into database
+            // 5. Upsert into database
             try await dbManager.upsertPeriodSummary(
                 type: .month,
                 text: monthlySummary.text,
@@ -1485,7 +1544,9 @@ public final class AppCoordinator: ObservableObject {
                 end: endOfMonth,
                 topicsJSON: monthlySummary.topicsJSON,
                 entitiesJSON: monthlySummary.entitiesJSON,
-                engineTier: monthlySummary.engineTier
+                engineTier: monthlySummary.engineTier,
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
             
             print("✅ [AppCoordinator] Monthly summary updated (engine: \(monthlySummary.engineTier ?? "unknown"))")
@@ -1512,18 +1573,10 @@ public final class AppCoordinator: ObservableObject {
         
         let periodKey = "year-\(startOfYear.timeIntervalSince1970)"
         
-        // Guard: Skip if already generating this period
+        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
         guard !generatingPeriodSummaries.contains(periodKey) else {
-            print("⏭️ [AppCoordinator] Yearly summary already being generated, skipping...")
+            print("⏭️ [AppCoordinator] Yearly summary already being generated, skipping duplicate call...")
             return
-        }
-        
-        // Guard: Skip if summary exists and forceRegenerate is false
-        if !forceRegenerate {
-            if let existing = try? await dbManager.fetchPeriodSummary(type: .year, date: startOfYear), !existing.text.isEmpty {
-                print("⏭️ [AppCoordinator] Yearly summary already exists for \(year), skipping...")
-                return
-            }
         }
         
         // Mark as in-progress
@@ -1550,12 +1603,35 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] Using \(weeklySummaries.count) weekly summaries for year (no monthly available)")
             }
             
-            print("📝 [AppCoordinator] Generating yearly summary using LLM...")
+            // 3. Compute input hash for change detection (use monthly summaries as source)
+            let monthlyIds = monthlySummaries.map { $0.id }
+            let monthlyTexts = monthlySummaries.map { $0.text }
+            let sourceIds = await dbManager.sourceIdsToJSON(monthlyIds)
+            let inputHash = await dbManager.computeInputHash(monthlyTexts)
             
-            // 3. Generate yearly summary using user-selected LLM engine via coordinator
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(monthlyTexts.count) monthly summaries")
+            
+            // 4. Check if summary exists with same input hash (cache hit)
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .year, date: startOfYear) {
+                print("📂 [AppCoordinator] Found existing yearly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Yearly summary unchanged, skipping API call")
+                    return
+                } else if forceRegenerate {
+                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
+                } else {
+                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate yearly summary")
+                }
+            } else {
+                print("📝 [AppCoordinator] No existing yearly summary found, will generate new one")
+            }
+            
+            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating yearly summary from \(monthlySummaries.count) monthly summaries using LLM...")
+            
+            // 5. Generate yearly summary using user-selected LLM engine via coordinator
             let yearlySummary = try await coordinator.generateYearlySummary(for: date)
             
-            // 4. Upsert into database
+            // 5. Upsert into database
             try await dbManager.upsertPeriodSummary(
                 type: .year,
                 text: yearlySummary.text,
@@ -1563,7 +1639,9 @@ public final class AppCoordinator: ObservableObject {
                 end: endOfYear,
                 topicsJSON: yearlySummary.topicsJSON,
                 entitiesJSON: yearlySummary.entitiesJSON,
-                engineTier: yearlySummary.engineTier
+                engineTier: yearlySummary.engineTier,
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
             
             print("✅ [AppCoordinator] Yearly summary updated (engine: \(yearlySummary.engineTier ?? "unknown"))")

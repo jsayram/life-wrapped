@@ -1450,7 +1450,7 @@ struct InsightsTab: View {
                 case .today: return .day
                 case .week: return .week
                 case .month: return .month
-                case .allTime: return .month // Show most recent month for current year
+                case .allTime: return .year // Show yearly summary for current year
                 }
             }()
             
@@ -1496,14 +1496,14 @@ struct InsightsTab: View {
             case .today: return .day
             case .week: return .week
             case .month: return .month
-            case .allTime: return .month
+            case .allTime: return .year
             }
         }()
         
-        // Use Date() (today) for week/month calculations, startDate for day
+        // Use Date() (today) for week/month/year calculations, startDate for day
         let dateForGeneration = (periodType == .day) ? startDate : Date()
         
-        print("🔄 [InsightsTab] Regenerating \(periodType) summary...")
+        print("🔄 [InsightsTab] Regenerating \(periodType.rawValue) summary...")
         
         switch periodType {
         case .day:
@@ -1512,6 +1512,8 @@ struct InsightsTab: View {
             await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
         case .month:
             await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
+        case .year:
+            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: true)
         default:
             break
         }

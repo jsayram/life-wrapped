@@ -9,6 +9,7 @@ import Foundation
 import SQLite3
 import SharedModels
 import os.log
+import CryptoKit
 
 /// SQLite transient destructor for text binding
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -180,6 +181,22 @@ public actor DatabaseManager {
     // MARK: - Database Schema (V1 - Greenfield)
     
     /// Complete database schema for Life Wrapped V1
+    // MARK: - Hashing Utilities
+    
+    /// Compute SHA256 hash of input text for change detection
+    public func computeInputHash(_ texts: [String]) -> String {
+        let combined = texts.joined(separator: "\n")
+        let hash = SHA256.hash(data: Data(combined.utf8))
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Convert array of UUIDs to JSON string
+    public func sourceIdsToJSON(_ ids: [UUID]) -> String {
+        let encoder = JSONEncoder()
+        let data = (try? encoder.encode(ids.map { $0.uuidString })) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "[]"
+    }
+    
     private func applySchema() throws {
         // Audio chunks table
         try execute("""
@@ -252,7 +269,9 @@ public actor DatabaseManager {
                 session_id TEXT,
                 topics_json TEXT,
                 entities_json TEXT,
-                engine_tier TEXT
+                engine_tier TEXT,
+                source_ids TEXT,
+                input_hash TEXT
             )
             """)
         
@@ -1450,8 +1469,8 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         
         var stmt: OpaquePointer?
@@ -1492,6 +1511,18 @@ public actor DatabaseManager {
             sqlite3_bind_null(stmt, 10)
         }
         
+        if let sourceIds = summary.sourceIds {
+            sqlite3_bind_text(stmt, 11, sourceIds, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 11)
+        }
+        
+        if let inputHash = summary.inputHash {
+            sqlite3_bind_text(stmt, 12, inputHash, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_null(stmt, 12)
+        }
+        
         guard sqlite3_step(stmt) == SQLITE_DONE else {
             throw StorageError.stepFailed(lastError())
         }
@@ -1501,7 +1532,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             WHERE id = ?
             """
@@ -1526,7 +1557,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         var sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             """
         
@@ -1565,7 +1596,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             WHERE session_id = ?
             ORDER BY created_at DESC
@@ -1595,7 +1626,7 @@ public actor DatabaseManager {
         // For week/month, find the summary where the date falls within the period range
         // For day, match the exact day
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             WHERE period_type = ?
             AND ? >= period_start
@@ -1630,7 +1661,9 @@ public actor DatabaseManager {
         end: Date,
         topicsJSON: String? = nil,
         entitiesJSON: String? = nil,
-        engineTier: String? = nil
+        engineTier: String? = nil,
+        sourceIds: String? = nil,
+        inputHash: String? = nil
     ) throws {
         guard let db = db else { throw StorageError.notOpen }
         
@@ -1639,7 +1672,7 @@ public actor DatabaseManager {
             // Update existing with structured data
             let sql = """
                 UPDATE summaries
-                SET text = ?, period_end = ?, topics_json = ?, entities_json = ?, engine_tier = ?
+                SET text = ?, period_end = ?, topics_json = ?, entities_json = ?, engine_tier = ?, source_ids = ?, input_hash = ?
                 WHERE id = ?
                 """
             
@@ -1671,7 +1704,19 @@ public actor DatabaseManager {
                 sqlite3_bind_null(stmt, 5)
             }
             
-            sqlite3_bind_text(stmt, 6, existing.id.uuidString, -1, SQLITE_TRANSIENT)
+            if let sources = sourceIds {
+                sqlite3_bind_text(stmt, 6, sources, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 6)
+            }
+            
+            if let hash = inputHash {
+                sqlite3_bind_text(stmt, 7, hash, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 7)
+            }
+            
+            sqlite3_bind_text(stmt, 8, existing.id.uuidString, -1, SQLITE_TRANSIENT)
             
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw StorageError.stepFailed(lastError())
@@ -1688,7 +1733,9 @@ public actor DatabaseManager {
                 sessionId: nil,
                 topicsJSON: topicsJSON,
                 entitiesJSON: entitiesJSON,
-                engineTier: engineTier
+                engineTier: engineTier,
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
             try insertSummary(summary)
         }
@@ -1754,7 +1801,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             WHERE period_type = 'day'
             AND period_start >= ? AND period_start < ?
@@ -1787,7 +1834,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             WHERE period_type = 'week'
             AND period_start >= ? AND period_start < ?
@@ -1820,7 +1867,7 @@ public actor DatabaseManager {
         guard let db = db else { throw StorageError.notOpen }
         
         let sql = """
-            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
             FROM summaries
             WHERE period_type = 'month'
             AND period_start >= ? AND period_start < ?
@@ -1916,6 +1963,22 @@ public actor DatabaseManager {
             engineTier = nil
         }
         
+        // Parse optional source_ids
+        let sourceIds: String?
+        if let sourceText = sqlite3_column_text(stmt, 10) {
+            sourceIds = String(cString: sourceText)
+        } else {
+            sourceIds = nil
+        }
+        
+        // Parse optional input_hash
+        let inputHash: String?
+        if let hashText = sqlite3_column_text(stmt, 11) {
+            inputHash = String(cString: hashText)
+        } else {
+            inputHash = nil
+        }
+        
         return Summary(
             id: id,
             periodType: periodType,
@@ -1926,7 +1989,9 @@ public actor DatabaseManager {
             sessionId: sessionId,
             topicsJSON: topicsJSON,
             entitiesJSON: entitiesJSON,
-            engineTier: engineTier
+            engineTier: engineTier,
+            sourceIds: sourceIds,
+            inputHash: inputHash
         )
     }
     
