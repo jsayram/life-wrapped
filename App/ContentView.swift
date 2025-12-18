@@ -3385,7 +3385,7 @@ struct IntelligenceEngineView: View {
         case .apple:
             return "Apple Intelligence requires iOS 18.1+ and compatible hardware. This feature will be available in a future update."
         case .local:
-            return "Local LLM engine is not yet implemented. This feature will be available in a future update."
+            return "Download the local AI model to enable on-device processing. Go to Settings → Local AI to manage models."
         case .external:
             return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
         }
