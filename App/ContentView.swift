@@ -3933,7 +3933,7 @@ struct ModelRowView: View {
     @State private var showDownloadAlert = false
     @State private var showDeleteAlert = false
     @State private var justCompleted = false
-    @State private var hasCheckedInitialState = false
+    @State private var isCheckingState = true  // True until we verify the actual state
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3964,19 +3964,21 @@ struct ModelRowView: View {
                                 .font(.subheadline)
                         }
                     }
-                } else if isDownloading {
+                } else if isDownloading || isCheckingState {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .scaleEffect(0.8)
-                            Text("Downloading in background...")
+                            Text(isCheckingState ? "Checking status..." : "Downloading in background...")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         
-                        Text("Continue using the app")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        if !isCheckingState {
+                            Text("Continue using the app")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 } else {
                     Button {
@@ -4039,13 +4041,12 @@ struct ModelRowView: View {
             Text("Delete \(modelSize.fullDisplayName)? You'll need to download \(modelSize.approximateSizeMB) MB again to use Local AI.")
         }
         .task {
-            // Check download state immediately when view appears - runs before body is evaluated
-            if !hasCheckedInitialState {
-                await syncDownloadState()
-                hasCheckedInitialState = true
-            }
+            // Check download state on EVERY appearance to ensure correct UI state
+            await syncDownloadState()
         }
         .onDisappear {
+            // Reset checking state when leaving so it shows on return
+            isCheckingState = true
             // Keep download task running in background when navigating away
             // Don't cancel - let it continue
         }
@@ -4126,6 +4127,9 @@ struct ModelRowView: View {
         let available = await manager.isModelAvailable(modelSize)
         
         await MainActor.run {
+            // Always clear the checking state first
+            isCheckingState = false
+            
             // If download is active in ModelFileManager, sync local state
             if downloading {
                 print("📥 [ModelRowView] Download in progress: \(modelSize.displayName)")
@@ -4146,6 +4150,13 @@ struct ModelRowView: View {
                     await coordinator.objectWillChange.send()
                 }
             } else if !downloading && isDownloading {
+                // Download was cancelled or failed
+                print("⚠️ [ModelRowView] Download stopped: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = false
+                }
+            } else {
+                // Not downloading and not available - show download button
                 // Download was cancelled or failed
                 print("⚠️ [ModelRowView] Download stopped: \(modelSize.displayName)")
                 withAnimation {

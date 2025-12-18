@@ -266,7 +266,7 @@ struct PermissionsView: View {
     }
     
     private func finishSetup() {
-        Task { @MainActor in
+        Task {
             print("🚀 [PermissionsView] Finishing setup...")
             await coordinator.permissionsGranted()
             print("✅ [PermissionsView] Setup complete, permissions sheet should close")
