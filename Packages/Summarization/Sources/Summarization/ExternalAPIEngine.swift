@@ -308,7 +308,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
         Transcript (duration: \(Int(duration))s):
         \(transcriptText)
         
-        Please provide a JSON response with:
+        IMPORTANT: Return ONLY a JSON object with these EXACT field names (do not rename or add prefixes):
         {
           "summary": "A concise 2-3 sentence summary",
           "topics": ["topic1", "topic2", ...],
@@ -320,6 +320,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
             {"timestamp": seconds, "description": "what happened"}
           ]
         }
+        
+        Use "summary" not "session_summary" or any other variation.
         """
     }
     
@@ -374,12 +376,41 @@ public actor ExternalAPIEngine: SummarizationEngine {
         }
         
         // Parse JSON content
-        guard let jsonData = contentText.data(using: .utf8),
-              let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-            throw SummarizationError.decodingFailed("Failed to parse content as JSON")
+        print("🔍 [ExternalAPIEngine] Raw API response content:")
+        print("📄 [ExternalAPIEngine] \(contentText.prefix(500))...")
+        
+        guard let jsonData = contentText.data(using: .utf8) else {
+            print("❌ [ExternalAPIEngine] Failed to convert content to UTF-8 data")
+            throw SummarizationError.decodingFailed("Failed to convert content to UTF-8 data")
         }
         
-        let summary = json["summary"] as? String ?? "No summary available"
+        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            print("❌ [ExternalAPIEngine] Content is not valid JSON - using as plain text summary")
+            print("📝 [ExternalAPIEngine] Falling back to plain text: \(contentText.prefix(200))...")
+            
+            // If not JSON, use the plain text as the summary
+            return SessionIntelligence(
+                sessionId: sessionId,
+                summary: contentText,
+                topics: [],
+                entities: [],
+                sentiment: 0.0,
+                duration: duration,
+                wordCount: contentText.split(separator: " ").count,
+                languageCodes: languageCodes,
+                keyMoments: nil
+            )
+        }
+        
+        print("✅ [ExternalAPIEngine] Successfully parsed JSON response")
+        
+        // Try multiple field names for summary (API might use different conventions)
+        let summary = json["summary"] as? String 
+            ?? json["session_summary"] as? String
+            ?? json["text"] as? String
+            ?? "No summary available"
+        
+        print("📝 [ExternalAPIEngine] Extracted summary (\(summary.count) chars): \(summary.prefix(100))...")
         let topics = json["topics"] as? [String] ?? []
         let sentiment = json["sentiment"] as? Double ?? 0.0
         
@@ -465,7 +496,13 @@ public actor ExternalAPIEngine: SummarizationEngine {
             throw SummarizationError.decodingFailed("Failed to parse content as JSON")
         }
         
-        let summary = json["summary"] as? String ?? "No summary available"
+        // Try multiple field names for summary (API might use different conventions)
+        let summary = json["summary"] as? String
+            ?? json["period_summary"] as? String
+            ?? json["session_summary"] as? String
+            ?? json["text"] as? String
+            ?? "No summary available"
+        
         let topics = json["topics"] as? [String] ?? []
         let trends = json["trends"] as? [String]
         
