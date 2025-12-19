@@ -336,12 +336,14 @@ public actor ExternalAPIEngine: SummarizationEngine {
         Summaries:
         \(summariesText)
         
-        Please provide a JSON response with:
+        IMPORTANT: Return ONLY a JSON object with these EXACT field names (do not rename or add prefixes):
         {
           "summary": "An overarching summary of the entire period",
           "topics": ["main topic themes across all sessions"],
           "trends": ["observed patterns or changes over time"]
         }
+        
+        Use "summary" not "daily_summary", "weekly_summary", "period_summary" or any other variation.
         """
     }
     
@@ -491,17 +493,49 @@ public actor ExternalAPIEngine: SummarizationEngine {
         }
         
         // Parse JSON content
+        print("🔍 [ExternalAPIEngine] Raw period API response content:")
+        print("📄 [ExternalAPIEngine] \(contentText.prefix(500))...")
+        
         guard let jsonData = contentText.data(using: .utf8),
               let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             throw SummarizationError.decodingFailed("Failed to parse content as JSON")
         }
         
+        print("✅ [ExternalAPIEngine] Successfully parsed period JSON response")
+        print("🔑 [ExternalAPIEngine] Available keys: \(Array(json.keys))")
+        
         // Try multiple field names for summary (API might use different conventions)
-        let summary = json["summary"] as? String
-            ?? json["period_summary"] as? String
-            ?? json["session_summary"] as? String
-            ?? json["text"] as? String
-            ?? "No summary available"
+        // Break into smaller expressions to help the compiler
+        let summary: String
+        if let s = json["summary"] as? String {
+            summary = s
+        } else if let s = json["period_summary"] as? String {
+            summary = s
+        } else if let s = json["day_summary"] as? String {
+            summary = s
+        } else if let s = json["daily_summary"] as? String {
+            summary = s
+        } else if let s = json["week_summary"] as? String {
+            summary = s
+        } else if let s = json["weekly_summary"] as? String {
+            summary = s
+        } else if let s = json["month_summary"] as? String {
+            summary = s
+        } else if let s = json["monthly_summary"] as? String {
+            summary = s
+        } else if let s = json["year_summary"] as? String {
+            summary = s
+        } else if let s = json["yearly_summary"] as? String {
+            summary = s
+        } else if let s = json["session_summary"] as? String {
+            summary = s
+        } else if let s = json["text"] as? String {
+            summary = s
+        } else {
+            summary = "No summary available"
+        }
+        
+        print("📝 [ExternalAPIEngine] Extracted period summary (\(summary.count) chars): \(summary.prefix(100))...")
         
         let topics = json["topics"] as? [String] ?? []
         let trends = json["trends"] as? [String]
