@@ -246,20 +246,19 @@ struct PermissionsView: View {
         }
     }
     
+    @MainActor
     private func requestSpeechRecognitionPermission() async {
         let status = await withCheckedContinuation { continuation in
-            // SFSpeechRecognizer.requestAuthorization must be called from main thread
-            DispatchQueue.main.async {
-                SFSpeechRecognizer.requestAuthorization { status in
+            SFSpeechRecognizer.requestAuthorization { status in
+                // Resume on the main actor to satisfy Speech API main-thread expectations.
+                Task { @MainActor in
                     continuation.resume(returning: status)
                 }
             }
         }
         
-        await MainActor.run {
-            speechStatus = PermissionStatus(from: status)
-            print("🗣️ [PermissionsView] Speech recognition permission: \(status)")
-        }
+        speechStatus = PermissionStatus(from: status)
+        print("🗣️ [PermissionsView] Speech recognition permission: \(status)")
     }
     
     private func openSettings() {
