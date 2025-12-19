@@ -118,6 +118,7 @@ public actor DataExporter {
         case .yearWrap:
             formatter.dateFormat = "yyyy"
             return "Year Wrap \(formatter.string(from: start))"
+        }
     }
 
     
