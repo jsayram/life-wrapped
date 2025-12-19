@@ -23,6 +23,7 @@ public actor SummarizationCoordinator {
     private var appleEngine: (any SummarizationEngine)?
     private var localEngine: (any SummarizationEngine)?
     private var externalEngine: (any SummarizationEngine)?
+    private var localConfiguration: LocalLLMConfiguration = .current()
     
     // Current active engine
     private var activeEngine: any SummarizationEngine
@@ -48,7 +49,7 @@ public actor SummarizationCoordinator {
         }
         
         // Initialize local engine (Phase 2A)
-        self.localEngine = LocalEngine(storage: storage)
+        self.localEngine = LocalEngine(storage: storage, configuration: .defaults(for: .local), localConfiguration: localConfiguration)
         
         // Initialize external API engine (Phase 2C)
         self.externalEngine = ExternalAPIEngine(storage: storage)
@@ -78,6 +79,7 @@ public actor SummarizationCoordinator {
             preferredTier = tier
             print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
         }
+        await applyLocalPreset()
         
         await selectBestAvailableEngine()
         print("✅ [SummarizationCoordinator] Active engine: \(activeEngine.tier.displayName)")
@@ -146,6 +148,17 @@ public actor SummarizationCoordinator {
             return "Error: \(error.localizedDescription)"
         }
     }
+
+    public func setLocalPresetOverride(_ preset: LocalLLMConfiguration.Preset?) async {
+        LocalLLMConfiguration.persistPresetOverride(preset)
+        await applyLocalPreset()
+        await selectBestAvailableEngine()
+        NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+    }
+
+    public func getLocalConfiguration() -> LocalLLMConfiguration {
+        localConfiguration
+    }
     
     /// Select the best available engine based on user preference
     private func selectBestAvailableEngine() async {
@@ -176,6 +189,15 @@ public actor SummarizationCoordinator {
         
         // Fallback to basic if preferred unavailable
         activeEngine = basicEngine
+    }
+
+    private func applyLocalPreset() async {
+        let profile = LocalLLMConfiguration.DeviceProfile.current
+        localConfiguration = LocalLLMConfiguration.current(profile: profile)
+        if let local = localEngine as? LocalEngine {
+            await local.updateLocalConfiguration(localConfiguration)
+        }
+        print("⚙️ [SummarizationCoordinator] Local preset set to \(localConfiguration.preset.displayName) (\(localConfiguration.tokensDescription))")
     }
     
     // MARK: - Session Summarization

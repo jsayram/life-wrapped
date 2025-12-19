@@ -21,6 +21,7 @@ public actor LocalEngine: SummarizationEngine {
     
     private let storage: DatabaseManager
     private let configuration: EngineConfiguration
+    private var localConfiguration: LocalLLMConfiguration
     private let llamaContext: LlamaContext
     private let modelFileManager: ModelFileManager
     
@@ -30,13 +31,18 @@ public actor LocalEngine: SummarizationEngine {
     
     // MARK: - Initialization
     
-    public init(storage: DatabaseManager, configuration: EngineConfiguration? = nil) {
+    public init(
+        storage: DatabaseManager,
+        configuration: EngineConfiguration? = nil,
+        localConfiguration: LocalLLMConfiguration = .current()
+    ) {
         self.storage = storage
         self.configuration = configuration ?? .defaults(for: .local)
-        self.llamaContext = LlamaContext()
+        self.localConfiguration = localConfiguration
+        self.llamaContext = LlamaContext(configuration: localConfiguration)
         self.modelFileManager = ModelFileManager.shared
         
-        print("🧠 [LocalEngine] Initialized")
+        print("🧠 [LocalEngine] Initialized (\(localConfiguration.preset.displayName), \(localConfiguration.tokensDescription))")
     }
     
     // MARK: - SummarizationEngine Protocol
@@ -72,9 +78,9 @@ public actor LocalEngine: SummarizationEngine {
             level: .session,
             engine: .local,
             provider: "SwiftLlama",
-            model: "qwen2-0.5b-instruct",
+            model: localConfiguration.modelName,
             temperature: configuration.temperature,
-            maxTokens: configuration.maxTokens,
+            maxTokens: min(configuration.maxTokens, localConfiguration.maxTokens),
             inputSize: transcriptText.count,
             sessionId: sessionId
         )
@@ -82,7 +88,8 @@ public actor LocalEngine: SummarizationEngine {
         // Ensure model is loaded
         try await ensureModelLoaded()
         
-        let wordCount = transcriptText.split(separator: " ").count
+        let preparedTranscript = clampTranscript(transcriptText)
+        let wordCount = preparedTranscript.split(separator: " ").count
         
         // Guard against empty or too-short transcripts
         guard wordCount >= configuration.minimumWords else {
@@ -93,15 +100,21 @@ public actor LocalEngine: SummarizationEngine {
         // Generate prompt using universal template
         let prompt = UniversalPrompt.build(
             level: .session,
-            input: transcriptText,
+            input: preparedTranscript,
             metadata: ["duration": Int(duration), "wordCount": wordCount]
         )
         
         // Call LLM
-        let response = try await llamaContext.generate(prompt: prompt)
+        let response: String
+        do {
+            response = try await llamaContext.generate(prompt: prompt)
+        } catch {
+            print("⚠️ [LocalEngine] Generation failed: \(error.localizedDescription). Falling back to extractive summary.")
+            return try await extractiveFallback(sessionId: sessionId, transcriptText: preparedTranscript, duration: duration)
+        }
         
         // Parse JSON response
-        let intelligence = try await parseSessionResponse(response, sessionId: sessionId, transcriptText: transcriptText, duration: duration)
+        let intelligence = try await parseSessionResponse(response, sessionId: sessionId, transcriptText: preparedTranscript, duration: duration)
         
         // Update statistics
         let processingTime = Date().timeIntervalSince(startTime)
@@ -128,9 +141,9 @@ public actor LocalEngine: SummarizationEngine {
             level: summaryLevel,
             engine: .local,
             provider: "SwiftLlama",
-            model: "qwen2-0.5b-instruct",
+            model: localConfiguration.modelName,
             temperature: configuration.temperature,
-            maxTokens: configuration.maxTokens,
+            maxTokens: min(configuration.maxTokens, localConfiguration.maxTokens),
             inputSize: sessionSummaries.count,
             sessionId: nil
         )
@@ -161,7 +174,18 @@ public actor LocalEngine: SummarizationEngine {
         )
         
         // Call LLM
-        let response = try await llamaContext.generate(prompt: prompt)
+        let response: String
+        do {
+            response = try await llamaContext.generate(prompt: prompt)
+        } catch {
+            print("⚠️ [LocalEngine] Period generation failed: \(error.localizedDescription). Using extractive fallback.")
+            return makePeriodFallback(
+                sessionSummaries: sessionSummaries,
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd
+            )
+        }
         
         // Parse JSON response
         let intelligence = try parsePeriodResponse(
@@ -196,6 +220,16 @@ public actor LocalEngine: SummarizationEngine {
     public func debugGenerate(prompt: String) async throws -> String {
         try await ensureModelLoaded()
         return try await llamaContext.generate(prompt: prompt)
+    }
+
+    public func getLocalConfiguration() -> LocalLLMConfiguration {
+        localConfiguration
+    }
+
+    /// Update the local LLM configuration and unload any loaded model so it reloads with new caps.
+    public func updateLocalConfiguration(_ configuration: LocalLLMConfiguration) async {
+        localConfiguration = configuration
+        await llamaContext.updateConfiguration(configuration)
     }
     
     private func extractiveFallback(sessionId: UUID, transcriptText: String, duration: TimeInterval) async throws -> SessionIntelligence {
@@ -306,6 +340,40 @@ public actor LocalEngine: SummarizationEngine {
         print("   - Average time: \(String(format: "%.2f", stats.avgTime))s")
         print("   - Total processing time: \(String(format: "%.2f", stats.totalTime))s")
         print("   - Memory usage: \(String(format: "%.1f", memoryUsage)) MB")
+    }
+
+    private func clampTranscript(_ transcript: String) -> String {
+        // Roughly 4 characters per token; clamp to avoid blowing past context
+        let maxTokens = min(localConfiguration.contextSize, configuration.maxContextLength)
+        let maxCharacters = maxTokens * 4
+        guard transcript.count > maxCharacters else { return transcript }
+        let clamped = String(transcript.prefix(maxCharacters))
+        print("✂️ [LocalEngine] Clamped transcript to \(clamped.count) chars (~\(maxTokens) tokens)")
+        return clamped
+    }
+
+    private func makePeriodFallback(
+        sessionSummaries: [SessionIntelligence],
+        periodType: PeriodType,
+        periodStart: Date,
+        periodEnd: Date
+    ) -> PeriodIntelligence {
+        let summary = sessionSummaries.map { $0.summary }.joined(separator: " \n\n ")
+        let totalDuration = sessionSummaries.reduce(0.0) { $0 + $1.duration }
+        let totalWordCount = sessionSummaries.reduce(0) { $0 + $1.wordCount }
+        return PeriodIntelligence(
+            periodType: periodType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            summary: summary.isEmpty ? "No summary available" : summary.prefix(800).description,
+            topics: [],
+            entities: [],
+            sentiment: 0,
+            sessionCount: sessionSummaries.count,
+            totalDuration: totalDuration,
+            totalWordCount: totalWordCount,
+            trends: []
+        )
     }
     
     /// Get current memory usage in MB

@@ -174,10 +174,10 @@ public struct EngineConfiguration: Sendable {
             return EngineConfiguration(
                 tier: .local,
                 minimumWords: 1,
-                maxContextLength: 4000,
+                maxContextLength: 4096,
                 timeoutSeconds: 60.0,
                 temperature: 0.2,  // Low temperature for deterministic summaries
-                maxTokens: 1024
+                maxTokens: 256
             )
         case .external:
             return EngineConfiguration(

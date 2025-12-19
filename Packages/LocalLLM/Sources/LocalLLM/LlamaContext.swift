@@ -9,19 +9,22 @@ import Foundation
 import SharedModels
 @preconcurrency import SwiftLlama
 
+// SwiftLlama models are not annotated Sendable; mark the prompt type as unchecked to satisfy
+// region-based isolation checking when crossing actor boundaries.
+extension Prompt: @retroactive @unchecked Sendable {}
+
 /// Actor wrapping SwiftLlama for thread-safe LLM inference
 /// Note: SwiftLlama uses @SwiftLlamaActor internally, so all inference
 /// happens on that actor's thread, not blocking the main thread.
 public actor LlamaContext {
     
-    private let configuration: LocalLLMConfiguration
+    private var configuration: LocalLLMConfiguration
     private let modelFileManager: ModelFileManager
     private var isLoaded: Bool = false
     private var modelPath: URL?
-    
-    // SwiftLlama instance - marked nonisolated(unsafe) because SwiftLlama
-    // manages its own thread safety via @SwiftLlamaActor
-    private nonisolated(unsafe) var swiftLlama: SwiftLlama?
+
+    // SwiftLlama instance lives inside the actor to avoid cross-actor races
+    private var swiftLlama: SwiftLlama?
     
     // MARK: - Initialization
     
@@ -30,6 +33,15 @@ public actor LlamaContext {
         self.modelFileManager = ModelFileManager.shared
         
         print("🧠 [LlamaContext] Initialized with model: \(configuration.modelName)")
+    }
+
+    /// Update configuration and unload current model if needed so next load uses new settings
+    public func updateConfiguration(_ configuration: LocalLLMConfiguration) async {
+        let requiresReload = configuration != self.configuration
+        self.configuration = configuration
+        if requiresReload && isLoaded {
+            await unloadModel()
+        }
     }
     
     // MARK: - Model Loading
@@ -44,7 +56,7 @@ public actor LlamaContext {
         print("📥 [LlamaContext] Loading model: \(configuration.modelName)")
         
         // Check if model file exists
-        let modelSize = ModelFileManager.ModelSize.llama32_1b
+        let modelSize = ModelFileManager.ModelSize.allCases.first { $0.rawValue == configuration.modelName } ?? .llama32_1b
         guard await modelFileManager.isModelAvailable(modelSize) else {
             throw LocalLLMError.modelNotFound(configuration.modelName)
         }
@@ -54,12 +66,13 @@ public actor LlamaContext {
         modelPath = url
         
         // Initialize SwiftLlama with the model
-        // Configure for Qwen2 model with ChatML stop tokens
+        // Configure for Llama 3.2 with conservative decoding caps
         let modelConfig = Configuration(
+            topP: configuration.topP,
             nCTX: configuration.contextSize,
             temperature: configuration.temperature,
             maxTokenCount: configuration.maxTokens,
-            stopTokens: StopToken.chatML
+            stopTokens: StopToken.llama3
         )
         
         do {
@@ -103,12 +116,13 @@ public actor LlamaContext {
         
         // Create a ChatML-format prompt for Qwen2 model
         let llamaPrompt = Prompt(
-            type: .chatML,
-            systemPrompt: "You are an AI assistant that creates concise summaries of audio journal entries. Always respond with valid JSON only, no explanations.",
+            type: .llama3,
+            systemPrompt: configuration.systemPrompt,
             userMessage: prompt
         )
         
         // SwiftLlama.start runs on @SwiftLlamaActor, not blocking main thread
+        // Use assumeIsolated to pass the prompt across isolation boundaries
         let response: String = try await llama.start(for: llamaPrompt)
         
         let elapsed = Date().timeIntervalSince(startTime)
@@ -128,8 +142,8 @@ public actor LlamaContext {
         
         // Create a ChatML-format prompt for Qwen2 model
         let llamaPrompt = Prompt(
-            type: .chatML,
-            systemPrompt: "You are an AI assistant that creates concise summaries of audio journal entries. Always respond with valid JSON only, no explanations.",
+            type: .llama3,
+            systemPrompt: configuration.systemPrompt,
             userMessage: prompt
         )
         

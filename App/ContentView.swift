@@ -2174,6 +2174,7 @@ struct AISettingsView: View {
     @State private var debugPromptInput = ""
     @State private var debugOutputText = ""
     @State private var isRunningLocalDebug = false
+    @State private var presetSelection: String = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "auto"
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -2207,6 +2208,18 @@ struct AISettingsView: View {
         selectedProvider == "OpenAI" ? openaiModels : anthropicModels
     }
     
+    private var effectivePreset: LocalLLMConfiguration.Preset {
+        LocalLLMConfiguration.Preset(rawValue: presetSelection) ?? LocalLLMConfiguration.recommendedPreset()
+    }
+    
+    private var effectiveConfig: LocalLLMConfiguration {
+        LocalLLMConfiguration.configuration(for: effectivePreset)
+    }
+    
+    private var deviceSummary: String {
+        LocalLLMConfiguration.deviceSummary()
+    }
+    
     var body: some View {
         List {
             // MARK: - On-Device Engines Section
@@ -2238,6 +2251,33 @@ struct AISettingsView: View {
                         subtitle: localModelAvailable ? "On-device LLM ready" : "Download model to enable",
                         onSelect: { selectEngine(.local) }
                     )
+                    
+                    if localModelAvailable {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label("Preset", systemImage: "slider.horizontal.2.square")
+                                Spacer()
+                                Text(effectiveConfig.tokensDescription)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Picker("Local Preset", selection: $presetSelection) {
+                                Text("Auto (\(LocalLLMConfiguration.recommendedPreset().displayName))")
+                                    .tag("auto")
+                                ForEach(LocalLLMConfiguration.Preset.allCases, id: \.rawValue) { preset in
+                                    Text(preset.displayName)
+                                        .tag(preset.rawValue)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .onChange(of: presetSelection) { _, _ in
+                                applyPresetSelection()
+                            }
+                            Text("Auto-picks based on device: \(deviceSummary). \(effectivePreset.summary).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     
                     // Show download button if no model
                     if !localModelAvailable {
@@ -2292,6 +2332,14 @@ struct AISettingsView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(debugPromptInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLocalDebug || !localModelAvailable)
+
+                    Button {
+                        runLocalSmokeTest()
+                    } label: {
+                        Label("Run Smoke Test", systemImage: "bolt.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRunningLocalDebug || !localModelAvailable)
 
                     if !debugOutputText.isEmpty {
                         Text("Output")
@@ -2501,6 +2549,7 @@ struct AISettingsView: View {
         .task {
             await loadEngineStatus()
             await checkLocalModelAvailability()
+            presetSelection = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "auto"
             loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
@@ -2535,6 +2584,15 @@ struct AISettingsView: View {
         }
     }
 
+    private func applyPresetSelection() {
+        let override = LocalLLMConfiguration.Preset(rawValue: presetSelection)
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setLocalPresetOverride(override)
+            await loadEngineStatus()
+        }
+    }
+
     private func runLocalLLMDebug() {
         let prompt = debugPromptInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
@@ -2556,6 +2614,13 @@ struct AISettingsView: View {
                 isRunningLocalDebug = false
             }
         }
+    }
+
+    private func runLocalSmokeTest() {
+        if debugPromptInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            debugPromptInput = "Summarize this 30-word meeting note into JSON with summary, topics, entities, sentiment: We discussed project launch timelines, dependencies, blockers, and next sprint goals."
+        }
+        runLocalLLMDebug()
     }
     
     private func selectEngine(_ tier: EngineTier) {
