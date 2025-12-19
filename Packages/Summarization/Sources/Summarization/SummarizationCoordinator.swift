@@ -134,6 +134,18 @@ public actor SummarizationCoordinator {
         print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
         await selectBestAvailableEngine()
     }
+
+    /// Run a raw prompt through the local engine for debugging
+    public func runLocalDebugPrompt(_ prompt: String) async -> String {
+        guard let local = localEngine as? LocalEngine else {
+            return "Local engine unavailable"
+        }
+        do {
+            return try await local.debugGenerate(prompt: prompt)
+        } catch {
+            return "Error: \(error.localizedDescription)"
+        }
+    }
     
     /// Select the best available engine based on user preference
     private func selectBestAvailableEngine() async {

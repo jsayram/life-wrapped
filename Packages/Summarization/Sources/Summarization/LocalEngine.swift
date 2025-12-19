@@ -191,6 +191,12 @@ public actor LocalEngine: SummarizationEngine {
             return
         }
     }
+
+    /// Run an arbitrary prompt against the local model for debugging
+    public func debugGenerate(prompt: String) async throws -> String {
+        try await ensureModelLoaded()
+        return try await llamaContext.generate(prompt: prompt)
+    }
     
     private func extractiveFallback(sessionId: UUID, transcriptText: String, duration: TimeInterval) async throws -> SessionIntelligence {
         print("🔄 [LocalEngine] Using extractive fallback for session \(sessionId)")
