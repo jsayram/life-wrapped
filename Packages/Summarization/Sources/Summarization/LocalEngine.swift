@@ -84,10 +84,7 @@ public actor LocalEngine: SummarizationEngine {
             inputSize: transcriptText.count,
             sessionId: sessionId
         )
-        
-        // Ensure model is loaded
-        try await ensureModelLoaded()
-        
+
         let preparedTranscript = clampTranscript(transcriptText)
         let wordCount = preparedTranscript.split(separator: " ").count
         
@@ -95,6 +92,14 @@ public actor LocalEngine: SummarizationEngine {
         guard wordCount >= configuration.minimumWords else {
             print("⚠️ [LocalEngine] Transcript too short (\(wordCount) words), using extractive fallback")
             return try await extractiveFallback(sessionId: sessionId, transcriptText: transcriptText, duration: duration)
+        }
+
+        // Ensure model is loaded; if it fails, drop to extractive fallback instead of erroring out.
+        do {
+            try await ensureModelLoaded()
+        } catch {
+            print("⚠️ [LocalEngine] Failed to load local model: \(error.localizedDescription). Using extractive fallback.")
+            return try await extractiveFallback(sessionId: sessionId, transcriptText: preparedTranscript, duration: duration)
         }
         
         // Generate prompt using universal template
@@ -148,11 +153,21 @@ public actor LocalEngine: SummarizationEngine {
             sessionId: nil
         )
         
-        // Ensure model is loaded
-        try await ensureModelLoaded()
-        
         guard !sessionSummaries.isEmpty else {
             throw SummarizationError.insufficientContent(minimumWords: 1, actualWords: 0)
+        }
+
+        // Ensure model is loaded; if unavailable, fall back to extractive merge to keep the app flowing.
+        do {
+            try await ensureModelLoaded()
+        } catch {
+            print("⚠️ [LocalEngine] Failed to load local model: \(error.localizedDescription). Returning simple merged summary.")
+            return makePeriodFallback(
+                sessionSummaries: sessionSummaries,
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd
+            )
         }
         
         // Prepare input as structured JSON for hierarchical summarization
