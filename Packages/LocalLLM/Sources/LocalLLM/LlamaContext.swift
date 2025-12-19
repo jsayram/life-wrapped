@@ -23,8 +23,8 @@ public actor LlamaContext {
     private var isLoaded: Bool = false
     private var modelPath: URL?
 
-    // SwiftLlama instance lives inside the actor to avoid cross-actor races
-    private var swiftLlama: SwiftLlama?
+    // SwiftLlama instance - keep as nonisolated(unsafe) since SwiftLlama manages its own actor
+    private nonisolated(unsafe) var swiftLlama: SwiftLlama?
     
     // MARK: - Initialization
     
@@ -114,16 +114,17 @@ public actor LlamaContext {
         
         let startTime = Date()
         
-        // Create a ChatML-format prompt for Qwen2 model
-        let llamaPrompt = Prompt(
-            type: .llama3,
-            systemPrompt: configuration.systemPrompt,
-            userMessage: prompt
-        )
+        // Cache prompt configuration to avoid isolation issues
+        let systemPrompt = configuration.systemPrompt
         
         // SwiftLlama.start runs on @SwiftLlamaActor, not blocking main thread
-        // Use assumeIsolated to pass the prompt across isolation boundaries
-        let response: String = try await llama.start(for: llamaPrompt)
+        let response: String = try await llama.start(
+            for: Prompt(
+                type: .llama3,
+                systemPrompt: systemPrompt,
+                userMessage: prompt
+            )
+        )
         
         let elapsed = Date().timeIntervalSince(startTime)
         print("✅ [LlamaContext] Generated \(response.count) characters in \(String(format: "%.2f", elapsed))s")
@@ -140,15 +141,17 @@ public actor LlamaContext {
         print("🤖 [LlamaContext] Starting streaming generation...")
         print("📝 [LlamaContext] Prompt length: \(prompt.count) characters")
         
-        // Create a ChatML-format prompt for Qwen2 model
-        let llamaPrompt = Prompt(
-            type: .llama3,
-            systemPrompt: configuration.systemPrompt,
-            userMessage: prompt
-        )
+        // Cache prompt configuration to avoid isolation issues
+        let systemPrompt = configuration.systemPrompt
         
         // Return SwiftLlama's async stream (runs on SwiftLlamaActor)
-        return await llama.start(for: llamaPrompt)
+        return await llama.start(
+            for: Prompt(
+                type: .llama3,
+                systemPrompt: systemPrompt,
+                userMessage: prompt
+            )
+        )
     }
     
     /// Check if context is ready for inference
