@@ -22,7 +22,7 @@ public struct LocalLLMConfiguration: Sendable {
     public let maxTokens: Int
     
     public init(
-        modelName: String = "phi-3-mini-4k-instruct-q4.gguf",
+        modelName: String = "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         contextSize: Int = 4096,
         temperature: Float = 0.7,
         topP: Float = 0.9,

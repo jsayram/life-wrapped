@@ -21,22 +21,22 @@ public actor ModelFileManager {
     
     /// Supported model configurations
     public enum ModelSize: String, CaseIterable, Sendable {
-        case qwen2_05b = "qwen2-0_5b-instruct-q4_k_m.gguf"  // ~352MB quantized
+        case llama32_1b = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"  // ~771MB quantized
         
         public var displayName: String {
-            return "Qwen2 0.5B (4-bit)"
+            return "Llama 3.2 1B (4-bit)"
         }
         
         public var fullDisplayName: String {
-            return "Qwen2 0.5B Instruct (Q4_K_M)"
+            return "Llama 3.2 1B Instruct (Q4_K_M)"
         }
         
         public var approximateSizeMB: Int {
-            return 352
+            return 771
         }
         
         public var contextLength: Int {
-            return 32768  // 32K context
+            return 131072  // 128K context
         }
     }
     
@@ -99,9 +99,9 @@ public actor ModelFileManager {
     /// Download URLs for models (Hugging Face)
     private func downloadURL(for model: ModelSize) -> URL? {
         switch model {
-        case .qwen2_05b:
-            // Qwen2-0.5B - small, fast, good for summarization
-            return URL(string: "https://huggingface.co/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0_5b-instruct-q4_k_m.gguf")
+        case .llama32_1b:
+            // Llama 3.2 1B Instruct - efficient on-device model with 128K context
+            return URL(string: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf")
         }
     }
     

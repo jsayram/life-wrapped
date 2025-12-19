@@ -2121,6 +2121,8 @@ public actor DatabaseManager {
             bucketEnd = calendar.date(byAdding: .month, value: 1, to: bucketStart) ?? bucketStart
         case .year:
             bucketEnd = calendar.date(byAdding: .year, value: 1, to: bucketStart) ?? bucketStart
+        case .yearWrap:
+            bucketEnd = calendar.date(byAdding: .year, value: 1, to: bucketStart) ?? bucketStart
         }
         
         let sql = """

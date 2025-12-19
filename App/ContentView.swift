@@ -908,6 +908,8 @@ struct InsightsTab: View {
     @State private var topWords: [WordFrequency] = []
     @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
     @State private var languageDistribution: [(language: String, wordCount: Int)] = []
+    @State private var yearWrapSummary: Summary?
+    @State private var isWrappingUpYear = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var wordLimit: Int = 20
@@ -938,7 +940,28 @@ struct InsightsTab: View {
                                     coordinator: coordinator,
                                     onRegenerate: {
                                         await regeneratePeriodSummary()
-                                    }
+                                    },
+                                    wrapAction: selectedTimeRange == .allTime ? {
+                                        await wrapUpYear(forceRegenerate: false)
+                                    } : nil,
+                                    wrapIsLoading: isWrappingUpYear
+                                )
+                            }
+                        }
+
+                        if selectedTimeRange == .allTime, let yearWrapSummary {
+                            Section {
+                                InsightsSummaryCard(
+                                    summary: yearWrapSummary,
+                                    periodTitle: "Year Wrap",
+                                    sessionCount: sessionCount,
+                                    sessionsInPeriod: sessionsInPeriod,
+                                    coordinator: coordinator,
+                                    onRegenerate: {
+                                        await wrapUpYear(forceRegenerate: true)
+                                    },
+                                    wrapAction: nil,
+                                    wrapIsLoading: isWrappingUpYear
                                 )
                             }
                         }
@@ -1472,6 +1495,12 @@ struct InsightsTab: View {
             // For week/month/year, use Date() to get current period, for day use startDate
             let dateForFetch = (periodType == .day) ? startDate : Date()
             periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+
+            if selectedTimeRange == .allTime {
+                yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            } else {
+                yearWrapSummary = nil
+            }
             
             // Debug logging
             if periodSummary == nil && !sessionsInPeriod.isEmpty {
@@ -1507,13 +1536,13 @@ struct InsightsTab: View {
         
         switch periodType {
         case .day:
-            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
+            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: false)
         case .week:
-            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
+            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: false)
         case .month:
-            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
+            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: false)
         case .year:
-            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: true)
+            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: false)
         default:
             break
         }
@@ -1527,6 +1556,17 @@ struct InsightsTab: View {
         } else {
             coordinator.showError("Failed to regenerate summary")
         }
+    }
+
+    private func wrapUpYear(forceRegenerate: Bool) async {
+        guard !isWrappingUpYear else { return }
+        isWrappingUpYear = true
+        let dateForGeneration = Date()
+
+        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
+
+        yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        isWrappingUpYear = false
     }
     
     private func formatHour(_ hour: Int) -> String {
@@ -4874,6 +4914,9 @@ struct SessionDetailView: View {
         case "local": return "cpu"
         case "openai": return "brain"
         case "anthropic": return "sparkles"
+        case "rollup", "basic": return "arrow.triangle.merge"
+        case "external": return "cloud"
+        case "year wrap": return "sparkles"
         default: return "cpu"
         }
     }
@@ -5238,11 +5281,14 @@ struct InsightsSummaryCard: View {
     let sessionsInPeriod: [RecordingSession]
     let coordinator: AppCoordinator
     let onRegenerate: () async -> Void
+    let wrapAction: (() async -> Void)?
+    let wrapIsLoading: Bool
     
     @State private var showingSessions = false
     @State private var visibleSessionCount = 3
     @State private var isRegenerating = false
     @State private var selectedSession: RecordingSession?
+    @State private var isWrapping = false
     
     private var visibleSessions: [RecordingSession] {
         Array(sessionsInPeriod.prefix(visibleSessionCount))
@@ -5330,6 +5376,31 @@ struct InsightsSummaryCard: View {
             }
             .buttonStyle(.plain)
             .disabled(isRegenerating)
+
+            if let wrapAction {
+                Button {
+                    Task {
+                        isWrapping = true
+                        await wrapAction()
+                        isWrapping = false
+                    }
+                } label: {
+                    if isWrapping || wrapIsLoading {
+                        ProgressView()
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.title3)
+                            .foregroundStyle(.purple)
+                            .frame(width: 44, height: 44)
+                            .background(Color.purple.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating || isWrapping)
+                .accessibilityLabel("Wrap Up Year")
+            }
         }
     }
     
@@ -5462,6 +5533,9 @@ struct InsightsSummaryCard: View {
         case "local": return "cpu"
         case "openai": return "brain"
         case "anthropic": return "sparkles"
+        case "rollup", "basic": return "arrow.triangle.merge"
+        case "external": return "cloud"
+        case "year wrap": return "sparkles"
         default: return "cpu"
         }
     }

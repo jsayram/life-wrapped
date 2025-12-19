@@ -299,6 +299,55 @@ public actor SummarizationCoordinator {
             endDate: endOfYear
         )
     }
+
+    /// Generate a Year Wrap summary using the external engine and higher-level rollups
+    public func generateYearWrapSummary(
+        startOfYear: Date,
+        endOfYear: Date,
+        sourceSummaries: [Summary]
+    ) async throws -> Summary {
+        guard !sourceSummaries.isEmpty else {
+            throw SummarizationError.noTranscriptData
+        }
+
+        guard let external = externalEngine else {
+            throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
+        }
+
+        guard await external.isAvailable() else {
+            throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
+        }
+
+        let previousEngine = activeEngine
+        activeEngine = external
+        defer { activeEngine = previousEngine }
+
+        let intelligences = sourceSummaries.map { summary -> SessionIntelligence in
+            let topics = (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? []
+            let entities = (try? [Entity].fromEntitiesJSON(summary.entitiesJSON)) ?? []
+            let wordCount = summary.text.split(separator: " ").count
+
+            return SessionIntelligence(
+                sessionId: summary.id,
+                summary: summary.text,
+                topics: topics,
+                entities: entities,
+                sentiment: 0.0,
+                duration: summary.periodEnd.timeIntervalSince(summary.periodStart),
+                wordCount: wordCount,
+                languageCodes: ["en-US"]
+            )
+        }
+
+        let intelligence = try await external.summarizePeriod(
+            periodType: .yearWrap,
+            sessionSummaries: intelligences,
+            periodStart: startOfYear,
+            periodEnd: endOfYear
+        )
+
+        return try convertToSummary(periodIntelligence: intelligence)
+    }
     
     /// Generate a period summary by aggregating session-level summaries
     private func generatePeriodSummary(

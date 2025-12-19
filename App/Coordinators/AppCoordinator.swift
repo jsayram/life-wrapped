@@ -770,6 +770,7 @@ public final class AppCoordinator: ObservableObject {
         let periodEnd = lastChunk.endTime
         
         // Check active engine
+        await coordinator.setPreferredEngine(.local)
         let activeEngine = await coordinator.getActiveEngine()
         print("🧠 [AppCoordinator] Active summarization engine: \(activeEngine.displayName)")
         
@@ -1256,45 +1257,38 @@ public final class AppCoordinator: ObservableObject {
         await updateYearlySummary(date: sessionDate)
     }
     
-    /// Update or create daily summary by aggregating all session summaries for that day
-    /// Uses the user-selected LLM engine for hierarchical summarization
+    /// Update or create daily summary by aggregating all session summaries for that day using deterministic rollup
     public func updateDailySummary(date: Date, forceRegenerate: Bool = false) async {
-        guard let dbManager = databaseManager,
-              let coordinator = summarizationCoordinator else { return }
-        
+        guard let dbManager = databaseManager else { return }
+
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
         let periodKey = "day-\(startOfDay.timeIntervalSince1970)"
-        
-        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
+
         guard !generatingPeriodSummaries.contains(periodKey) else {
             print("⏭️ [AppCoordinator] Daily summary already being generated, skipping duplicate call...")
             return
         }
-        
-        // Mark as in-progress
+
         generatingPeriodSummaries.insert(periodKey)
         defer { generatingPeriodSummaries.remove(periodKey) }
-        
+
         do {
-            // 1. Fetch all sessions for this day
             let sessions = try await dbManager.fetchSessionsByDate(date: date)
             print("📊 [AppCoordinator] Found \(sessions.count) sessions for \(date.formatted(date: .abbreviated, time: .omitted))")
-            
+
             guard !sessions.isEmpty else {
                 print("ℹ️ [AppCoordinator] No sessions found for this day")
                 return
             }
-            
-            // 2. Ensure all sessions have summaries (generate if missing)
+
             var sessionsWithSummaries = 0
             var sessionsNeedingSummaries = 0
-            
+
             for session in sessions {
                 if let _ = try? await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
                     sessionsWithSummaries += 1
                 } else {
-                    // Check if transcription is complete
                     let isComplete = try await isSessionTranscriptionComplete(sessionId: session.sessionId)
                     if isComplete {
                         print("⚠️ [AppCoordinator] Session \(session.sessionId) missing summary, generating...")
@@ -1306,262 +1300,227 @@ public final class AppCoordinator: ObservableObject {
                     }
                 }
             }
-            
+
             guard sessionsWithSummaries > 0 else {
                 print("ℹ️ [AppCoordinator] No sessions with summaries for this day (\(sessions.count) total, \(sessionsNeedingSummaries) pending transcription)")
                 return
             }
-            
-            print("📊 [AppCoordinator] Found \(sessionsWithSummaries) sessions with summaries (of \(sessions.count) total)")
-            
-            // 3. Calculate period boundaries
-            let calendar = Calendar.current
-            let startOfDay = calendar.startOfDay(for: date)
+
             let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
-            
-            // 4. Fetch session summaries for input hash computation
+
             let sessionSummaries = try await dbManager.fetchSummaries(periodType: .session)
                 .filter { $0.sessionId != nil && $0.periodStart >= startOfDay && $0.periodStart < endOfDay }
-            
+                .sorted { $0.periodStart < $1.periodStart }
+
             let sessionIds = sessionSummaries.compactMap { $0.sessionId }
             let sessionTexts = sessionSummaries.map { $0.text }
-            
-            // 5. Compute input hash for change detection
+
             let sourceIds = await dbManager.sourceIdsToJSON(sessionIds)
             let inputHash = await dbManager.computeInputHash(sessionTexts)
-            
+
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(sessionTexts.count) session summaries")
-            
-            // 6. Check if summary exists with same input hash (cache hit)
+
             if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay) {
                 print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
                 if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Daily summary unchanged, skipping API call")
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Daily rollup unchanged, skipping regeneration")
                     return
-                } else if forceRegenerate {
-                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
-                } else {
-                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate daily summary")
                 }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating daily rollup")
             } else {
-                print("📝 [AppCoordinator] No existing daily summary found, will generate new one")
+                print("📝 [AppCoordinator] No existing daily summary found, will generate new rollup")
             }
-            
-            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating daily summary from \(sessionTexts.count) session summaries using LLM...")
-            
-            // 7. Generate daily summary using user-selected LLM engine via coordinator
-            let dailySummary = try await coordinator.generateDailySummary(for: date)
-            
-            // 8. Upsert into database (generateDailySummary returns a Summary object)
+
+            let lines = sessionSummaries.map { summary in
+                let timeLabel = rollupTimeFormatter.string(from: summary.periodStart)
+                return "- [\(timeLabel)] \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Day rollup (\(sessionSummaries.count) sessions)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .day,
-                text: dailySummary.text,
+                text: rollupText,
                 start: startOfDay,
                 end: endOfDay,
-                topicsJSON: dailySummary.topicsJSON,
-                entitiesJSON: dailySummary.entitiesJSON,
-                engineTier: dailySummary.engineTier,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] ✨ Daily summary saved to database (engine: \(dailySummary.engineTier ?? "unknown"), \(dailySummary.text.count) chars)")
+
+            print("✅ [AppCoordinator] Daily rollup saved to database (engine: rollup, \(rollupText.count) chars)")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
     }
     
-    /// Update or create weekly summary by aggregating all daily summaries for that week
-    /// Uses the user-selected LLM engine for hierarchical summarization
+    /// Update or create weekly summary by concatenating daily rollups
     public func updateWeeklySummary(date: Date, forceRegenerate: Bool = false) async {
-        guard let dbManager = databaseManager,
-              let coordinator = summarizationCoordinator else { return }
-        
-        // 1. Get week range (Monday to Sunday)
+        guard let dbManager = databaseManager else { return }
+
         let calendar = Calendar.current
         var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         components.weekday = 2 // Monday
         guard let startOfWeek = calendar.date(from: components) else { return }
         guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
-        
+
         let periodKey = "week-\(startOfWeek.timeIntervalSince1970)"
-        
-        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
+
         guard !generatingPeriodSummaries.contains(periodKey) else {
             print("⏭️ [AppCoordinator] Weekly summary already being generated, skipping duplicate call...")
             return
         }
-        
-        // Mark as in-progress
+
         generatingPeriodSummaries.insert(periodKey)
         defer { generatingPeriodSummaries.remove(periodKey) }
-        
+
         do {
-            print("📊 [AppCoordinator] Updating weekly summary for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)) - \(endOfWeek.formatted(date: .abbreviated, time: .omitted))")
-            
-            // 2. Fetch all daily summaries for this week
+            print("📊 [AppCoordinator] Updating weekly rollup for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)) - \(endOfWeek.formatted(date: .abbreviated, time: .omitted))")
+
             let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfWeek, to: endOfWeek)
+                .sorted { $0.periodStart < $1.periodStart }
             print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this week")
-            
-            if dailySummaries.isEmpty {
+
+            guard !dailySummaries.isEmpty else {
                 print("ℹ️ [AppCoordinator] No daily summaries found for this week")
-                print("   Query range: \(startOfWeek.ISO8601Format()) to \(endOfWeek.ISO8601Format())")
-                
-                // Debug: List all daily summaries to see what exists
-                if let allDailies = try? await dbManager.fetchSummaries(periodType: .day) {
-                    print("   Available daily summaries: \(allDailies.count)")
-                    for daily in allDailies {
-                        print("   - Daily: \(daily.periodStart.ISO8601Format()) to \(daily.periodEnd.ISO8601Format())")
-                    }
-                }
                 return
             }
-            
-            // 3. Compute input hash for change detection
+
             let dailyIds = dailySummaries.map { $0.id }
             let dailyTexts = dailySummaries.map { $0.text }
             let sourceIds = await dbManager.sourceIdsToJSON(dailyIds)
             let inputHash = await dbManager.computeInputHash(dailyTexts)
-            
+
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
-            
-            // 4. Check if summary exists with same input hash (cache hit)
+
             if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek) {
                 print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
                 if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly summary unchanged, skipping API call")
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly rollup unchanged, skipping regeneration")
                     return
-                } else if forceRegenerate {
-                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
-                } else {
-                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate weekly summary")
                 }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating weekly rollup")
             } else {
-                print("📝 [AppCoordinator] No existing weekly summary found, will generate new one")
+                print("📝 [AppCoordinator] No existing weekly summary found, will generate new rollup")
             }
-            
-            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating weekly summary from \(dailySummaries.count) daily summaries using LLM...")
-            
-            // 5. Generate weekly summary using user-selected LLM engine via coordinator
-            let weeklySummary = try await coordinator.generateWeeklySummary(for: date)
-            
-            // 5. Upsert into database
+
+            let lines = dailySummaries.map { summary in
+                let dateLabel = rollupDateFormatter.string(from: summary.periodStart)
+                return "- \(dateLabel): \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Week rollup (\(dailySummaries.count) days)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .week,
-                text: weeklySummary.text,
+                text: rollupText,
                 start: startOfWeek,
                 end: endOfWeek,
-                topicsJSON: weeklySummary.topicsJSON,
-                entitiesJSON: weeklySummary.entitiesJSON,
-                engineTier: weeklySummary.engineTier,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] Weekly summary updated (engine: \(weeklySummary.engineTier ?? "unknown"))")
+
+            print("✅ [AppCoordinator] Weekly rollup updated (engine: rollup)")
         } catch {
             print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
         }
     }
     
-    /// Update or create monthly summary by aggregating all weekly summaries for that month
-    /// Uses the user-selected LLM engine for hierarchical summarization
+    /// Update or create monthly summary by concatenating weekly rollups (or daily when needed)
     public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
-        guard let dbManager = databaseManager,
-              let coordinator = summarizationCoordinator else { return }
-        
-        // 1. Get month range
+        guard let dbManager = databaseManager else { return }
+
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month], from: date)
         guard let startOfMonth = calendar.date(from: components) else { return }
         guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
-        
+
         let periodKey = "month-\(startOfMonth.timeIntervalSince1970)"
-        
-        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
+
         guard !generatingPeriodSummaries.contains(periodKey) else {
             print("⏭️ [AppCoordinator] Monthly summary already being generated, skipping duplicate call...")
             return
         }
-        
-        // Mark as in-progress
+
         generatingPeriodSummaries.insert(periodKey)
         defer { generatingPeriodSummaries.remove(periodKey) }
-        
+
         do {
-            print("📊 [AppCoordinator] Updating monthly summary for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
-            
-            // 2. Fetch all weekly summaries for this month (hierarchical rollup)
-            let weeklySummaries = try await dbManager.fetchWeeklySummaries(from: startOfMonth, to: endOfMonth)
+            print("📊 [AppCoordinator] Updating monthly rollup for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
+
+            var weeklySummaries = try await dbManager.fetchWeeklySummaries(from: startOfMonth, to: endOfMonth)
+                .sorted { $0.periodStart < $1.periodStart }
             print("📊 [AppCoordinator] Found \(weeklySummaries.count) weekly summaries for this month")
-            
-            // Fall back to daily summaries if no weekly summaries exist
+
             if weeklySummaries.isEmpty {
                 print("ℹ️ [AppCoordinator] No weekly summaries found, checking daily summaries...")
-                let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
-                
-                if dailySummaries.isEmpty {
-                    print("ℹ️ [AppCoordinator] No daily summaries found for this month")
-                    return
-                }
-                
-                print("📝 [AppCoordinator] Using \(dailySummaries.count) daily summaries for month (no weekly available)")
+                weeklySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
+                    .sorted { $0.periodStart < $1.periodStart }
             }
-            
-            // 3. Compute input hash for change detection (use weekly summaries as source)
+
+            guard !weeklySummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No rollups found for this month")
+                return
+            }
+
             let weeklyIds = weeklySummaries.map { $0.id }
             let weeklyTexts = weeklySummaries.map { $0.text }
             let sourceIds = await dbManager.sourceIdsToJSON(weeklyIds)
             let inputHash = await dbManager.computeInputHash(weeklyTexts)
-            
-            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) weekly summaries")
-            
-            // 4. Check if summary exists with same input hash (cache hit)
+
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) rollups")
+
             if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
                 print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
                 if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly summary unchanged, skipping API call")
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly rollup unchanged, skipping regeneration")
                     return
-                } else if forceRegenerate {
-                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
-                } else {
-                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate monthly summary")
                 }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating monthly rollup")
             } else {
-                print("📝 [AppCoordinator] No existing monthly summary found, will generate new one")
+                print("📝 [AppCoordinator] No existing monthly summary found, will generate new rollup")
             }
-            
-            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating monthly summary from \(weeklySummaries.count) weekly summaries using LLM...")
-            
-            // 5. Generate monthly summary using user-selected LLM engine via coordinator
-            let monthlySummary = try await coordinator.generateMonthlySummary(for: date)
-            
-            // 5. Upsert into database
+
+            let lines = weeklySummaries.map { summary in
+                let rangeLabel = rollupMonthRangeFormatter.string(from: summary.periodStart)
+                return "- \(rangeLabel): \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Month rollup (\(weeklySummaries.count) entries)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .month,
-                text: monthlySummary.text,
+                text: rollupText,
                 start: startOfMonth,
                 end: endOfMonth,
-                topicsJSON: monthlySummary.topicsJSON,
-                entitiesJSON: monthlySummary.entitiesJSON,
-                engineTier: monthlySummary.engineTier,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] Monthly summary updated (engine: \(monthlySummary.engineTier ?? "unknown"))")
+
+            print("✅ [AppCoordinator] Monthly rollup updated (engine: rollup)")
         } catch {
             print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
         }
     }
     
-    /// Update or create yearly summary by aggregating all monthly summaries for that year
-    /// Uses the user-selected LLM engine for hierarchical summarization
+    /// Update or create yearly summary by concatenating monthly rollups (no external calls)
     public func updateYearlySummary(date: Date, forceRegenerate: Bool = false) async {
-        guard let dbManager = databaseManager,
-              let coordinator = summarizationCoordinator else { return }
-        
-        // 1. Get year range
+        guard let dbManager = databaseManager else { return }
+
         let calendar = Calendar.current
         let year = calendar.component(.year, from: date)
         var startComponents = DateComponents()
@@ -1570,85 +1529,196 @@ public final class AppCoordinator: ObservableObject {
         startComponents.day = 1
         guard let startOfYear = calendar.date(from: startComponents) else { return }
         guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
-        
+
         let periodKey = "year-\(startOfYear.timeIntervalSince1970)"
-        
-        // Guard: Skip if already generating this period (prevents duplicate concurrent calls)
+
         guard !generatingPeriodSummaries.contains(periodKey) else {
             print("⏭️ [AppCoordinator] Yearly summary already being generated, skipping duplicate call...")
             return
         }
-        
-        // Mark as in-progress
+
         generatingPeriodSummaries.insert(periodKey)
         defer { generatingPeriodSummaries.remove(periodKey) }
-        
+
         do {
-            print("📊 [AppCoordinator] Updating yearly summary for \(year)")
-            
-            // 2. Fetch all monthly summaries for this year (hierarchical rollup)
-            let monthlySummaries = try await dbManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+            print("📊 [AppCoordinator] Updating yearly rollup for \(year)")
+
+            var monthlySummaries = try await dbManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+                .sorted { $0.periodStart < $1.periodStart }
             print("📊 [AppCoordinator] Found \(monthlySummaries.count) monthly summaries for this year")
-            
-            // Fall back to weekly summaries if no monthly summaries exist
+
             if monthlySummaries.isEmpty {
                 print("ℹ️ [AppCoordinator] No monthly summaries found, checking weekly summaries...")
-                let weeklySummaries = try await dbManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
-                
-                if weeklySummaries.isEmpty {
-                    print("ℹ️ [AppCoordinator] No weekly summaries found for this year")
-                    return
-                }
-                
-                print("📝 [AppCoordinator] Using \(weeklySummaries.count) weekly summaries for year (no monthly available)")
+                monthlySummaries = try await dbManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
+                    .sorted { $0.periodStart < $1.periodStart }
             }
-            
-            // 3. Compute input hash for change detection (use monthly summaries as source)
+
+            guard !monthlySummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No rollups found for this year")
+                return
+            }
+
             let monthlyIds = monthlySummaries.map { $0.id }
             let monthlyTexts = monthlySummaries.map { $0.text }
             let sourceIds = await dbManager.sourceIdsToJSON(monthlyIds)
             let inputHash = await dbManager.computeInputHash(monthlyTexts)
-            
-            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(monthlyTexts.count) monthly summaries")
-            
-            // 4. Check if summary exists with same input hash (cache hit)
+
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(monthlyTexts.count) rollups")
+
             if let existing = try? await dbManager.fetchPeriodSummary(type: .year, date: startOfYear) {
                 print("📂 [AppCoordinator] Found existing yearly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
                 if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Yearly summary unchanged, skipping API call")
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Yearly rollup unchanged, skipping regeneration")
                     return
-                } else if forceRegenerate {
-                    print("🔄 [AppCoordinator] Force regenerate enabled, bypassing cache")
-                } else {
-                    print("🔄 [AppCoordinator] Hash mismatch - will regenerate yearly summary")
                 }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating yearly rollup")
             } else {
-                print("📝 [AppCoordinator] No existing yearly summary found, will generate new one")
+                print("📝 [AppCoordinator] No existing yearly summary found, will generate new rollup")
             }
-            
-            print("🌐 [AppCoordinator] 🚀 MAKING API CALL - Generating yearly summary from \(monthlySummaries.count) monthly summaries using LLM...")
-            
-            // 5. Generate yearly summary using user-selected LLM engine via coordinator
-            let yearlySummary = try await coordinator.generateYearlySummary(for: date)
-            
-            // 5. Upsert into database
+
+            let lines = monthlySummaries.map { summary in
+                let monthLabel = rollupYearMonthFormatter.string(from: summary.periodStart)
+                return "- \(monthLabel): \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Year rollup (\(monthlySummaries.count) entries)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .year,
-                text: yearlySummary.text,
+                text: rollupText,
                 start: startOfYear,
                 end: endOfYear,
-                topicsJSON: yearlySummary.topicsJSON,
-                entitiesJSON: yearlySummary.entitiesJSON,
-                engineTier: yearlySummary.engineTier,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] Yearly summary updated (engine: \(yearlySummary.engineTier ?? "unknown"))")
+
+            print("✅ [AppCoordinator] Yearly rollup updated (engine: rollup)")
         } catch {
             print("❌ [AppCoordinator] Failed to update yearly summary: \(error)")
         }
     }
+
+    /// Manual Year Wrap using external intelligence (keeps deterministic rollup as default)
+    public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
+        guard let dbManager = databaseManager,
+              let coordinator = summarizationCoordinator else { return }
+
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        var startComponents = DateComponents()
+        startComponents.year = year
+        startComponents.month = 1
+        startComponents.day = 1
+        guard let startOfYear = calendar.date(from: startComponents) else { return }
+        guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
+
+        let periodKey = "yearwrap-\(startOfYear.timeIntervalSince1970)"
+
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Year Wrap already in progress, skipping duplicate call...")
+            return
+        }
+
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+
+        do {
+            print("📊 [AppCoordinator] Starting Year Wrap for \(year)")
+
+            var sourceSummaries = try await dbManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+                .sorted { $0.periodStart < $1.periodStart }
+
+            if sourceSummaries.isEmpty {
+                sourceSummaries = try await dbManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
+                    .sorted { $0.periodStart < $1.periodStart }
+            }
+
+            guard !sourceSummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No rollups available to build a Year Wrap")
+                return
+            }
+
+            let sourceIds = await dbManager.sourceIdsToJSON(sourceSummaries.map { $0.id })
+            let inputHash = await dbManager.computeInputHash(sourceSummaries.map { $0.text })
+
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear) {
+                print("📂 [AppCoordinator] Found existing Year Wrap (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Year Wrap unchanged, skipping external call")
+                    return
+                }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating Year Wrap")
+            } else {
+                print("📝 [AppCoordinator] No Year Wrap found, generating new one")
+            }
+
+            let wrapSummary = try await coordinator.generateYearWrapSummary(
+                startOfYear: startOfYear,
+                endOfYear: endOfYear,
+                sourceSummaries: sourceSummaries
+            )
+
+            try await dbManager.upsertPeriodSummary(
+                type: .yearWrap,
+                text: wrapSummary.text,
+                start: startOfYear,
+                end: endOfYear,
+                topicsJSON: wrapSummary.topicsJSON,
+                entitiesJSON: wrapSummary.entitiesJSON,
+                engineTier: wrapSummary.engineTier ?? EngineTier.external.rawValue,
+                sourceIds: sourceIds,
+                inputHash: inputHash
+            )
+
+            print("✅ [AppCoordinator] Year Wrap saved (engine: \(wrapSummary.engineTier ?? "external"))")
+        } catch {
+            print("❌ [AppCoordinator] Failed to generate Year Wrap: \(error)")
+            showError("Year Wrap failed. Check your external key and try again.")
+        }
+    }
+
+    // MARK: - Rollup Helpers
+
+    private func buildRollupText(header: String, lines: [String]) -> String {
+        guard !lines.isEmpty else { return header }
+        return ([header] + lines).joined(separator: "\n")
+    }
+
+    private var rollupTimeFormatter: DateFormatter { Self.rollupTimeFormatter }
+    private var rollupDateFormatter: DateFormatter { Self.rollupDateFormatter }
+    private var rollupMonthRangeFormatter: DateFormatter { Self.rollupMonthRangeFormatter }
+    private var rollupYearMonthFormatter: DateFormatter { Self.rollupYearMonthFormatter }
+
+    private static let rollupTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let rollupDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private static let rollupMonthRangeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    private static let rollupYearMonthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "LLLL"
+        return formatter
+    }()
     
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
