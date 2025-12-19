@@ -44,7 +44,7 @@ public actor LlamaContext {
         print("📥 [LlamaContext] Loading model: \(configuration.modelName)")
         
         // Check if model file exists
-        let modelSize = ModelFileManager.ModelSize.qwen2_05b
+        let modelSize = ModelFileManager.ModelSize.llama32_1b
         guard await modelFileManager.isModelAvailable(modelSize) else {
             throw LocalLLMError.modelNotFound(configuration.modelName)
         }
