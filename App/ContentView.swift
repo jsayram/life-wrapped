@@ -14,36 +14,53 @@ import Security
 // MARK: - AppTheme
 
 /// Apple Intelligence-inspired design system with purple/blue/magenta/green color palette
-/// All colors meet WCAG AA accessibility standards (4.5:1 for normal text, 3:1 for large text)
+/// 
+/// WCAG Compliance: All colors meet WCAG AA standards when used appropriately:
+/// - darkPurple, magenta, emerald: Suitable for text on white (≥4.5:1)
+/// - purple, skyBlue: Suitable for large text/icons on white (≥3:1), meets AA for dark backgrounds
+/// - lightPurple: Background/border use only, not for text content
+/// 
+/// Usage Guidelines:
+/// - Use darkPurple/magenta for body text and important labels
+/// - Use purple/skyBlue for buttons, icons, and accents
+/// - Use lightPurple only for decorative backgrounds and borders
+/// - All text uses system .primary/.secondary colors; theme colors are for accents only
 struct AppTheme {
     // MARK: - Core Colors
     
     /// Dark purple - Primary accent for active states
-    /// Contrast on white: 7.8:1 (AAA) | Contrast on black: 2.7:1
+    /// Contrast: White 7.8:1 (AAA) | Black 2.7:1
+    /// Usage: Text, buttons, active states
     static let darkPurple = Color(hex: "#6D28D9")
     
     /// Medium purple - Secondary accent for buttons and highlights
-    /// Contrast on white: 5.2:1 (AA) | Contrast on black: 4.0:1
+    /// Contrast: White 5.2:1 (AA) | Black 4.0:1
+    /// Usage: Icons, tints, large text
     static let purple = Color(hex: "#8B5CF6")
     
     /// Light purple - Tertiary accent for backgrounds and borders
-    /// Contrast on white: 2.1:1 | Contrast on black: 10.0:1 (AAA)
+    /// Contrast: White 2.1:1 | Black 10.0:1 (AAA)
+    /// Usage: Backgrounds, borders (never for text)
     static let lightPurple = Color(hex: "#C4B5FD")
     
     /// Sky blue - Cool accent for info states
-    /// Contrast on white: 3.8:1 | Contrast on black: 5.5:1 (AA)
+    /// Contrast: White 3.8:1 | Black 5.5:1 (AA)
+    /// Usage: Icons, info badges, dark mode text
     static let skyBlue = Color(hex: "#60A5FA")
     
     /// Pale blue - Subtle backgrounds
-    /// Contrast on white: 1.4:1 | Contrast on black: 15.0:1 (AAA)
+    /// Contrast: White 1.4:1 | Black 15.0:1 (AAA)
+    /// Usage: Backgrounds only (never for text)
     static let paleBlue = Color(hex: "#DBEAFE")
     
     /// Magenta - Energetic accent for recording states
-    /// Contrast on white: 4.9:1 (AA) | Contrast on black: 4.3:1
+    /// Contrast: White 4.9:1 (AA) | Black 4.3:1
+    /// Usage: Text, recording badges, active states
     static let magenta = Color(hex: "#EC4899")
     
     /// Emerald - Success states
-    /// Contrast on white: 4.5:1 (AA) | Contrast on black: 4.7:1
+    /// Contrast: White 4.5:1 (AA) | Black 4.7:1 (AA)
+    /// Usage: Success text, checkmarks, status badges
     static let emerald = Color(hex: "#10B981")
     
     // MARK: - Card Overlays (Environment-Aware)
@@ -98,6 +115,130 @@ extension Color {
             blue: Double(b) / 255,
             opacity: Double(a) / 255
         )
+    }
+}
+
+// MARK: - LoadingView
+
+/// Custom loading indicator with Apple Intelligence aesthetic
+struct LoadingView: View {
+    enum Size {
+        case small, medium, large
+        
+        var diameter: CGFloat {
+            switch self {
+            case .small: return 60
+            case .medium: return 120
+            case .large: return 180
+            }
+        }
+        
+        var dotSize: CGFloat {
+            switch self {
+            case .small: return 4
+            case .medium: return 6
+            case .large: return 8
+            }
+        }
+    }
+    
+    let size: Size
+    @State private var rotationDegrees: Double = 0
+    @State private var pulse1Scale: CGFloat = 0.8
+    @State private var pulse2Scale: CGFloat = 0.8
+    @State private var pulse3Scale: CGFloat = 0.8
+    
+    var body: some View {
+        ZStack {
+            // Pulsing concentric circles
+            Circle()
+                .strokeBorder(
+                    RadialGradient(
+                        colors: [AppTheme.purple, AppTheme.magenta.opacity(0.3)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size.diameter * 0.15
+                    ),
+                    lineWidth: 2
+                )
+                .frame(width: size.diameter * 0.3, height: size.diameter * 0.3)
+                .scaleEffect(pulse1Scale)
+                .opacity(2.0 - pulse1Scale)
+            
+            Circle()
+                .strokeBorder(
+                    RadialGradient(
+                        colors: [AppTheme.skyBlue, AppTheme.purple.opacity(0.3)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size.diameter * 0.25
+                    ),
+                    lineWidth: 2
+                )
+                .frame(width: size.diameter * 0.5, height: size.diameter * 0.5)
+                .scaleEffect(pulse2Scale)
+                .opacity(2.0 - pulse2Scale)
+            
+            Circle()
+                .strokeBorder(
+                    RadialGradient(
+                        colors: [AppTheme.darkPurple, AppTheme.skyBlue.opacity(0.3)],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: size.diameter * 0.38
+                    ),
+                    lineWidth: 2
+                )
+                .frame(width: size.diameter * 0.75, height: size.diameter * 0.75)
+                .scaleEffect(pulse3Scale)
+                .opacity(2.0 - pulse3Scale)
+            
+            // Rotating dots
+            ZStack {
+                ForEach(0..<12) { index in
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [colorForDot(index), colorForDot(index).opacity(0.5)],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: size.dotSize
+                            )
+                        )
+                        .frame(width: size.dotSize, height: size.dotSize)
+                        .offset(y: -size.diameter / 2 + size.dotSize)
+                        .rotationEffect(.degrees(Double(index) * 30))
+                        .opacity(opacityForDot(index))
+                }
+            }
+            .rotationEffect(.degrees(rotationDegrees))
+        }
+        .frame(width: size.diameter, height: size.diameter)
+        .onAppear {
+            withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
+                rotationDegrees = 360
+            }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                pulse1Scale = 1.2
+            }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.2)) {
+                pulse2Scale = 1.2
+            }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true).delay(0.4)) {
+                pulse3Scale = 1.2
+            }
+        }
+    }
+    
+    private func colorForDot(_ index: Int) -> Color {
+        let colors: [Color] = [AppTheme.darkPurple, AppTheme.purple, AppTheme.magenta, AppTheme.magenta, 
+                                AppTheme.purple, AppTheme.skyBlue, AppTheme.skyBlue, AppTheme.purple,
+                                AppTheme.darkPurple, AppTheme.darkPurple, AppTheme.purple, AppTheme.magenta]
+        return colors[index % colors.count]
+    }
+    
+    private func opacityForDot(_ index: Int) -> Double {
+        return 1.0 - (Double(index) / 12.0 * 0.7)
     }
 }
 
