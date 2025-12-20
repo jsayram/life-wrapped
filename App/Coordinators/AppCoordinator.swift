@@ -795,6 +795,13 @@ public final class AppCoordinator: ObservableObject {
             engineTier: generatedSummary.engineTier
         )
         
+        // Delete old session summary if it exists (to prevent duplicates in rollups)
+        if let existingSummary = try? await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+            print("🗑️ [AppCoordinator] Deleting old session summary (ID: \(existingSummary.id))...")
+            try await dbManager.deleteSummary(id: existingSummary.id)
+            print("✅ [AppCoordinator] Old session summary deleted")
+        }
+        
         // Save session summary
         print("💾 [AppCoordinator] Saving summary to database...")
         try await dbManager.insertSummary(generatedSummary)
