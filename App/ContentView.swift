@@ -5011,38 +5011,86 @@ struct SessionDetailView: View {
     }
     
     private var waveformView: some View {
-        ZStack {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    HStack(spacing: 2) {
-                        ForEach(0..<50, id: \.self) { index in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [AppTheme.lightPurple.opacity(0.5), AppTheme.purple.opacity(0.3)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(height: waveformHeight(for: index))
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                    .background(Color(.tertiarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    
-                    if isPlayingThisSession {
-                        let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
-                        Rectangle()
-                            .fill(AppTheme.magenta)
-                            .frame(width: 3, height: 60)
-                            .shadow(color: AppTheme.magenta.opacity(0.5), radius: 3)
-                            .offset(x: geometry.size.width * progress)
-                            .animation(.linear(duration: 0.1), value: progress)
+        TimelineView(.animation(minimumInterval: 1/30)) { context in
+            Canvas { canvasContext, size in
+                let barCount = 80
+                let barWidth: CGFloat = 3
+                let spacing: CGFloat = 1
+                let totalWidth = CGFloat(barCount) * (barWidth + spacing) - spacing
+                let startX = (size.width - totalWidth) / 2
+                let maxHeight = size.height - 20
+                
+                // Get FFT magnitudes from playback or use static pattern
+                let magnitudes: [Float]
+                if isPlayingThisSession {
+                    // Use actual FFT data during playback
+                    let playbackMagnitudes = coordinator.audioPlayback.fftMagnitudes
+                    magnitudes = playbackMagnitudes.isEmpty ? Array(repeating: 0.1, count: barCount) : playbackMagnitudes
+                } else {
+                    // Static visualization when not playing
+                    magnitudes = (0..<barCount).map { index in
+                        let seed = Double(index) * 0.12345
+                        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
+                        return Float(0.2 + abs(height) * 0.3)
                     }
                 }
+                
+                // Rainbow gradient colors (Apple Intelligence)
+                let waveformGradient = Gradient(colors: [
+                    Color(hex: "#FF9500"), // Orange
+                    Color(hex: "#FF2D55"), // Pink  
+                    Color(hex: "#A855F7"), // Purple
+                    Color(hex: "#3B82F6"), // Blue
+                    Color(hex: "#06B6D4"), // Cyan
+                    Color(hex: "#10B981"), // Green
+                    Color(hex: "#FBBF24")  // Yellow
+                ])
+                
+                // Draw each frequency bar
+                for (index, magnitude) in magnitudes.prefix(barCount).enumerated() {
+                    let x = startX + CGFloat(index) * (barWidth + spacing)
+                    
+                    // Calculate bar height based on magnitude
+                    let minHeight: CGFloat = 4
+                    let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(magnitude)
+                    
+                    // Center vertically
+                    let y = (size.height - barHeight) / 2
+                    
+                    // Create rounded rectangle for bar
+                    let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
+                    let barPath = Path(roundedRect: barRect, cornerRadii: RectangleCornerRadii(
+                        topLeading: barWidth / 2,
+                        bottomLeading: barWidth / 2,
+                        bottomTrailing: barWidth / 2,
+                        topTrailing: barWidth / 2
+                    ))
+                    
+                    // Calculate gradient position based on bar index
+                    let gradientProgress = CGFloat(index) / CGFloat(barCount - 1)
+                    
+                    // Fill with gradient
+                    canvasContext.fill(barPath, with: .linearGradient(
+                        waveformGradient,
+                        startPoint: CGPoint(x: 0, y: 0),
+                        endPoint: CGPoint(x: size.width, y: 0)
+                    ))
+                }
+                
+                // Draw playhead indicator if playing
+                if isPlayingThisSession {
+                    let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
+                    let playheadX = size.width * progress
+                    
+                    let playheadPath = Path { path in
+                        path.move(to: CGPoint(x: playheadX, y: 0))
+                        path.addLine(to: CGPoint(x: playheadX, y: size.height))
+                    }
+                    
+                    canvasContext.stroke(playheadPath, with: .color(AppTheme.magenta), lineWidth: 3)
+                }
             }
-            .frame(height: 60)
+            .frame(height: 100)
         }
     }
     
@@ -5351,8 +5399,8 @@ struct SessionDetailView: View {
     
     private func startPlaybackUpdateTimer() {
         stopPlaybackUpdateTimer()
-        // Update at 20fps for smooth visual feedback
-        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+        // Update at 30fps for smooth visual feedback (matches waveform animation)
+        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { _ in
             Task { @MainActor in
                 self.forceUpdateTrigger.toggle()
             }

@@ -4,6 +4,7 @@
 
 import AVFoundation
 import Foundation
+import Accelerate
 
 /// Manager for playing back recorded audio files
 @MainActor
@@ -15,6 +16,7 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     @Published public private(set) var currentTime: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
     @Published public private(set) var currentlyPlayingURL: URL?
+    @Published public private(set) var fftMagnitudes: [Float] = Array(repeating: 0, count: 80)
     
     // MARK: - Private Properties
     
@@ -25,6 +27,11 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     private var playQueue: [URL] = []
     private var currentQueueIndex: Int = 0
     private var onQueueComplete: (() -> Void)?
+    
+    // Audio engine for FFT analysis
+    private var audioEngine: AVAudioEngine?
+    private var playerNode: AVAudioPlayerNode?
+    private var audioFile: AVAudioFile?
     
     // MARK: - Initialization
     
@@ -44,23 +51,92 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         try session.setActive(true)
         #endif
         
-        // Create and configure player
-        audioPlayer = try AVAudioPlayer(contentsOf: url)
-        audioPlayer?.delegate = self
-        audioPlayer?.prepareToPlay()
-        
-        duration = audioPlayer?.duration ?? 0
-        currentTime = 0
-        currentlyPlayingURL = url
-        
-        // Start playback
-        audioPlayer?.play()
-        isPlaying = true
-        
-        // Start progress timer
-        startProgressTimer()
+        // Setup audio engine for FFT
+        setupAudioEngine(url: url)
         
         print("▶️ [AudioPlaybackManager] Started playing: \(url.lastPathComponent)")
+    }
+    
+    private func setupAudioEngine(url: URL) {
+        // Stop existing engine
+        stopAudioEngine()
+        
+        do {
+            // Create audio engine and player node
+            audioEngine = AVAudioEngine()
+            playerNode = AVAudioPlayerNode()
+            
+            guard let engine = audioEngine, let player = playerNode else { return }
+            
+            // Load audio file
+            audioFile = try AVAudioFile(forReading: url)
+            guard let file = audioFile else { return }
+            
+            let format = file.processingFormat
+            duration = Double(file.length) / format.sampleRate
+            currentTime = 0
+            currentlyPlayingURL = url
+            
+            // Attach and connect player node
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+            
+            // Install tap for FFT analysis
+            let tapFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                         sampleRate: format.sampleRate,
+                                         channels: 1,
+                                         interleaved: false)
+            
+            engine.mainMixerNode.installTap(onBus: 0,
+                                           bufferSize: 4096,
+                                           format: tapFormat) { [weak self] buffer, time in
+                self?.performFFTNonisolated(buffer: buffer)
+            }
+            
+            // Start engine
+            try engine.start()
+            
+            // Schedule audio file
+            player.scheduleFile(file, at: nil) { [weak self] in
+                Task { @MainActor in
+                    self?.handlePlaybackFinished()
+                }
+            }
+            
+            // Start playback
+            player.play()
+            isPlaying = true
+            
+            // Start progress timer
+            startProgressTimer()
+            
+        } catch {
+            print("❌ [AudioPlaybackManager] Failed to setup audio engine: \(error)")
+        }
+    }
+    
+    private func stopAudioEngine() {
+        playerNode?.stop()
+        audioEngine?.mainMixerNode.removeTap(onBus: 0)
+        audioEngine?.stop()
+        audioEngine = nil
+        playerNode = nil
+        audioFile = nil
+    }
+    
+    private func handlePlaybackFinished() {
+        isPlaying = false
+        currentTime = 0
+        stopProgressTimer()
+        
+        // If playing from queue, advance to next
+        if !playQueue.isEmpty {
+            currentQueueIndex += 1
+            playNextInQueue()
+        } else {
+            print("✅ [AudioPlaybackManager] Finished playing")
+            stopAudioEngine()
+        }
     }
     
     /// Play a single audio file (clears any queue)
@@ -73,7 +149,7 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     
     /// Pause the current playback
     public func pause() {
-        audioPlayer?.pause()
+        playerNode?.pause()
         isPlaying = false
         stopProgressTimer()
         print("⏸️ [AudioPlaybackManager] Paused")
@@ -81,7 +157,7 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     
     /// Resume paused playback
     public func resume() {
-        audioPlayer?.play()
+        playerNode?.play()
         isPlaying = true
         startProgressTimer()
         print("▶️ [AudioPlaybackManager] Resumed")
@@ -91,7 +167,7 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     public func togglePlayPause() {
         if isPlaying {
             pause()
-        } else if audioPlayer != nil {
+        } else if playerNode != nil {
             resume()
         }
     }
@@ -99,8 +175,7 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     /// Stop playback and reset
     public func stop() {
         stopProgressTimer()
-        audioPlayer?.stop()
-        audioPlayer = nil
+        stopAudioEngine()
         isPlaying = false
         currentTime = 0
         duration = 0
@@ -111,13 +186,39 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         currentQueueIndex = 0
         onQueueComplete = nil
         
+        // Reset FFT
+        fftMagnitudes = Array(repeating: 0, count: 80)
+        
         print("⏹️ [AudioPlaybackManager] Stopped")
     }
     
     /// Seek to a specific time
     /// - Parameter time: The time to seek to
     public func seek(to time: TimeInterval) {
-        audioPlayer?.currentTime = time
+        guard let player = playerNode, let file = audioFile else { return }
+        
+        let sampleRate = file.processingFormat.sampleRate
+        let startFrame = AVAudioFramePosition(time * sampleRate)
+        let frameCount = AVAudioFrameCount(file.length - startFrame)
+        
+        // Stop current playback
+        player.stop()
+        
+        // Schedule from new position
+        player.scheduleSegment(file,
+                              startingFrame: startFrame,
+                              frameCount: frameCount,
+                              at: nil) { [weak self] in
+            Task { @MainActor in
+                self?.handlePlaybackFinished()
+            }
+        }
+        
+        // Resume if was playing
+        if isPlaying {
+            player.play()
+        }
+        
         currentTime = time
     }
     
@@ -198,34 +299,74 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     }
     
     private func updateProgress() {
-        currentTime = audioPlayer?.currentTime ?? 0
-    }
-}
-
-// MARK: - AVAudioPlayerDelegate
-
-extension AudioPlaybackManager: AVAudioPlayerDelegate {
-    nonisolated public func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in
-            self.isPlaying = false
-            self.currentTime = 0
-            self.stopProgressTimer()
-            
-            // If playing from queue, advance to next
-            if !self.playQueue.isEmpty {
-                self.currentQueueIndex += 1
-                self.playNextInQueue()
-            } else {
-                print("✅ [AudioPlaybackManager] Finished playing")
-            }
+        // Calculate current time from player node
+        if let player = playerNode, let nodeTime = player.lastRenderTime,
+           let playerTime = player.playerTime(forNodeTime: nodeTime) {
+            let sampleRate = audioFile?.processingFormat.sampleRate ?? 44100
+            currentTime = Double(playerTime.sampleTime) / sampleRate
         }
     }
     
-    nonisolated public func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
-        Task { @MainActor in
-            self.stop()
-            if let error = error {
-                print("❌ [AudioPlaybackManager] Decode error: \(error)")
+    // MARK: - FFT Processing
+    
+    private nonisolated func performFFTNonisolated(buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        let frameCount = Int(buffer.frameLength)
+        
+        // Take samples for FFT (max 1024)
+        let samplesToProcess = min(frameCount, 1024)
+        var samples = Array(UnsafeBufferPointer(start: channelData, count: samplesToProcess))
+        
+        // Pad if needed
+        while samples.count < 1024 {
+            samples.append(0)
+        }
+        
+        // Perform FFT
+        var realParts = [Float](repeating: 0, count: 512)
+        var imagParts = [Float](repeating: 0, count: 512)
+        
+        samples.withUnsafeMutableBytes { samplesBytes in
+            realParts.withUnsafeMutableBytes { realBytes in
+                imagParts.withUnsafeMutableBytes { imagBytes in
+                    let complexPtr = samplesBytes.baseAddress!.assumingMemoryBound(to: DSPComplex.self)
+                    var splitComplex = DSPSplitComplex(
+                        realp: realBytes.baseAddress!.assumingMemoryBound(to: Float.self),
+                        imagp: imagBytes.baseAddress!.assumingMemoryBound(to: Float.self)
+                    )
+                    
+                    vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(512))
+                    
+                    // Note: FFT setup needs to be created in nonisolated context
+                    // We'll use vDSP_fft directly instead
+                    let log2n = vDSP_Length(10) // log2(1024)
+                    vDSP_fft_zrip(vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!,
+                                 &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
+                    
+                    // Calculate magnitudes
+                    var magnitudes = [Float](repeating: 0, count: 512)
+                    vDSP_zvabs(&splitComplex, 1, &magnitudes, 1, vDSP_Length(512))
+                    
+                    // Normalize and group into 80 bins
+                    let binSize = magnitudes.count / 80
+                    var outputMagnitudes = [Float](repeating: 0, count: 80)
+                    
+                    for i in 0..<80 {
+                        let startIdx = i * binSize
+                        let endIdx = min(startIdx + binSize, magnitudes.count)
+                        let binMagnitudes = magnitudes[startIdx..<endIdx]
+                        
+                        if !binMagnitudes.isEmpty {
+                            let average = binMagnitudes.reduce(0, +) / Float(binMagnitudes.count)
+                            outputMagnitudes[i] = min(average / 100.0, 1.0) // Normalize to 0-1
+                        }
+                    }
+                    
+                    // Update on main actor
+                    Task { @MainActor in
+                        self.fftMagnitudes = outputMagnitudes
+                    }
+                }
             }
         }
     }
