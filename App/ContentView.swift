@@ -1787,13 +1787,13 @@ struct InsightsTab: View {
             }
             .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
                 Button("Cancel", role: .cancel) { }
-                Button("Generate") {
+                Button("✨ Generate with External AI") {
                     Task {
                         await wrapUpYear(forceRegenerate: false)
                     }
                 }
             } message: {
-                Text("This will use your selected external AI service to create a comprehensive, beautifully crafted year-in-review summary.\n\n✨ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid external API credentials in Settings.\n\n📝 Use the orange refresh button to regenerate with your local AI model.")
+                Text("✨ Clicking 'Generate with External AI' will use your configured external AI service (from Settings) to create a comprehensive, beautifully crafted year-in-review summary.\n\n⏱️ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid external API credentials configured in Settings.\n\n🔄 Use the orange refresh button to roll up the monthly summaries without using external AI.")
             }
         }
     }
