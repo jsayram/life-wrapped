@@ -32,13 +32,19 @@ struct LoadingView: View {
     @State private var pulse2Scale: CGFloat = 0.8
     @State private var pulse3Scale: CGFloat = 0.8
     
+    // Theme colors (embedded since AppTheme isn't accessible in separate file)
+    private let purple = Color(hex: "#8B5CF6")
+    private let darkPurple = Color(hex: "#6D28D9")
+    private let magenta = Color(hex: "#EC4899")
+    private let skyBlue = Color(hex: "#60A5FA")
+    
     var body: some View {
         ZStack {
             // Pulsing concentric circles (center)
             Circle()
                 .strokeBorder(
                     RadialGradient(
-                        colors: [AppTheme.purple, AppTheme.magenta.opacity(0.3)],
+                        colors: [purple, magenta.opacity(0.3)],
                         center: .center,
                         startRadius: 0,
                         endRadius: size.diameter * 0.15
@@ -52,7 +58,7 @@ struct LoadingView: View {
             Circle()
                 .strokeBorder(
                     RadialGradient(
-                        colors: [AppTheme.skyBlue, AppTheme.purple.opacity(0.3)],
+                        colors: [skyBlue, purple.opacity(0.3)],
                         center: .center,
                         startRadius: 0,
                         endRadius: size.diameter * 0.25
@@ -66,7 +72,7 @@ struct LoadingView: View {
             Circle()
                 .strokeBorder(
                     RadialGradient(
-                        colors: [AppTheme.darkPurple, AppTheme.skyBlue.opacity(0.3)],
+                        colors: [darkPurple, skyBlue.opacity(0.3)],
                         center: .center,
                         startRadius: 0,
                         endRadius: size.diameter * 0.38
@@ -143,18 +149,18 @@ struct LoadingView: View {
     /// Assign gradient colors to dots for rainbow effect
     private func colorForDot(_ index: Int) -> Color {
         let colors: [Color] = [
-            AppTheme.darkPurple,  // 0
-            AppTheme.purple,      // 1
-            AppTheme.magenta,     // 2
-            AppTheme.magenta,     // 3
-            AppTheme.purple,      // 4
-            AppTheme.skyBlue,     // 5
-            AppTheme.skyBlue,     // 6
-            AppTheme.purple,      // 7
-            AppTheme.darkPurple,  // 8
-            AppTheme.darkPurple,  // 9
-            AppTheme.purple,      // 10
-            AppTheme.magenta      // 11
+            darkPurple,  // 0
+            purple,      // 1
+            magenta,     // 2
+            magenta,     // 3
+            purple,      // 4
+            skyBlue,     // 5
+            skyBlue,     // 6
+            purple,      // 7
+            darkPurple,  // 8
+            darkPurple,  // 9
+            purple,      // 10
+            magenta      // 11
         ]
         return colors[index % colors.count]
     }
@@ -164,6 +170,37 @@ struct LoadingView: View {
         // Dots fade from 1.0 to 0.3 for trailing effect
         let normalizedIndex = Double(index) / 12.0
         return 1.0 - (normalizedIndex * 0.7)
+    }
+}
+
+// MARK: - Color Hex Extension (for LoadingView)
+
+extension Color {
+    /// Initialize Color from hex string (e.g., "#8B5CF6" or "8B5CF6")
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        
+        let r, g, b, a: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (r, g, b, a) = ((int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17, 255)
+        case 6: // RGB (24-bit)
+            (r, g, b, a) = (int >> 16, int >> 8 & 0xFF, int & 0xFF, 255)
+        case 8: // ARGB (32-bit)
+            (r, g, b, a) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (r, g, b, a) = (0, 0, 0, 255)
+        }
+        
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
     }
 }
 
