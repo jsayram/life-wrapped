@@ -16,6 +16,10 @@ public final class AudioCaptureManager: ObservableObject {
     @Published public private(set) var currentState: ListeningState = .idle
     @Published public private(set) var isRecording = false
     
+    /// Current audio input level (0.0 to 1.0) for audio-reactive visualization
+    /// Updated at 10Hz during recording
+    @Published public private(set) var currentAudioLevel: Float = 0.0
+    
     // MARK: - Private Properties
     
     private let audioEngine = AVAudioEngine()
@@ -40,6 +44,9 @@ public final class AudioCaptureManager: ObservableObject {
     
     // Callback for error handling
     public var onError: (@Sendable (AudioCaptureError) -> Void)?
+    
+    // Audio level metering (10Hz update rate)
+    private var lastAudioLevelUpdate: Date = .distantPast
     
     // MARK: - Initialization
     
@@ -440,16 +447,21 @@ public final class AudioCaptureManager: ObservableObject {
         on inputNode: AVAudioInputNode,
         format: AVAudioFormat,
         audioFile: AVAudioFile?,
-        onError: (@Sendable (AudioCaptureError) -> Void)?
+        onError: (@Sendable (AudioCaptureError) -> Void)?,
+        onAudioLevel: (@Sendable (Float) -> Void)?
     ) {
         // Remove any existing tap
         inputNode.removeTap(onBus: 0)
+        
+        // Track last update time for 10Hz rate limiting
+        var lastLevelUpdate = Date.distantPast
         
         // Install tap to capture audio — this closure runs on the realtime audio thread
         // and must NOT access any @MainActor state. All values are passed in as parameters.
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
             guard let audioFile = audioFile else { return }
             
+            // Write audio to file
             do {
                 try audioFile.write(from: buffer)
             } catch {
@@ -457,6 +469,35 @@ public final class AudioCaptureManager: ObservableObject {
                 if let onError = onError {
                     DispatchQueue.main.async {
                         onError(captureError)
+                    }
+                }
+            }
+            
+            // Calculate RMS level for audio visualization (10Hz updates)
+            let now = Date()
+            if now.timeIntervalSince(lastLevelUpdate) >= 0.1 { // 10Hz = every 100ms
+                lastLevelUpdate = now
+                
+                guard let channelData = buffer.floatChannelData?[0] else { return }
+                let frameLength = Int(buffer.frameLength)
+                
+                // Calculate RMS (Root Mean Square)
+                var sum: Float = 0
+                for i in 0..<frameLength {
+                    let sample = channelData[i]
+                    sum += sample * sample
+                }
+                let rms = sqrt(sum / Float(frameLength))
+                
+                // Convert to decibels and normalize to 0-1 range
+                // Typical speech range: -40dB to 0dB
+                let db = 20 * log10(max(rms, 0.00001)) // Avoid log(0)
+                let normalizedLevel = max(0, min(1, (db + 40) / 40))
+                
+                // Dispatch to main thread
+                if let onAudioLevel = onAudioLevel {
+                    DispatchQueue.main.async {
+                        onAudioLevel(normalizedLevel)
                     }
                 }
             }
@@ -471,13 +512,21 @@ public final class AudioCaptureManager: ObservableObject {
         let capturedAudioFile = self.audioFile
         let capturedOnError = self.onError
         
+        // Create callback for audio level updates
+        let onAudioLevel: (@Sendable (Float) -> Void) = { [weak self] level in
+            Task { @MainActor in
+                self?.currentAudioLevel = level
+            }
+        }
+        
         // Call nonisolated helper to install the tap - this ensures the closure
         // is created outside of the @MainActor context entirely
         installAudioTap(
             on: inputNode,
             format: format,
             audioFile: capturedAudioFile,
-            onError: capturedOnError
+            onError: capturedOnError,
+            onAudioLevel: onAudioLevel
         )
     }
     
