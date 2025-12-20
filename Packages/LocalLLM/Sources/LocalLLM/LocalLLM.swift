@@ -14,6 +14,8 @@ import SharedModels
 
 // SwiftLlama models and errors are not annotated Sendable
 extension Prompt: @retroactive @unchecked Sendable {}
+extension Configuration: @retroactive @unchecked Sendable {}
+extension SwiftLlama: @retroactive @unchecked Sendable {}
 
 /// LocalLLM package for on-device LLM inference using llama.cpp
 /// This package provides local model execution without network calls.
@@ -613,17 +615,12 @@ public actor LlamaContext {
             print("   Stop tokens: \(StopToken.llama3)")
             print("   ⏳ This may take 10-30 seconds...")
 
-            // CRITICAL: Wrap in detached task to manage memory
-            let newLlama = try await withCheckedThrowingContinuation { continuation in
-                Task.detached(priority: .userInitiated) {
-                    do {
-                        let llama = try SwiftLlama(modelPath: url.path, modelConfiguration: config)
-                        continuation.resume(returning: llama)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
+            // CRITICAL: Wrap in detached task to manage memory; capture Sendable values only
+            let modelPath = url.path
+            let configCopy = config
+            let newLlama = try await Task.detached(priority: .userInitiated) { () -> SwiftLlama in
+                try SwiftLlama(modelPath: modelPath, modelConfiguration: configCopy)
+            }.value
 
             self.llama = newLlama
             self.modelPath = url

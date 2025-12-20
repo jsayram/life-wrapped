@@ -153,7 +153,9 @@ public actor SummarizationCoordinator {
         LocalLLMConfiguration.persistPresetOverride(preset)
         await applyLocalPreset()
         await selectBestAvailableEngine()
-        NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        await MainActor.run {
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
     }
 
     public func getLocalConfiguration() -> LocalLLMConfiguration {
