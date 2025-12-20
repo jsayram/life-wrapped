@@ -137,6 +137,7 @@ struct ContentView: View {
                 }
                 .tag(3)
         }
+        .tint(AppTheme.purple)
         .sheet(isPresented: $coordinator.needsPermissions) {
             PermissionsView()
                 .interactiveDismissDisabled()
@@ -463,6 +464,7 @@ struct ModelDownloadRowView: View {
                             .fontWeight(.semibold)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.purple)
                 }
             }
             
@@ -1938,6 +1940,7 @@ struct InsightsTab: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .tint(AppTheme.purple)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 8)
                 }
@@ -2496,7 +2499,7 @@ struct SettingsTab: View {
                             Text("Recording")
                         } icon: {
                             Image(systemName: "mic.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(AppTheme.magenta)
                         }
                     }
                 }
@@ -2513,7 +2516,7 @@ struct SettingsTab: View {
                             }
                         } icon: {
                             Image(systemName: "brain")
-                                .foregroundStyle(.purple)
+                                .foregroundStyle(AppTheme.purple)
                         }
                     }
                 } footer: {
@@ -2527,7 +2530,7 @@ struct SettingsTab: View {
                             Text("Insights")
                         } icon: {
                             Image(systemName: "chart.bar.fill")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(AppTheme.skyBlue)
                         }
                     }
                 }
@@ -2539,7 +2542,7 @@ struct SettingsTab: View {
                             Text("Languages")
                         } icon: {
                             Image(systemName: "globe")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(AppTheme.emerald)
                         }
                     }
                 } footer: {
@@ -2553,7 +2556,7 @@ struct SettingsTab: View {
                             Text("Data")
                         } icon: {
                             Image(systemName: "externaldrive.fill")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(AppTheme.magenta)
                         }
                     }
                 }
@@ -2565,7 +2568,7 @@ struct SettingsTab: View {
                             Text("Privacy")
                         } icon: {
                             Image(systemName: "lock.shield.fill")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(AppTheme.darkPurple)
                         }
                     }
                 }
@@ -2573,7 +2576,12 @@ struct SettingsTab: View {
                 // About Section
                 Section {
                     HStack {
-                        Label("Version", systemImage: "info.circle")
+                        Label {
+                            Text("Version")
+                        } icon: {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(AppTheme.lightPurple)
+                        }
                         Spacer()
                         Text("1.0.0")
                             .foregroundStyle(.secondary)
@@ -2589,10 +2597,15 @@ struct SettingsTab: View {
                     }
                     
                     HStack {
-                        Label("On-Device Processing", systemImage: "checkmark.shield.fill")
+                        Label {
+                            Text("On-Device Processing")
+                        } icon: {
+                            Image(systemName: "checkmark.shield.fill")
+                                .foregroundStyle(AppTheme.emerald)
+                        }
                         Spacer()
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(AppTheme.emerald)
                     }
                 } header: {
                     Text("About")
@@ -2681,6 +2694,7 @@ struct RecordingSettingsView: View {
                     Slider(value: $chunkDuration, in: 30...300, step: 30) {
                         Text("Chunk Duration")
                     }
+                    .tint(AppTheme.purple)
                     .onChange(of: chunkDuration) { oldValue, newValue in
                         coordinator.audioCapture.autoChunkDuration = newValue
                         coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
@@ -2785,8 +2799,13 @@ struct AISettingsView: View {
             // MARK: - How It Works Section
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Session Summaries", systemImage: "doc.text")
-                        .font(.headline)
+                    Label {
+                        Text("Session Summaries")
+                            .font(.headline)
+                    } icon: {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(AppTheme.purple)
+                    }
                     HStack {
                         Text("Uses your ACTIVE engine →")
                             .font(.caption)
@@ -2795,29 +2814,44 @@ struct AISettingsView: View {
                             Text(activeEngine.displayName)
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(AppTheme.emerald)
                         }
                     }
                     
                     Divider()
                     
-                    Label("Period Rollups (Day/Week/Month/Year)", systemImage: "calendar")
-                        .font(.headline)
+                    Label {
+                        Text("Period Rollups (Day/Week/Month/Year)")
+                            .font(.headline)
+                    } icon: {
+                        Image(systemName: "calendar")
+                            .foregroundStyle(AppTheme.skyBlue)
+                    }
                     Text("Combines session summaries (no additional AI processing)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     
                     Divider()
                     
-                    Label("✨ Year Wrap (Special)", systemImage: "sparkles")
-                        .font(.headline)
+                    Label {
+                        Text("✨ Year Wrap (Special)")
+                            .font(.headline)
+                    } icon: {
+                        Image(systemName: "sparkles")
+                            .foregroundStyle(AppTheme.magenta)
+                    }
                     Text("Always uses Year Wrapped Pro AI (OpenAI or Anthropic) for a beautifully crafted year-in-review. Requires valid Pro AI credentials below.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
             } header: {
-                Label("How AI Works in Life Wrapped", systemImage: "info.circle")
+                Label {
+                    Text("How AI Works in Life Wrapped")
+                } icon: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(AppTheme.lightPurple)
+                }
             }
             
             // MARK: - On-Device Engines Section
@@ -2854,11 +2888,11 @@ struct AISettingsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Image(systemName: "wand.and.stars")
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(AppTheme.emerald)
                                 Text("Auto-Optimized for Your Device")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(AppTheme.emerald)
                             }
                             Text("Automatically uses maximum quality settings for \(deviceSummary). \(effectiveConfig.tokensDescription)")
                                 .font(.caption)
@@ -2868,7 +2902,12 @@ struct AISettingsView: View {
                     }
                 }
             } header: {
-                Label("On-Device Processing", systemImage: "lock.shield.fill")
+                Label {
+                    Text("On-Device Processing")
+                } icon: {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundStyle(AppTheme.darkPurple)
+                }
             } footer: {
                 Text("All processing happens locally. Your data never leaves your device.")
             }
@@ -2895,6 +2934,7 @@ struct AISettingsView: View {
                         Text("Anthropic").tag("Anthropic")
                     }
                     .pickerStyle(.segmented)
+                    .tint(AppTheme.purple)
                     .onChange(of: selectedProvider) { _, newValue in
                         UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
                         // Reset to default model for new provider
@@ -2938,10 +2978,10 @@ struct AISettingsView: View {
                         if hasValidAPIKey() {
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(AppTheme.emerald)
                                 Text("Configured")
                                     .font(.caption)
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(AppTheme.emerald)
                             }
                         }
                     }
@@ -2969,12 +3009,14 @@ struct AISettingsView: View {
                                 if isTesting {
                                     ProgressView()
                                         .scaleEffect(0.7)
+                                        .tint(AppTheme.purple)
                                 } else {
                                     Text("Test")
                                         .fontWeight(.medium)
                                 }
                             }
                             .buttonStyle(.bordered)
+                            .tint(AppTheme.skyBlue)
                             .disabled(apiKey.isEmpty || isTesting)
                             
                             Button {
@@ -2984,6 +3026,7 @@ struct AISettingsView: View {
                                     .fontWeight(.medium)
                             }
                             .buttonStyle(.borderedProminent)
+                            .tint(AppTheme.purple)
                             .disabled(apiKey.isEmpty)
                         } else {
                             Button {
@@ -2995,6 +3038,7 @@ struct AISettingsView: View {
                                 }
                             }
                             .buttonStyle(.bordered)
+                            .tint(AppTheme.purple)
                         }
                     }
                     
@@ -3017,10 +3061,10 @@ struct AISettingsView: View {
                     if let result = testResult {
                         HStack {
                             Image(systemName: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(testSuccess ? .green : .red)
+                                .foregroundStyle(testSuccess ? AppTheme.emerald : AppTheme.magenta)
                             Text(result)
                                 .font(.caption)
-                                .foregroundStyle(testSuccess ? .green : .red)
+                                .foregroundStyle(testSuccess ? AppTheme.emerald : AppTheme.magenta)
                         }
                         .padding(.top, 4)
                     }
@@ -3037,7 +3081,12 @@ struct AISettingsView: View {
                     }
                 }
             } header: {
-                Label("Year Wrapped Pro AI", systemImage: "sparkles")
+                Label {
+                    Text("Year Wrapped Pro AI")
+                } icon: {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(AppTheme.magenta)
+                }
             } footer: {
                 Label {
                     Text("Required for Year Wrap feature. Select as active engine above to also use for session summaries. Data is sent to \(selectedProvider) servers for processing.")
@@ -3207,23 +3256,30 @@ struct EngineOptionCard: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                // Radio button indicator
+                // Radio button indicator with gradient
                 ZStack {
                     Circle()
-                        .strokeBorder(isSelected ? Color.green : Color.gray.opacity(0.5), lineWidth: 2)
+                        .strokeBorder(isSelected ? AppTheme.purple : Color.gray.opacity(0.5), lineWidth: 2)
                         .frame(width: 24, height: 24)
                     
                     if isSelected {
                         Circle()
-                            .fill(Color.green)
+                            .fill(
+                                RadialGradient(
+                                    colors: [AppTheme.lightPurple, AppTheme.purple],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 12
+                                )
+                            )
                             .frame(width: 14, height: 14)
                     }
                 }
                 
-                // Engine icon
+                // Engine icon with theme color
                 Image(systemName: tier.icon)
                     .font(.title3)
-                    .foregroundStyle(isSelected ? .primary : (isAvailable ? .secondary : .tertiary))
+                    .foregroundStyle(isSelected ? AppTheme.purple : (isAvailable ? AppTheme.lightPurple : Color.secondary.opacity(0.5)))
                     .frame(width: 28)
                 
                 // Text content
@@ -3240,7 +3296,7 @@ struct EngineOptionCard: View {
                 
                 Spacer()
                 
-                // Status indicator
+                // Status indicator with gradient
                 if isSelected {
                     Text("Active")
                         .font(.caption)
@@ -3248,7 +3304,13 @@ struct EngineOptionCard: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.green)
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.darkPurple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                         .clipShape(Capsule())
                 } else if !isAvailable {
                     Image(systemName: "lock.fill")
@@ -4114,6 +4176,7 @@ struct ExcludedWordsView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.purple)
                     .disabled(customWordsText.isEmpty)
                     
                     Text("Words will be converted to lowercase and trimmed. Separate multiple words with commas.")
@@ -4741,7 +4804,7 @@ struct TranscriptChunkView: View {
                     .fontWeight(.medium)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                .tint(AppTheme.magenta)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -5528,12 +5591,14 @@ struct SessionDetailView: View {
                         saveTitle()
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.purple)
                     
                     Button("Cancel") {
                         isEditingTitle = false
                         sessionTitle = session.title ?? ""
                     }
                     .buttonStyle(.bordered)
+                    .tint(AppTheme.skyBlue)
                 }
             } else {
                 HStack {
@@ -6151,6 +6216,7 @@ struct LanguageSettingsView: View {
                                 .monospacedDigit()
                         }
                     }
+                    .tint(AppTheme.purple)
                 }
             }
         }
