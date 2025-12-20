@@ -4461,10 +4461,12 @@ struct RecordingDetailView: View {
         if coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL {
             coordinator.audioPlayback.togglePlayPause()
         } else {
-            do {
-                try coordinator.audioPlayback.playSingle(url: recording.fileURL)
-            } catch {
-                loadError = "Could not play recording: \(error.localizedDescription)"
+            Task {
+                do {
+                    try await coordinator.audioPlayback.play(url: recording.fileURL)
+                } catch {
+                    loadError = "Could not play recording: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -5020,14 +5022,18 @@ struct SessionDetailView: View {
                 let startX = (size.width - totalWidth) / 2
                 let maxHeight = size.height - 20
                 
-                // Get FFT magnitudes from playback or use static pattern
+                // Get animated waveform pattern
                 let magnitudes: [Float]
-                if isPlayingThisSession {
-                    // Use actual FFT data during playback
-                    let playbackMagnitudes = coordinator.audioPlayback.fftMagnitudes
-                    magnitudes = playbackMagnitudes.isEmpty ? Array(repeating: 0.1, count: barCount) : playbackMagnitudes
+                if isPlayingThisSession && coordinator.audioPlayback.isPlaying {
+                    // Animated pattern based on time for visual effect (only when actively playing)
+                    let time = Date().timeIntervalSince1970
+                    magnitudes = (0..<barCount).map { index in
+                        let seed = Double(index) * 0.12345 + time * 2.0
+                        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
+                        return Float(0.3 + abs(height) * 0.5)
+                    }
                 } else {
-                    // Static visualization when not playing
+                    // Static visualization when paused or not playing
                     magnitudes = (0..<barCount).map { index in
                         let seed = Double(index) * 0.12345
                         let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
@@ -5945,12 +5951,12 @@ struct SessionDetailView: View {
                     let chunkURLs = session.chunks.map { $0.fileURL }
                     let wasPlaying = coordinator.audioPlayback.isPlaying
                     
-                    coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
-                        print("✅ [SessionDetailView] Session playback completed after seek")
-                    }
-                    
-                    // Seek within this chunk immediately for smooth scrubbing
                     Task {
+                        try await coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
+                            print("✅ [SessionDetailView] Session playback completed after seek")
+                        }
+                        
+                        // Seek within this chunk immediately for smooth scrubbing
                         // Minimal delay to ensure player is initialized
                         try? await Task.sleep(for: .milliseconds(10))
                         coordinator.audioPlayback.seek(to: remainingTime)
@@ -6065,17 +6071,19 @@ struct SessionDetailView: View {
             
             // If user has scrubbed before playing, seek to that position
             if scrubbedTime > 0 {
-                coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                    print("✅ [SessionDetailView] Session playback completed")
-                }
-                // Seek to scrubbed position after playback starts
                 Task {
+                    try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                        print("✅ [SessionDetailView] Session playback completed")
+                    }
+                    // Seek to scrubbed position after playback starts
                     try? await Task.sleep(for: .milliseconds(50))
                     seekToTotalTime(scrubbedTime)
                 }
             } else {
-                coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                    print("✅ [SessionDetailView] Session playback completed")
+                Task {
+                    try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                        print("✅ [SessionDetailView] Session playback completed")
+                    }
                 }
             }
         }
