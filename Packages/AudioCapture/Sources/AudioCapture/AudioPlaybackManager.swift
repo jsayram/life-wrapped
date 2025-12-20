@@ -32,11 +32,20 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private var audioFile: AVAudioFile?
+    nonisolated(unsafe) private var fftSetup: OpaquePointer?
     
     // MARK: - Initialization
     
     public override init() {
         super.init()
+        // Create FFT setup for 1024 samples (log2(1024) = 10)
+        fftSetup = vDSP_create_fftsetup(10, FFTRadix(kFFTRadix2))
+    }
+    
+    deinit {
+        if let setup = fftSetup {
+            vDSP_destroy_fftsetup(setup)
+        }
     }
     
     // MARK: - Public API
@@ -326,47 +335,42 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         var realParts = [Float](repeating: 0, count: 512)
         var imagParts = [Float](repeating: 0, count: 512)
         
-        samples.withUnsafeMutableBytes { samplesBytes in
-            realParts.withUnsafeMutableBytes { realBytes in
-                imagParts.withUnsafeMutableBytes { imagBytes in
-                    let complexPtr = samplesBytes.baseAddress!.assumingMemoryBound(to: DSPComplex.self)
-                    var splitComplex = DSPSplitComplex(
-                        realp: realBytes.baseAddress!.assumingMemoryBound(to: Float.self),
-                        imagp: imagBytes.baseAddress!.assumingMemoryBound(to: Float.self)
-                    )
-                    
-                    vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(512))
-                    
-                    // Note: FFT setup needs to be created in nonisolated context
-                    // We'll use vDSP_fft directly instead
-                    let log2n = vDSP_Length(10) // log2(1024)
-                    vDSP_fft_zrip(vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))!,
-                                 &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
-                    
-                    // Calculate magnitudes
-                    var magnitudes = [Float](repeating: 0, count: 512)
-                    vDSP_zvabs(&splitComplex, 1, &magnitudes, 1, vDSP_Length(512))
-                    
-                    // Normalize and group into 80 bins
-                    let binSize = magnitudes.count / 80
-                    var outputMagnitudes = [Float](repeating: 0, count: 80)
-                    
-                    for i in 0..<80 {
-                        let startIdx = i * binSize
-                        let endIdx = min(startIdx + binSize, magnitudes.count)
-                        let binMagnitudes = magnitudes[startIdx..<endIdx]
-                        
-                        if !binMagnitudes.isEmpty {
-                            let average = binMagnitudes.reduce(0, +) / Float(binMagnitudes.count)
-                            outputMagnitudes[i] = min(average / 100.0, 1.0) // Normalize to 0-1
-                        }
-                    }
-                    
-                    // Update on main actor
-                    Task { @MainActor in
-                        self.fftMagnitudes = outputMagnitudes
-                    }
+        // Convert samples to complex format
+        for i in 0..<512 {
+            realParts[i] = i * 2 < samples.count ? samples[i * 2] : 0
+            imagParts[i] = i * 2 + 1 < samples.count ? samples[i * 2 + 1] : 0
+        }
+        
+        var splitComplex = DSPSplitComplex(realp: &realParts, imagp: &imagParts)
+        
+        // Perform FFT using stored setup
+        let log2n = vDSP_Length(10) // log2(1024)
+        
+        if let setup = fftSetup {
+            vDSP_fft_zrip(setup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
+            
+            // Calculate magnitudes
+            var magnitudes = [Float](repeating: 0, count: 512)
+            vDSP_zvabs(&splitComplex, 1, &magnitudes, 1, vDSP_Length(512))
+            
+            // Normalize and group into 80 bins
+            let binSize = magnitudes.count / 80
+            var outputMagnitudes = [Float](repeating: 0, count: 80)
+            
+            for i in 0..<80 {
+                let startIdx = i * binSize
+                let endIdx = min(startIdx + binSize, magnitudes.count)
+                let binMagnitudes = magnitudes[startIdx..<endIdx]
+                
+                if !binMagnitudes.isEmpty {
+                    let average = binMagnitudes.reduce(0, +) / Float(binMagnitudes.count)
+                    outputMagnitudes[i] = min(average / 100.0, 1.0) // Normalize to 0-1
                 }
+            }
+            
+            // Update on main actor
+            Task { @MainActor in
+                self.fftMagnitudes = outputMagnitudes
             }
         }
     }
