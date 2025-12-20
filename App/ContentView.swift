@@ -2557,9 +2557,6 @@ struct AISettingsView: View {
     // Local AI state
     @State private var localModelAvailable = false
     @State private var isDownloadingModel = false
-    @State private var debugPromptInput = ""
-    @State private var debugOutputText = ""
-    @State private var isRunningLocalDebug = false
     @State private var presetSelection: String = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "auto"
     
     // External API state
@@ -2669,70 +2666,6 @@ struct AISettingsView: View {
                 Label("On-Device Processing", systemImage: "lock.shield.fill")
             } footer: {
                 Text("All processing happens locally. Your data never leaves your device.")
-            }
-
-            // MARK: - Local LLM Debug
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Prompt")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: $debugPromptInput)
-                        .frame(minHeight: 120)
-                        .disableAutocorrection(true)
-                        .textInputAutocapitalization(.never)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(0.2))
-                        )
-
-                    Button {
-                        runLocalLLMDebug()
-                    } label: {
-                        if isRunningLocalDebug {
-                            ProgressView()
-                        } else {
-                            Label("Run Local Prompt", systemImage: "play.fill")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(debugPromptInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLocalDebug || !localModelAvailable)
-
-                    Button {
-                        runLocalSmokeTest()
-                    } label: {
-                        Label("Run Smoke Test", systemImage: "bolt.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isRunningLocalDebug || !localModelAvailable)
-
-                    if !debugOutputText.isEmpty {
-                        Text("Output")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ScrollView {
-                            Text(debugOutputText)
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(minHeight: 120)
-                    }
-
-                    if !localModelAvailable {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.down.circle")
-                            Text("Download a local model to enable the debug tester.")
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Label("Local AI Debug", systemImage: "terminal.fill")
-            } footer: {
-                Text("Send a raw prompt to the on-device LLM and view the response.")
             }
             
             // MARK: - External API Section
@@ -2956,36 +2889,6 @@ struct AISettingsView: View {
             await summCoord.setLocalPresetOverride(override)
             await loadEngineStatus()
         }
-    }
-
-    private func runLocalLLMDebug() {
-        let prompt = debugPromptInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty else { return }
-        isRunningLocalDebug = true
-        debugOutputText = ""
-
-        Task {
-            guard let summCoord = coordinator.summarizationCoordinator else {
-                await MainActor.run {
-                    debugOutputText = "Summarization not initialized"
-                    isRunningLocalDebug = false
-                }
-                return
-            }
-
-            let response = await summCoord.runLocalDebugPrompt(prompt)
-            await MainActor.run {
-                debugOutputText = response
-                isRunningLocalDebug = false
-            }
-        }
-    }
-
-    private func runLocalSmokeTest() {
-        if debugPromptInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            debugPromptInput = "Summarize this 30-word meeting note into JSON with summary, topics, entities, sentiment: We discussed project launch timelines, dependencies, blockers, and next sprint goals."
-        }
-        runLocalLLMDebug()
     }
     
     private func selectEngine(_ tier: EngineTier) {

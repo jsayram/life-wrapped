@@ -137,18 +137,6 @@ public actor SummarizationCoordinator {
         await selectBestAvailableEngine()
     }
 
-    /// Run a raw prompt through the local engine for debugging
-    public func runLocalDebugPrompt(_ prompt: String) async -> String {
-        guard let local = localEngine as? LocalEngine else {
-            return "Local engine unavailable"
-        }
-        do {
-            return try await local.debugGenerate(prompt: prompt)
-        } catch {
-            return "Error: \(error.localizedDescription)"
-        }
-    }
-
     public func setLocalPresetOverride(_ preset: LocalLLMConfiguration.Preset?) async {
         LocalLLMConfiguration.persistPresetOverride(preset)
         await applyLocalPreset()
