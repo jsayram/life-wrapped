@@ -1193,26 +1193,22 @@ struct SessionRowClean: View {
                 
                 // Status indicators
                 HStack(spacing: 6) {
-                    if session.chunkCount == 0 {
-                        StatusPill(text: "\(session.chunkCount)", color: .red, icon: "exclamationmark.triangle.fill")
-                    }
-
-                    if session.chunkCount >= 1 {
-                        StatusPill(text: "\(session.chunkCount)", color: .blue, icon: "waveform")
+                    if session.chunkCount > 1 {
+                        StatusPill(text: "\(session.chunkCount) parts", color: .blue, icon: "waveform")
                     }
                     
                     if hasSummary {
                         StatusPill(text: "Summarized", color: .green, icon: "checkmark.circle.fill")
                     }
                     
-                    if wordCount == nil {
-                        StatusPill(text: "Empty", color: .red, icon: "xmark.octagon.fill")
-                    }
-
-                    if  wordCount == 0 {
+                    // Show processing if wordCount is nil (still being transcribed)
+                    if wordCount == 0 {
                         StatusPill(text: "Processing", color: .orange, icon: "gearshape.fill")
                     }
-                    
+                    // Show empty if processing done but no words found
+                    else if let count = wordCount, count == nil {
+                        StatusPill(text: "Empty", color: .red, icon: "xmark.octagon.fill")
+                    }
                 }
             }
             
@@ -1437,7 +1433,13 @@ struct InsightsTab: View {
         NavigationStack {
             Group {
                 if isLoading {
-                    ProgressView("Loading insights...")
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .tint(AppTheme.purple)
+                        Text("Loading insights...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 } else if periodSummary == nil && sessionsByHour.isEmpty {
                     ContentUnavailableView(
                         "No Insights Yet",
@@ -1480,9 +1482,16 @@ struct InsightsTab: View {
                                     HStack(spacing: 12) {
                                         Image(systemName: "timer")
                                             .font(.title2)
-                                            .foregroundStyle(.orange.gradient)
+                                            .foregroundStyle(AppTheme.purple)
                                             .frame(width: 40, height: 40)
-                                            .background(.orange.opacity(0.1))
+                                            .background(
+                                                RadialGradient(
+                                                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                                    center: .center,
+                                                    startRadius: 0,
+                                                    endRadius: 20
+                                                )
+                                            )
                                             .clipShape(RoundedRectangle(cornerRadius: 8))
                                         
                                         VStack(alignment: .leading, spacing: 4) {
@@ -1515,9 +1524,16 @@ struct InsightsTab: View {
                                     HStack(spacing: 12) {
                                         Image(systemName: "calendar.badge.plus")
                                             .font(.title2)
-                                            .foregroundStyle(.purple.gradient)
+                                            .foregroundStyle(AppTheme.magenta)
                                             .frame(width: 40, height: 40)
-                                            .background(.purple.opacity(0.1))
+                                            .background(
+                                                RadialGradient(
+                                                    colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
+                                                    center: .center,
+                                                    startRadius: 0,
+                                                    endRadius: 20
+                                                )
+                                            )
                                             .clipShape(RoundedRectangle(cornerRadius: 8))
                                         
                                         VStack(alignment: .leading, spacing: 4) {
@@ -1555,7 +1571,13 @@ struct InsightsTab: View {
                                             y: .value("Sessions", data.count),
                                             width: .fixed(20)
                                         )
-                                        .foregroundStyle(.blue.gradient)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [AppTheme.skyBlue, AppTheme.darkPurple],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                        )
                                     }
                                     .chartXAxis {
                                         AxisMarks(values: [0, 6, 12, 18, 23]) { value in
@@ -1597,7 +1619,7 @@ struct InsightsTab: View {
                                                         Text(formatHourShort(data.hour))
                                                             .font(.caption)
                                                             .fontWeight(.semibold)
-                                                            .foregroundStyle(.blue)
+                                                            .foregroundStyle(AppTheme.skyBlue)
                                                         Text("\(data.count)")
                                                             .font(.title3)
                                                             .fontWeight(.bold)
@@ -1607,7 +1629,14 @@ struct InsightsTab: View {
                                                     }
                                                     .frame(width: 70)
                                                     .padding(.vertical, 8)
-                                                    .background(.blue.opacity(0.1))
+                                                    .background(
+                                                        RadialGradient(
+                                                            colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
+                                                            center: .center,
+                                                            startRadius: 0,
+                                                            endRadius: 35
+                                                        )
+                                                    )
                                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                                 }
                                                 .buttonStyle(.plain)
@@ -1635,7 +1664,13 @@ struct InsightsTab: View {
                                             y: .value("Sessions", data.count),
                                             width: .fixed(40)
                                         )
-                                        .foregroundStyle(.green.gradient)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [AppTheme.emerald, AppTheme.skyBlue],
+                                                startPoint: .top,
+                                                endPoint: .bottom
+                                            )
+                                        )
                                     }
                                     .chartXAxis {
                                         AxisMarks { value in
@@ -1677,7 +1712,7 @@ struct InsightsTab: View {
                                                         Text(formatDayOfWeek(data.dayOfWeek))
                                                             .font(.caption)
                                                             .fontWeight(.semibold)
-                                                            .foregroundStyle(.green)
+                                                            .foregroundStyle(AppTheme.emerald)
                                                         Text("\(data.count)")
                                                             .font(.title3)
                                                             .fontWeight(.bold)
@@ -1687,7 +1722,14 @@ struct InsightsTab: View {
                                                     }
                                                     .frame(width: 70)
                                                     .padding(.vertical, 8)
-                                                    .background(.green.opacity(0.1))
+                                                    .background(
+                                                        RadialGradient(
+                                                            colors: [AppTheme.emerald.opacity(0.15), AppTheme.emerald.opacity(0.05)],
+                                                            center: .center,
+                                                            startRadius: 0,
+                                                            endRadius: 35
+                                                        )
+                                                    )
                                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                                 }
                                                 .buttonStyle(.plain)
@@ -2214,13 +2256,13 @@ struct InsightsTab: View {
     }
     
     private func colorForRank(_ rank: Int) -> Color {
-        // Gradient of colors from most to least frequent
+        // Apple Intelligence gradient colors for word frequency
         switch rank {
-        case 0...2: return .purple    // Top 3
-        case 3...5: return .indigo    // 4-6
-        case 6...9: return .blue      // 7-10
-        case 10...14: return .teal    // 11-15
-        default: return .cyan         // 16-20
+        case 0...2: return AppTheme.darkPurple    // Top 3 - most frequent
+        case 3...5: return AppTheme.purple        // 4-6
+        case 6...9: return AppTheme.magenta       // 7-10
+        case 10...14: return AppTheme.skyBlue     // 11-15
+        default: return AppTheme.lightPurple      // 16-20
         }
     }
     
@@ -2228,9 +2270,9 @@ struct InsightsTab: View {
     
     private func sentimentColor(_ score: Double) -> Color {
         switch score {
-        case ..<(-0.3): return .red
-        case -0.3..<0.3: return .gray
-        default: return .green
+        case ..<(-0.3): return AppTheme.magenta  // Negative
+        case -0.3..<0.3: return AppTheme.skyBlue  // Neutral
+        default: return AppTheme.emerald         // Positive
         }
     }
     
@@ -2257,12 +2299,27 @@ struct InsightsTab: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(color.opacity(0.1))
+        .background(
+            RadialGradient(
+                colors: [color.opacity(0.15), color.opacity(0.05)],
+                center: .center,
+                startRadius: 0,
+                endRadius: 50
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
     
     private func languageColor(index: Int) -> Color {
-        let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .cyan]
+        let colors: [Color] = [
+            AppTheme.skyBlue,
+            AppTheme.emerald,
+            AppTheme.magenta,
+            AppTheme.darkPurple,
+            AppTheme.purple,
+            AppTheme.lightPurple,
+            AppTheme.paleBlue
+        ]
         return colors[index % colors.count]
     }
     
