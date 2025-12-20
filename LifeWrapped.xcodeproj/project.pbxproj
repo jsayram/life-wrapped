@@ -64,7 +64,6 @@
 		2CBE511C20A8C5633211A25E /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		303597C991FCE6CB954F0D29 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
-		4613C0252EF6468000A4434B /* MyPlayground.playground */ = {isa = PBXFileReference; lastKnownFileType = file.playground; name = MyPlayground.playground; path = "../LocalIOS-LLMTEST/MyPlayground.playground"; sourceTree = SOURCE_ROOT; xcLanguageSpecificationIdentifier = xcode.lang.swift; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
@@ -157,7 +156,6 @@
 		AA4F27C9692EA729DDA632EA = {
 			isa = PBXGroup;
 			children = (
-				4613C0252EF6468000A4434B /* MyPlayground.playground */,
 				1DBB8D0ABAB53A6AE528F4AD /* App */,
 				BB2CBF013343BDECF27FFC31 /* Packages */,
 				DA1F14E43DC88CFBF29C46B1 /* WidgetExtension */,
