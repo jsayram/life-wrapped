@@ -181,14 +181,7 @@ struct LoadingOverlay: View {
             Color(.systemBackground)
                 .ignoresSafeArea()
             
-            VStack(spacing: 20) {
-                ProgressView()
-                    .scaleEffect(1.5)
-                
-                Text("Loading Life Wrapped...")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-            }
+            LoadingView(size: .medium)
         }
     }
 }
@@ -970,13 +963,7 @@ struct HistoryTab: View {
     @ViewBuilder
     private var contentView: some View {
         if isLoading {
-            VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.2)
-                Text("Loading recordings...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+            LoadingView(size: .medium)
         } else if sessions.isEmpty {
             ContentUnavailableView(
                 "No Recordings Yet",
@@ -1441,13 +1428,7 @@ struct InsightsTab: View {
         NavigationStack {
             Group {
                 if isLoading {
-                    VStack(spacing: 16) {
-                        ProgressView()
-                            .tint(AppTheme.purple)
-                        Text("Loading insights...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                    LoadingView(size: .medium)
                 } else if periodSummary == nil && sessionsByHour.isEmpty {
                     ContentUnavailableView(
                         "No Insights Yet",
