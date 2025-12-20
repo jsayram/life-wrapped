@@ -65,20 +65,28 @@ public actor SummarizationCoordinator {
     /// Restore saved preference and select appropriate engine
     /// Call this after initialization to properly set up the active engine
     public func restoreSavedPreference() async {
-        // Check if Local AI model is available - if so, always prefer it
-        let modelManager = ModelFileManager.shared
-        let localModelAvailable = await modelManager.availableModels().isEmpty == false
-        
-        if localModelAvailable {
-            // Local AI should ALWAYS be the default when model is downloaded
-            preferredTier = .local
-            UserDefaults.standard.set(EngineTier.local.rawValue, forKey: Self.preferredEngineKey)
-            print("🧠 [SummarizationCoordinator] Local AI model available - setting as default")
-        } else if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
-                  let tier = EngineTier(rawValue: savedPreference) {
+        // Load saved preference from UserDefaults
+        if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
+           let tier = EngineTier(rawValue: savedPreference) {
             preferredTier = tier
             print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
+        } else {
+            // No saved preference - set default based on availability
+            let modelManager = ModelFileManager.shared
+            let localModelAvailable = await modelManager.availableModels().isEmpty == false
+            
+            if localModelAvailable {
+                // Local AI is default when model is downloaded and no preference set
+                preferredTier = .local
+                UserDefaults.standard.set(EngineTier.local.rawValue, forKey: Self.preferredEngineKey)
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Local AI")
+            } else {
+                // Fall back to basic if no local model
+                preferredTier = .basic
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Basic")
+            }
         }
+        
         await applyLocalPreset()
         
         await selectBestAvailableEngine()
