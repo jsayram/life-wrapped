@@ -2557,7 +2557,7 @@ struct AISettingsView: View {
     // Local AI state
     @State private var localModelAvailable = false
     @State private var isDownloadingModel = false
-    @State private var presetSelection: String = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "auto"
+    @State private var presetSelection: String = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "balanced"
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -2592,7 +2592,7 @@ struct AISettingsView: View {
     }
     
     private var effectivePreset: LocalLLMConfiguration.Preset {
-        LocalLLMConfiguration.Preset(rawValue: presetSelection) ?? LocalLLMConfiguration.recommendedPreset()
+        LocalLLMConfiguration.Preset(rawValue: presetSelection) ?? .balanced
     }
     
     private var effectiveConfig: LocalLLMConfiguration {
@@ -2645,8 +2645,6 @@ struct AISettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Picker("Local Preset", selection: $presetSelection) {
-                                Text("Auto (\(LocalLLMConfiguration.recommendedPreset().displayName))")
-                                    .tag("auto")
                                 ForEach(LocalLLMConfiguration.Preset.allCases, id: \.rawValue) { preset in
                                     Text(preset.displayName)
                                         .tag(preset.rawValue)
@@ -2656,7 +2654,7 @@ struct AISettingsView: View {
                             .onChange(of: presetSelection) { _, _ in
                                 applyPresetSelection()
                             }
-                            Text("Auto-picks based on device: \(deviceSummary). \(effectivePreset.summary).")
+                            Text("\(effectivePreset.summary). Device: \(deviceSummary)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -2847,7 +2845,7 @@ struct AISettingsView: View {
         .task {
             await loadEngineStatus()
             await checkLocalModelAvailability()
-            presetSelection = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "auto"
+            presetSelection = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "balanced"
             loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
@@ -4600,6 +4598,7 @@ struct SessionDetailView: View {
     @State private var editedText: String = ""
     @State private var transcriptWasEdited: Bool = false
     @State private var editedChunkIds: Set<UUID> = []  // Track which chunks were edited
+    @State private var isRegeneratingSummary: Bool = false
     @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
@@ -5244,11 +5243,25 @@ struct SessionDetailView: View {
                         await regenerateSummary()
                     }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.body)
-                        .foregroundStyle(.blue)
+                    HStack(spacing: 4) {
+                        if isRegeneratingSummary {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.body)
+                        }
+                    }
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .pink, .orange],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                 }
                 .buttonStyle(.plain)
+                .disabled(isRegeneratingSummary)
             }
             
             Text(summary.text)
@@ -5380,6 +5393,9 @@ struct SessionDetailView: View {
     }
     
     private func regenerateSummary() async {
+        isRegeneratingSummary = true
+        defer { isRegeneratingSummary = false }
+        
         do {
             try await coordinator.generateSessionSummary(sessionId: session.sessionId)
             await loadSessionSummary()
@@ -5389,6 +5405,7 @@ struct SessionDetailView: View {
             coordinator.showSuccess("Summary regenerated")
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
+            coordinator.showError("Failed to regenerate summary")
         }
     }
 
