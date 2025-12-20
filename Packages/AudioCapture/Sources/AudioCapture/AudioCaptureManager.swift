@@ -21,9 +21,9 @@ public final class AudioCaptureManager: ObservableObject {
     /// Updated at 10Hz during recording
     @Published public private(set) var currentAudioLevel: Float = 0.0
     
-    /// FFT frequency magnitudes for waveform visualization (32 bars)
+    /// FFT frequency magnitudes for waveform visualization (80 bars)
     /// Each value represents the magnitude of a frequency bin
-    @Published public private(set) var fftMagnitudes: [Float] = Array(repeating: 0, count: 32)
+    @Published public private(set) var fftMagnitudes: [Float] = Array(repeating: 0, count: 80)
     
     // MARK: - Private Properties
     
@@ -193,7 +193,7 @@ public final class AudioCaptureManager: ObservableObject {
             vDSP_DFT_DestroySetup(setup)
             fftSetup = nil
         }
-        fftMagnitudes = Array(repeating: 0, count: 32)
+        fftMagnitudes = Array(repeating: 0, count: 80)
         
         // Reset session state
         currentSessionId = nil
@@ -578,15 +578,15 @@ public final class AudioCaptureManager: ObservableObject {
     // MARK: - FFT Processing
     
     /// Perform Fast Fourier Transform on audio buffer to extract frequency magnitudes
-    /// Returns array of 32 magnitudes representing different frequency bins
+    /// Returns array of 80 magnitudes representing different frequency bins
     private func performFFT(data: [Float]) -> [Float] {
         guard let setup = fftSetup else {
-            return Array(repeating: 0, count: 32)
+            return Array(repeating: 0, count: 80)
         }
         
         // Ensure we have enough data
         guard data.count >= fftBufferSize else {
-            return Array(repeating: 0, count: 32)
+            return Array(repeating: 0, count: 80)
         }
         
         // Prepare input arrays (real and imaginary parts)
@@ -597,8 +597,8 @@ public final class AudioCaptureManager: ObservableObject {
         var realOut = [Float](repeating: 0, count: fftBufferSize)
         var imagOut = [Float](repeating: 0, count: fftBufferSize)
         
-        // Prepare magnitude array (32 frequency bins)
-        var magnitudes = [Float](repeating: 0, count: 32)
+        // Prepare magnitude array (80 frequency bins)
+        var magnitudes = [Float](repeating: 0, count: 80)
         
         // Perform FFT using nested withUnsafeMutableBufferPointer calls
         realIn.withUnsafeMutableBufferPointer { realInPtr in
@@ -620,8 +620,8 @@ public final class AudioCaptureManager: ObservableObject {
                             imagp: imagOutPtr.baseAddress!
                         )
                         
-                        // Compute magnitudes (use first 32 frequency bins)
-                        vDSP_zvabs(&complex, 1, &magnitudes, 1, UInt(32))
+                        // Compute magnitudes (use first 80 frequency bins)
+                        vDSP_zvabs(&complex, 1, &magnitudes, 1, UInt(80))
                     }
                 }
             }
@@ -639,15 +639,15 @@ public final class AudioCaptureManager: ObservableObject {
         
         // Return zeros if insufficient data
         guard data.count >= bufferSize else {
-            return Array(repeating: 0, count: 32)
+            return Array(repeating: 0, count: 80)
         }
         
         // Quick inline FFT (simplified version for audio tap thread)
         // We'll just do a basic frequency magnitude calculation without the full setup
-        var magnitudes = [Float](repeating: 0, count: 32)
+        var magnitudes = [Float](repeating: 0, count: 80)
         
-        let chunkSize = bufferSize / 32
-        for i in 0..<32 {
+        let chunkSize = bufferSize / 80
+        for i in 0..<80 {
             let start = i * chunkSize
             let end = min(start + chunkSize, data.count)
             var sum: Float = 0

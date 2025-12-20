@@ -666,6 +666,7 @@ struct RecordingButton: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var recordingDuration: TimeInterval = 0
+    @State private var smoothedMagnitudes: [Float] = Array(repeating: 0, count: 80)
     
     // Timer that fires every 0.1 seconds to update the recording duration
     private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
@@ -716,24 +717,26 @@ struct RecordingButton: View {
     // MARK: - Subviews
     
     private var waveformView: some View {
-        TimelineView(.animation(minimumInterval: 0.1)) { context in
+        TimelineView(.animation(minimumInterval: 1/60)) { context in
             Canvas { canvasContext, size in
                 drawFFTWaveform(
                     context: canvasContext,
                     size: size,
-                    magnitudes: coordinator.audioCapture.fftMagnitudes
+                    magnitudes: smoothedMagnitudes
                 )
             }
-            .frame(width: 280, height: 120)
+            .frame(width: 340, height: 160)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 20)
     }
     
     // MARK: - Drawing Methods
     
     private func drawFFTWaveform(context: GraphicsContext, size: CGSize, magnitudes: [Float]) {
-        let barCount = magnitudes.count // 32 bars
-        let barWidth: CGFloat = 6
-        let spacing: CGFloat = 2
+        let barCount = magnitudes.count // 80 bars
+        let barWidth: CGFloat = 3
+        let spacing: CGFloat = 1
         let totalWidth = CGFloat(barCount) * (barWidth + spacing) - spacing
         let startX = (size.width - totalWidth) / 2
         let maxHeight = size.height - 20
@@ -775,6 +778,12 @@ struct RecordingButton: View {
             recordingDuration = Date().timeIntervalSince(startTime)
         } else {
             recordingDuration = 0
+        }
+        
+        // Apply exponential moving average smoothing to FFT magnitudes
+        let rawMagnitudes = coordinator.audioCapture.fftMagnitudes
+        for i in 0..<min(smoothedMagnitudes.count, rawMagnitudes.count) {
+            smoothedMagnitudes[i] = smoothedMagnitudes[i] * 0.8 + rawMagnitudes[i] * 0.2
         }
     }
     
