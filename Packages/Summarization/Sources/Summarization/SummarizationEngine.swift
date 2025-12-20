@@ -27,7 +27,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .basic: return "Basic"
         case .apple: return "Apple Intelligence"
         case .local: return "Local AI"
-        case .external: return "External AI"
+        case .external: return "Year Wrapped Pro AI"
         }
     }
     
@@ -36,7 +36,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .basic: return "Fast, simple summarization"
         case .apple: return "Apple's on-device AI (iOS 18.1+)"
         case .local: return "Phi-3.5 Mini running locally"
-        case .external: return "OpenAI, Anthropic APIs"
+        case .external: return "OpenAI, Anthropic (Year Wrap only by default)"
         }
     }
     
@@ -45,7 +45,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .basic: return "bolt.fill"
         case .apple: return "apple.intelligence"
         case .local: return "cpu.fill"
-        case .external: return "cloud.fill"
+        case .external: return "sparkles"
         }
     }
     
@@ -58,7 +58,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .local:
             return "High-quality AI using local models (Phi-3.5 Mini, ~2.4GB). Processing happens entirely on your device"
         case .external:
-            return "Premium AI using external services (OpenAI, Anthropic). Requires API key and internet connection"
+            return "Premium AI using external services (OpenAI or Anthropic). Required for Year Wrap feature. Select as active to also use for session summaries. Requires API key and internet connection"
         }
     }
     

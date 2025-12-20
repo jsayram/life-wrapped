@@ -1317,11 +1317,12 @@ struct InsightsTab: View {
                 } else {
                     List {
                         // Period Summary section (at the top)
-                        if let summary = periodSummary {
+                        // For Year tab: prioritize yearWrapSummary (Pro AI) over periodSummary (rollup)
+                        if let summary = (selectedTimeRange == .allTime ? (yearWrapSummary ?? periodSummary) : periodSummary) {
                             Section {
                                 InsightsSummaryCard(
                                     summary: summary,
-                                    periodTitle: periodTitle,
+                                    periodTitle: selectedTimeRange == .allTime && yearWrapSummary != nil ? "✨ Year Wrap (Pro AI)" : periodTitle,
                                     sessionCount: sessionCount,
                                     sessionsInPeriod: sessionsInPeriod,
                                     coordinator: coordinator,
@@ -1787,13 +1788,13 @@ struct InsightsTab: View {
             }
             .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
                 Button("Cancel", role: .cancel) { }
-                Button("✨ Generate with External AI") {
+                Button("✨ Generate with Pro AI") {
                     Task {
                         await wrapUpYear(forceRegenerate: false)
                     }
                 }
             } message: {
-                Text("✨ Clicking 'Generate with External AI' will use your configured external AI service (from Settings) to create a comprehensive, beautifully crafted year-in-review summary.\n\n⏱️ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid external API credentials configured in Settings.\n\n🔄 Use the orange refresh button to roll up the monthly summaries without using external AI.")
+                Text("✨ Clicking 'Generate with Pro AI' will use your configured Year Wrapped Pro AI service (OpenAI or Anthropic) to create a comprehensive, beautifully crafted year-in-review summary.\n\n⏱️ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid Pro AI credentials configured in Settings.\n\n🔄 Use the orange refresh button to roll up the monthly summaries (no Pro AI needed).")
             }
         }
     }
@@ -2599,6 +2600,44 @@ struct AISettingsView: View {
     
     var body: some View {
         List {
+            // MARK: - How It Works Section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Session Summaries", systemImage: "doc.text")
+                        .font(.headline)
+                    HStack {
+                        Text("Uses your ACTIVE engine →")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let activeEngine {
+                            Text(activeEngine.displayName)
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    Label("Period Rollups (Day/Week/Month/Year)", systemImage: "calendar")
+                        .font(.headline)
+                    Text("Combines session summaries (no additional AI processing)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Divider()
+                    
+                    Label("✨ Year Wrap (Special)", systemImage: "sparkles")
+                        .font(.headline)
+                    Text("Always uses Year Wrapped Pro AI (OpenAI or Anthropic) for a beautifully crafted year-in-review. Requires valid Pro AI credentials below.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Label("How AI Works in Life Wrapped", systemImage: "info.circle")
+            }
+            
             // MARK: - On-Device Engines Section
             Section {
                 // Basic Engine
@@ -2660,9 +2699,9 @@ struct AISettingsView: View {
                 Text("All processing happens locally. Your data never leaves your device.")
             }
             
-            // MARK: - External API Section
+            // MARK: - Year Wrapped Pro AI Section
             Section {
-                // External API Engine Toggle
+                // Pro AI Engine Toggle
                 EngineOptionCard(
                     tier: .external,
                     isSelected: activeEngine == .external,
@@ -2824,10 +2863,10 @@ struct AISettingsView: View {
                     }
                 }
             } header: {
-                Label("Cloud Processing", systemImage: "cloud.fill")
+                Label("Year Wrapped Pro AI", systemImage: "sparkles")
             } footer: {
                 Label {
-                    Text("Data is sent to \(selectedProvider) servers for processing.")
+                    Text("Required for Year Wrap feature. Select as active engine above to also use for session summaries. Data is sent to \(selectedProvider) servers for processing.")
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
