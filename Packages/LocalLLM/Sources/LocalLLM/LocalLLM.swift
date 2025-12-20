@@ -101,42 +101,39 @@ public struct LocalLLMConfiguration: Sendable, Equatable {
     private static let presetOverrideKey = "localLLM.presetOverride"
 
     public static func recommendedPreset(for profile: DeviceProfile = .current) -> Preset {
-        if profile.isLowMemory {
-            return .speed
-        }
-        if profile.isProClass {
-            return .quality
-        }
-        return .balanced
+        // Always use quality - auto-optimized for device
+        return .quality
     }
 
     public static func configuration(for preset: Preset) -> LocalLLMConfiguration {
-        switch preset {
-        case .speed:
-            return LocalLLMConfiguration(
-                preset: .speed,
-                contextSize: 2048,  // SwiftLlama default
-                temperature: 0.2,   // SwiftLlama default
-                topP: 0.9,
-                maxTokens: 512
-            )
-        case .balanced:
-            return LocalLLMConfiguration(
-                preset: .balanced,
-                contextSize: 2048,  // Safe default
-                temperature: 0.2,   // SwiftLlama default
-                topP: 0.9,
-                maxTokens: 1024     // SwiftLlama default
-            )
-        case .quality:
-            return LocalLLMConfiguration(
-                preset: .quality,
-                contextSize: 2048,  // Keep same for stability
-                temperature: 0.2,   // SwiftLlama default
-                topP: 0.9,
-                maxTokens: 1024
-            )
+        let profile = DeviceProfile.current
+        
+        // Auto-optimize based on device capabilities
+        // Always maximize quality while respecting device limits
+        let contextSize: Int
+        let maxTokens: Int
+        
+        if profile.isLowMemory {
+            // Low memory devices (< 5.5 GB) - conservative but still high quality
+            contextSize = 2048
+            maxTokens = 768
+        } else if profile.isProClass {
+            // Pro devices (>= 7.5 GB or iPad) - maximum quality
+            contextSize = 4096
+            maxTokens = 1536
+        } else {
+            // Standard devices (5.5-7.5 GB) - high quality
+            contextSize = 3072
+            maxTokens = 1024
         }
+        
+        return LocalLLMConfiguration(
+            preset: preset,
+            contextSize: contextSize,
+            temperature: 0.2,   // Balanced creativity/accuracy
+            topP: 0.9,
+            maxTokens: maxTokens
+        )
     }
 
     public static func recommended(for profile: DeviceProfile = .current) -> LocalLLMConfiguration {
@@ -145,11 +142,8 @@ public struct LocalLLMConfiguration: Sendable, Equatable {
     }
 
     public static func current(profile: DeviceProfile = .current) -> LocalLLMConfiguration {
-        if let raw = UserDefaults.standard.string(forKey: presetOverrideKey),
-           let preset = Preset(rawValue: raw) {
-            return configuration(for: preset)
-        }
-        return recommended(for: profile)
+        // Always use auto-optimized quality settings
+        return configuration(for: .quality)
     }
 
     public static func persistPresetOverride(_ preset: Preset?) {

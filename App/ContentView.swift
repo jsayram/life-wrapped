@@ -2552,7 +2552,6 @@ struct AISettingsView: View {
     // Local AI state
     @State private var localModelAvailable = false
     @State private var isDownloadingModel = false
-    @State private var presetSelection: String = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "balanced"
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -2586,12 +2585,8 @@ struct AISettingsView: View {
         selectedProvider == "OpenAI" ? openaiModels : anthropicModels
     }
     
-    private var effectivePreset: LocalLLMConfiguration.Preset {
-        LocalLLMConfiguration.Preset(rawValue: presetSelection) ?? .balanced
-    }
-    
     private var effectiveConfig: LocalLLMConfiguration {
-        LocalLLMConfiguration.configuration(for: effectivePreset)
+        LocalLLMConfiguration.current()
     }
     
     private var deviceSummary: String {
@@ -2671,26 +2666,18 @@ struct AISettingsView: View {
                     if localModelAvailable {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Label("Preset", systemImage: "slider.horizontal.2.square")
-                                Spacer()
-                                Text(effectiveConfig.tokensDescription)
+                                Image(systemName: "wand.and.stars")
+                                    .foregroundStyle(.green)
+                                Text("Auto-Optimized for Your Device")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.green)
                             }
-                            Picker("Local Preset", selection: $presetSelection) {
-                                ForEach(LocalLLMConfiguration.Preset.allCases, id: \.rawValue) { preset in
-                                    Text(preset.displayName)
-                                        .tag(preset.rawValue)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: presetSelection) { _, _ in
-                                applyPresetSelection()
-                            }
-                            Text("\(effectivePreset.summary). Device: \(deviceSummary)")
+                            Text("Automatically uses maximum quality settings for \\(deviceSummary). \\(effectiveConfig.tokensDescription)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        .padding(.vertical, 4)
                     }
                 }
             } header: {
@@ -2878,7 +2865,6 @@ struct AISettingsView: View {
         .task {
             await loadEngineStatus()
             await checkLocalModelAvailability()
-            presetSelection = LocalLLMConfiguration.loadPresetOverride()?.rawValue ?? "balanced"
             loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
@@ -2910,15 +2896,6 @@ struct AISettingsView: View {
         let models = await modelManager.availableModels()
         await MainActor.run {
             localModelAvailable = !models.isEmpty
-        }
-    }
-
-    private func applyPresetSelection() {
-        let override = LocalLLMConfiguration.Preset(rawValue: presetSelection)
-        Task {
-            guard let summCoord = coordinator.summarizationCoordinator else { return }
-            await summCoord.setLocalPresetOverride(override)
-            await loadEngineStatus()
         }
     }
     

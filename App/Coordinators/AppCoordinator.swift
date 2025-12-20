@@ -769,10 +769,9 @@ public final class AppCoordinator: ObservableObject {
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
-        // Check active engine
-        await coordinator.setPreferredEngine(.local)
+        // Use the user's active engine (respects their settings choice)
         let activeEngine = await coordinator.getActiveEngine()
-        print("🧠 [AppCoordinator] Active summarization engine: \(activeEngine.displayName)")
+        print("🧠 [AppCoordinator] Using active summarization engine: \(activeEngine.displayName)")
         
         // Generate summary using coordinator (returns Summary with structured data)
         print("🌐 [AppCoordinator] 🚀 CALLING LLM API - Summarizing \(wordCount) words from session...")
