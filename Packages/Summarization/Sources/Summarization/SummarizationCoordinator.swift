@@ -17,6 +17,7 @@ public actor SummarizationCoordinator {
     // MARK: - Properties
     
     private let storage: DatabaseManager
+    private let keychainManager: KeychainManager
     
     // Available engines
     private var basicEngine: BasicEngine
@@ -36,8 +37,9 @@ public actor SummarizationCoordinator {
     
     // MARK: - Initialization
     
-    public init(storage: DatabaseManager) {
+    public init(storage: DatabaseManager, keychainManager: KeychainManager = .shared) {
         self.storage = storage
+        self.keychainManager = keychainManager
         
         // Initialize basic engine (always available)
         self.basicEngine = BasicEngine(storage: storage)
@@ -212,6 +214,26 @@ public actor SummarizationCoordinator {
     ) async throws -> Summary {
         guard !segments.isEmpty else {
             throw SummarizationError.noTranscriptData
+        }
+        
+        // Check if preferred engine is available
+        if activeEngine.tier != preferredTier {
+            print("⚠️ [SummarizationCoordinator] Preferred engine (\(preferredTier.displayName)) unavailable, using \(activeEngine.tier.displayName)")
+            
+            // If user selected external but it's not available, throw clear error
+            if preferredTier == .external {
+                if let external = externalEngine, await !external.isAvailable() {
+                    // Check specific reason
+                    let externalAPIEngine = external as? ExternalAPIEngine
+                    let provider = await externalAPIEngine?.getProvider().provider ?? .openai
+                    let hasAPIKey = await keychainManager.hasAPIKey(for: provider)
+                    if !hasAPIKey {
+                        throw SummarizationError.configurationError("Year Wrapped Pro AI requires an API key. Please add your OpenAI or Anthropic key in Settings → AI & Intelligence.")
+                    } else {
+                        throw SummarizationError.configurationError("Year Wrapped Pro AI requires internet connection.")
+                    }
+                }
+            }
         }
         
         // Combine transcript text
