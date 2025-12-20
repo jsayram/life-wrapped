@@ -337,9 +337,23 @@ struct HomeTab: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    // Streak Card
-                    StreakCard(streak: coordinator.currentStreak)
+                VStack(spacing: 16) {
+                    // App Title - Centered and smaller
+                    Text("Life Wrapped")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.magenta],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
+                    
+                    // Streak Display - Minimal and transparent
+                    StreakDisplay(streak: coordinator.currentStreak)
                     
                     // Recording Button
                     RecordingButton()
@@ -359,7 +373,7 @@ struct HomeTab: View {
                 await refreshStats()
                 await checkLocalModelAvailability()
             }
-            .navigationTitle("Life Wrapped")
+            .navigationBarHidden(true)
             .sheet(isPresented: $showLocalAIDownload) {
                 LocalAIDownloadView()
             }
@@ -776,49 +790,60 @@ struct ModelDownloadRowView: View {
 
 // MARK: - Streak Card
 
+// MARK: - Streak Display (Minimal)
+
+struct StreakDisplay: View {
+    let streak: Int
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("🔥")
+                .font(.system(size: 20))
+            
+            Text("\(streak) Day Streak")
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [AppTheme.purple.opacity(0.9), AppTheme.magenta.opacity(0.9)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+            
+            if streak > 0 {
+                Text("•")
+                    .foregroundStyle(.tertiary)
+                Text(streakMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+    
+    private var streakMessage: String {
+        if streak == 0 {
+            return ""
+        } else if streak == 1 {
+            return "Great start!"
+        } else if streak < 7 {
+            return "Building momentum!"
+        } else if streak < 30 {
+            return "Amazing!"
+        } else {
+            return "Incredible!"
+        }
+    }
+}
+
+// Legacy StreakCard kept for compatibility
 struct StreakCard: View {
     let streak: Int
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        HStack(spacing: 12) {
-            Text("🔥")
-                .font(.system(size: 32))
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(streak) Day Streak")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                
-                Text(streakMessage)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-        }
-        .padding(12)
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-    
-    private var streakMessage: String {
-        if streak == 0 {
-            return "Start journaling to begin!"
-        } else if streak == 1 {
-            return "Great start! Keep it going!"
-        } else if streak < 7 {
-            return "Building momentum!"
-        } else if streak < 30 {
-            return "Amazing consistency!"
-        } else {
-            return "Incredible dedication!"
-        }
+        StreakDisplay(streak: streak)
     }
 }
 
