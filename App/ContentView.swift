@@ -4594,6 +4594,7 @@ struct SessionDetailView: View {
     @State private var isTranscriptionComplete = false
     @State private var transcriptionCheckTimer: Timer?
     @State private var sessionSummary: Summary?
+    @State private var summaryLoadError: String?
     @State private var scrubbedTime: TimeInterval = 0
     
     // Session metadata
@@ -4629,9 +4630,13 @@ struct SessionDetailView: View {
                 // Transcription Section
                 transcriptionSection
                 
-                // Session Summary Section (if available)
+                // Session Summary Section (if available or error)
                 if let summary = sessionSummary {
                     sessionSummarySection(summary: summary)
+                } else if let error = summaryLoadError {
+                    sessionSummaryErrorSection(error: error)
+                } else if isTranscriptionComplete {
+                    sessionSummaryPlaceholderSection
                 }
                 
                 // Personal Notes Section
@@ -5228,6 +5233,109 @@ struct SessionDetailView: View {
     
     // MARK: - Session Summary Section
     
+    private var sessionSummaryPlaceholderSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("AI Summary")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Generate button
+                Button {
+                    Task {
+                        await regenerateSummary()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isRegeneratingSummary {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.body)
+                        }
+                        Text("Generate")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .pink, .orange],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegeneratingSummary)
+            }
+            
+            Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .italic()
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    private func sessionSummaryErrorSection(error: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("AI Summary")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Retry button
+                Button {
+                    Task {
+                        await regenerateSummary()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isRegeneratingSummary {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                        }
+                        Text("Retry")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegeneratingSummary)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Summary Generation Failed")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                if error.contains("API key") {
+                    Text("Go to Settings → AI & Intelligence to add your API key.")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
     private func sessionSummarySection(summary: Summary) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -5416,6 +5524,7 @@ struct SessionDetailView: View {
     
     private func regenerateSummary() async {
         isRegeneratingSummary = true
+        summaryLoadError = nil
         defer { isRegeneratingSummary = false }
         
         do {
@@ -5427,6 +5536,7 @@ struct SessionDetailView: View {
             coordinator.showSuccess("Summary regenerated")
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
+            summaryLoadError = error.localizedDescription
             coordinator.showError("Failed to regenerate summary")
         }
     }
@@ -5529,13 +5639,18 @@ struct SessionDetailView: View {
     }
     
     private func loadSessionSummary() async {
+        summaryLoadError = nil
         do {
             sessionSummary = try await coordinator.fetchSessionSummary(sessionId: session.sessionId)
             if sessionSummary != nil {
                 print("✨ [SessionDetailView] Loaded session summary")
+            } else {
+                print("ℹ️ [SessionDetailView] No session summary found (not yet generated)")
+                summaryLoadError = "Summary not yet generated. Transcription must complete first."
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load session summary: \(error)")
+            summaryLoadError = error.localizedDescription
         }
     }
     

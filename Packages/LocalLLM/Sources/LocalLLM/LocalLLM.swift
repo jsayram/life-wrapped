@@ -505,12 +505,12 @@ public actor LlamaContext {
                 temperature: 0.2,
                 batchSize: 128,
                 maxTokenCount: 512,
-                stopTokens: StopToken.llama3
+                stopTokens: StopToken.phi
             )
 
             print("🔄 [LlamaContext] Creating SwiftLlama instance...")
             print("   Model path: \(url.path)")
-            print("   Stop tokens: \(StopToken.llama3)")
+            print("   Stop tokens: \(StopToken.phi)")
             print("   ⏳ This may take 10-30 seconds...")
 
             // CRITICAL: Wrap in detached task to manage memory; capture Sendable values only
@@ -571,9 +571,9 @@ public actor LlamaContext {
         let startTime = Date()
 
         do {
-            // Create prompt - exactly like article
+            // Create prompt - using Phi format for Phi-3.5 model
             let promptObj = Prompt(
-                type: .llama3,
+                type: .phi,
                 systemPrompt: "You are a helpful AI assistant.",
                 userMessage: prompt
             )

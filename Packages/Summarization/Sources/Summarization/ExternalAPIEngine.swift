@@ -406,14 +406,57 @@ public actor ExternalAPIEngine: SummarizationEngine {
         
         print("✅ [ExternalAPIEngine] Successfully parsed JSON response")
         
-        // Try multiple field names for summary (API might use different conventions)
-        let summary = json["summary"] as? String 
-            ?? json["session_summary"] as? String
-            ?? json["text"] as? String
-            ?? "No summary available"
+        // Extract summary based on schema structure
+        // Session schema has: title, key_insights[], main_themes[], thought_process, etc.
+        let summary: String
+        if let title = json["title"] as? String,
+           let keyInsights = json["key_insights"] as? [String] {
+            // Build comprehensive summary from session schema
+            var parts: [String] = []
+            
+            // Add title as header
+            parts.append("**\(title)**")
+            
+            // Add key insights
+            if !keyInsights.isEmpty {
+                parts.append("\n\nKey Insights:")
+                for (index, insight) in keyInsights.enumerated() {
+                    parts.append("• \(insight)")
+                }
+            }
+            
+            // Add thought process if available
+            if let thoughtProcess = json["thought_process"] as? String, !thoughtProcess.isEmpty {
+                parts.append("\n\n\(thoughtProcess)")
+            }
+            
+            // Add main themes if available
+            if let themes = json["main_themes"] as? [String], !themes.isEmpty {
+                parts.append("\n\nThemes: \(themes.joined(separator: ", "))")
+            }
+            
+            // Add action items if available
+            if let actionItems = json["action_items"] as? [String], !actionItems.isEmpty {
+                parts.append("\n\nAction Items:")
+                for item in actionItems {
+                    parts.append("• \(item)")
+                }
+            }
+            
+            summary = parts.joined(separator: "\n")
+        } else {
+            // Fallback to simple field extraction
+            summary = json["summary"] as? String 
+                ?? json["session_summary"] as? String
+                ?? json["text"] as? String
+                ?? json["thought_process"] as? String
+                ?? "No summary available"
+        }
         
         print("📝 [ExternalAPIEngine] Extracted summary (\(summary.count) chars): \(summary.prefix(100))...")
-        let topics = json["topics"] as? [String] ?? []
+        
+        // Extract topics from main_themes or topics field
+        let topics = (json["main_themes"] as? [String]) ?? (json["topics"] as? [String]) ?? []
         let sentiment = json["sentiment"] as? Double ?? 0.0
         
         // Parse entities
