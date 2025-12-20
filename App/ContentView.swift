@@ -254,6 +254,7 @@ struct HomeTab: View {
 // MARK: - Add Local AI Button
 
 struct AddLocalAIButton: View {
+    @Environment(\.colorScheme) var colorScheme
     let action: () -> Void
     
     var body: some View {
@@ -288,6 +289,10 @@ struct AddLocalAIButton: View {
             }
             .padding()
             .background(Color(.secondarySystemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(AppTheme.cardGradient(for: colorScheme))
+            )
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
@@ -1412,6 +1417,7 @@ class WordAnalyzer {
 
 struct InsightsTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
+    @Environment(\.colorScheme) var colorScheme
     @State private var periodSummary: Summary?
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
@@ -4369,6 +4375,7 @@ struct PrivacyPolicyView: View {
 }
 
 struct PrivacyPoint: View {
+    @Environment(\.colorScheme) var colorScheme
     let icon: String
     let title: String
     let description: String
@@ -4391,6 +4398,10 @@ struct PrivacyPoint: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
 }
@@ -4399,6 +4410,7 @@ struct PrivacyPoint: View {
 
 struct RecordingDetailView: View {
     @EnvironmentObject var coordinator: AppCoordinator
+    @Environment(\.colorScheme) var colorScheme
     let recording: AudioChunk
     
     @State private var transcriptSegments: [TranscriptSegment] = []
@@ -4419,6 +4431,10 @@ struct RecordingDetailView: View {
                 }
                 .padding()
                 .background(Color(.secondarySystemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(AppTheme.cardGradient(for: colorScheme))
+                )
                 .cornerRadius(12)
                 
                 // Playback Controls
@@ -4471,6 +4487,10 @@ struct RecordingDetailView: View {
                 }
                 .padding()
                 .background(Color(.secondarySystemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(AppTheme.cardGradient(for: colorScheme))
+                )
                 .cornerRadius(12)
                 
                 // Transcription Section
@@ -4505,6 +4525,10 @@ struct RecordingDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
                 .background(Color(.secondarySystemBackground))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(AppTheme.cardGradient(for: colorScheme))
+                )
                 .cornerRadius(12)
             }
             .padding()
@@ -4881,6 +4905,7 @@ struct TranscriptChunkView: View {
 
 struct SessionDetailView: View {
     @EnvironmentObject var coordinator: AppCoordinator
+    @Environment(\.colorScheme) var colorScheme
     let session: RecordingSession
     
     @State private var transcriptSegments: [TranscriptSegment] = []
@@ -5034,6 +5059,10 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -5072,6 +5101,10 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -5316,6 +5349,10 @@ struct SessionDetailView: View {
             }
         }
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -5679,6 +5716,10 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -5735,6 +5776,10 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -5802,6 +5847,10 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -5852,6 +5901,10 @@ struct SessionDetailView: View {
         }
         .padding()
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(12)
     }
     
@@ -6527,6 +6580,7 @@ struct InsightsSummaryCard: View {
 // MARK: - Insight Session Row
 
 struct InsightSessionRow: View {
+    @Environment(\.colorScheme) var colorScheme
     let session: RecordingSession
     
     var body: some View {
@@ -6550,6 +6604,10 @@ struct InsightSessionRow: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 16)
         .background(Color(.secondarySystemBackground))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(AppTheme.cardGradient(for: colorScheme))
+        )
         .cornerRadius(8)
     }
 }
