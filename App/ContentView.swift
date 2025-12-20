@@ -26,19 +26,19 @@ struct ContentView: View {
                     Label("Home", systemImage: "house.fill")
                 }
                 .tag(0)
-            
+
             HistoryTab()
                 .tabItem {
                     Label("History", systemImage: "list.bullet")
                 }
                 .tag(1)
-            
+
             InsightsTab()
                 .tabItem {
                     Label("Insights", systemImage: "chart.bar.fill")
                 }
                 .tag(2)
-            
+
             SettingsTab()
                 .tabItem {
                     Label("Settings", systemImage: "gear")

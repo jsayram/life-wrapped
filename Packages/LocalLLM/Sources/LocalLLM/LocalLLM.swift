@@ -295,7 +295,7 @@ public actor ModelFileManager {
     }
 
     /// Get the models directory URL for external downloads
-    public func getModelsDirectory() -> URL {
+    public nonisolated func getModelsDirectory() -> URL {
         return modelsDirectory
     }
 
@@ -363,10 +363,11 @@ public actor ModelFileManager {
     }
 
     /// Mark a file or directory as excluded from iCloud backups
-    private func markExcludedFromBackup(at url: URL) throws {
+    private nonisolated func markExcludedFromBackup(at url: URL) throws {
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
-        try url.setResourceValues(values)
+        var mutableURL = url
+        try mutableURL.setResourceValues(values)
     }
 }
 
@@ -591,10 +592,21 @@ public actor LlamaContext {
         print("📂 [LlamaContext] Path: \(url.path)")
 
         do {
-            // MINIMAL CONFIG - exactly like the article's working examples
-            // Just stopTokens, everything else uses defaults
-            print("⚙️ [LlamaContext] Using minimal config with just stopTokens")
-            let config = Configuration(stopTokens: StopToken.llama3)
+            // Safer, lower-memory config for mobile:
+            // - Smaller context (1024)
+            // - Smaller batch (128)
+            // - Lower max tokens (512)
+            // - Conservative sampling
+            print("⚙️ [LlamaContext] Using constrained config (nCTX=1024, batch=128, maxTokens=512)")
+            let config = Configuration(
+                topK: 30,
+                topP: 0.9,
+                nCTX: 1024,
+                temperature: 0.2,
+                batchSize: 128,
+                maxTokenCount: 512,
+                stopTokens: StopToken.llama3
+            )
 
             print("🔄 [LlamaContext] Creating SwiftLlama instance...")
             print("   Model path: \(url.path)")

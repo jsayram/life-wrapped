@@ -16,14 +16,15 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../SharedModels"),
-        .package(url: "https://github.com/ShenghaiWang/SwiftLlama.git", from: "0.4.0"),
+        // Patched SwiftLlama using llama.cpp b7486 XCFramework for Llama 3.2 tokenizer compatibility
+        .package(path: "../SwiftLlamaPatched"),
     ],
     targets: [
         .target(
             name: "LocalLLM",
             dependencies: [
                 "SharedModels",
-                "SwiftLlama",
+                .product(name: "SwiftLlama", package: "SwiftLlamaPatched"),
             ],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
