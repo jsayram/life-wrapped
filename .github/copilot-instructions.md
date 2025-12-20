@@ -81,54 +81,29 @@ xcodebuild -scheme LifeWrapped -destination 'generic/platform=iOS Simulator' bui
 
 ### Database Schema Changes
 
-**Current Schema Version: V1** — Transaction-safe migrations with ROLLBACK on error.
+**Current Schema Version: V1** — All tables created in single `applySchema()` method.
 
 Database schema lives in `Packages/Storage/Sources/Storage/DatabaseManager.swift`:
 
-- **Approach**: Modify tables directly in `applyMigrationV1()` method
+- **Approach**: Modify tables directly in `applySchema()` method
 - Change columns, indexes, or constraints in CREATE TABLE statements
-- Migrations wrapped in BEGIN TRANSACTION / COMMIT with ROLLBACK on error
 - Delete app and reinstall to regenerate database with new schema
 
-**Key Schema Features:**
+**Key Database Tables:**
 
-- `transcript_segments.word_count` — Cached word count for performance
-- `summaries.session_id` — Links summaries to recording sessions
-- Transaction safety prevents partial migrations from corrupting database
+- `audio_chunks` — Recording segments with session_id and chunk_index
+- `transcript_segments` — Text segments with word_count, sentiment_score
+- `summaries` — Period-based + session-level summaries (session_id column)
+- `session_metadata` — Titles, notes, favorites for sessions
+- `insights_rollups` — Time-based aggregations
+- `control_events` — App control events
 
-**Current transcript_segments table schema:**
+**Session Metadata Features:**
 
-```swift
-private func applyMigrationV1() throws {
-    try execute("""
-        CREATE TABLE IF NOT EXISTS transcript_segments (
-            id TEXT PRIMARY KEY,
-            audio_chunk_id TEXT NOT NULL,
-            start_time REAL NOT NULL,
-            end_time REAL NOT NULL,
-            text TEXT NOT NULL,
-            confidence REAL NOT NULL,
-            created_at REAL NOT NULL,
-            word_count INTEGER NOT NULL DEFAULT 0,
-            period_start REAL NOT NULL,
-            period_end REAL NOT NULL,
-            text TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            session_id TEXT  -- Links summary to recording session
-        )
-    """)
-
-    try execute("""
-        CREATE INDEX IF NOT EXISTS idx_summaries_period
-        ON summaries(period_type, period_start)
-    """)
-
-    try execute("""
-        CREATE INDEX IF NOT EXISTS idx_summaries_session
-        ON summaries(session_id)
-    """)
-}
-```
+- User-editable session titles
+- Personal notes per session
+- Favorites system with star toggle
+- Full-text search across transcripts
 
 **To modify schema**: Edit CREATE TABLE, delete app, reinstall. Test data regenerates from new recordings.
 
@@ -248,11 +223,31 @@ try await generateSessionSummary(sessionId: sessionId)
 - Waveform visualization with playhead indicator
 - Sequential multi-chunk playback with auto-advance
 
+**Session Detail Features:**
+
+- Editable session titles (persisted to database)
+- Personal notes section per session
+- Favorites with star toggle in toolbar
+- AI Summary section with regenerate button
+- Share transcript via system share sheet
+- Copy transcript/summary to clipboard
+- Tap chunk to seek playback position
+- **Transcript Editing**: Edit transcript text directly with text selection support
+- **Selectable Text**: Select and copy individual words from transcripts
+- **Edit-aware Summary**: Prompt to regenerate summary after transcript edits
+
+**History Tab Features:**
+
+- Full-text search (titles, notes, dates, transcripts)
+- Favorites filter toggle in toolbar
+- Session titles and favorite stars in list rows
+- Debounced transcript search for performance
+
 ## Common Tasks
 
 ### Adding a New Database Table
 
-1. Add `CREATE TABLE` directly in `initializeDatabase()` method
+1. Add `CREATE TABLE` directly in `applySchema()` method
 2. Add CRUD methods to `DatabaseManager.swift`
 3. Create corresponding model in `SharedModels`
 4. Update `AppCoordinator` to use new methods

@@ -57,7 +57,7 @@ public final class AudioCaptureManager: ObservableObject {
             stopAudioEngine()
         }
         
-        #if os(iOS)
+        #if os(iOS) || os(watchOS)
         // Remove notification observers
         NotificationCenter.default.removeObserver(
             self,
@@ -287,10 +287,24 @@ public final class AudioCaptureManager: ObservableObject {
     // MARK: - Private Methods
     
     private func requestMicrophonePermission() async -> Bool {
-        #if os(iOS) || os(macOS)
+        #if os(iOS)
         return await withCheckedContinuation { continuation in
             AVAudioApplication.requestRecordPermission { granted in
                 continuation.resume(returning: granted)
+            }
+        }
+        #elseif os(macOS)
+        // macOS doesn't use AVAudioApplication, use AVCaptureDevice instead
+        return await withCheckedContinuation { continuation in
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized:
+                continuation.resume(returning: true)
+            case .notDetermined:
+                AVCaptureDevice.requestAccess(for: .audio) { granted in
+                    continuation.resume(returning: granted)
+                }
+            default:
+                continuation.resume(returning: false)
             }
         }
         #else
@@ -300,7 +314,7 @@ public final class AudioCaptureManager: ObservableObject {
     }
     
     private func setupAudioSession() throws {
-        #if os(iOS)
+        #if os(iOS) || os(watchOS)
         let session = AVAudioSession.sharedInstance()
         do {
             // Configure for background audio recording
@@ -328,9 +342,13 @@ public final class AudioCaptureManager: ObservableObject {
         } catch {
             throw AudioCaptureError.audioSessionSetupFailed(error.localizedDescription)
         }
+        #elseif os(macOS)
+        // macOS doesn't use AVAudioSession
+        print("🎙️ [AudioCaptureManager] Audio session setup not needed on macOS")
         #endif
     }
     
+    #if os(iOS) || os(watchOS)
     @objc private func handleAudioInterruption(_ notification: Notification) {
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
@@ -370,6 +388,7 @@ public final class AudioCaptureManager: ObservableObject {
             print("⚠️ [AudioCaptureManager] Unknown interruption type")
         }
     }
+    #endif
     
     private func generateFileURL(for chunkID: UUID) throws -> URL {
         // Prefer app group container when available, but fall back to temporary directory

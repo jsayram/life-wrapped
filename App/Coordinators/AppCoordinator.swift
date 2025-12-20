@@ -111,6 +111,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var initializationError: Error?
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
+    @Published public var showLocalAIWelcomeTip: Bool = false
     
     // MARK: - Dependencies
     
@@ -118,7 +119,7 @@ public final class AppCoordinator: ObservableObject {
     public let audioCapture: AudioCaptureManager
     public let audioPlayback: AudioPlaybackManager
     private var transcriptionManager: TranscriptionManager?
-    private var summarizationManager: SummarizationManager?
+    public private(set) var summarizationCoordinator: SummarizationCoordinator?
     private var insightsManager: InsightsManager?
     private let widgetDataManager: WidgetDataManager
     
@@ -138,6 +139,11 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var transcribingChunkIds: Set<UUID> = []  // Currently transcribing
     @Published public private(set) var transcribedChunkIds: Set<UUID> = []   // Successfully completed
     @Published public private(set) var failedChunkIds: Set<UUID> = []         // Failed transcription
+    
+    // MARK: - Period Summary Generation Guards
+    
+    /// Tracks which period summaries are currently being generated to prevent duplicate concurrent calls
+    private var generatingPeriodSummaries: Set<String> = []
     
     // MARK: - Initialization
     
@@ -214,10 +220,11 @@ public final class AppCoordinator: ObservableObject {
             // Initialize managers that need storage
             print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)
-            print("📝 [AppCoordinator] Initializing SummarizationManager...")
-            // Use config with no word minimum - all content should generate summaries
-            let summaryConfig = SummarizationConfig(minimumWords: 1)
-            self.summarizationManager = SummarizationManager(storage: dbManager, config: summaryConfig)
+            print("📝 [AppCoordinator] Initializing SummarizationCoordinator...")
+            let coordinator = SummarizationCoordinator(storage: dbManager)
+            self.summarizationCoordinator = coordinator
+            // Restore saved engine preference (auto-selects Local AI if available)
+            await coordinator.restoreSavedPreference()
             print("📊 [AppCoordinator] Initializing InsightsManager...")
             self.insightsManager = InsightsManager(storage: dbManager)
             print("✅ [AppCoordinator] All managers initialized")
@@ -240,6 +247,13 @@ public final class AppCoordinator: ObservableObject {
             isInitialized = true
             initializationError = nil
             print("🎉 [AppCoordinator] Initialization complete!")
+            
+            // Show Local AI welcome tip once after first setup
+            let hasShownWelcomeTip = UserDefaults.standard.bool(forKey: "hasShownLocalAIWelcomeTip")
+            if !hasShownWelcomeTip {
+                showLocalAIWelcomeTip = true
+                UserDefaults.standard.set(true, forKey: "hasShownLocalAIWelcomeTip")
+            }
             
         } catch {
             print("❌ [AppCoordinator] Initialization failed: \(error.localizedDescription)")
@@ -315,7 +329,9 @@ public final class AppCoordinator: ObservableObject {
     /// Called when user completes permission flow
     public func permissionsGranted() async {
         print("✅ [AppCoordinator] Permissions granted, initializing...")
+        // Immediately close the permissions sheet (already on MainActor)
         needsPermissions = false
+        // Then initialize
         await initialize()
     }
     
@@ -411,11 +427,18 @@ public final class AppCoordinator: ObservableObject {
         // Get session metadata
         let sessionMetadata = try await dbManager.fetchSessions(limit: limit)
         
-        // Fetch chunks for each session and build RecordingSession objects
+        // Fetch chunks and metadata for each session and build RecordingSession objects
         var sessions: [RecordingSession] = []
         for (sessionId, _, _) in sessionMetadata {
             let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
-            let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+            let metadata = try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+            let session = RecordingSession(
+                sessionId: sessionId, 
+                chunks: chunks,
+                title: metadata?.title,
+                notes: metadata?.notes,
+                isFavorite: metadata?.isFavorite ?? false
+            )
             sessions.append(session)
         }
         
@@ -428,12 +451,19 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         
-        // Fetch chunks for each session and build RecordingSession objects
+        // Fetch chunks and metadata for each session and build RecordingSession objects
         var sessions: [RecordingSession] = []
         for sessionId in ids {
             let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
             if !chunks.isEmpty {
-                let session = RecordingSession(sessionId: sessionId, chunks: chunks)
+                let metadata = try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+                let session = RecordingSession(
+                    sessionId: sessionId, 
+                    chunks: chunks,
+                    title: metadata?.title,
+                    notes: metadata?.notes,
+                    isFavorite: metadata?.isFavorite ?? false
+                )
                 sessions.append(session)
             }
         }
@@ -480,7 +510,7 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.noActiveRecording
         }
         
-        guard let dbManager = databaseManager else {
+        guard databaseManager != nil else {
             print("❌ [AppCoordinator] Cannot stop: not initialized")
             throw AppCoordinatorError.notInitialized
         }
@@ -558,7 +588,7 @@ public final class AppCoordinator: ObservableObject {
         print("🔄 [AppCoordinator] Retrying transcription for chunk: \(chunkId)")
         
         // Remove from failed set
-        await MainActor.run {
+        _ = await MainActor.run {
             failedChunkIds.remove(chunkId)
         }
         
@@ -657,15 +687,21 @@ public final class AppCoordinator: ObservableObject {
     
     /// Check if all chunks in a session are transcribed and generate session summary
     private func checkAndGenerateSessionSummary(for sessionId: UUID) async {
+        print("🔔 [AppCoordinator] === CHECK AND GENERATE SESSION SUMMARY TRIGGERED ===")
+        print("📌 [AppCoordinator] Session ID: \(sessionId)")
+        
         do {
             // Check if all chunks are transcribed
+            print("1️⃣ [AppCoordinator] Checking if session transcription is complete...")
             let isComplete = try await isSessionTranscriptionComplete(sessionId: sessionId)
-            print("🔍 [AppCoordinator] Session \(sessionId) completion check: \(isComplete)")
+            print("🔍 [AppCoordinator] Session \(sessionId) transcription complete: \(isComplete)")
             
             guard isComplete else {
-                print("⏳ [AppCoordinator] Session \(sessionId) not yet complete, skipping summary")
+                print("⏳ [AppCoordinator] ⏸️  Session \(sessionId) not yet complete, skipping summary generation")
                 return
             }
+            
+            print("✅ [AppCoordinator] Session transcription is complete!")
             
             // Check if summary already exists
             guard let dbManager = databaseManager else {
@@ -673,29 +709,42 @@ public final class AppCoordinator: ObservableObject {
                 return
             }
             
+            print("2️⃣ [AppCoordinator] Checking if summary already exists...")
             if let existingSummary = try await dbManager.fetchSummaryForSession(sessionId: sessionId) {
-                print("ℹ️ [AppCoordinator] Summary already exists for session \(sessionId): \(existingSummary.text.prefix(50))...")
+                print("ℹ️ [AppCoordinator] ✋ Summary already exists for session \(sessionId)")
+                print("📝 [AppCoordinator] Existing summary: \(existingSummary.text.prefix(50))...")
+                print("🚫 [AppCoordinator] Skipping regeneration (summary already exists)")
                 return
             }
             
+            print("✅ [AppCoordinator] No existing summary found - will generate new one")
+            
             // Generate session summary
-            print("📝 [AppCoordinator] Generating summary for session \(sessionId)...")
+            print("3️⃣ [AppCoordinator] 🚀 Triggering session summary generation...")
             try await generateSessionSummary(sessionId: sessionId)
-            print("✅ [AppCoordinator] Session summary generated and period summaries updated")
+            print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
             
         } catch {
-            print("❌ [AppCoordinator] Failed to check/generate session summary: \(error)")
+            print("❌ [AppCoordinator] ⚠️ Failed to check/generate session summary: \(error)")
+            print("❌ [AppCoordinator] Error details: \(error.localizedDescription)")
         }
     }
     
     /// Generate a summary for an entire session
-    private func generateSessionSummary(sessionId: UUID) async throws {
+    public func generateSessionSummary(sessionId: UUID) async throws {
+        print("🚀 [AppCoordinator] === GENERATING SESSION SUMMARY ===")
+        print("📌 [AppCoordinator] Session ID: \(sessionId)")
+        
         guard let dbManager = databaseManager,
-              let summarizer = summarizationManager else {
+              let coordinator = summarizationCoordinator else {
+            print("❌ [AppCoordinator] Missing dependencies - dbManager: \(databaseManager != nil), coordinator: \(summarizationCoordinator != nil)")
             throw AppCoordinatorError.notInitialized
         }
         
+        print("✅ [AppCoordinator] Dependencies initialized")
+        
         // Get all transcript segments for the session
+        print("🔍 [AppCoordinator] Fetching transcript segments...")
         let allSegments = try await fetchSessionTranscript(sessionId: sessionId)
         
         // Combine all text
@@ -705,35 +754,63 @@ public final class AppCoordinator: ObservableObject {
         print("📊 [AppCoordinator] Session transcript: \(allSegments.count) segments, \(wordCount) words")
         print("📝 [AppCoordinator] First 100 chars: \(fullText.prefix(100))...")
         
-        // Always generate summaries regardless of word count
-        // Even short recordings should be aggregated into daily/weekly/monthly summaries
+        guard wordCount > 0 else {
+            print("❌ [AppCoordinator] No transcript text found - cannot generate summary")
+            throw AppCoordinatorError.transcriptionFailed(NSError(domain: "AppCoordinator", code: -1, userInfo: [NSLocalizedDescriptionKey: "No transcript text"]))
+        }
         
         // Get session time range
         let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
-        guard let firstChunk = chunks.first, let lastChunk = chunks.last else { return }
+        guard let firstChunk = chunks.first, let lastChunk = chunks.last else {
+            print("❌ [AppCoordinator] No chunks found for session")
+            return
+        }
         
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
-        // Generate summary using the date range method
-        print("📝 [AppCoordinator] Summarizing \(wordCount) words from session...")
-        let generatedSummary = try await summarizer.generateSummary(from: periodStart, to: periodEnd)
-        let summaryText = generatedSummary.text
+        // Use the user's active engine (respects their settings choice)
+        let activeEngine = await coordinator.getActiveEngine()
+        print("🧠 [AppCoordinator] Using active summarization engine: \(activeEngine.displayName)")
         
-        // Save session summary
-        let summary = Summary(
+        // Generate summary using coordinator (returns Summary with structured data)
+        print("🌐 [AppCoordinator] 🚀 CALLING LLM API - Summarizing \(wordCount) words from session...")
+        var generatedSummary = try await coordinator.generateSessionSummary(sessionId: sessionId, segments: allSegments)
+        
+        print("✅ [AppCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
+        print("📝 [AppCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
+        
+        // Update time range
+        generatedSummary = Summary(
+            id: generatedSummary.id,
             periodType: .session,
             periodStart: periodStart,
             periodEnd: periodEnd,
-            text: summaryText,
-            sessionId: sessionId
+            text: generatedSummary.text,
+            createdAt: generatedSummary.createdAt,
+            sessionId: sessionId,
+            topicsJSON: generatedSummary.topicsJSON,
+            entitiesJSON: generatedSummary.entitiesJSON,
+            engineTier: generatedSummary.engineTier
         )
         
-        try await dbManager.insertSummary(summary)
-        print("✅ [AppCoordinator] Session summary saved")
+        // Delete old session summary if it exists (to prevent duplicates in rollups)
+        if let existingSummary = try? await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+            print("🗑️ [AppCoordinator] Deleting old session summary (ID: \(existingSummary.id))...")
+            try await dbManager.deleteSummary(id: existingSummary.id)
+            print("✅ [AppCoordinator] Old session summary deleted")
+        }
+        
+        // Save session summary
+        print("💾 [AppCoordinator] Saving summary to database...")
+        try await dbManager.insertSummary(generatedSummary)
+        print("✅ [AppCoordinator] Session summary saved successfully!")
+        print("📊 [AppCoordinator] Summary details - topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none")")
         
         // Update period summaries (daily, weekly, monthly)
+        print("📅 [AppCoordinator] Updating period summaries...")
         await updatePeriodSummaries(sessionId: sessionId, sessionDate: periodStart)
+        print("🎉 [AppCoordinator] === SESSION SUMMARY COMPLETE ===")
     }
     
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
@@ -787,28 +864,8 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
-    private func generateSummaryIfNeeded(segments: [TranscriptSegment]) async {
-        guard let summarizer = summarizationManager else { return }
-        
-        // Combine all segment text
-        let fullText = segments.map { $0.text }.joined(separator: " ")
-        
-        // Only summarize if there's enough content (at least 50 words)
-        let wordCount = fullText.split(separator: " ").count
-        guard wordCount >= 50 else { return }
-        
-        do {
-            // Generate daily summary for today
-            let today = Calendar.current.startOfDay(for: Date())
-            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
-            
-            _ = try await summarizer.generateSummary(from: today, to: tomorrow)
-            
-        } catch {
-            // Log but don't fail the recording flow for summarization errors
-            print("Summarization failed: \(error)")
-        }
-    }
+    // Note: Summary generation is now handled per-session in checkAndGenerateSessionSummary()
+    // This old per-chunk method is no longer needed
     
     private func updateRollupsAndStats() async {
         guard let insights = insightsManager else { return }
@@ -1111,6 +1168,69 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSessionLanguage(sessionId: sessionId)
     }
     
+    // MARK: - Session Metadata
+    
+    /// Update session title
+    public func updateSessionTitle(sessionId: UUID, title: String?) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        try await dbManager.updateSessionTitle(sessionId: sessionId, title: title)
+        print("📝 [AppCoordinator] Updated session title: \(title ?? "nil")")
+    }
+    
+    /// Update session notes
+    public func updateSessionNotes(sessionId: UUID, notes: String?) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        try await dbManager.updateSessionNotes(sessionId: sessionId, notes: notes)
+        print("📝 [AppCoordinator] Updated session notes")
+    }
+    
+    /// Toggle session favorite status
+    public func toggleSessionFavorite(sessionId: UUID) async throws -> Bool {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        let isFavorite = try await dbManager.toggleSessionFavorite(sessionId: sessionId)
+        print("⭐ [AppCoordinator] Session favorite: \(isFavorite)")
+        return isFavorite
+    }
+    
+    /// Fetch session metadata
+    public func fetchSessionMetadata(sessionId: UUID) async throws -> DatabaseManager.SessionMetadata? {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+    }
+    
+    // MARK: - Transcript Editing
+    
+    /// Update transcript segment text (for user edits)
+    public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        try await dbManager.updateTranscriptSegmentText(id: segmentId, newText: newText)
+        print("✏️ [AppCoordinator] Updated transcript segment: \(segmentId)")
+    }
+    
+    /// Search for sessions by transcript text
+    public func searchSessionsByTranscript(query: String) async throws -> Set<UUID> {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        return try await dbManager.searchSessionsByTranscript(query: query)
+    }
+
     /// Fetch period summary for a specific date and type
     public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
         guard let dbManager = databaseManager else {
@@ -1123,6 +1243,7 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Period Summary Updates
     
     /// Update period summaries after a new session summary is created
+    /// Follows hierarchical rollup: Session → Day → Week → Month → Year
     private func updatePeriodSummaries(sessionId: UUID, sessionDate: Date) async {
         print("🔄 [AppCoordinator] Updating period summaries for session...")
         
@@ -1137,184 +1258,473 @@ public final class AppCoordinator: ObservableObject {
         
         // Update monthly summary
         await updateMonthlySummary(date: sessionDate)
+        
+        // Update yearly summary
+        await updateYearlySummary(date: sessionDate)
     }
     
-    /// Update or create daily summary by aggregating all session summaries for that day
-    public func updateDailySummary(date: Date) async {
+    /// Update or create daily summary by aggregating all session summaries for that day using deterministic rollup
+    public func updateDailySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager else { return }
-        
+
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let periodKey = "day-\(startOfDay.timeIntervalSince1970)"
+
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Daily summary already being generated, skipping duplicate call...")
+            return
+        }
+
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+
         do {
-            // 1. Fetch all sessions for this day
             let sessions = try await dbManager.fetchSessionsByDate(date: date)
             print("📊 [AppCoordinator] Found \(sessions.count) sessions for \(date.formatted(date: .abbreviated, time: .omitted))")
-            
+
             guard !sessions.isEmpty else {
                 print("ℹ️ [AppCoordinator] No sessions found for this day")
                 return
             }
-            
-            // 2. Fetch all session summaries for this day, generate if missing
-            var summaryTexts: [String] = []
+
+            var sessionsWithSummaries = 0
+            var sessionsNeedingSummaries = 0
+
             for session in sessions {
-                do {
-                    if let summary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                        summaryTexts.append(summary.text)
+                if let _ = try? await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
+                    sessionsWithSummaries += 1
+                } else {
+                    let isComplete = try await isSessionTranscriptionComplete(sessionId: session.sessionId)
+                    if isComplete {
+                        print("⚠️ [AppCoordinator] Session \(session.sessionId) missing summary, generating...")
+                        try await generateSessionSummary(sessionId: session.sessionId)
+                        sessionsWithSummaries += 1
                     } else {
-                        // No summary exists - check if we can generate one
-                        print("⚠️ [AppCoordinator] Session \(session.sessionId) has no summary, attempting to generate...")
-                        let isComplete = try await isSessionTranscriptionComplete(sessionId: session.sessionId)
-                        
-                        if isComplete {
-                            // Generate summary now
-                            try await generateSessionSummary(sessionId: session.sessionId)
-                            
-                            // Fetch the newly created summary
-                            if let newSummary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
-                                summaryTexts.append(newSummary.text)
-                                print("✅ [AppCoordinator] Generated summary for session \(session.sessionId)")
-                            }
-                        } else {
-                            print("⏳ [AppCoordinator] Session \(session.sessionId) transcription not complete, skipping")
-                        }
+                        print("⏳ [AppCoordinator] Session \(session.sessionId) transcription incomplete, skipping")
+                        sessionsNeedingSummaries += 1
                     }
-                } catch {
-                    print("❌ [AppCoordinator] Failed to process session \(session.sessionId): \(error)")
                 }
             }
-            
-            guard !summaryTexts.isEmpty else {
-                print("ℹ️ [AppCoordinator] No summaries found for this day (found \(sessions.count) sessions, none have transcripts)")
+
+            guard sessionsWithSummaries > 0 else {
+                print("ℹ️ [AppCoordinator] No sessions with summaries for this day (\(sessions.count) total, \(sessionsNeedingSummaries) pending transcription)")
                 return
             }
-            
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) session summaries for day...")
-            
-            // 3. Aggregate using BasicAggregator
-            let aggregator = BasicAggregator()
-            let combinedText = aggregator.aggregate(summaries: summaryTexts)
-            
-            // 4. Calculate period end (end of day)
-            let calendar = Calendar.current
-            let endOfDay = calendar.date(byAdding: .day, value: 1, to: date) ?? date
-            
-            // 5. Upsert into database
+
+            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? date
+
+            let sessionSummaries = try await dbManager.fetchSummaries(periodType: .session)
+                .filter { $0.sessionId != nil && $0.periodStart >= startOfDay && $0.periodStart < endOfDay }
+                .sorted { $0.periodStart < $1.periodStart }
+
+            let sessionIds = sessionSummaries.compactMap { $0.sessionId }
+            let sessionTexts = sessionSummaries.map { $0.text }
+
+            let sourceIds = await dbManager.sourceIdsToJSON(sessionIds)
+            let inputHash = await dbManager.computeInputHash(sessionTexts)
+
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(sessionTexts.count) session summaries")
+
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay) {
+                print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Daily rollup unchanged, skipping regeneration")
+                    return
+                }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating daily rollup")
+            } else {
+                print("📝 [AppCoordinator] No existing daily summary found, will generate new rollup")
+            }
+
+            let lines = sessionSummaries.map { summary in
+                let timeLabel = rollupTimeFormatter.string(from: summary.periodStart)
+                return "- [\(timeLabel)] \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Day rollup (\(sessionSummaries.count) sessions)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .day,
-                text: combinedText,
-                start: date,
-                end: endOfDay
+                text: rollupText,
+                start: startOfDay,
+                end: endOfDay,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] Daily summary updated")
+
+            print("✅ [AppCoordinator] Daily rollup saved to database (engine: rollup, \(rollupText.count) chars)")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
     }
     
-    /// Update or create weekly summary by aggregating all daily summaries for that week
-    public func updateWeeklySummary(date: Date) async {
+    /// Update or create weekly summary by concatenating daily rollups
+    public func updateWeeklySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager else { return }
-        
+
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        components.weekday = 2 // Monday
+        guard let startOfWeek = calendar.date(from: components) else { return }
+        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
+
+        let periodKey = "week-\(startOfWeek.timeIntervalSince1970)"
+
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Weekly summary already being generated, skipping duplicate call...")
+            return
+        }
+
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+
         do {
-            // 1. Get week range (Monday to Sunday)
-            let calendar = Calendar.current
-            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-            components.weekday = 2 // Monday
-            guard let startOfWeek = calendar.date(from: components) else { return }
-            guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
-            
-            print("📊 [AppCoordinator] Updating weekly summary for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)) - \(endOfWeek.formatted(date: .abbreviated, time: .omitted))")
-            
-            // 2. Fetch all daily summaries for this week
+            print("📊 [AppCoordinator] Updating weekly rollup for \(startOfWeek.formatted(date: .abbreviated, time: .omitted)) - \(endOfWeek.formatted(date: .abbreviated, time: .omitted))")
+
             let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfWeek, to: endOfWeek)
+                .sorted { $0.periodStart < $1.periodStart }
             print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this week")
-            
-            if dailySummaries.isEmpty {
+
+            guard !dailySummaries.isEmpty else {
                 print("ℹ️ [AppCoordinator] No daily summaries found for this week")
-                print("   Query range: \(startOfWeek.ISO8601Format()) to \(endOfWeek.ISO8601Format())")
-                
-                // Debug: List all daily summaries to see what exists
-                if let allDailies = try? await dbManager.fetchSummaries(periodType: .day) {
-                    print("   Available daily summaries: \(allDailies.count)")
-                    for daily in allDailies {
-                        print("   - Daily: \(daily.periodStart.ISO8601Format()) to \(daily.periodEnd.ISO8601Format())")
-                    }
-                }
                 return
             }
-            
-            let summaryTexts = dailySummaries.map { $0.text }
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) daily summaries for week...")
-            
-            // 3. Aggregate using BasicAggregator
-            let aggregator = BasicAggregator()
-            let combinedText = aggregator.aggregate(summaries: summaryTexts)
-            
-            // 4. Upsert into database
+
+            let dailyIds = dailySummaries.map { $0.id }
+            let dailyTexts = dailySummaries.map { $0.text }
+            let sourceIds = await dbManager.sourceIdsToJSON(dailyIds)
+            let inputHash = await dbManager.computeInputHash(dailyTexts)
+
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
+
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek) {
+                print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly rollup unchanged, skipping regeneration")
+                    return
+                }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating weekly rollup")
+            } else {
+                print("📝 [AppCoordinator] No existing weekly summary found, will generate new rollup")
+            }
+
+            let lines = dailySummaries.map { summary in
+                let dateLabel = rollupDateFormatter.string(from: summary.periodStart)
+                return "- \(dateLabel): \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Week rollup (\(dailySummaries.count) days)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .week,
-                text: combinedText,
+                text: rollupText,
                 start: startOfWeek,
-                end: endOfWeek
+                end: endOfWeek,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] Weekly summary updated")
+
+            print("✅ [AppCoordinator] Weekly rollup updated (engine: rollup)")
         } catch {
             print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
         }
     }
     
-    /// Update or create monthly summary by aggregating all daily summaries for that month
-    public func updateMonthlySummary(date: Date) async {
+    /// Update or create monthly summary by concatenating weekly rollups (or daily when needed)
+    public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
         guard let dbManager = databaseManager else { return }
-        
+
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: date)
+        guard let startOfMonth = calendar.date(from: components) else { return }
+        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
+
+        let periodKey = "month-\(startOfMonth.timeIntervalSince1970)"
+
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Monthly summary already being generated, skipping duplicate call...")
+            return
+        }
+
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+
         do {
-            // 1. Get month range
-            let calendar = Calendar.current
-            let components = calendar.dateComponents([.year, .month], from: date)
-            guard let startOfMonth = calendar.date(from: components) else { return }
-            guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
-            
-            print("📊 [AppCoordinator] Updating monthly summary for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
-            
-            // 2. Fetch all daily summaries for this month
-            let dailySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
-            print("📊 [AppCoordinator] Found \(dailySummaries.count) daily summaries for this month")
-            
-            if dailySummaries.isEmpty {
-                print("ℹ️ [AppCoordinator] No daily summaries found for this month")
-                print("   Query range: \(startOfMonth.ISO8601Format()) to \(endOfMonth.ISO8601Format())")
-                
-                // Debug: List all daily summaries to see what exists
-                if let allDailies = try? await dbManager.fetchSummaries(periodType: .day) {
-                    print("   Available daily summaries: \(allDailies.count)")
-                    for daily in allDailies.prefix(5) {
-                        print("   - Daily: \(daily.periodStart.ISO8601Format()) to \(daily.periodEnd.ISO8601Format())")
-                    }
-                }
+            print("📊 [AppCoordinator] Updating monthly rollup for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
+
+            var weeklySummaries = try await dbManager.fetchWeeklySummaries(from: startOfMonth, to: endOfMonth)
+                .sorted { $0.periodStart < $1.periodStart }
+            print("📊 [AppCoordinator] Found \(weeklySummaries.count) weekly summaries for this month")
+
+            if weeklySummaries.isEmpty {
+                print("ℹ️ [AppCoordinator] No weekly summaries found, checking daily summaries...")
+                weeklySummaries = try await dbManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
+                    .sorted { $0.periodStart < $1.periodStart }
+            }
+
+            guard !weeklySummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No rollups found for this month")
                 return
             }
-            
-            let summaryTexts = dailySummaries.map { $0.text }
-            print("📝 [AppCoordinator] Aggregating \(summaryTexts.count) daily summaries for month...")
-            
-            // 3. Aggregate using BasicAggregator
-            let aggregator = BasicAggregator()
-            let combinedText = aggregator.aggregate(summaries: summaryTexts)
-            
-            // 4. Upsert into database
+
+            let weeklyIds = weeklySummaries.map { $0.id }
+            let weeklyTexts = weeklySummaries.map { $0.text }
+            let sourceIds = await dbManager.sourceIdsToJSON(weeklyIds)
+            let inputHash = await dbManager.computeInputHash(weeklyTexts)
+
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) rollups")
+
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
+                print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly rollup unchanged, skipping regeneration")
+                    return
+                }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating monthly rollup")
+            } else {
+                print("📝 [AppCoordinator] No existing monthly summary found, will generate new rollup")
+            }
+
+            let lines = weeklySummaries.map { summary in
+                let rangeLabel = rollupMonthRangeFormatter.string(from: summary.periodStart)
+                return "- \(rangeLabel): \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Month rollup (\(weeklySummaries.count) entries)",
+                lines: lines
+            )
+
             try await dbManager.upsertPeriodSummary(
                 type: .month,
-                text: combinedText,
+                text: rollupText,
                 start: startOfMonth,
-                end: endOfMonth
+                end: endOfMonth,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
+                sourceIds: sourceIds,
+                inputHash: inputHash
             )
-            
-            print("✅ [AppCoordinator] Monthly summary updated")
+
+            print("✅ [AppCoordinator] Monthly rollup updated (engine: rollup)")
         } catch {
             print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
         }
     }
+    
+    /// Update or create yearly summary by concatenating monthly rollups (no external calls)
+    public func updateYearlySummary(date: Date, forceRegenerate: Bool = false) async {
+        guard let dbManager = databaseManager else { return }
+
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        var startComponents = DateComponents()
+        startComponents.year = year
+        startComponents.month = 1
+        startComponents.day = 1
+        guard let startOfYear = calendar.date(from: startComponents) else { return }
+        guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
+
+        let periodKey = "year-\(startOfYear.timeIntervalSince1970)"
+
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Yearly summary already being generated, skipping duplicate call...")
+            return
+        }
+
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+
+        do {
+            print("📊 [AppCoordinator] Updating yearly rollup for \(year)")
+
+            var monthlySummaries = try await dbManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+                .sorted { $0.periodStart < $1.periodStart }
+            print("📊 [AppCoordinator] Found \(monthlySummaries.count) monthly summaries for this year")
+
+            if monthlySummaries.isEmpty {
+                print("ℹ️ [AppCoordinator] No monthly summaries found, checking weekly summaries...")
+                monthlySummaries = try await dbManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
+                    .sorted { $0.periodStart < $1.periodStart }
+            }
+
+            guard !monthlySummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No rollups found for this year")
+                return
+            }
+
+            let monthlyIds = monthlySummaries.map { $0.id }
+            let monthlyTexts = monthlySummaries.map { $0.text }
+            let sourceIds = await dbManager.sourceIdsToJSON(monthlyIds)
+            let inputHash = await dbManager.computeInputHash(monthlyTexts)
+
+            print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(monthlyTexts.count) rollups")
+
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .year, date: startOfYear) {
+                print("📂 [AppCoordinator] Found existing yearly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Yearly rollup unchanged, skipping regeneration")
+                    return
+                }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating yearly rollup")
+            } else {
+                print("📝 [AppCoordinator] No existing yearly summary found, will generate new rollup")
+            }
+
+            let lines = monthlySummaries.map { summary in
+                let monthLabel = rollupYearMonthFormatter.string(from: summary.periodStart)
+                return "- \(monthLabel): \(summary.text)"
+            }
+            let rollupText = buildRollupText(
+                header: "Year rollup (\(monthlySummaries.count) entries)",
+                lines: lines
+            )
+
+            try await dbManager.upsertPeriodSummary(
+                type: .year,
+                text: rollupText,
+                start: startOfYear,
+                end: endOfYear,
+                topicsJSON: nil,
+                entitiesJSON: nil,
+                engineTier: "rollup",
+                sourceIds: sourceIds,
+                inputHash: inputHash
+            )
+
+            print("✅ [AppCoordinator] Yearly rollup updated (engine: rollup)")
+        } catch {
+            print("❌ [AppCoordinator] Failed to update yearly summary: \(error)")
+        }
+    }
+
+    /// Manual Year Wrap using external intelligence (keeps deterministic rollup as default)
+    public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
+        guard let dbManager = databaseManager,
+              let coordinator = summarizationCoordinator else { return }
+
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        var startComponents = DateComponents()
+        startComponents.year = year
+        startComponents.month = 1
+        startComponents.day = 1
+        guard let startOfYear = calendar.date(from: startComponents) else { return }
+        guard let endOfYear = calendar.date(byAdding: DateComponents(year: 1), to: startOfYear) else { return }
+
+        let periodKey = "yearwrap-\(startOfYear.timeIntervalSince1970)"
+
+        guard !generatingPeriodSummaries.contains(periodKey) else {
+            print("⏭️ [AppCoordinator] Year Wrap already in progress, skipping duplicate call...")
+            return
+        }
+
+        generatingPeriodSummaries.insert(periodKey)
+        defer { generatingPeriodSummaries.remove(periodKey) }
+
+        do {
+            print("📊 [AppCoordinator] Starting Year Wrap for \(year)")
+
+            var sourceSummaries = try await dbManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+                .sorted { $0.periodStart < $1.periodStart }
+
+            if sourceSummaries.isEmpty {
+                sourceSummaries = try await dbManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
+                    .sorted { $0.periodStart < $1.periodStart }
+            }
+
+            guard !sourceSummaries.isEmpty else {
+                print("ℹ️ [AppCoordinator] No rollups available to build a Year Wrap")
+                return
+            }
+
+            let sourceIds = await dbManager.sourceIdsToJSON(sourceSummaries.map { $0.id })
+            let inputHash = await dbManager.computeInputHash(sourceSummaries.map { $0.text })
+
+            if let existing = try? await dbManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear) {
+                print("📂 [AppCoordinator] Found existing Year Wrap (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                if existing.inputHash == inputHash, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Year Wrap unchanged, skipping external call")
+                    return
+                }
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating Year Wrap")
+            } else {
+                print("📝 [AppCoordinator] No Year Wrap found, generating new one")
+            }
+
+            let wrapSummary = try await coordinator.generateYearWrapSummary(
+                startOfYear: startOfYear,
+                endOfYear: endOfYear,
+                sourceSummaries: sourceSummaries
+            )
+
+            try await dbManager.upsertPeriodSummary(
+                type: .yearWrap,
+                text: wrapSummary.text,
+                start: startOfYear,
+                end: endOfYear,
+                topicsJSON: wrapSummary.topicsJSON,
+                entitiesJSON: wrapSummary.entitiesJSON,
+                engineTier: wrapSummary.engineTier ?? EngineTier.external.rawValue,
+                sourceIds: sourceIds,
+                inputHash: inputHash
+            )
+
+            print("✅ [AppCoordinator] Year Wrap saved (engine: \(wrapSummary.engineTier ?? "external"))")
+        } catch {
+            print("❌ [AppCoordinator] Failed to generate Year Wrap: \(error)")
+            showError("Year Wrap failed. Check your external key and try again.")
+        }
+    }
+
+    // MARK: - Rollup Helpers
+
+    private func buildRollupText(header: String, lines: [String]) -> String {
+        guard !lines.isEmpty else { return header }
+        return ([header] + lines).joined(separator: "\n")
+    }
+
+    private var rollupTimeFormatter: DateFormatter { Self.rollupTimeFormatter }
+    private var rollupDateFormatter: DateFormatter { Self.rollupDateFormatter }
+    private var rollupMonthRangeFormatter: DateFormatter { Self.rollupMonthRangeFormatter }
+    private var rollupYearMonthFormatter: DateFormatter { Self.rollupYearMonthFormatter }
+
+    private static let rollupTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let rollupDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+
+    private static let rollupMonthRangeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
+
+    private static let rollupYearMonthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "LLLL"
+        return formatter
+    }()
     
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {

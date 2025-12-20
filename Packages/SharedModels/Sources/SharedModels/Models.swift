@@ -55,11 +55,30 @@ public struct RecordingSession: Identifiable, Sendable, Hashable {
     public let sessionId: UUID
     public let chunks: [AudioChunk]
     
+    // Optional metadata (loaded from session_metadata table)
+    public var title: String?
+    public var notes: String?
+    public var isFavorite: Bool
+    
     public var id: UUID { sessionId }
     
-    public init(sessionId: UUID, chunks: [AudioChunk]) {
+    public init(sessionId: UUID, chunks: [AudioChunk], title: String? = nil, notes: String? = nil, isFavorite: Bool = false) {
         self.sessionId = sessionId
         self.chunks = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
+        self.title = title
+        self.notes = notes
+        self.isFavorite = isFavorite
+    }
+    
+    /// Display name: title if set, otherwise formatted time
+    public var displayName: String {
+        if let title = title, !title.isEmpty {
+            return title
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: startTime)
     }
     
     /// Total duration of all chunks combined
@@ -183,6 +202,11 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
     public let text: String
     public let createdAt: Date
     public let sessionId: UUID?  // Optional: set for session summaries
+    public let topicsJSON: String?  // JSON array of topics
+    public let entitiesJSON: String?  // JSON array of entities
+    public let engineTier: String?  // "basic", "apple", "local", "external"
+    public let sourceIds: String?  // JSON array of source UUIDs (session/summary IDs used as input)
+    public let inputHash: String?  // SHA256 hash of input content for change detection
 
     public init(
         id: UUID = UUID(),
@@ -191,7 +215,12 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         periodEnd: Date,
         text: String,
         createdAt: Date = Date(),
-        sessionId: UUID? = nil
+        sessionId: UUID? = nil,
+        topicsJSON: String? = nil,
+        entitiesJSON: String? = nil,
+        engineTier: String? = nil,
+        sourceIds: String? = nil,
+        inputHash: String? = nil
     ) {
         self.id = id
         self.periodType = periodType
@@ -200,6 +229,11 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         self.text = text
         self.createdAt = createdAt
         self.sessionId = sessionId
+        self.topicsJSON = topicsJSON
+        self.entitiesJSON = entitiesJSON
+        self.engineTier = engineTier
+        self.sourceIds = sourceIds
+        self.inputHash = inputHash
     }
 }
 
@@ -211,6 +245,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case day
     case week
     case month
+    case year
+    case yearWrap
 
     public var displayName: String {
         switch self {
@@ -224,6 +260,10 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Week"
         case .month:
             return "Month"
+        case .year:
+            return "Year"
+        case .yearWrap:
+            return "Year Wrap"
         }
     }
 }

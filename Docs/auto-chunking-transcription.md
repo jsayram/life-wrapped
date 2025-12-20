@@ -271,6 +271,11 @@ The system includes comprehensive logging:
   - Waveform visualization with animated playhead
   - Cross-chunk progress tracking
   - Sequential auto-advance through multiple chunks
+- **Transcript Editing**:
+  - Select and copy individual words from transcript text
+  - Edit button per chunk to modify transcript
+  - Changes saved to database with automatic word count recalculation
+  - Prompt to regenerate AI summary after edits
 - **Retry Mechanism**: Orange button appears for failed chunks
 
 **History Tab**:

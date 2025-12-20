@@ -5,6 +5,7 @@
 import SwiftUI
 import AVFoundation
 import Speech
+import LocalLLM
 
 /// Permission request view shown on first launch or when permissions are needed
 struct PermissionsView: View {
@@ -67,6 +68,65 @@ struct PermissionsView: View {
                         .padding()
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(12)
+                        
+                        // Local AI Recommendation
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "cpu.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.purple.gradient)
+                                
+                                Text("Enhance with Local AI")
+                                    .font(.headline)
+                                
+                                Spacer()
+                            }
+                            
+                            Text("Get AI-powered summaries similar to ChatGPT and Apple Intelligence, but running entirely on your device for maximum privacy.")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            
+                            // Comparison badges
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "apple.logo")
+                                        .foregroundColor(.secondary)
+                                    Text("Apple Intelligence quality")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    Image(systemName: "lock.fill")
+                                        .foregroundColor(.green)
+                                    Text("100% private, on-device")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    Image(systemName: "wifi.slash")
+                                        .foregroundColor(.blue)
+                                    Text("Works offline")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                            .padding(.top, 4)
+                            
+                            Text("~2.4GB download • Optional • Available in Settings after setup")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                        }
+                        .padding()
+                        .background(Color.purple.opacity(0.08))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.purple.opacity(0.2), lineWidth: 1)
+                        )
                     }
                     .padding(.horizontal)
                     
@@ -76,10 +136,7 @@ struct PermissionsView: View {
                     VStack(spacing: 12) {
                         if allPermissionsGranted {
                             Button {
-                                Task {
-                                    await coordinator.permissionsGranted()
-                                    dismiss()
-                                }
+                                finishSetup()
                             } label: {
                                 Text("Get Started")
                                     .font(.headline)
@@ -189,22 +246,32 @@ struct PermissionsView: View {
         }
     }
     
+    @MainActor
     private func requestSpeechRecognitionPermission() async {
         let status = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
+                // Resume on the main actor to satisfy Speech API main-thread expectations.
+                Task { @MainActor in
+                    continuation.resume(returning: status)
+                }
             }
         }
         
-        await MainActor.run {
-            speechStatus = PermissionStatus(from: status)
-            print("🗣️ [PermissionsView] Speech recognition permission: \(status)")
-        }
+        speechStatus = PermissionStatus(from: status)
+        print("🗣️ [PermissionsView] Speech recognition permission: \(status)")
     }
     
     private func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
+        }
+    }
+    
+    private func finishSetup() {
+        Task {
+            print("🚀 [PermissionsView] Finishing setup...")
+            await coordinator.permissionsGranted()
+            print("✅ [PermissionsView] Setup complete, permissions sheet should close")
         }
     }
 }

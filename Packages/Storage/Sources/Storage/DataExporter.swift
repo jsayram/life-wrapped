@@ -112,6 +112,12 @@ public actor DataExporter {
         case .month:
             formatter.dateFormat = "MMMM yyyy"
             return formatter.string(from: start)
+        case .year:
+            formatter.dateFormat = "yyyy"
+            return "Year \(formatter.string(from: start))"
+        case .yearWrap:
+            formatter.dateFormat = "yyyy"
+            return "Year Wrap \(formatter.string(from: start))"
         }
     }
 
@@ -209,7 +215,7 @@ public struct JSONTranscriptSegment: Codable {
         self.endTime = segment.endTime
         self.text = segment.text
         self.confidence = segment.confidence
-        self.languageCode = segment.languageCode ?? "en"
+        self.languageCode = segment.languageCode
         self.createdAt = segment.createdAt
         self.sentimentScore = segment.sentimentScore
     }

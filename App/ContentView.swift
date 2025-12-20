@@ -7,6 +7,9 @@ import SharedModels
 import Charts
 import Transcription
 import Storage
+import Summarization
+import LocalLLM
+import Security
 
 struct ContentView: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -23,19 +26,19 @@ struct ContentView: View {
                     Label("Home", systemImage: "house.fill")
                 }
                 .tag(0)
-            
+
             HistoryTab()
                 .tabItem {
                     Label("History", systemImage: "list.bullet")
                 }
                 .tag(1)
-            
+
             InsightsTab()
                 .tabItem {
                     Label("Insights", systemImage: "chart.bar.fill")
                 }
                 .tag(2)
-            
+
             SettingsTab()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
@@ -45,6 +48,17 @@ struct ContentView: View {
         .sheet(isPresented: $coordinator.needsPermissions) {
             PermissionsView()
                 .interactiveDismissDisabled()
+        }
+        .alert("Enhance with Local AI", isPresented: $coordinator.showLocalAIWelcomeTip) {
+            Button("Open Settings") {
+                coordinator.showLocalAIWelcomeTip = false
+                selectedTab = 3 // Switch to Settings tab
+            }
+            Button("Maybe Later", role: .cancel) {
+                coordinator.showLocalAIWelcomeTip = false
+            }
+        } message: {
+            Text("Get AI-powered summaries similar to ChatGPT, but running entirely on your device for maximum privacy. Available in Settings → Local AI.")
         }
         .toast($coordinator.currentToast)
         .overlay {
@@ -90,6 +104,8 @@ struct LoadingOverlay: View {
 
 struct HomeTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
+    @State private var localModelAvailable = false
+    @State private var showLocalAIDownload = false
     
     var body: some View {
         NavigationStack {
@@ -104,14 +120,28 @@ struct HomeTab: View {
                     // Today's Stats
                     TodayStatsCard(stats: coordinator.todayStats)
                     
+                    // Add Local AI Button (only show if no model available)
+                    if !localModelAvailable {
+                        AddLocalAIButton {
+                            showLocalAIDownload = true
+                        }
+                    }
+                    
                     Spacer()
                 }
                 .padding()
             }
             .refreshable {
                 await refreshStats()
+                await checkLocalModelAvailability()
             }
             .navigationTitle("Life Wrapped")
+            .sheet(isPresented: $showLocalAIDownload) {
+                LocalAIDownloadView()
+            }
+            .task {
+                await checkLocalModelAvailability()
+            }
         }
     }
     
@@ -120,6 +150,376 @@ struct HomeTab: View {
         await coordinator.refreshTodayStats()
         await coordinator.refreshStreak()
         print("✅ [HomeTab] Stats refreshed")
+    }
+    
+    private func checkLocalModelAvailability() async {
+        let modelManager = LocalLLM.ModelFileManager.shared
+        let models = await modelManager.availableModels()
+        await MainActor.run {
+            localModelAvailable = !models.isEmpty
+        }
+    }
+}
+
+// MARK: - Add Local AI Button
+
+struct AddLocalAIButton: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color.purple.opacity(0.2))
+                        .frame(width: 48, height: 48)
+                    
+                    Image(systemName: "brain.head.profile")
+                        .font(.title2)
+                        .foregroundStyle(.purple)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Add Local AI")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text("Enable smart summaries with on-device AI")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Local AI Download View
+
+struct LocalAIDownloadView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var availableModels: [LocalLLM.ModelFileManager.ModelSize] = []
+    @State private var isLoading = true
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Local AI Models")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        Text("Download an AI model to enable smart summaries that run entirely on your device. Your data never leaves your phone.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield.fill")
+                                .foregroundStyle(.green)
+                            Text("Privacy-First")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section("Available Models") {
+                    ForEach(LocalLLM.ModelFileManager.ModelSize.allCases, id: \.rawValue) { modelSize in
+                        ModelDownloadRowView(
+                            modelSize: modelSize,
+                            isDownloaded: availableModels.contains(modelSize)
+                        )
+                    }
+                }
+                
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Requirements")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        
+                        HStack(spacing: 6) {
+                            Image(systemName: "wifi")
+                                .font(.caption)
+                            Text("WiFi connection for download")
+                                .font(.caption)
+                        }
+                        
+                        HStack(spacing: 6) {
+                            Image(systemName: "memorychip")
+                                .font(.caption)
+                            Text("2-3 GB free storage space")
+                                .font(.caption)
+                        }
+                        
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock")
+                                .font(.caption)
+                            Text("5-10 minutes download time")
+                                .font(.caption)
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Add Local AI")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .task {
+                await loadModels()
+            }
+            .refreshable {
+                await loadModels()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
+                Task {
+                    await loadModels()
+                }
+            }
+        }
+    }
+    
+    private func loadModels() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        let manager = LocalLLM.ModelFileManager.shared
+        availableModels = await manager.availableModels()
+    }
+}
+
+// MARK: - Model Download Row View
+
+struct ModelDownloadRowView: View {
+    let modelSize: LocalLLM.ModelFileManager.ModelSize
+    let isDownloaded: Bool
+    @EnvironmentObject var coordinator: AppCoordinator
+    @Environment(\.dismiss) var dismiss
+    @State private var isDownloading = false
+    @State private var downloadProgress: Double = 0.0
+    @State private var downloadTask: Task<Void, Never>?
+    @State private var showDownloadAlert = false
+    @State private var justCompleted = false
+    @State private var isCheckingState = true
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(modelSize.displayName)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                    
+                    Text("\(modelSize.approximateSizeMB) MB")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if isDownloaded {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.green)
+                        
+                        Text("Ready")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    }
+                } else if isDownloading || isCheckingState {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text(isCheckingState ? "Checking..." : "Downloading...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        if !isCheckingState {
+                            Text("Continue using the app")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Button {
+                        showDownloadAlert = true
+                    } label: {
+                        Label("Download", systemImage: "arrow.down.circle")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            
+            // Show when download just completed
+            if justCompleted {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Download complete! Local AI is now available.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .onAppear {
+                    Task {
+                        try? await Task.sleep(for: .seconds(3))
+                        withAnimation {
+                            justCompleted = false
+                        }
+                    }
+                }
+            }
+            
+            // Details
+            VStack(alignment: .leading, spacing: 4) {
+                DetailRow(icon: "cpu", text: "On-Device Processing")
+                DetailRow(icon: "memorychip", text: "\(modelSize.contextLength.formatted()) tokens context")
+                
+                if !isDownloaded && !isDownloading {
+                    DetailRow(icon: "wifi", text: "Requires WiFi")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .alert("Download Model", isPresented: $showDownloadAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Download") {
+                startDownload()
+            }
+        } message: {
+            Text("Download \(modelSize.fullDisplayName)? This will use \(modelSize.approximateSizeMB) MB. Download continues in the background if you navigate away.")
+        }
+        .task {
+            await syncDownloadState()
+        }
+        .onDisappear {
+            // Keep download task running in background when navigating away
+            // Don't cancel - let it continue
+        }
+    }
+    
+    @MainActor
+    private func startDownload() {
+        Task {
+            let manager = LocalLLM.ModelFileManager.shared
+            let alreadyDownloading = await manager.isDownloading(modelSize)
+            
+            guard !alreadyDownloading else {
+                await MainActor.run {
+                    coordinator.showError("\(modelSize.displayName) is already downloading")
+                }
+                return
+            }
+            
+            await MainActor.run {
+                isDownloading = true
+                downloadProgress = 0.0
+                coordinator.showSuccess("Downloading \(modelSize.displayName)... Continue using the app.")
+            }
+            
+            downloadTask = Task {
+                do {
+                    try await manager.downloadModel(modelSize) { @MainActor progress in
+                        self.downloadProgress = progress
+                    }
+                    
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            justCompleted = true
+                        }
+                        
+                        // Auto-switch to Local AI and refresh engines
+                        if let summCoord = coordinator.summarizationCoordinator {
+                            Task {
+                                _ = await summCoord.getAvailableEngines()
+                                await summCoord.setPreferredEngine(.local)
+                                coordinator.showSuccess("✅ Local AI is now active!")
+                                
+                                // Trigger parent view refresh via notification
+                                NotificationCenter.default.post(name: NSNotification.Name("ModelDownloadCompleted"), object: nil)
+                                
+                                // Dismiss after a short delay
+                                try? await Task.sleep(for: .seconds(2))
+                                dismiss()
+                            }
+                        }
+                    }
+                } catch is CancellationError {
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            downloadProgress = 0.0
+                        }
+                        coordinator.showError("Download cancelled")
+                    }
+                } catch {
+                    await MainActor.run {
+                        withAnimation {
+                            isDownloading = false
+                            downloadProgress = 0.0
+                        }
+                        coordinator.showError("Download failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+    
+    private func syncDownloadState() async {
+        let manager = LocalLLM.ModelFileManager.shared
+        let downloading = await manager.isDownloading(modelSize)
+        let available = await manager.isModelAvailable(modelSize)
+        
+        await MainActor.run {
+            isCheckingState = false
+            
+            if downloading {
+                print("📥 [ModelDownloadRowView] Download in progress: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = true
+                }
+            } else if available && isDownloading {
+                print("✅ [ModelDownloadRowView] Download completed: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = false
+                    justCompleted = true
+                }
+            } else if !downloading && isDownloading {
+                print("⚠️ [ModelDownloadRowView] Download stopped: \(modelSize.displayName)")
+                withAnimation {
+                    isDownloading = false
+                }
+            }
+        }
     }
 }
 
@@ -360,16 +760,88 @@ struct StatItem: View {
 struct HistoryTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var sessions: [RecordingSession] = []
-    @State private var sessionWordCounts: [UUID: Int] = [:] // Cache word counts
-    @State private var sessionSentiments: [UUID: Double] = [:] // Cache sentiments
-    @State private var sessionLanguages: [UUID: String] = [:] // Cache languages
+    @State private var sessionWordCounts: [UUID: Int] = [:]
+    @State private var sessionHasSummary: [UUID: Bool] = [:]
     @State private var isLoading = true
     @State private var playbackError: String?
+    @State private var searchText = ""
+    @State private var showFavoritesOnly = false
+    @State private var transcriptMatchingSessionIds: Set<UUID> = []
+    @State private var isSearchingTranscripts = false
+    @State private var searchDebounceTask: Task<Void, Never>?
+    
+    private var filteredSessions: [RecordingSession] {
+        var result = sessions
+        
+        // Filter by favorites if enabled
+        if showFavoritesOnly {
+            result = result.filter { $0.isFavorite }
+        }
+        
+        // Filter by search text
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            
+            result = result.filter { session in
+                // Search in title
+                if let title = session.title, title.lowercased().contains(query) {
+                    return true
+                }
+                // Search in notes
+                if let notes = session.notes, notes.lowercased().contains(query) {
+                    return true
+                }
+                // Search in date
+                let dateString = formatter.string(from: session.startTime).lowercased()
+                if dateString.contains(query) {
+                    return true
+                }
+                // Search in transcripts (from cached results)
+                return transcriptMatchingSessionIds.contains(session.sessionId)
+            }
+        }
+        
+        return result
+    }
     
     var body: some View {
         NavigationStack {
             contentView
                 .navigationTitle("History")
+                .searchable(text: $searchText, prompt: "Search titles, notes, transcripts...")
+                .onChange(of: searchText) { _, newValue in
+                    // Debounce transcript search
+                    searchDebounceTask?.cancel()
+                    if newValue.count >= 2 {
+                        searchDebounceTask = Task {
+                            try? await Task.sleep(for: .milliseconds(300))
+                            guard !Task.isCancelled else { return }
+                            await searchTranscripts(query: newValue)
+                        }
+                    } else {
+                        transcriptMatchingSessionIds = []
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 12) {
+                            if isSearchingTranscripts {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            }
+                            
+                            Button {
+                                showFavoritesOnly.toggle()
+                            } label: {
+                                Image(systemName: showFavoritesOnly ? "star.fill" : "star")
+                                    .foregroundStyle(showFavoritesOnly ? .yellow : .secondary)
+                            }
+                        }
+                    }
+                }
                 .task {
                     await loadSessions()
                 }
@@ -391,12 +863,24 @@ struct HistoryTab: View {
     @ViewBuilder
     private var contentView: some View {
         if isLoading {
-            ProgressView("Loading sessions...")
+            VStack(spacing: 16) {
+                ProgressView()
+                    .scaleEffect(1.2)
+                Text("Loading recordings...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         } else if sessions.isEmpty {
             ContentUnavailableView(
                 "No Recordings Yet",
                 systemImage: "mic.slash",
-                description: Text("Start recording to see your journal entries here.")
+                description: Text("Tap the record button on the Home tab to start your first journal entry.")
+            )
+        } else if filteredSessions.isEmpty {
+            ContentUnavailableView(
+                "No Results",
+                systemImage: "magnifyingglass",
+                description: Text("No recordings match '\(searchText)'")
             )
         } else {
             sessionsList
@@ -405,33 +889,56 @@ struct HistoryTab: View {
     
     private var sessionsList: some View {
         List {
+            // Stats summary at top
+            if !searchText.isEmpty {
+                Section {
+                    Text("\(filteredSessions.count) recording\(filteredSessions.count == 1 ? "" : "s") found")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
             ForEach(sortedDates, id: \.self) { date in
-                Section(header: Text(formatSectionDate(date))) {
-                    ForEach(groupedSessions[date] ?? [], id: \.id) { session in
+                Section {
+                    ForEach(sessionsForDate(date), id: \.id) { session in
                         NavigationLink(destination: sessionDetailView(for: session)) {
-                            SessionRow(
+                            SessionRowClean(
                                 session: session,
                                 wordCount: sessionWordCounts[session.sessionId],
-                                sentiment: sessionSentiments[session.sessionId],
-                                language: sessionLanguages[session.sessionId]
+                                hasSummary: sessionHasSummary[session.sessionId] ?? false
                             )
                         }
                     }
                     .onDelete { offsets in
                         deleteSession(at: offsets, in: date)
                     }
+                } header: {
+                    HStack {
+                        Text(formatSectionDate(date))
+                        Spacer()
+                        Text("\(sessionsForDate(date).count) recording\(sessionsForDate(date).count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
         }
+        .listStyle(.insetGrouped)
     }
     
     private func sessionDetailView(for session: RecordingSession) -> some View {
         SessionDetailView(session: session)
     }
     
+    private func sessionsForDate(_ date: Date) -> [RecordingSession] {
+        filteredSessions.filter { session in
+            Calendar.current.isDate(session.startTime, inSameDayAs: date)
+        }
+    }
+    
     /// Group sessions by date
     private var groupedSessions: [Date: [RecordingSession]] {
-        Dictionary(grouping: sessions) { session in
+        Dictionary(grouping: filteredSessions) { session in
             Calendar.current.startOfDay(for: session.startTime)
         }
     }
@@ -447,6 +954,10 @@ struct HistoryTab: View {
             return "Today"
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE" // Day name like "Monday"
+            return formatter.string(from: date)
         } else {
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
@@ -457,40 +968,50 @@ struct HistoryTab: View {
     private func loadSessions() async {
         isLoading = true
         do {
-            sessions = try await coordinator.fetchRecentSessions(limit: 50)
+            sessions = try await coordinator.fetchRecentSessions(limit: 100)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
             
-            // Load word counts, sentiments, and languages in parallel for all sessions
+            // Load word counts and summary status in parallel
             guard let dbManager = coordinator.getDatabaseManager() else { return }
-            await withTaskGroup(of: (UUID, Int, Double?, String?).self) { group in
+            await withTaskGroup(of: (UUID, Int, Bool).self) { group in
                 for session in sessions {
                     group.addTask {
                         let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
-                        let sentiment = try? await dbManager.fetchSessionSentiment(sessionId: session.sessionId)
-                        let language = try? await dbManager.fetchSessionLanguage(sessionId: session.sessionId)
-                        return (session.sessionId, count, sentiment, language)
+                        let hasSummary = await ((try? dbManager.fetchSummaryForSession(sessionId: session.sessionId)) != nil)
+                        return (session.sessionId, count, hasSummary)
                     }
                 }
                 
-                for await (sessionId, wordCount, sentiment, language) in group {
+                for await (sessionId, wordCount, hasSummary) in group {
                     sessionWordCounts[sessionId] = wordCount
-                    if let sentiment = sentiment {
-                        sessionSentiments[sessionId] = sentiment
-                    }
-                    if let language = language {
-                        sessionLanguages[sessionId] = language
-                    }
+                    sessionHasSummary[sessionId] = hasSummary
                 }
             }
-            print("✅ [HistoryTab] Loaded word counts for \(sessionWordCounts.count) sessions, \(sessionSentiments.count) sentiments, and \(sessionLanguages.count) languages")
         } catch {
             print("❌ [HistoryTab] Failed to load sessions: \(error)")
         }
         isLoading = false
     }
     
+    private func searchTranscripts(query: String) async {
+        guard query.count >= 2 else {
+            transcriptMatchingSessionIds = []
+            return
+        }
+        
+        isSearchingTranscripts = true
+        do {
+            transcriptMatchingSessionIds = try await coordinator.searchSessionsByTranscript(query: query)
+            print("🔍 [HistoryTab] Found \(transcriptMatchingSessionIds.count) sessions matching '\(query)' in transcripts")
+        } catch {
+            print("❌ [HistoryTab] Transcript search failed: \(error)")
+            transcriptMatchingSessionIds = []
+        }
+        isSearchingTranscripts = false
+    }
+    
     private func deleteSession(at offsets: IndexSet, in date: Date) {
-        guard let sessionsForDate = groupedSessions[date] else { return }
+        let sessionsForDate = self.sessionsForDate(date)
         
         Task {
             for index in offsets {
@@ -506,6 +1027,7 @@ struct HistoryTab: View {
                     try await coordinator.deleteSession(session.sessionId)
                     sessions.removeAll { $0.sessionId == session.sessionId }
                     sessionWordCounts.removeValue(forKey: session.sessionId)
+                    sessionHasSummary.removeValue(forKey: session.sessionId)
                 } catch {
                     print("Failed to delete session: \(error)")
                 }
@@ -514,77 +1036,86 @@ struct HistoryTab: View {
     }
 }
 
-struct SessionRow: View {
+// MARK: - Clean Session Row
+
+struct SessionRowClean: View {
     let session: RecordingSession
     let wordCount: Int?
-    let sentiment: Double?
-    let language: String?
+    let hasSummary: Bool
     
     var body: some View {
         HStack(spacing: 12) {
-            // Icon
-            Image(systemName: session.chunkCount > 1 ? "waveform.circle.fill" : "waveform.circle")
-                .font(.title2)
-                .foregroundStyle(session.chunkCount > 1 ? .blue : .gray)
+            // Time badge - fixed width to prevent wrapping
+            Text(timeString)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .monospacedDigit()
+                .frame(width: 70, alignment: .leading)
             
+            // Divider
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(width: 1, height: 40)
+            
+            // Content
             VStack(alignment: .leading, spacing: 6) {
-                // Time
-                Text(session.startTime, style: .time)
-                    .font(.headline)
+                // Title row (if available)
+                if let title = session.title, !title.isEmpty {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                        
+                        if session.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                        }
+                    }
+                }
                 
-                // Stats row
-                HStack(spacing: 16) {
-                    // Duration
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                        Text(formatDuration(session.totalDuration))
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                // Duration and word count - always show
+                HStack(spacing: 10) {
+                    Label(formatDuration(session.totalDuration), systemImage: "clock")
                     
-                    // Word count (if available)
                     if let words = wordCount, words > 0 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "text.word.spacing")
-                            Text("\(words) words")
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        Label("\(words) words", systemImage: "doc.text")
                     }
                     
-                    // Chunk count (if multi-chunk)
+                    if session.isFavorite && (session.title == nil || session.title?.isEmpty == true) {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                
+                // Status indicators
+                HStack(spacing: 6) {
                     if session.chunkCount > 1 {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.stack.3d.up")
-                            Text("\(session.chunkCount) parts")
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        StatusPill(text: "\(session.chunkCount) parts", color: .blue)
+                    }
+                    
+                    if hasSummary {
+                        StatusPill(text: "Summarized", color: .green)
+                    }
+                    
+                    if wordCount == nil || wordCount == 0 {
+                        StatusPill(text: "Processing", color: .orange)
                     }
                 }
             }
             
             Spacer()
-            
-            HStack(spacing: 8) {
-                // Language flag
-                if let language = language {
-                    Text(LanguageDetector.flagEmoji(for: language))
-                        .font(.title3)
-                }
-                
-                // Sentiment badge
-                if let sentiment = sentiment {
-                    Text(sentimentEmoji(sentiment))
-                        .font(.title3)
-                }
-            }
-            
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+    }
+    
+    private var timeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: session.startTime)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -596,15 +1127,40 @@ struct SessionRow: View {
             return "\(seconds)s"
         }
     }
+}
+
+// MARK: - Status Pill
+
+struct StatusPill: View {
+    let text: String
+    let color: Color
     
-    private func sentimentEmoji(_ score: Double) -> String {
-        switch score {
-        case ..<(-0.5): return "😢"
-        case -0.5..<(-0.2): return "😔"
-        case -0.2..<0.2: return "😐"
-        case 0.2..<0.5: return "🙂"
-        default: return "😊"
-        }
+    var body: some View {
+        Text(text)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15))
+            .clipShape(Capsule())
+    }
+}
+
+// MARK: - Legacy SessionRow (kept for compatibility)
+
+struct SessionRow: View {
+    let session: RecordingSession
+    let wordCount: Int?
+    let sentiment: Double?
+    let language: String?
+    
+    var body: some View {
+        SessionRowClean(
+            session: session,
+            wordCount: wordCount,
+            hasSummary: false
+        )
     }
 }
 
@@ -659,19 +1215,21 @@ struct RecordingRow: View {
 // MARK: - Insights Tab
 
 enum TimeRange: String, CaseIterable, Identifiable {
+    case yesterday = "Yesterday"
     case today = "Today"
     case week = "Week"
     case month = "Month"
-    case allTime = "All"
+    case allTime = "Year"
     
     var id: String { rawValue }
     
     var fullName: String {
         switch self {
+        case .yesterday: return "Yesterday"
         case .today: return "Today"
         case .week: return "This Week"
         case .month: return "This Month"
-        case .allTime: return "All Time"
+        case .allTime: return "This Year"
         }
     }
 }
@@ -736,9 +1294,12 @@ struct InsightsTab: View {
     @State private var topWords: [WordFrequency] = []
     @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
     @State private var languageDistribution: [(language: String, wordCount: Int)] = []
+    @State private var yearWrapSummary: Summary?
+    @State private var isWrappingUpYear = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var wordLimit: Int = 20
+    @State private var showYearWrapConfirmation = false
     
     private let wordLimitKey = "insightsWordLimit"
     
@@ -755,6 +1316,27 @@ struct InsightsTab: View {
                     )
                 } else {
                     List {
+                        // Period Summary section (at the top)
+                        // For Year tab: prioritize yearWrapSummary (Pro AI) over periodSummary (rollup)
+                        if let summary = (selectedTimeRange == .allTime ? (yearWrapSummary ?? periodSummary) : periodSummary) {
+                            Section {
+                                InsightsSummaryCard(
+                                    summary: summary,
+                                    periodTitle: selectedTimeRange == .allTime && yearWrapSummary != nil ? "✨ Year Wrap (Pro AI)" : periodTitle,
+                                    sessionCount: sessionCount,
+                                    sessionsInPeriod: sessionsInPeriod,
+                                    coordinator: coordinator,
+                                    onRegenerate: selectedTimeRange == .yesterday ? nil : {
+                                        await regeneratePeriodSummary()
+                                    },
+                                    wrapAction: selectedTimeRange == .allTime ? {
+                                        showYearWrapConfirmation = true
+                                    } : nil,
+                                    wrapIsLoading: isWrappingUpYear
+                                )
+                            }
+                        }
+                        
                         // Key Statistics section
                         Section("Key Statistics") {
                             // Longest session
@@ -1172,58 +1754,6 @@ struct InsightsTab: View {
                                 .padding(.vertical, 8)
                             }
                         }
-                        
-                        // Period Summary section
-                        if let summary = periodSummary {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    // Header
-                                    HStack {
-                                        Text("📝 \(periodTitle)")
-                                            .font(.headline)
-                                        Spacer()
-                                        Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    
-                                    // Summary text
-                                    Text(summary.text)
-                                        .font(.body)
-                                        .foregroundStyle(.primary)
-                                        .padding(.vertical, 4)
-                                    
-                                    // Collapsible session details
-                                    if !sessionsInPeriod.isEmpty {
-                                        DisclosureGroup {
-                                            ForEach(sessionsInPeriod, id: \.sessionId) { session in
-                                                NavigationLink {
-                                                    SessionDetailView(session: session)
-                                                } label: {
-                                                    HStack {
-                                                        VStack(alignment: .leading, spacing: 4) {
-                                                            Text(session.startTime, style: .time)
-                                                                .font(.subheadline)
-                                                                .fontWeight(.medium)
-                                                            Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
-                                                                .font(.caption)
-                                                                .foregroundStyle(.secondary)
-                                                        }
-                                                        Spacer()
-                                                    }
-                                                }
-                                                .padding(.vertical, 2)
-                                            }
-                                        } label: {
-                                            Text("Show individual sessions (\(sessionsInPeriod.count))")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.blue)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
                     }
                 }
             }
@@ -1236,7 +1766,8 @@ struct InsightsTab: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 300)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
                 }
             }
             .task {
@@ -1254,6 +1785,16 @@ struct InsightsTab: View {
                 Task {
                     await loadInsights()
                 }
+            }
+            .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("✨ Generate with Pro AI") {
+                    Task {
+                        await wrapUpYear(forceRegenerate: false)
+                    }
+                }
+            } message: {
+                Text("✨ Clicking 'Generate with Pro AI' will use your configured Year Wrapped Pro AI service (OpenAI or Anthropic) to create a comprehensive, beautifully crafted year-in-review summary.\n\n⏱️ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid Pro AI credentials configured in Settings.\n\n🔄 Use the orange refresh button to roll up the monthly summaries (no Pro AI needed).")
             }
         }
     }
@@ -1309,16 +1850,17 @@ struct InsightsTab: View {
             // Load period summary based on selected time range
             let periodType: PeriodType = {
                 switch selectedTimeRange {
+                case .yesterday: return .day
                 case .today: return .day
                 case .week: return .week
                 case .month: return .month
-                case .allTime: return .month // Show most recent month for all-time
+                case .allTime: return .year // Show yearly summary for current year
                 }
             }()
             
             // Load sessions in this period first
             if let dbManager = coordinator.getDatabaseManager() {
-                if selectedTimeRange == .today {
+                if selectedTimeRange == .today || selectedTimeRange == .yesterday {
                     sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: startDate)) ?? []
                 } else {
                     // For week/month/all, fetch ALL sessions and filter by date range
@@ -1330,41 +1872,82 @@ struct InsightsTab: View {
                 sessionCount = sessionsInPeriod.count
             }
             
-            // Try to fetch existing period summary, or generate if missing
-            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: startDate)
+            // Try to fetch existing period summary (don't auto-generate on view load)
+            // For week/month/year, use Date() to get current period, for day use startDate
+            let dateForFetch = (periodType == .day) ? startDate : Date()
+            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+
+            if selectedTimeRange == .allTime {
+                yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            } else {
+                yearWrapSummary = nil
+            }
             
-            // If no period summary exists but we have sessions with summaries, generate one now
+            // Debug logging
             if periodSummary == nil && !sessionsInPeriod.isEmpty {
-                print("ℹ️ [InsightsTab] No \(periodType) summary found for \(startDate.formatted()), generating...")
-                
-                // Use Date() (today) for week/month calculations, startDate for day
-                let dateForGeneration = (periodType == .day) ? startDate : Date()
-                
-                switch periodType {
-                case .day:
-                    await coordinator.updateDailySummary(date: dateForGeneration)
-                case .week:
-                    await coordinator.updateWeeklySummary(date: dateForGeneration)
-                case .month:
-                    await coordinator.updateMonthlySummary(date: dateForGeneration)
-                default:
-                    break
-                }
-                
-                // Fetch again after generation using the same date we used for generation
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // Wait 1s
-                periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
-                
-                if periodSummary != nil {
-                    print("✅ [InsightsTab] Successfully generated \(periodType) summary")
-                } else {
-                    print("⚠️ [InsightsTab] Failed to generate \(periodType) summary (generated with date: \(dateForGeneration.formatted()), fetching with same date)")
-                }
+                print("ℹ️ [InsightsTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
+                print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
+                print("   Sessions in period: \(sessionsInPeriod.count)")
+            } else if periodSummary != nil {
+                print("✅ [InsightsTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
             }
         } catch {
             print("❌ [InsightsTab] Failed to load insights: \(error)")
         }
         isLoading = false
+    }
+    
+    private func regeneratePeriodSummary() async {
+        let (startDate, _) = getDateRange(for: selectedTimeRange)
+        
+        let periodType: PeriodType = {
+            switch selectedTimeRange {
+            case .yesterday: return .day
+            case .today: return .day
+            case .week: return .week
+            case .month: return .month
+            case .allTime: return .year
+            }
+        }()
+        
+        // Use Date() (today) for week/month/year calculations, startDate for day
+        let dateForGeneration = (periodType == .day) ? startDate : Date()
+        
+        print("🔄 [InsightsTab] Regenerating \(periodType.rawValue) summary...")
+        
+        switch periodType {
+        case .day:
+            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: false)
+        case .week:
+            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: false)
+        case .month:
+            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: false)
+        case .year:
+            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: false)
+        default:
+            break
+        }
+        
+        // Fetch again after regeneration
+        try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s
+        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
+        
+        if periodSummary != nil {
+            coordinator.showSuccess("Summary regenerated")
+        } else {
+            coordinator.showError("Failed to regenerate summary")
+        }
+    }
+
+    private func wrapUpYear(forceRegenerate: Bool) async {
+        guard !isWrappingUpYear else { return }
+        isWrappingUpYear = true
+        let dateForGeneration = Date()
+
+        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
+
+        yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        isWrappingUpYear = false
     }
     
     private func formatHour(_ hour: Int) -> String {
@@ -1402,6 +1985,11 @@ struct InsightsTab: View {
         let now = Date()
         
         switch timeRange {
+        case .yesterday:
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+            let start = calendar.startOfDay(for: yesterday)
+            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now
+            return (start, end)
         case .today:
             let start = calendar.startOfDay(for: now)
             return (start, now)
@@ -1412,7 +2000,10 @@ struct InsightsTab: View {
             let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
             return (start, now)
         case .allTime:
-            return (Date.distantPast, Date.distantFuture)
+            // Show only current year (e.g., 2025) up to today
+            let currentYear = calendar.component(.year, from: now)
+            let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
+            return (startOfYear, now)
         }
     }
     
@@ -1547,10 +2138,14 @@ struct InsightsTab: View {
     
     private var periodTitle: String {
         switch selectedTimeRange {
+        case .yesterday: return "Yesterday's Summary"
         case .today: return "Today's Summary"
         case .week: return "This Week's Summary"
         case .month: return "This Month's Summary"
-        case .allTime: return "Overall Summary"
+        case .allTime:
+            let calendar = Calendar.current
+            let currentYear = calendar.component(.year, from: Date())
+            return "\(currentYear) Summary"
         }
     }
 }
@@ -1698,163 +2293,1506 @@ struct SummaryRow: View {
 // MARK: - Settings Tab
 
 struct SettingsTab: View {
-    @State private var showDataManagement = false
     @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngineName: String = "Loading..."
+    @State private var debugTapCount: Int = 0
+    @State private var showDebugSection: Bool = false
     @State private var databasePath: String?
-    @State private var chunkDuration: Double = 180 // Default 3 minutes
-    @State private var wordLimit: Double = 20 // Default 20 words
-    
-    private let wordLimitKey = "insightsWordLimit"
     
     var body: some View {
         NavigationStack {
             List {
-                Section("Recording") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Auto-Chunk Duration")
-                            Spacer()
-                            Text("\(Int(chunkDuration))s")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
+                // Recording Section
+                Section {
+                    NavigationLink(destination: RecordingSettingsView()) {
+                        Label {
+                            Text("Recording")
+                        } icon: {
+                            Image(systemName: "mic.fill")
+                                .foregroundStyle(.red)
                         }
-                        
-                        Slider(value: $chunkDuration, in: 30...300, step: 30) {
-                            Text("Chunk Duration")
-                        }
-                        .onChange(of: chunkDuration) { oldValue, newValue in
-                            coordinator.audioCapture.autoChunkDuration = newValue
-                            coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
-                        }
-                        
-                        Text("Recordings are automatically split into chunks of this duration for better processing.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
-                
-                Section("Insights") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Word Cloud Limit")
-                            Spacer()
-                            Text("\(Int(wordLimit))")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        
-                        Slider(value: $wordLimit, in: 10...200, step: 10) {
-                            Text("Word Limit")
-                        }
-                        .onChange(of: wordLimit) { oldValue, newValue in
-                            UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
-                            coordinator.showSuccess("Word limit updated to \(Int(newValue))")
-                        }
-                        
-                        Text("Number of most-used words to display in the Insights tab.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                    
-                    NavigationLink(destination: ExcludedWordsView()) {
-                        Label("Excluded Words", systemImage: "text.badge.xmark")
                     }
                 }
                 
+                // AI & Summaries Section
+                Section {
+                    NavigationLink(destination: AISettingsView()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI & Summaries")
+                                Text(activeEngineName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "brain")
+                                .foregroundStyle(.purple)
+                        }
+                    }
+                } footer: {
+                    Text("Configure how your recordings are summarized.")
+                }
+                
+                // Insights Section
+                Section {
+                    NavigationLink(destination: InsightsSettingsView()) {
+                        Label {
+                            Text("Insights")
+                        } icon: {
+                            Image(systemName: "chart.bar.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                }
+                
+                // Languages Section
                 Section {
                     NavigationLink(destination: LanguageSettingsView()) {
-                        Label("Languages", systemImage: "globe")
+                        Label {
+                            Text("Languages")
+                        } icon: {
+                            Image(systemName: "globe")
+                                .foregroundStyle(.green)
+                        }
                     }
-                } header: {
-                    Text("Languages")
                 } footer: {
-                    Text("Manage which languages Life Wrapped can detect in your recordings. Detected languages are stored locally and used for insights.")
+                    Text("Manage which languages Life Wrapped can detect.")
                 }
                 
-                Section("Preferences") {
-                    NavigationLink(destination: Text("Audio Settings")) {
-                        Label("Audio Quality", systemImage: "waveform")
-                    }
-                    
-                    NavigationLink(destination: Text("Privacy Settings")) {
-                        Label("Privacy", systemImage: "lock.shield")
-                    }
-                }
-                
-                Section("Data") {
-                    Button {
-                        showDataManagement = true
-                    } label: {
-                        Label("Data Management", systemImage: "externaldrive")
-                    }
-                    .foregroundColor(.primary)
-                }
-                
-                Section("Debug") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Database Location")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let path = databasePath {
-                            Text(path)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.primary)
-                                .textSelection(.enabled)
-                        } else {
-                            Text("Loading...")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                // Data Section
+                Section {
+                    NavigationLink(destination: DataSettingsView()) {
+                        Label {
+                            Text("Data")
+                        } icon: {
+                            Image(systemName: "externaldrive.fill")
+                                .foregroundStyle(.orange)
                         }
                     }
-                    .padding(.vertical, 4)
-                    
-                    Button {
-                        Task {
-                            await coordinator.testSessionQueries()
+                }
+                
+                // Privacy Section
+                Section {
+                    NavigationLink(destination: PrivacySettingsView()) {
+                        Label {
+                            Text("Privacy")
+                        } icon: {
+                            Image(systemName: "lock.shield.fill")
+                                .foregroundStyle(.blue)
                         }
-                    } label: {
-                        Label("Test Session Queries", systemImage: "testtube.2")
                     }
                 }
                 
-                Section("About") {
+                // About Section
+                Section {
                     HStack {
-                        Text("Version")
+                        Label("Version", systemImage: "info.circle")
                         Spacer()
                         Text("1.0.0")
                             .foregroundStyle(.secondary)
                     }
-                    
-                    NavigationLink(destination: PrivacyPolicyView()) {
-                        Label("Privacy Policy", systemImage: "doc.text")
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        debugTapCount += 1
+                        if debugTapCount >= 5 {
+                            showDebugSection = true
+                            coordinator.showSuccess("Debug mode enabled")
+                            debugTapCount = 0
+                        }
                     }
                     
                     HStack {
-                        Text("On-Device Processing")
+                        Label("On-Device Processing", systemImage: "checkmark.shield.fill")
                         Spacer()
-                        Image(systemName: "checkmark.shield.fill")
-                            .foregroundColor(.green)
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                } header: {
+                    Text("About")
+                }
+                
+                // Debug Section (hidden by default)
+                if showDebugSection {
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Database Location")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let path = databasePath {
+                                Text(path)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+                            } else {
+                                Text("Loading...")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        
+                        Button {
+                            Task {
+                                await coordinator.testSessionQueries()
+                            }
+                        } label: {
+                            Label("Test Session Queries", systemImage: "testtube.2")
+                        }
+                        
+                        Button(role: .destructive) {
+                            showDebugSection = false
+                        } label: {
+                            Label("Hide Debug Section", systemImage: "eye.slash")
+                        }
+                    } header: {
+                        Text("Debug")
                     }
                 }
             }
             .navigationTitle("Settings")
-            .sheet(isPresented: $showDataManagement) {
-                DataManagementView()
-            }
             .task {
+                await loadActiveEngine()
                 databasePath = await coordinator.getDatabasePath()
-                chunkDuration = coordinator.audioCapture.autoChunkDuration
-                
-                // Load word limit from UserDefaults
-                wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
-                if wordLimit == 0 {
-                    wordLimit = 20 // Default if not set
-                    UserDefaults.standard.set(20, forKey: wordLimitKey)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+                Task {
+                    await loadActiveEngine()
                 }
             }
         }
+    }
+    
+    private func loadActiveEngine() async {
+        guard let summCoord = coordinator.summarizationCoordinator else {
+            activeEngineName = "Not configured"
+            return
+        }
+        
+        let engine = await summCoord.getActiveEngine()
+        activeEngineName = engine.displayName
+    }
+}
+
+// MARK: - Recording Settings View
+
+struct RecordingSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var chunkDuration: Double = 180
+    
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Auto-Chunk Duration")
+                        Spacer()
+                        Text("\(Int(chunkDuration))s")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    
+                    Slider(value: $chunkDuration, in: 30...300, step: 30) {
+                        Text("Chunk Duration")
+                    }
+                    .onChange(of: chunkDuration) { oldValue, newValue in
+                        coordinator.audioCapture.autoChunkDuration = newValue
+                        coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Chunk Settings")
+            } footer: {
+                Text("Recordings are automatically split into chunks of this duration for efficient processing and transcription.")
+            }
+            
+            Section {
+                HStack {
+                    Label("Format", systemImage: "waveform")
+                    Spacer()
+                    Text("AAC")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Sample Rate", systemImage: "dial.medium")
+                    Spacer()
+                    Text("44.1 kHz")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Channels", systemImage: "speaker.wave.2")
+                    Spacer()
+                    Text("Mono")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Audio Quality")
+            } footer: {
+                Text("Optimized settings for voice recording with smaller file sizes.")
+            }
+        }
+        .navigationTitle("Recording")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            chunkDuration = coordinator.audioCapture.autoChunkDuration
+        }
+    }
+}
+
+// MARK: - AI Settings View
+
+struct AISettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    
+    // Local AI state
+    @State private var localModelAvailable = false
+    @State private var isDownloadingModel = false
+    
+    // External API state
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
+    @State private var apiKey: String = ""
+    @State private var showAPIKeyField = false
+    
+    // API Key testing state
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess = false
+    
+    // Available models per provider
+    private let openaiModels = [
+        ("gpt-4.1", "GPT-4.1 (Recommended)"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4o-mini", "GPT-4o Mini"),
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
+    ]
+    
+    private let anthropicModels = [
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
+        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
+    ]
+    
+    private var currentModels: [(String, String)] {
+        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    }
+    
+    private var effectiveConfig: LocalLLMConfiguration {
+        LocalLLMConfiguration.current()
+    }
+    
+    private var deviceSummary: String {
+        LocalLLMConfiguration.deviceSummary()
+    }
+    
+    var body: some View {
+        List {
+            // MARK: - How It Works Section
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Session Summaries", systemImage: "doc.text")
+                        .font(.headline)
+                    HStack {
+                        Text("Uses your ACTIVE engine →")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let activeEngine {
+                            Text(activeEngine.displayName)
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    Label("Period Rollups (Day/Week/Month/Year)", systemImage: "calendar")
+                        .font(.headline)
+                    Text("Combines session summaries (no additional AI processing)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Divider()
+                    
+                    Label("✨ Year Wrap (Special)", systemImage: "sparkles")
+                        .font(.headline)
+                    Text("Always uses Year Wrapped Pro AI (OpenAI or Anthropic) for a beautifully crafted year-in-review. Requires valid Pro AI credentials below.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Label("How AI Works in Life Wrapped", systemImage: "info.circle")
+            }
+            
+            // MARK: - On-Device Engines Section
+            Section {
+                // Basic Engine
+                EngineOptionCard(
+                    tier: .basic,
+                    isSelected: activeEngine == .basic,
+                    isAvailable: true,
+                    subtitle: "Simple word-based summaries",
+                    onSelect: { selectEngine(.basic) }
+                )
+                
+                // Apple Intelligence
+                EngineOptionCard(
+                    tier: .apple,
+                    isSelected: activeEngine == .apple,
+                    isAvailable: availableEngines.contains(.apple),
+                    subtitle: "Requires iOS 18.1+ & compatible device",
+                    onSelect: { selectEngine(.apple) }
+                )
+                
+                // Local AI
+                VStack(alignment: .leading, spacing: 12) {
+                    EngineOptionCard(
+                        tier: .local,
+                        isSelected: activeEngine == .local,
+                        isAvailable: localModelAvailable,
+                        subtitle: localModelAvailable ? "On-device LLM ready" : "Download model to enable",
+                        onSelect: { selectEngine(.local) }
+                    )
+                    
+                    if localModelAvailable {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Image(systemName: "wand.and.stars")
+                                    .foregroundStyle(.green)
+                                Text("Auto-Optimized for Your Device")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.green)
+                            }
+                            Text("Automatically uses maximum quality settings for \(deviceSummary). \(effectiveConfig.tokensDescription)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            } header: {
+                Label("On-Device Processing", systemImage: "lock.shield.fill")
+            } footer: {
+                Text("All processing happens locally. Your data never leaves your device.")
+            }
+            
+            // MARK: - Year Wrapped Pro AI Section
+            Section {
+                // Pro AI Engine Toggle
+                EngineOptionCard(
+                    tier: .external,
+                    isSelected: activeEngine == .external,
+                    isAvailable: hasValidAPIKey(),
+                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "Configure API key below",
+                    onSelect: { selectEngine(.external) }
+                )
+                
+                // Provider Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Provider")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Picker("Provider", selection: $selectedProvider) {
+                        Text("OpenAI").tag("OpenAI")
+                        Text("Anthropic").tag("Anthropic")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedProvider) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                        // Reset to default model for new provider
+                        let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
+                        selectedModel = defaultModel
+                        UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
+                        // Load the appropriate key
+                        loadAPIKey()
+                    }
+                }
+                .padding(.vertical, 4)
+                .opacity(activeEngine == .external ? 1.0 : 0.6)
+                
+                // Model Selection
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Model")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    Picker("Model", selection: $selectedModel) {
+                        ForEach(currentModels, id: \.0) { model in
+                            Text(model.1).tag(model.0)
+                        }
+                    }
+                    .onChange(of: selectedModel) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
+                    }
+                }
+                .padding(.vertical, 4)
+                .opacity(activeEngine == .external ? 1.0 : 0.6)
+                
+                // API Key Input
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("API Key")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        if hasValidAPIKey() {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Configured")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                    }
+                    
+                    HStack {
+                        if showAPIKeyField {
+                            SecureField("Enter \(selectedProvider) API Key", text: $apiKey)
+                                .textContentType(.password)
+                                .autocapitalization(.none)
+                                .autocorrectionDisabled()
+                                .textFieldStyle(.roundedBorder)
+                                .onChange(of: apiKey) { _, newValue in
+                                    // Normalize: trim whitespace and newlines
+                                    let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if normalized != newValue {
+                                        apiKey = normalized
+                                    }
+                                    // Reset test state when key changes
+                                    testResult = nil
+                                }
+                            
+                            Button {
+                                testAPIKey()
+                            } label: {
+                                if isTesting {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                } else {
+                                    Text("Test")
+                                        .fontWeight(.medium)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(apiKey.isEmpty || isTesting)
+                            
+                            Button {
+                                saveAPIKey()
+                            } label: {
+                                Text("Save")
+                                    .fontWeight(.medium)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(apiKey.isEmpty)
+                        } else {
+                            Button {
+                                showAPIKeyField = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: hasValidAPIKey() ? "pencil" : "plus.circle.fill")
+                                    Text(hasValidAPIKey() ? "Change API Key" : "Add API Key")
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    
+                    // Help links
+                    HStack(spacing: 16) {
+                        if selectedProvider == "OpenAI" {
+                            Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                                Text("Get OpenAI Key")
+                                    .font(.caption)
+                            }
+                        } else {
+                            Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
+                                Text("Get Anthropic Key")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    
+                    // Test result
+                    if let result = testResult {
+                        HStack {
+                            Image(systemName: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(testSuccess ? .green : .red)
+                            Text(result)
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+                .padding(.vertical, 4)
+                
+                // Clear key option
+                if hasValidAPIKey() {
+                    Button(role: .destructive) {
+                        clearAPIKey()
+                    } label: {
+                        Label("Remove API Key", systemImage: "trash")
+                            .font(.subheadline)
+                    }
+                }
+            } header: {
+                Label("Year Wrapped Pro AI", systemImage: "sparkles")
+            } footer: {
+                Label {
+                    Text("Required for Year Wrap feature. Select as active engine above to also use for session summaries. Data is sent to \(selectedProvider) servers for processing.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .navigationTitle("AI & Summaries")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+            await checkLocalModelAvailability()
+            loadAPIKey()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
+            Task {
+                await checkLocalModelAvailability()
+                await loadEngineStatus()
+            }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func checkLocalModelAvailability() async {
+        let modelManager = LocalLLM.ModelFileManager.shared
+        let models = await modelManager.availableModels()
+        await MainActor.run {
+            localModelAvailable = !models.isEmpty
+        }
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // Check availability
+        if tier == .local && !localModelAvailable {
+            coordinator.showError("Download a Local AI model first")
+            return
+        }
+        if tier == .apple && !availableEngines.contains(.apple) {
+            coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
+            return
+        }
+        if tier == .external && !hasValidAPIKey() {
+            coordinator.showError("Configure an API key first")
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func hasValidAPIKey() -> Bool {
+        let key = selectedProvider == "OpenAI" 
+            ? KeychainHelper.load(key: "openai_api_key")
+            : KeychainHelper.load(key: "anthropic_api_key")
+        return key != nil && !key!.isEmpty
+    }
+    
+    private func loadAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        apiKey = KeychainHelper.load(key: keychainKey) ?? ""
+        showAPIKeyField = false
+    }
+    
+    private func saveAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        
+        if KeychainHelper.save(key: keychainKey, value: apiKey) {
+            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+            showAPIKeyField = false
+            coordinator.showSuccess("API key saved")
+            
+            Task {
+                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            guard !apiKey.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(apiKey, for: provider)
+            
+            await MainActor.run {
+                testSuccess = result.isValid
+                testResult = result.message
+                isTesting = false
+            }
+        }
+    }
+    
+    private func clearAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        KeychainHelper.delete(key: keychainKey)
+        apiKey = ""
+        showAPIKeyField = false
+        
+        // If external was active, switch to basic
+        if activeEngine == .external {
+            selectEngine(.basic)
+        }
+        
+        coordinator.showSuccess("API key removed")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
+
+// MARK: - Engine Option Card
+
+struct EngineOptionCard: View {
+    let tier: EngineTier
+    let isSelected: Bool
+    let isAvailable: Bool
+    let subtitle: String
+    let onSelect: () -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Radio button indicator
+                ZStack {
+                    Circle()
+                        .strokeBorder(isSelected ? Color.green : Color.gray.opacity(0.5), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                    
+                    if isSelected {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 14, height: 14)
+                    }
+                }
+                
+                // Engine icon
+                Image(systemName: tier.icon)
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? .primary : (isAvailable ? .secondary : .tertiary))
+                    .frame(width: 28)
+                
+                // Text content
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .fontWeight(isSelected ? .semibold : .regular)
+                        .foregroundStyle(isSelected ? .primary : (isAvailable ? .primary : .secondary))
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                // Status indicator
+                if isSelected {
+                    Text("Active")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green)
+                        .clipShape(Capsule())
+                } else if !isAvailable {
+                    Image(systemName: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isAvailable || isSelected ? 1.0 : 0.5)
+    }
+}
+
+// MARK: - On-Device Engines View (Keep for backward compatibility)
+
+struct OnDeviceEnginesView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showUnavailableAlert = false
+    @State private var selectedUnavailableTier: EngineTier?
+    
+    var body: some View {
+        List {
+            Section {
+                ForEach(EngineTier.privateTiers, id: \.self) { tier in
+                    EngineSelectionRow(
+                        tier: tier,
+                        isActive: tier == activeEngine,
+                        isAvailable: availableEngines.contains(tier)
+                    ) {
+                        selectEngine(tier)
+                    }
+                }
+            } header: {
+                Text("Select Engine")
+            } footer: {
+                Text("Tap an engine to activate it. All on-device engines process data locally for privacy.")
+            }
+        }
+        .navigationTitle("On-Device Engines")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let tier = selectedUnavailableTier {
+                Text(unavailableMessage(for: tier))
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        if tier == activeEngine { return }
+        
+        guard availableEngines.contains(tier) else {
+            selectedUnavailableTier = tier
+            showUnavailableAlert = true
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func unavailableMessage(for tier: EngineTier) -> String {
+        switch tier {
+        case .basic:
+            return "Basic engine should always be available. Please restart the app."
+        case .apple:
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
+        case .local:
+            return "Download the local AI model to enable on-device processing. Go to AI Settings → Local AI Models."
+        case .external:
+            return "Configure your API key to use external AI services."
+        }
+    }
+}
+
+// MARK: - Engine Selection Row
+
+struct EngineSelectionRow: View {
+    let tier: EngineTier
+    let isActive: Bool
+    let isAvailable: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: tier.icon)
+                    .font(.title3)
+                    .foregroundStyle(isAvailable ? .blue : .secondary)
+                    .frame(width: 32)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .foregroundStyle(isAvailable ? .primary : .secondary)
+                    
+                    Text(tier.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else if !isAvailable {
+                    Text("Unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - External API Settings View
+
+struct ExternalAPISettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
+    @State private var openaiKey: String = ""
+    @State private var anthropicKey: String = ""
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess: Bool = false
+    
+    // Available models per provider
+    private let openaiModels = [
+        ("gpt-4.1", "GPT-4.1 (Recommended)"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4o-mini", "GPT-4o Mini"),
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
+    ]
+    
+    private let anthropicModels = [
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
+        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
+    ]
+    
+    private var currentModels: [(String, String)] {
+        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    }
+    
+    private var currentKey: String {
+        selectedProvider == "OpenAI" ? openaiKey : anthropicKey
+    }
+    
+    var body: some View {
+        List {
+            // Status
+            Section {
+                EngineSelectionRow(
+                    tier: .external,
+                    isActive: activeEngine == .external,
+                    isAvailable: availableEngines.contains(.external)
+                ) {
+                    activateExternalEngine()
+                }
+            } header: {
+                Text("Status")
+            } footer: {
+                if availableEngines.contains(.external) {
+                    Text("External API is configured and ready to use.")
+                } else {
+                    Text("Configure an API key below to enable external AI.")
+                }
+            }
+            
+            // Provider Selection
+            Section {
+                Picker("Provider", selection: $selectedProvider) {
+                    Text("OpenAI").tag("OpenAI")
+                    Text("Anthropic").tag("Anthropic")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: selectedProvider) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                    // Reset to default model for new provider
+                    let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
+                    selectedModel = defaultModel
+                    UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
+                }
+            } header: {
+                Text("AI Provider")
+            }
+            
+            // Model Selection
+            Section {
+                Picker("Model", selection: $selectedModel) {
+                    ForEach(currentModels, id: \.0) { model in
+                        Text(model.1).tag(model.0)
+                    }
+                }
+                .onChange(of: selectedModel) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
+                    coordinator.showSuccess("Model updated to \(newValue)")
+                }
+            } header: {
+                Text("Model")
+            } footer: {
+                Text("Different models have varying capabilities, speed, and cost.")
+            }
+            
+            // API Key Input
+            Section {
+                if selectedProvider == "OpenAI" {
+                    SecureField("OpenAI API Key", text: $openaiKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+                        .autocorrectionDisabled()
+                        .onChange(of: openaiKey) { _, newValue in
+                            // Normalize: trim whitespace and newlines
+                            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if normalized != newValue {
+                                openaiKey = normalized
+                            }
+                        }
+                    
+                    if !openaiKey.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("API key configured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                        Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
+                    }
+                } else {
+                    SecureField("Anthropic API Key", text: $anthropicKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+                        .autocorrectionDisabled()
+                        .onChange(of: anthropicKey) { _, newValue in
+                            // Normalize: trim whitespace and newlines
+                            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if normalized != newValue {
+                                anthropicKey = normalized
+                            }
+                        }
+                    
+                    if !anthropicKey.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("API key configured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
+                        Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
+                    }
+                }
+            } header: {
+                Text("API Key")
+            } footer: {
+                Text("Your API key is stored securely in the device keychain.")
+            }
+            
+            // Test & Save
+            Section {
+                Button {
+                    testAPIKey()
+                } label: {
+                    HStack {
+                        if isTesting {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Testing...")
+                        } else {
+                            Label("Test API Key", systemImage: "checkmark.shield")
+                        }
+                    }
+                }
+                .disabled(currentKey.isEmpty || isTesting)
+                
+                if let result = testResult {
+                    Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(testSuccess ? .green : .red)
+                }
+                
+                Button {
+                    saveAPIKey()
+                } label: {
+                    Label("Save API Key", systemImage: "square.and.arrow.down")
+                }
+                .disabled(currentKey.isEmpty)
+            }
+            
+            // Clear Keys
+            if !openaiKey.isEmpty || !anthropicKey.isEmpty {
+                Section {
+                    Button(role: .destructive) {
+                        clearAPIKeys()
+                    } label: {
+                        Label("Clear All API Keys", systemImage: "trash")
+                    }
+                }
+            }
+            
+            // Warning
+            Section {
+                Label {
+                    Text("Data will be sent to \(selectedProvider) servers for processing.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Privacy Notice")
+            }
+        }
+        .navigationTitle("External API")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+            loadSavedKeys()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func loadSavedKeys() {
+        // Load from keychain
+        openaiKey = KeychainHelper.load(key: "openai_api_key") ?? ""
+        anthropicKey = KeychainHelper.load(key: "anthropic_api_key") ?? ""
+        
+        // Load saved model selection
+        if let savedModel = UserDefaults.standard.string(forKey: "externalAPIModel") {
+            selectedModel = savedModel
+        }
+    }
+    
+    private func activateExternalEngine() {
+        guard availableEngines.contains(.external) else {
+            coordinator.showError("Configure an API key first")
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(.external)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to External API")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            let key = currentKey
+            guard !key.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            // Use the ExternalAPIEngine to validate the key with a real API request
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(key, for: provider)
+            
+            await MainActor.run {
+                testSuccess = result.isValid
+                testResult = result.message
+                isTesting = false
+            }
+        }
+    }
+    
+    private func saveAPIKey() {
+        // Save to keychain
+        let key = currentKey
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        
+        if KeychainHelper.save(key: keychainKey, value: key) {
+            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+            coordinator.showSuccess("API key saved securely")
+            
+            Task {
+                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func clearAPIKeys() {
+        KeychainHelper.delete(key: "openai_api_key")
+        KeychainHelper.delete(key: "anthropic_api_key")
+        openaiKey = ""
+        anthropicKey = ""
+        coordinator.showSuccess("API keys cleared")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
+
+// MARK: - Keychain Helper
+
+enum KeychainHelper {
+    static func save(key: String, value: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        
+        // Delete existing item first
+        delete(key: key)
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.jsayram.lifewrapped",
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        
+        let status = SecItemAdd(query as CFDictionary, nil)
+        return status == errSecSuccess
+    }
+    
+    static func load(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.jsayram.lifewrapped",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        
+        return value
+    }
+    
+    static func delete(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecAttrService as String: "com.jsayram.lifewrapped"
+        ]
+        
+        SecItemDelete(query as CFDictionary)
+    }
+}
+
+// MARK: - Insights Settings View
+
+struct InsightsSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var wordLimit: Double = 20
+    
+    private let wordLimitKey = "insightsWordLimit"
+    
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Word Cloud Limit")
+                        Spacer()
+                        Text("\(Int(wordLimit))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    
+                    Slider(value: $wordLimit, in: 10...200, step: 10) {
+                        Text("Word Limit")
+                    }
+                    .onChange(of: wordLimit) { oldValue, newValue in
+                        UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
+                        coordinator.showSuccess("Word limit updated to \(Int(newValue))")
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Word Cloud")
+            } footer: {
+                Text("Number of most-used words to display in the Insights tab.")
+            }
+            
+            Section {
+                NavigationLink(destination: ExcludedWordsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Excluded Words")
+                            Text("Manage stop words for word cloud")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "text.badge.xmark")
+                            .foregroundStyle(.red)
+                    }
+                }
+            } header: {
+                Text("Filters")
+            }
+        }
+        .navigationTitle("Insights")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
+            if wordLimit == 0 {
+                wordLimit = 20
+            }
+        }
+    }
+}
+
+// MARK: - Data Settings View
+
+struct DataSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var showDataManagement = false
+    @State private var storageUsed: String = "Calculating..."
+    
+    var body: some View {
+        List {
+            Section {
+                NavigationLink(destination: HistoricalDataView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Historical Data")
+                            Text("View and manage data by year")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.blue)
+                    }
+                }
+            } header: {
+                Text("Browse Data")
+            } footer: {
+                Text("The Insights tab always shows the current year. Use Historical Data to browse previous years.")
+            }
+            
+            Section {
+                Button {
+                    showDataManagement = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Export & Backup")
+                            Text("Export your data or create backups")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.green)
+                    }
+                }
+                .foregroundStyle(.primary)
+            } header: {
+                Text("Data Management")
+            }
+            
+            Section {
+                HStack {
+                    Label("Storage Used", systemImage: "internaldrive")
+                    Spacer()
+                    Text(storageUsed)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Includes recordings, transcripts, and AI models.")
+            }
+        }
+        .navigationTitle("Data")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showDataManagement) {
+            DataManagementView()
+        }
+        .task {
+            await calculateStorage()
+        }
+    }
+    
+    private func calculateStorage() async {
+        // Calculate total storage used by app
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        
+        if let url = documentsURL {
+            let size = directorySize(url: url)
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useMB, .useGB]
+            formatter.countStyle = .file
+            storageUsed = formatter.string(fromByteCount: Int64(size))
+        }
+    }
+    
+    private func directorySize(url: URL) -> Int {
+        let fileManager = FileManager.default
+        var totalSize = 0
+        
+        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    totalSize += fileSize
+                }
+            }
+        }
+        
+        return totalSize
+    }
+}
+
+// MARK: - Privacy Settings View
+
+struct PrivacySettingsView: View {
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    Label("On-Device Processing", systemImage: "checkmark.shield.fill")
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                
+                HStack {
+                    Label("iCloud Sync", systemImage: "icloud.slash")
+                    Spacer()
+                    Text("Disabled")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Analytics", systemImage: "chart.bar.xaxis")
+                    Spacer()
+                    Text("None")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Privacy Status")
+            } footer: {
+                Text("Life Wrapped processes all data locally. No data is sent to external servers unless you configure External API.")
+            }
+            
+            Section {
+                NavigationLink(destination: PrivacyPolicyView()) {
+                    Label("Privacy Policy", systemImage: "doc.text")
+                }
+            }
+        }
+        .navigationTitle("Privacy")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -2397,6 +4335,250 @@ struct InfoRow: View {
     }
 }
 
+// MARK: - Transcript Chunk View
+
+struct TranscriptChunkView: View {
+    let chunkIndex: Int
+    let segments: [TranscriptSegment]
+    let session: RecordingSession
+    let isCurrentChunk: Bool
+    let chunkId: UUID?
+    let coordinator: AppCoordinator
+    let isEdited: Bool  // Track if this chunk was edited
+    let onSeekToChunk: () -> Void
+    let onTextEdited: (UUID, String) -> Void
+    
+    @State private var isEditing = false
+    @State private var editedText: String = ""
+    @FocusState private var isTextFocused: Bool
+    
+    private var combinedText: String {
+        segments.map { $0.text }.joined(separator: " ")
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Action buttons row at top right
+            HStack {
+                // Left side: Part label for multi-chunk, or edited badge
+                if session.chunkCount > 1 {
+                    HStack(spacing: 6) {
+                        Text("Part \(chunkIndex + 1)")
+                            .font(.caption)
+                            .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                            .fontWeight(isCurrentChunk ? .semibold : .regular)
+                        
+                        if let chunkId = chunkId {
+                            transcriptionStatusBadge(for: chunkId)
+                        }
+                        
+                        if isEdited {
+                            HStack(spacing: 2) {
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.caption2)
+                                Text("Edited")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.orange)
+                        }
+                    }
+                } else if isEdited {
+                    HStack(spacing: 2) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.caption2)
+                        Text("Edited")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(.orange)
+                }
+                
+                Spacer()
+                
+                // Action buttons - compact
+                if !isEditing && !combinedText.isEmpty {
+                    HStack(spacing: 8) {
+                        Button {
+                            UIPasteboard.general.string = combinedText
+                            coordinator.showSuccess("Copied")
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            editedText = combinedText
+                            isEditing = true
+                            isTextFocused = true
+                        } label: {
+                            HStack(spacing: 2) {
+                                Image(systemName: "pencil")
+                                Text("Edit")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            // Content
+            chunkContent
+        }
+        .padding(10)
+        .background(chunkBackground)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(chunkBorderColor, lineWidth: 2)
+        )
+        .onTapGesture {
+            if !isEditing {
+                onSeekToChunk()
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
+        .animation(.easeInOut(duration: 0.3), value: isEdited)
+    }
+    
+    private var chunkBackground: Color {
+        if isEdited {
+            return Color.orange.opacity(0.08)
+        } else if isCurrentChunk {
+            return Color.blue.opacity(0.1)
+        } else {
+            return Color.clear
+        }
+    }
+    
+    private var chunkBorderColor: Color {
+        if isEdited {
+            return Color.orange.opacity(0.5)
+        } else if isCurrentChunk {
+            return Color.blue.opacity(0.5)
+        } else {
+            return Color.clear
+        }
+    }
+    
+    @ViewBuilder
+    private func transcriptionStatusBadge(for chunkId: UUID) -> some View {
+        if coordinator.transcribingChunkIds.contains(chunkId) {
+            HStack(spacing: 4) {
+                ProgressView()
+                    .scaleEffect(0.6)
+                Text("Transcribing...")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+            }
+        } else if coordinator.transcribedChunkIds.contains(chunkId) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundColor(.green)
+        } else if coordinator.failedChunkIds.contains(chunkId) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundColor(.orange)
+        }
+    }
+    
+    @ViewBuilder
+    private var chunkContent: some View {
+        if let chunkId = chunkId, coordinator.failedChunkIds.contains(chunkId) {
+            VStack(spacing: 12) {
+                Text("Transcription failed for this part")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                
+                Button {
+                    Task {
+                        await coordinator.retryTranscription(chunkId: chunkId)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Retry Transcription")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        } else if isEditing {
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $editedText)
+                    .font(.body)
+                    .frame(minHeight: 200, maxHeight: 400)
+                    .padding(12)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(12)
+                    .focused($isTextFocused)
+                    .scrollContentBackground(.hidden)
+                
+                HStack(spacing: 12) {
+                    Button {
+                        isEditing = false
+                        editedText = ""
+                    } label: {
+                        Text("Cancel")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.tertiarySystemBackground))
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        saveEdit()
+                    } label: {
+                        Text("Save")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                            .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        } else {
+            // Selectable text - user can select and copy individual words
+            Text(combinedText)
+                .font(.body)
+                .foregroundStyle(isCurrentChunk ? .primary : .secondary)
+                .textSelection(.enabled)
+                .onTapGesture {
+                    onSeekToChunk()
+                }
+        }
+    }
+    
+    private func saveEdit() {
+        let trimmedText = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty, let firstSegment = segments.first else {
+            isEditing = false
+            return
+        }
+        
+        // Save the edited text to the first segment (we combine all segments into one for simplicity)
+        onTextEdited(firstSegment.id, trimmedText)
+        isEditing = false
+        editedText = ""
+    }
+}
+
 // MARK: - Session Detail View
 
 struct SessionDetailView: View {
@@ -2412,325 +4594,67 @@ struct SessionDetailView: View {
     @State private var isTranscriptionComplete = false
     @State private var transcriptionCheckTimer: Timer?
     @State private var sessionSummary: Summary?
+    @State private var summaryLoadError: String?
     @State private var scrubbedTime: TimeInterval = 0
+    
+    // Session metadata
+    @State private var sessionTitle: String = ""
+    @State private var sessionNotes: String = ""
+    @State private var isFavorite: Bool = false
+    @State private var isEditingTitle: Bool = false
+    @State private var isEditingNotes: Bool = false
+    
+    // Transcript editing
+    @State private var editingSegmentId: UUID?
+    @State private var editedText: String = ""
+    @State private var transcriptWasEdited: Bool = false
+    @State private var editedChunkIds: Set<UUID> = []  // Track which chunks were edited
+    @State private var isRegeneratingSummary: Bool = false
+    @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                // Session Title Section (Editable)
+                sessionTitleSection
+                
                 // Transcription Processing Banner
-                if !isTranscriptionComplete {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Processing Transcription...")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text("\(session.chunkCount - transcriptSegments.map({ $0.audioChunkID }).uniqueCount) of \(session.chunkCount) chunks pending")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Spacer()
-                        
-                        Button {
-                            Task {
-                                await refreshSession()
-                            }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.body)
-                                .foregroundStyle(.blue)
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                    )
-                }
+                processingBannerSection
                 
                 // Session Info Card
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Session Details")
-                        .font(.headline)
-                    
-                    InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
-                    InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
-                    InfoRow(label: "Parts", value: "\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
-                    
-                    if !transcriptSegments.isEmpty {
-                        let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
-                        InfoRow(label: "Word Count", value: "\(wordCount) words")
-                    }
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
+                sessionInfoSection
                 
                 // Playback Controls
-                VStack(spacing: 16) {
-                    // Waveform/Progress visualization
-                    VStack(spacing: 12) {
-                        // Progress bar with scrubbing
-                        ZStack {
-                            GeometryReader { geometry in
-                                ZStack(alignment: .leading) {
-                                    // Background waveform
-                                    HStack(spacing: 2) {
-                                        ForEach(0..<50, id: \.self) { index in
-                                            RoundedRectangle(cornerRadius: 2)
-                                                .fill(Color.gray.opacity(0.3))
-                                                .frame(height: waveformHeight(for: index))
-                                        }
-                                    }
-                                    .padding(.horizontal, 4)
-                                    .background(Color(.tertiarySystemBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    
-                                    // Playhead indicator (white line)
-                                    let progress = session.totalDuration > 0
-                                        ? totalElapsedTime / session.totalDuration
-                                        : 0
-                                    
-                                    if isPlayingThisSession {
-                                        Rectangle()
-                                            .fill(Color.white)
-                                            .frame(width: 3, height: 60)
-                                            .shadow(color: .black.opacity(0.5), radius: 3)
-                                            .offset(x: geometry.size.width * progress)
-                                            .animation(.linear(duration: 0.1), value: progress)
-                                    }
-                                }
-                            }
-                            .frame(height: 60)
-                        }
-                        
-                        // Slider for scrubbing across entire session
-                        Slider(
-                            value: Binding(
-                                get: { 
-                                    isPlayingThisSession ? totalElapsedTime : scrubbedTime 
-                                },
-                                set: { newValue in
-                                    if isPlayingThisSession {
-                                        seekToTotalTime(newValue)
-                                    } else {
-                                        scrubbedTime = newValue
-                                    }
-                                }
-                            ),
-                            in: 0...session.totalDuration
-                        )
-                        .tint(.blue)
-                        
-                        // Time display
-                        HStack {
-                            Text(formatTime(isPlayingThisSession ? totalElapsedTime : scrubbedTime))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                            
-                            Spacer()
-                            
-                            // Show current chunk in session
-                            if isPlayingThisSession, let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
-                               let currentChunkIndex = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
-                                Text("Part \(currentChunkIndex + 1) of \(session.chunkCount)")
-                                    .font(.caption)
-                                    .foregroundStyle(.blue)
-                                    .fontWeight(.medium)
-                            }
-                            
-                            Spacer()
-                            
-                            Text(formatTime(session.totalDuration))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                    }
-                    
-                    // Play/Pause button
-                    Button {
-                        playSession()
-                    } label: {
-                        HStack(spacing: 12) {
-                            let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
-                            Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.title)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                if isCurrentlyPlaying {
-                                    Text("Pause")
-                                        .font(.headline)
-                                } else if isPlayingThisSession {
-                                    Text("Resume")
-                                        .font(.headline)
-                                } else {
-                                    Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
-                                        .font(.headline)
-                                }
-                            }
-                            
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
+                playbackControlsSection
                 
                 // Transcription Section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Transcription")
-                        .font(.headline)
-                    
-                    if isLoading {
-                        ProgressView("Loading transcription...")
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                    } else if let error = loadError {
-                        Text("Error: \(error)")
-                            .foregroundStyle(.red)
-                            .font(.subheadline)
-                            .padding()
-                    } else if transcriptSegments.isEmpty {
-                        // Empty state with different messages based on transcription status
-                        let chunkIds = Set(session.chunks.map { $0.id })
-                        let hasTranscribing = !chunkIds.isDisjoint(with: coordinator.transcribingChunkIds)
-                        let hasFailed = !chunkIds.isDisjoint(with: coordinator.failedChunkIds)
-                        
-                        if hasTranscribing {
-                            ContentUnavailableView(
-                                "Transcribing Audio...",
-                                systemImage: "waveform.path",
-                                description: Text("Your audio is being processed. This may take a moment.")
-                            )
-                            .padding()
-                        } else if hasFailed {
-                            ContentUnavailableView(
-                                "Transcription Failed",
-                                systemImage: "exclamationmark.triangle",
-                                description: Text("Unable to transcribe this recording. Try recording again.")
-                            )
-                            .padding()
-                        } else {
-                            ContentUnavailableView(
-                                "No Transcript",
-                                systemImage: "doc.text.slash",
-                                description: Text("No transcription available for this recording.")
-                            )
-                            .padding()
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 16) {
-                            ForEach(groupedByChunk, id: \.chunkIndex) { group in
-                                let isCurrentChunk = isPlayingThisSession && currentChunkIndex == group.chunkIndex
-                                let chunkId = session.chunks[safe: group.chunkIndex]?.id
-                                
-                                VStack(alignment: .leading, spacing: 8) {
-                                    if session.chunkCount > 1 {
-                                        // Show chunk marker for multi-chunk sessions with status indicator
-                                        HStack(spacing: 8) {
-                                            Divider()
-                                                .frame(width: 40)
-                                            
-                                            HStack(spacing: 6) {
-                                                Text("Part \(group.chunkIndex + 1)")
-                                                    .font(.caption)
-                                                    .foregroundStyle(isCurrentChunk ? .blue : .secondary)
-                                                    .fontWeight(isCurrentChunk ? .semibold : .regular)
-                                                
-                                                // Transcription status badge
-                                                if let chunkId = chunkId {
-                                                    if coordinator.transcribingChunkIds.contains(chunkId) {
-                                                        HStack(spacing: 4) {
-                                                            ProgressView()
-                                                                .scaleEffect(0.6)
-                                                            Text("Transcribing...")
-                                                                .font(.caption2)
-                                                                .foregroundStyle(.blue)
-                                                        }
-                                                    } else if coordinator.transcribedChunkIds.contains(chunkId) {
-                                                        Image(systemName: "checkmark.circle.fill")
-                                                            .font(.caption)
-                                                            .foregroundColor(.green)
-                                                    } else if coordinator.failedChunkIds.contains(chunkId) {
-                                                        Image(systemName: "exclamationmark.triangle.fill")
-                                                            .font(.caption)
-                                                            .foregroundColor(.orange)
-                                                    }
-                                                }
-                                            }
-                                            
-                                            Divider()
-                                        }
-                                    }
-                                    
-                                    // Show text or retry button for failed chunks
-                                    if let chunkId = chunkId, coordinator.failedChunkIds.contains(chunkId) {
-                                        VStack(spacing: 12) {
-                                            Text("Transcription failed for this part")
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                            
-                                            Button {
-                                                Task {
-                                                    await coordinator.retryTranscription(chunkId: chunkId)
-                                                }
-                                            } label: {
-                                                HStack(spacing: 6) {
-                                                    Image(systemName: "arrow.clockwise")
-                                                    Text("Retry Transcription")
-                                                }
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            }
-                                            .buttonStyle(.borderedProminent)
-                                            .tint(.orange)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 8)
-                                    } else {
-                                        Text(group.text)
-                                            .font(.body)
-                                            .foregroundStyle(isCurrentChunk ? .primary : .secondary)
-                                    }
-                                }
-                                .padding(12)
-                                .background(isCurrentChunk ? Color.blue.opacity(0.1) : Color.clear)
-                                .cornerRadius(8)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isCurrentChunk ? Color.blue.opacity(0.5) : Color.clear, lineWidth: 2)
-                                )
-                                .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
-                            }
-                        }
-                        .padding()
-                    }
+                transcriptionSection
+                
+                // Session Summary Section (if available or error)
+                if let summary = sessionSummary {
+                    sessionSummarySection(summary: summary)
+                } else if let error = summaryLoadError {
+                    sessionSummaryErrorSection(error: error)
+                } else if isTranscriptionComplete {
+                    sessionSummaryPlaceholderSection
                 }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
+                
+                // Personal Notes Section
+                personalNotesSection
             }
             .padding()
         }
-        .navigationTitle("Recording")
+        .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                toolbarButtons
+            }
+        }
         .task {
+            await loadSessionMetadata()
             await loadTranscription()
-            // Check status immediately after loading transcription
+            await loadSessionSummary()
             checkTranscriptionStatus()
         }
         .onAppear {
@@ -2740,11 +4664,407 @@ struct SessionDetailView: View {
         .onDisappear {
             stopPlaybackUpdateTimer()
             stopTranscriptionCheckTimer()
-            // Stop playback when leaving this view
             if isPlayingThisSession {
                 coordinator.audioPlayback.stop()
             }
         }
+    }
+    
+    // MARK: - Processing Banner
+    
+    @ViewBuilder
+    private var processingBannerSection: some View {
+        if !isTranscriptionComplete {
+            let pendingCount = session.chunkCount - transcriptSegments.map({ $0.audioChunkID }).uniqueCount
+            HStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(0.8)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Processing Transcription...")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("\(pendingCount) of \(session.chunkCount) chunks pending")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Button {
+                    Task { await refreshSession() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+            )
+        }
+    }
+    
+    // MARK: - Session Info Section
+    
+    private var sessionInfoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Session Details")
+                .font(.headline)
+            
+            InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
+            InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
+            InfoRow(label: "Parts", value: "\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
+            
+            if !transcriptSegments.isEmpty {
+                let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+                InfoRow(label: "Word Count", value: "\(wordCount) words")
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Toolbar Buttons
+    
+    private var toolbarButtons: some View {
+        HStack(spacing: 16) {
+            Button {
+                Task {
+                    do {
+                        isFavorite = try await coordinator.toggleSessionFavorite(sessionId: session.sessionId)
+                    } catch {
+                        print("❌ Failed to toggle favorite: \(error)")
+                    }
+                }
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(isFavorite ? .yellow : .secondary)
+            }
+            
+            ShareLink(item: transcriptText) {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .disabled(transcriptSegments.isEmpty)
+        }
+    }
+    
+    // MARK: - Playback Controls Section
+    
+    private var playbackControlsSection: some View {
+        VStack(spacing: 16) {
+            waveformView
+            scrubberSlider
+            timeDisplayRow
+            playPauseButton
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    private var waveformView: some View {
+        ZStack {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    HStack(spacing: 2) {
+                        ForEach(0..<50, id: \.self) { index in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: waveformHeight(for: index))
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .background(Color(.tertiarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    if isPlayingThisSession {
+                        let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
+                        Rectangle()
+                            .fill(Color.white)
+                            .frame(width: 3, height: 60)
+                            .shadow(color: .black.opacity(0.5), radius: 3)
+                            .offset(x: geometry.size.width * progress)
+                            .animation(.linear(duration: 0.1), value: progress)
+                    }
+                }
+            }
+            .frame(height: 60)
+        }
+    }
+    
+    private var scrubberSlider: some View {
+        Slider(
+            value: Binding(
+                get: { isPlayingThisSession ? totalElapsedTime : scrubbedTime },
+                set: { newValue in
+                    if isPlayingThisSession {
+                        seekToTotalTime(newValue)
+                    } else {
+                        scrubbedTime = newValue
+                    }
+                }
+            ),
+            in: 0...max(session.totalDuration, 0.1)
+        )
+        .tint(.blue)
+    }
+    
+    private var timeDisplayRow: some View {
+        HStack {
+            Text(formatTime(isPlayingThisSession ? totalElapsedTime : scrubbedTime))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            
+            Spacer()
+            
+            if isPlayingThisSession, let currentURL = coordinator.audioPlayback.currentlyPlayingURL,
+               let idx = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
+                Text("Part \(idx + 1) of \(session.chunkCount)")
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                    .fontWeight(.medium)
+            }
+            
+            Spacer()
+            
+            Text(formatTime(session.totalDuration))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+    }
+    
+    private var playPauseButton: some View {
+        Button { playSession() } label: {
+            HStack(spacing: 12) {
+                let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
+                Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.title)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    if isCurrentlyPlaying {
+                        Text("Pause")
+                            .font(.headline)
+                    } else if isPlayingThisSession {
+                        Text("Resume")
+                            .font(.headline)
+                    } else {
+                        Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
+                            .font(.headline)
+                    }
+                }
+                
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.blue.opacity(0.1))
+            .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Transcription Section
+    
+    private var transcriptionSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header - just the title
+            Text("Transcription")
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            
+            // Content directly below header
+            transcriptionContent
+                .padding(.horizontal, 12)
+            
+            // Action buttons at the bottom (only if there's content)
+            if !transcriptSegments.isEmpty {
+                HStack(spacing: 12) {
+                    Spacer()
+                    
+                    // Copy all button
+                    Button {
+                        UIPasteboard.general.string = transcriptText
+                        coordinator.showSuccess("Transcript copied")
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "doc.on.doc")
+                            Text("Copy All")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Share button
+                    ShareLink(item: transcriptText) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Share")
+                        }
+                        .font(.subheadline)
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+            } else {
+                Spacer().frame(height: 12)
+            }
+        }
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    @ViewBuilder
+    private var transcriptionContent: some View {
+        if isLoading {
+            ProgressView("Loading transcription...")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+        } else if let error = loadError {
+            Text("Error: \(error)")
+                .foregroundStyle(.red)
+                .font(.subheadline)
+                .padding(.vertical, 8)
+        } else if transcriptSegments.isEmpty {
+            transcriptionEmptyState
+        } else {
+            transcriptionSegmentsList
+        }
+    }
+    
+    @ViewBuilder
+    private var transcriptionEmptyState: some View {
+        let chunkIds = Set(session.chunks.map { $0.id })
+        let hasTranscribing = !chunkIds.isDisjoint(with: coordinator.transcribingChunkIds)
+        let hasFailed = !chunkIds.isDisjoint(with: coordinator.failedChunkIds)
+        
+        if hasTranscribing {
+            ContentUnavailableView(
+                "Transcribing Audio...",
+                systemImage: "waveform.path",
+                description: Text("Your audio is being processed. This may take a moment.")
+            )
+            .padding(.vertical, 8)
+        } else if hasFailed {
+            ContentUnavailableView(
+                "Transcription Failed",
+                systemImage: "exclamationmark.triangle",
+                description: Text("Unable to transcribe this recording. Try recording again.")
+            )
+            .padding(.vertical, 8)
+        } else {
+            ContentUnavailableView(
+                "No Transcript",
+                systemImage: "doc.text.slash",
+                description: Text("No transcription available for this recording.")
+            )
+            .padding(.vertical, 8)
+        }
+    }
+    
+    private var transcriptionSegmentsList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(groupedSegmentsByChunk, id: \.chunkIndex) { group in
+                let chunkId = session.chunks[safe: group.chunkIndex]?.id
+                TranscriptChunkView(
+                    chunkIndex: group.chunkIndex,
+                    segments: group.segments,
+                    session: session,
+                    isCurrentChunk: isPlayingThisSession && currentChunkIndex == group.chunkIndex,
+                    chunkId: chunkId,
+                    coordinator: coordinator,
+                    isEdited: chunkId.map { editedChunkIds.contains($0) } ?? false,
+                    onSeekToChunk: { seekToChunk(group.chunkIndex) },
+                    onTextEdited: { segmentId, newText in
+                        if let chunkId = chunkId {
+                            editedChunkIds.insert(chunkId)
+                        }
+                        saveTranscriptEdit(segmentId: segmentId, newText: newText)
+                    }
+                )
+            }
+            
+            // Show regenerate prompt if transcript was edited
+            if transcriptWasEdited && sessionSummary != nil {
+                regenerateSummaryPrompt
+            }
+        }
+    }
+    
+    private var regenerateSummaryPrompt: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(.orange)
+                Text("Transcript was edited")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+            }
+            
+            Text("The summary may be outdated. Would you like to regenerate it?")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Button {
+                Task {
+                    await regenerateSummary()
+                    transcriptWasEdited = false
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "sparkles")
+                    Text("Regenerate Summary")
+                }
+                .font(.subheadline)
+                .fontWeight(.medium)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+    }
+    
+    private func saveTranscriptEdit(segmentId: UUID, newText: String) {
+        Task {
+            do {
+                try await coordinator.updateTranscriptText(segmentId: segmentId, newText: newText)
+                transcriptWasEdited = true
+                await loadTranscription()  // Refresh the segments
+                coordinator.showSuccess("Transcript updated")
+            } catch {
+                print("❌ [SessionDetailView] Failed to save transcript edit: \(error)")
+                coordinator.showError("Failed to save edit")
+            }
+        }
+    }
+    
+    private func seekToChunk(_ chunkIndex: Int) {
+        var targetTime: TimeInterval = 0
+        for i in 0..<chunkIndex {
+            targetTime += session.chunks[i].duration
+        }
+        seekToTotalTime(targetTime)
     }
     
     private func startPlaybackUpdateTimer() {
@@ -2833,6 +5153,394 @@ struct SessionDetailView: View {
         }
     }
     
+    private var groupedSegmentsByChunk: [(chunkIndex: Int, segments: [TranscriptSegment])] {
+        // Group segments by chunk, preserving segment objects for editing
+        var groups: [Int: [TranscriptSegment]] = [:]
+        
+        for segment in transcriptSegments {
+            for (index, chunk) in session.chunks.enumerated() {
+                if segment.audioChunkID == chunk.id {
+                    groups[index, default: []].append(segment)
+                    break
+                }
+            }
+        }
+        
+        return groups.keys.sorted().map { chunkIndex in
+            (chunkIndex, groups[chunkIndex] ?? [])
+        }
+    }
+    
+    // Combined transcript text for sharing
+    private var transcriptText: String {
+        groupedByChunk.map { $0.text }.joined(separator: "\n\n")
+    }
+    
+    // MARK: - Session Title Section
+    
+    private var sessionTitleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if isEditingTitle {
+                HStack {
+                    TextField("Session Title", text: $sessionTitle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.title2)
+                        .focused($isTextFieldFocused)
+                    
+                    Button("Save") {
+                        isEditingTitle = false
+                        saveTitle()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    
+                    Button("Cancel") {
+                        isEditingTitle = false
+                        sessionTitle = session.title ?? ""
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        if !sessionTitle.isEmpty {
+                            Text(sessionTitle)
+                                .font(.title2)
+                                .fontWeight(.semibold)
+                        }
+                        
+                        Text(session.startTime.formatted(date: .abbreviated, time: .shortened))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Button {
+                        isEditingTitle = true
+                        isTextFieldFocused = true
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                            .font(.title2)
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Session Summary Section
+    
+    private var sessionSummaryPlaceholderSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("AI Summary")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Generate button
+                Button {
+                    Task {
+                        await regenerateSummary()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isRegeneratingSummary {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.body)
+                        }
+                        Text("Generate")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .pink, .orange],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegeneratingSummary)
+            }
+            
+            Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .italic()
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    private func sessionSummaryErrorSection(error: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("AI Summary")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Retry button
+                Button {
+                    Task {
+                        await regenerateSummary()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isRegeneratingSummary {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                        }
+                        Text("Retry")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegeneratingSummary)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Summary Generation Failed")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                if error.contains("API key") {
+                    Text("Go to Settings → AI & Intelligence to add your API key.")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    private func sessionSummarySection(summary: Summary) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("AI Summary")
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Copy button
+                Button {
+                    UIPasteboard.general.string = summary.text
+                    coordinator.showSuccess("Summary copied to clipboard")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                }
+                .buttonStyle(.plain)
+                
+                // Regenerate button
+                Button {
+                    Task {
+                        await regenerateSummary()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        if isRegeneratingSummary {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.body)
+                        }
+                    }
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.purple, .pink, .orange],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegeneratingSummary)
+            }
+            
+            Text(summary.text)
+                .font(.body)
+                .foregroundStyle(.primary)
+            
+            // Show engine tier if available
+            if let engineTier = summary.engineTier {
+                HStack {
+                    Image(systemName: engineIcon(for: engineTier))
+                        .font(.caption)
+                    Text("Generated by \(engineDisplayName(for: engineTier))")
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Personal Notes Section
+    
+    private var personalNotesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Personal Notes")
+                    .font(.headline)
+                
+                Spacer()
+                
+                if isEditingNotes {
+                    Button("Done") {
+                        isEditingNotes = false
+                        saveNotes()
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        isEditingNotes = true
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                            .font(.body)
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            if isEditingNotes {
+                TextEditor(text: $sessionNotes)
+                    .frame(minHeight: 100)
+                    .padding(8)
+                    .background(Color(.tertiarySystemBackground))
+                    .cornerRadius(8)
+            } else if sessionNotes.isEmpty {
+                Text("Tap the pencil to add personal notes...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                Text(sessionNotes)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func engineIcon(for tier: String) -> String {
+        switch tier.lowercased() {
+        case "local": return "cpu"
+        case "apple": return "apple.intelligence"
+        case "basic": return "bolt.fill"
+        case "external": return "sparkles"
+        case "rollup": return "arrow.triangle.merge"
+        case "year wrap": return "sparkles"
+        default: return "cpu"
+        }
+    }
+    
+    private func engineDisplayName(for tier: String) -> String {
+        switch tier.lowercased() {
+        case "local": return "Local AI"
+        case "apple": return "Apple Intelligence"
+        case "basic": return "Basic"
+        case "external": return "Year Wrapped Pro AI"
+        case "rollup": return "Rollup"
+        case "year wrap": return "Year Wrap"
+        default: return tier.capitalized
+        }
+    }
+    
+    private func loadSessionMetadata() async {
+        do {
+            if let metadata = try await coordinator.fetchSessionMetadata(sessionId: session.sessionId) {
+                sessionTitle = metadata.title ?? ""
+                sessionNotes = metadata.notes ?? ""
+                isFavorite = metadata.isFavorite
+            } else {
+                sessionTitle = session.title ?? ""
+                sessionNotes = session.notes ?? ""
+                isFavorite = session.isFavorite
+            }
+        } catch {
+            print("❌ [SessionDetailView] Failed to load metadata: \(error)")
+            sessionTitle = session.title ?? ""
+            sessionNotes = session.notes ?? ""
+            isFavorite = session.isFavorite
+        }
+    }
+    
+    private func saveTitle() {
+        Task {
+            do {
+                let titleToSave = sessionTitle.isEmpty ? nil : sessionTitle
+                try await coordinator.updateSessionTitle(sessionId: session.sessionId, title: titleToSave)
+                coordinator.showSuccess("Title saved")
+            } catch {
+                print("❌ [SessionDetailView] Failed to save title: \(error)")
+            }
+        }
+    }
+    
+    private func saveNotes() {
+        Task {
+            do {
+                let notesToSave = sessionNotes.isEmpty ? nil : sessionNotes
+                try await coordinator.updateSessionNotes(sessionId: session.sessionId, notes: notesToSave)
+                coordinator.showSuccess("Notes saved")
+            } catch {
+                print("❌ [SessionDetailView] Failed to save notes: \(error)")
+            }
+        }
+    }
+    
+    private func regenerateSummary() async {
+        isRegeneratingSummary = true
+        summaryLoadError = nil
+        defer { isRegeneratingSummary = false }
+        
+        do {
+            try await coordinator.generateSessionSummary(sessionId: session.sessionId)
+            await loadSessionSummary()
+            // Reset edit tracking after summary is regenerated
+            editedChunkIds.removeAll()
+            transcriptWasEdited = false
+            coordinator.showSuccess("Summary regenerated")
+        } catch {
+            print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
+            summaryLoadError = error.localizedDescription
+            coordinator.showError("Failed to regenerate summary")
+        }
+    }
+
     private var isPlayingThisSession: Bool {
         // Check if any chunk from this session is currently playing
         guard let currentURL = coordinator.audioPlayback.currentlyPlayingURL else { return false }
@@ -2931,13 +5639,18 @@ struct SessionDetailView: View {
     }
     
     private func loadSessionSummary() async {
+        summaryLoadError = nil
         do {
             sessionSummary = try await coordinator.fetchSessionSummary(sessionId: session.sessionId)
             if sessionSummary != nil {
                 print("✨ [SessionDetailView] Loaded session summary")
+            } else {
+                print("ℹ️ [SessionDetailView] No session summary found (not yet generated)")
+                summaryLoadError = "Summary not yet generated. Transcription must complete first."
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load session summary: \(error)")
+            summaryLoadError = error.localizedDescription
         }
     }
     
@@ -3125,6 +5838,1687 @@ struct LanguageSettingsView: View {
     private func saveEnabledLanguages() {
         UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
         coordinator.showSuccess("Language preferences saved")
+    }
+}
+
+// MARK: - Insights Summary Card
+
+struct InsightsSummaryCard: View {
+    let summary: Summary
+    let periodTitle: String
+    let sessionCount: Int
+    let sessionsInPeriod: [RecordingSession]
+    let coordinator: AppCoordinator
+    let onRegenerate: (() async -> Void)?
+    let wrapAction: (() -> Void)?
+    let wrapIsLoading: Bool
+    
+    @State private var showingSessions = false
+    @State private var visibleSessionCount = 3
+    @State private var isRegenerating = false
+    @State private var selectedSession: RecordingSession?
+    
+    private var visibleSessions: [RecordingSession] {
+        Array(sessionsInPeriod.prefix(visibleSessionCount))
+    }
+    
+    private var hasMoreSessions: Bool {
+        visibleSessionCount < sessionsInPeriod.count
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header with action buttons
+            headerSection
+            
+            // Summary text - larger, selectable, in its own container
+            summaryTextSection
+            
+            // Topics tags
+            if let topicsJSON = summary.topicsJSON {
+                TopicTagsView(topicsJSON: topicsJSON)
+            }
+            
+            // Engine tier badge
+            if let engineTier = summary.engineTier {
+                engineBadge(tier: engineTier)
+            }
+            
+            Divider()
+            
+            // Sessions list - individually tappable
+            if !sessionsInPeriod.isEmpty {
+                sessionsSection
+            }
+        }
+        .padding(.vertical, 8)
+    }
+    
+    // MARK: - Header Section
+    
+    private var headerSection: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("📝 \(periodTitle)")
+                    .font(.headline)
+                Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            // Copy button
+            Button {
+                UIPasteboard.general.string = summary.text
+                coordinator.showSuccess("Summary copied")
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.title3)
+                    .foregroundStyle(.blue)
+                    .frame(width: 44, height: 44)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+            
+            // Regenerate button (optional)
+            if let onRegenerate {
+                Button {
+                    Task {
+                        isRegenerating = true
+                        await onRegenerate()
+                        isRegenerating = false
+                    }
+                } label: {
+                    if isRegenerating {
+                        ProgressView()
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3)
+                            .foregroundStyle(.orange)
+                            .frame(width: 44, height: 44)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating)
+            }
+
+            if let wrapAction {
+                Button {
+                    wrapAction()
+                } label: {
+                    if wrapIsLoading {
+                        ProgressView()
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.title3)
+                            .foregroundStyle(.purple)
+                            .frame(width: 44, height: 44)
+                            .background(Color.purple.opacity(0.1))
+                            .cornerRadius(8)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating || wrapIsLoading)
+                .accessibilityLabel("Generate Year Wrap")
+            }
+        }
+    }
+    
+    // MARK: - Summary Text Section
+    
+    private var summaryTextSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // The summary text in a scrollable, selectable container
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 120, maxHeight: 200)
+            .padding(16)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(12)
+        }
+    }
+    
+    // MARK: - Engine Badge
+    
+    private func engineBadge(tier: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: engineIcon(for: tier))
+                .font(.caption)
+            Text("Generated by \(engineDisplayName(for: tier))")
+                .font(.caption)
+        }
+        .foregroundStyle(.secondary)
+    }
+    
+    // MARK: - Sessions Section
+    
+    private var sessionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Toggle button
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showingSessions.toggle()
+                    if !showingSessions {
+                        visibleSessionCount = 3 // Reset when closing
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(showingSessions ? "Hide sessions" : "Show individual sessions (\(sessionsInPeriod.count))")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Spacer()
+                    Image(systemName: showingSessions ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundStyle(.blue)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            if showingSessions {
+                // Session rows - each individually tappable with Button
+                VStack(spacing: 8) {
+                    ForEach(visibleSessions, id: \.sessionId) { session in
+                        Button {
+                            selectedSession = session
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(session.startTime, style: .time)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                    Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                // Load more button
+                if hasMoreSessions {
+                    Button {
+                        withAnimation {
+                            visibleSessionCount += 5
+                        }
+                    } label: {
+                        HStack {
+                            Text("Show more (\(sessionsInPeriod.count - visibleSessionCount) remaining)")
+                                .font(.caption)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .sheet(item: $selectedSession) { session in
+            NavigationStack {
+                SessionDetailView(session: session)
+            }
+        }
+    }
+    
+    // MARK: - Helpers
+    
+    private func engineIcon(for tier: String) -> String {
+        switch tier.lowercased() {
+        case "local": return "cpu"
+        case "apple": return "apple.intelligence"
+        case "basic": return "bolt.fill"
+        case "external": return "sparkles"
+        case "rollup": return "arrow.triangle.merge"
+        case "year wrap": return "sparkles"
+        default: return "cpu"
+        }
+    }
+    
+    private func engineDisplayName(for tier: String) -> String {
+        switch tier.lowercased() {
+        case "local": return "Local AI"
+        case "apple": return "Apple Intelligence"
+        case "basic": return "Basic"
+        case "external": return "Year Wrapped Pro AI"
+        case "rollup": return "Rollup"
+        case "year wrap": return "Year Wrap"
+        default: return tier.capitalized
+        }
+    }
+}
+
+// MARK: - Insight Session Row
+
+struct InsightSessionRow: View {
+    let session: RecordingSession
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.startTime, style: .time)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - Topic Tags View
+
+struct TopicTagsView: View {
+    let topicsJSON: String
+    @State private var topics: [String] = []
+    
+    var body: some View {
+        if !topics.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Topics")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+                
+                FlowLayout(spacing: 8) {
+                    ForEach(topics, id: \.self) { topic in
+                        Text(topic.capitalized)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            .task {
+                parseTopics()
+            }
+        }
+    }
+    
+    private func parseTopics() {
+        do {
+            let parsed = try [String].fromTopicsJSON(topicsJSON)
+            // Limit to top 10 topics for display
+            topics = Array(parsed.prefix(10))
+        } catch {
+            print("⚠️ [TopicTagsView] Failed to parse topics: \(error)")
+        }
+    }
+}
+
+// MARK: - Intelligence Engine View
+
+struct IntelligenceEngineView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showUnavailableAlert = false
+    @State private var selectedUnavailableTier: EngineTier?
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading engines...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            } else {
+                ForEach(EngineTier.privateTiers, id: \.self) { tier in
+                    EngineRow(
+                        tier: tier,
+                        isActive: tier == activeEngine,
+                        isAvailable: availableEngines.contains(tier)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectEngine(tier)
+                    }
+                    
+                    if tier != EngineTier.privateTiers.last {
+                        Divider()
+                            .padding(.leading, 48)
+                    }
+                }
+            }
+        }
+        .task {
+            await loadEngineStatus()
+        }
+        .onAppear {
+            // Refresh engine status when view appears to catch changes
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            // Refresh when engine changes from any view
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let tier = selectedUnavailableTier {
+                Text(unavailableMessage(for: tier))
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else {
+            print("⚠️ [IntelligenceEngineView] No summarization coordinator available")
+            return
+        }
+        
+        // Get active engine
+        activeEngine = await summCoord.getActiveEngine()
+        
+        // Get available engines
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // Check if already active
+        if tier == activeEngine {
+            return
+        }
+        
+        // Check if available
+        guard availableEngines.contains(tier) else {
+            selectedUnavailableTier = tier
+            showUnavailableAlert = true
+            return
+        }
+        
+        // Set preferred engine
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()  // Refresh UI
+            
+            // Notify other views to refresh
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            
+            // Show success toast
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func unavailableMessage(for tier: EngineTier) -> String {
+        switch tier {
+        case .basic:
+            return "Basic engine should always be available. Please restart the app."
+        case .apple:
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. This feature will be available in a future update."
+        case .local:
+            return "Download the local AI model to enable on-device processing. Go to Settings → Local AI to manage models."
+        case .external:
+            return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
+        }
+    }
+}
+
+struct EngineRow: View {
+    let tier: EngineTier
+    let isActive: Bool
+    let isAvailable: Bool
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: iconName)
+                .font(.title2)
+                .foregroundStyle(isAvailable ? iconColor : iconColor.opacity(0.3))
+                .frame(width: 32, height: 32)
+            
+            // Name and description
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .fontWeight(isActive ? .semibold : .regular)
+                        .foregroundStyle(isAvailable ? .primary : .secondary)
+                    
+                    if isActive {
+                        Text("Active")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.green.gradient)
+                            .clipShape(Capsule())
+                    } else if isAvailable && !isActive {
+                        Text("Available")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.green.opacity(0.1))
+                            .clipShape(Capsule())
+                    } else if !isAvailable {
+                        Text("Unavailable")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(.gray.opacity(0.08))
+                            .clipShape(Capsule())
+                    }
+                }
+                
+                Text(tier.description)
+                    .font(.caption)
+                    .foregroundStyle(isAvailable ? .secondary : .tertiary)
+                    .lineLimit(2)
+                
+                // Attributes
+                HStack(spacing: 12) {
+                    AttributeBadge(
+                        icon: tier.isPrivacyPreserving ? "lock.fill" : "lock.open.fill",
+                        text: tier.isPrivacyPreserving ? "Private" : "Cloud",
+                        color: tier.isPrivacyPreserving ? .green : .orange,
+                        isAvailable: isAvailable
+                    )
+                    
+                    if tier.requiresInternet {
+                        AttributeBadge(
+                            icon: "wifi",
+                            text: "Internet",
+                            color: .blue,
+                            isAvailable: isAvailable
+                        )
+                    }
+                }
+                .padding(.top, 4)
+            }
+            
+            Spacer()
+            
+            // Chevron for available engines
+            if isAvailable && !isActive {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isActive ? Color.green.opacity(0.12) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+        .opacity(isAvailable ? 1.0 : 0.5)
+    }
+    
+    private var iconName: String {
+        switch tier {
+        case .basic: return "text.alignleft"
+        case .apple: return "apple.logo"
+        case .local: return "cpu"
+        case .external: return "cloud"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch tier {
+        case .basic: return .gray
+        case .apple: return .blue
+        case .local: return .purple
+        case .external: return .orange
+        }
+    }
+}
+
+struct AttributeBadge: View {
+    let icon: String
+    let text: String
+    let color: Color
+    var isAvailable: Bool = true
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundStyle(isAvailable ? color : color.opacity(0.4))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(isAvailable ? color.opacity(0.1) : color.opacity(0.05))
+        .clipShape(Capsule())
+    }
+}
+
+// MARK: - External AI View
+
+struct ExternalAIView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showConfigSheet = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+            } else {
+                EngineRow(
+                    tier: .external,
+                    isActive: activeEngine == .external,
+                    isAvailable: availableEngines.contains(.external)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectEngine(.external)
+                }
+                
+                Divider()
+                    .padding(.leading, 48)
+                
+                // Configuration button
+                Button {
+                    showConfigSheet = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "key.fill")
+                            .font(.body)
+                            .foregroundStyle(.orange)
+                            .frame(width: 32, height: 32)
+                        
+                        Text("Configure API Keys")
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .task {
+            await loadEngineStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            // Refresh when engine changes from any view
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .sheet(isPresented: $showConfigSheet, onDismiss: {
+            // Refresh engine status after config sheet dismisses
+            Task {
+                await loadEngineStatus()
+            }
+        }) {
+            ExternalAPIConfigView()
+                .environmentObject(coordinator)
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // Check if available
+        guard availableEngines.contains(tier) else {
+            showConfigSheet = true  // Open config if not available
+            return
+        }
+        
+        // Set preferred engine
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            
+            // Notify other views to refresh
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+}
+
+// MARK: - External API Configuration View
+
+struct ExternalAPIConfigView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var coordinator: AppCoordinator
+    
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var openaiKey: String = ""
+    @State private var anthropicKey: String = ""
+    @State private var isSaving = false
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess: Bool = false
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Provider", selection: $selectedProvider) {
+                        Text("OpenAI").tag("OpenAI")
+                        Text("Anthropic").tag("Anthropic")
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("AI Provider")
+                } footer: {
+                    Text("Select which external AI service you want to use")
+                }
+                
+                if selectedProvider == "OpenAI" {
+                    Section {
+                        SecureField("API Key", text: $openaiKey)
+                            .textContentType(.password)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                        
+                        Button {
+                            testAPIKey()
+                        } label: {
+                            HStack {
+                                if isTesting {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Testing Key...")
+                                } else {
+                                    Label("Test API Key", systemImage: "checkmark.shield")
+                                }
+                            }
+                        }
+                        .disabled(openaiKey.isEmpty || isTesting)
+                        
+                        if let result = testResult {
+                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        }
+                        
+                        Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                            Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
+                        }
+                    } header: {
+                        Text("OpenAI Configuration")
+                    } footer: {
+                        Text("Your API key is stored securely in Keychain. Never shared with anyone.\n\nNote: Using OpenAI sends your transcript data to their servers. Standard API rates apply.")
+                    }
+                } else {
+                    Section {
+                        SecureField("API Key", text: $anthropicKey)
+                            .textContentType(.password)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                        
+                        Button {
+                            testAPIKey()
+                        } label: {
+                            HStack {
+                                if isTesting {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Testing Key...")
+                                } else {
+                                    Label("Test API Key", systemImage: "checkmark.shield")
+                                }
+                            }
+                        }
+                        .disabled(anthropicKey.isEmpty || isTesting)
+                        
+                        if let result = testResult {
+                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        }
+                        
+                        Link(destination: URL(string: "https://console.anthropic.com/account/keys")!) {
+                            Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
+                        }
+                    } header: {
+                        Text("Anthropic Configuration")
+                    } footer: {
+                        Text("Your API key is stored securely in Keychain. Never shared with anyone.\n\nNote: Using Anthropic sends your transcript data to their servers. Standard API rates apply.")
+                    }
+                }
+                
+                Section {
+                    Button {
+                        saveConfiguration()
+                    } label: {
+                        if isSaving {
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("Saving...")
+                            }
+                        } else {
+                            Text("Save Configuration")
+                        }
+                    }
+                    .disabled(isSaving || (selectedProvider == "OpenAI" ? openaiKey.isEmpty : anthropicKey.isEmpty))
+                }
+            }
+            .navigationTitle("External AI Setup")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .task {
+                await loadExistingKeys()
+            }
+            .onChange(of: selectedProvider) { _, _ in
+                testResult = nil  // Clear test result when switching providers
+            }
+            .onChange(of: openaiKey) { _, _ in
+                testResult = nil  // Clear test result when key changes
+            }
+            .onChange(of: anthropicKey) { _, _ in
+                testResult = nil  // Clear test result when key changes
+            }
+        }
+    }
+    
+    private func loadExistingKeys() async {
+        // Load existing keys from Keychain
+        let keychain = KeychainManager.shared
+        if let openaiExisting = await keychain.getAPIKey(for: .openai) {
+            openaiKey = openaiExisting
+        }
+        if let anthropicExisting = await keychain.getAPIKey(for: .anthropic) {
+            anthropicKey = anthropicExisting
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            do {
+                // Simple test: check if key format looks valid
+                let currentKey = selectedProvider == "OpenAI" ? openaiKey : anthropicKey
+                
+                if selectedProvider == "OpenAI" {
+                    // OpenAI keys start with "sk-"
+                    if currentKey.hasPrefix("sk-") && currentKey.count > 20 {
+                        testSuccess = true
+                        testResult = "Key format looks valid"
+                    } else {
+                        testSuccess = false
+                        testResult = "Invalid key format (should start with 'sk-')"
+                    }
+                } else {
+                    // Anthropic keys start with "sk-ant-"
+                    if currentKey.hasPrefix("sk-ant-") && currentKey.count > 20 {
+                        testSuccess = true
+                        testResult = "Key format looks valid"
+                    } else {
+                        testSuccess = false
+                        testResult = "Invalid key format (should start with 'sk-ant-')"
+                    }
+                }
+                
+                isTesting = false
+            }
+        }
+    }
+    
+    private func saveConfiguration() {
+        isSaving = true
+        
+        Task {
+            let keychain = KeychainManager.shared
+            
+            if selectedProvider == "OpenAI" && !openaiKey.isEmpty {
+                await keychain.setAPIKey(openaiKey, for: .openai)
+                UserDefaults.standard.set("OpenAI", forKey: "externalAPIProvider")
+            } else if selectedProvider == "Anthropic" && !anthropicKey.isEmpty {
+                await keychain.setAPIKey(anthropicKey, for: .anthropic)
+                UserDefaults.standard.set("Anthropic", forKey: "externalAPIProvider")
+            }
+            
+            // Immediately refresh available engines so External AI becomes available
+            if let summCoord = coordinator.summarizationCoordinator {
+                _ = await summCoord.getAvailableEngines()
+            }
+            
+            isSaving = false
+            coordinator.showSuccess("API key saved! External AI is now available.")
+            dismiss()
+        }
+    }
+}
+
+
+struct DetailRow: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .frame(width: 16)
+            Text(text)
+                .font(.caption)
+        }
+        .foregroundStyle(.secondary)
+    }
+}
+
+// MARK: - Historical Data View
+
+struct HistoricalDataView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var yearlyData: [(year: Int, sessionCount: Int, totalDuration: TimeInterval)] = []
+    @State private var isLoading = true
+    @State private var showDeleteAlert = false
+    @State private var selectedYear: Int?
+    
+    var body: some View {
+        List {
+            if isLoading {
+                Section {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading historical data...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+            } else if yearlyData.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No Historical Data",
+                        systemImage: "clock.arrow.circlepath",
+                        description: Text("Start recording to build your history.")
+                    )
+                }
+            } else {
+                Section {
+                    Text("View insights from previous years or delete old data to free up space.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                ForEach(yearlyData, id: \.year) { data in
+                    Section {
+                        NavigationLink(destination: YearInsightsView(year: data.year)) {
+                            HStack(spacing: 16) {
+                                // Year icon
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.blue.opacity(0.1))
+                                        .frame(width: 50, height: 50)
+                                    
+                                    Text(String(data.year))
+                                        .font(.headline)
+                                        .foregroundStyle(.blue)
+                                }
+                                
+                                // Stats
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(data.year)")
+                                        .font(.headline)
+                                    
+                                    HStack(spacing: 12) {
+                                        Label("\(data.sessionCount)", systemImage: "mic.circle")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Label(formatDuration(data.totalDuration), systemImage: "timer")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                Spacer()
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                selectedYear = data.year
+                                showDeleteAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Historical Data")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadYearlyData()
+        }
+        .refreshable {
+            await loadYearlyData()
+        }
+        .alert("Delete \(selectedYear ?? 0) Data?", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                if let year = selectedYear {
+                    deleteYear(year)
+                }
+            }
+        } message: {
+            if let year = selectedYear {
+                Text("This will permanently delete all recordings and data from \(year). This action cannot be undone.")
+            }
+        }
+    }
+    
+    private func loadYearlyData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            // Fetch all sessions
+            let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+            
+            // Group by year
+            let calendar = Calendar.current
+            var yearlyStats: [Int: (sessionCount: Int, totalDuration: TimeInterval)] = [:]
+            
+            for session in allSessions {
+                let year = calendar.component(.year, from: session.startTime)
+                let existing = yearlyStats[year] ?? (sessionCount: 0, totalDuration: 0)
+                yearlyStats[year] = (
+                    sessionCount: existing.sessionCount + 1,
+                    totalDuration: existing.totalDuration + session.totalDuration
+                )
+            }
+            
+            // Convert to array and sort by year descending
+            yearlyData = yearlyStats.map { (year: $0.key, sessionCount: $0.value.sessionCount, totalDuration: $0.value.totalDuration) }
+                .sorted { $0.year > $1.year }
+            
+        } catch {
+            print("❌ [HistoricalDataView] Failed to load yearly data: \(error)")
+            coordinator.showError("Failed to load historical data")
+        }
+    }
+    
+    private func deleteYear(_ year: Int) {
+        Task {
+            do {
+                // Fetch all sessions for this year
+                let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+                let calendar = Calendar.current
+                let sessionsToDelete = allSessions.filter { calendar.component(.year, from: $0.startTime) == year }
+                
+                // Delete each session using coordinator's delete method (handles cascading)
+                for session in sessionsToDelete {
+                    try? await coordinator.deleteSession(session.sessionId)
+                }
+                
+                await MainActor.run {
+                    coordinator.showSuccess("\(year) data deleted successfully")
+                }
+                
+                // Reload data
+                await loadYearlyData()
+                
+            } catch {
+                await MainActor.run {
+                    coordinator.showError("Failed to delete \(year) data: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+}
+
+// MARK: - Year Insights View
+
+struct YearInsightsView: View {
+    let year: Int
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var sessions: [RecordingSession] = []
+    @State private var sessionCount: Int = 0
+    @State private var totalDuration: TimeInterval = 0
+    @State private var totalWordCount: Int = 0
+    @State private var isLoading = true
+    @State private var isExporting = false
+    @State private var showShareSheet = false
+    @State private var exportURL: URL?
+    @State private var showDeleteAlert = false
+    @State private var monthlyBreakdown: [(monthNumber: Int, monthName: String, count: Int, duration: TimeInterval)] = []
+    
+    var body: some View {
+        List {
+            if isLoading {
+                Section {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading \(String(year)) insights...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+            } else if sessions.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No Data for \(String(year))",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text("No recordings found for this year.")
+                    )
+                }
+            } else {
+                // Overview section
+                Section {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Year header
+                        HStack {
+                            Text(String(year))
+                                .font(.largeTitle)
+                                .fontWeight(.bold)
+                            
+                            Spacer()
+                            
+                            Image(systemName: "calendar")
+                                .font(.title)
+                                .foregroundStyle(.blue)
+                        }
+                        
+                        // Stats grid
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 16) {
+                            StatCard(
+                                icon: "mic.circle.fill",
+                                value: "\(sessionCount)",
+                                label: "Sessions",
+                                color: .blue
+                            )
+                            
+                            StatCard(
+                                icon: "timer",
+                                value: formatDuration(totalDuration),
+                                label: "Total Time",
+                                color: .green
+                            )
+                            
+                            StatCard(
+                                icon: "text.word.spacing",
+                                value: formatWordCount(totalWordCount),
+                                label: "Words",
+                                color: .purple
+                            )
+                        }
+                    }
+                    .padding(.vertical, 8)
+                } header: {
+                    Text("Overview")
+                }
+                
+                // Monthly breakdown
+                if !monthlyBreakdown.isEmpty {
+                    Section {
+                        ForEach(monthlyBreakdown, id: \.monthNumber) { item in
+                            NavigationLink(destination: MonthInsightsView(year: year, month: item.monthNumber, monthName: item.monthName)) {
+                                HStack {
+                                    Text(item.monthName)
+                                        .font(.subheadline)
+                                    
+                                    Spacer()
+                                    
+                                    Text("\(item.count) sessions")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    
+                                    Text("•")
+                                        .foregroundStyle(.secondary)
+                                    
+                                    Text(formatDuration(item.duration))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Monthly Breakdown")
+                    }
+                }
+                
+                // Export section
+                Section {
+                    Button {
+                        exportYearData()
+                    } label: {
+                        HStack {
+                            Label("Export \(String(year)) Data", systemImage: "square.and.arrow.up")
+                            
+                            Spacer()
+                            
+                            if isExporting {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                        }
+                    }
+                    .disabled(isExporting)
+                } header: {
+                    Text("Export")
+                } footer: {
+                    Text("Export all recordings and transcripts from \(String(year)) as a JSON file.")
+                }
+                
+                // Delete section
+                Section {
+                    Button(role: .destructive) {
+                        showDeleteAlert = true
+                    } label: {
+                        Label("Delete All \(String(year)) Data", systemImage: "trash")
+                    }
+                } header: {
+                    Text("Danger Zone")
+                } footer: {
+                    Text("Permanently delete all recordings and data from \(String(year)). This cannot be undone.")
+                }
+            }
+        }
+        .navigationTitle(String(year))
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadYearData()
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let url = exportURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .alert("Delete \(String(year)) Data?", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteYearData()
+            }
+        } message: {
+            Text("This will permanently delete all \(sessionCount) recordings from \(String(year)). This action cannot be undone.")
+        }
+    }
+    
+    private func loadYearData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        let calendar = Calendar.current
+        guard let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
+              let endOfYear = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1)) else {
+            return
+        }
+        
+        do {
+            // Fetch all sessions for this year
+            let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+            sessions = allSessions.filter { $0.startTime >= startOfYear && $0.startTime < endOfYear }
+            
+            sessionCount = sessions.count
+            totalDuration = sessions.reduce(0) { $0 + $1.totalDuration }
+            
+            // Calculate word count from database
+            if let dbManager = coordinator.getDatabaseManager() {
+                var wordCount = 0
+                for session in sessions {
+                    let count = try await dbManager.fetchSessionWordCount(sessionId: session.sessionId)
+                    wordCount += count
+                }
+                totalWordCount = wordCount
+            }
+            
+            // Calculate monthly breakdown
+            var monthlyData: [Int: (count: Int, duration: TimeInterval)] = [:]
+            for session in sessions {
+                let month = calendar.component(.month, from: session.startTime)
+                let existing = monthlyData[month] ?? (count: 0, duration: 0)
+                monthlyData[month] = (count: existing.count + 1, duration: existing.duration + session.totalDuration)
+            }
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "MMMM"
+            
+            monthlyBreakdown = monthlyData.keys.sorted().compactMap { month -> (monthNumber: Int, monthName: String, count: Int, duration: TimeInterval)? in
+                guard let data = monthlyData[month],
+                      let date = calendar.date(from: DateComponents(year: year, month: month, day: 1)) else {
+                    return nil
+                }
+                return (monthNumber: month, monthName: dateFormatter.string(from: date), count: data.count, duration: data.duration)
+            }
+            
+        } catch {
+            print("❌ [YearInsightsView] Failed to load year data: \(error)")
+            coordinator.showError("Failed to load year data")
+        }
+    }
+    
+    private func exportYearData() {
+        isExporting = true
+        
+        Task {
+            do {
+                guard let dbManager = coordinator.getDatabaseManager() else {
+                    throw NSError(domain: "YearInsightsView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Database not available"])
+                }
+                
+                // Build export data for this year
+                var exportData: [[String: Any]] = []
+                
+                for session in sessions {
+                    // Fetch chunks for this session
+                    let chunks = try await dbManager.fetchChunksBySession(sessionId: session.sessionId)
+                    
+                    var sessionData: [String: Any] = [
+                        "sessionId": session.sessionId.uuidString,
+                        "startTime": ISO8601DateFormatter().string(from: session.startTime),
+                        "duration": session.totalDuration,
+                        "chunkCount": chunks.count
+                    ]
+                    
+                    // Fetch transcripts for each chunk
+                    var transcripts: [[String: Any]] = []
+                    for chunk in chunks {
+                        let segments = try await dbManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                        let text = segments.map { $0.text }.joined(separator: " ")
+                        if !text.isEmpty {
+                            transcripts.append([
+                                "chunkIndex": chunk.chunkIndex,
+                                "text": text,
+                                "wordCount": segments.reduce(0) { $0 + $1.wordCount }
+                            ])
+                        }
+                    }
+                    sessionData["transcripts"] = transcripts
+                    
+                    // Fetch session summary if available
+                    if let summary = try await dbManager.fetchSummaryForSession(sessionId: session.sessionId) {
+                        sessionData["summary"] = summary.text
+                    }
+                    
+                    exportData.append(sessionData)
+                }
+                
+                // Create export JSON
+                let exportDict: [String: Any] = [
+                    "exportDate": ISO8601DateFormatter().string(from: Date()),
+                    "year": year,
+                    "sessionCount": sessionCount,
+                    "totalDurationSeconds": totalDuration,
+                    "totalWordCount": totalWordCount,
+                    "sessions": exportData
+                ]
+                
+                let jsonData = try JSONSerialization.data(withJSONObject: exportDict, options: [.prettyPrinted, .sortedKeys])
+                
+                let filename = "lifewrapped-\(year)-export.json"
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+                try jsonData.write(to: tempURL)
+                
+                await MainActor.run {
+                    exportURL = tempURL
+                    showShareSheet = true
+                    isExporting = false
+                    coordinator.showSuccess("Exported \(sessionCount) sessions from \(year)")
+                }
+                
+            } catch {
+                await MainActor.run {
+                    isExporting = false
+                    coordinator.showError("Export failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    private func deleteYearData() {
+        Task {
+            for session in sessions {
+                try? await coordinator.deleteSession(session.sessionId)
+            }
+            
+            await MainActor.run {
+                coordinator.showSuccess("\(year) data deleted successfully")
+            }
+            
+            // Reload to show empty state
+            await loadYearData()
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func formatWordCount(_ count: Int) -> String {
+        if count >= 1000 {
+            let formatted = Double(count) / 1000.0
+            return String(format: "%.1fK", formatted)
+        }
+        return "\(count)"
+    }
+}
+
+// MARK: - Stat Card Component
+
+struct StatCard: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(color)
+            
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+            
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+// MARK: - Month Insights View
+
+struct MonthInsightsView: View {
+    let year: Int
+    let month: Int
+    let monthName: String
+    
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var sessions: [RecordingSession] = []
+    @State private var isLoading = true
+    @State private var totalDuration: TimeInterval = 0
+    @State private var totalWordCount: Int = 0
+    
+    var body: some View {
+        List {
+            if isLoading {
+                Section {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading \(monthName) sessions...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+            } else if sessions.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No Sessions",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text("No recordings found for \(monthName) \(String(year)).")
+                    )
+                }
+            } else {
+                // Stats section
+                Section {
+                    HStack(spacing: 20) {
+                        StatCard(
+                            icon: "mic.circle.fill",
+                            value: "\(sessions.count)",
+                            label: "Sessions",
+                            color: .blue
+                        )
+                        
+                        StatCard(
+                            icon: "timer",
+                            value: formatDuration(totalDuration),
+                            label: "Total Time",
+                            color: .green
+                        )
+                        
+                        StatCard(
+                            icon: "text.word.spacing",
+                            value: formatWordCount(totalWordCount),
+                            label: "Words",
+                            color: .purple
+                        )
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .padding(.vertical, 8)
+                } header: {
+                    Text("Overview")
+                }
+                
+                // Sessions list
+                Section {
+                    ForEach(sessions, id: \.sessionId) { session in
+                        NavigationLink(destination: SessionDetailView(session: session)) {
+                            SessionRowView(session: session)
+                        }
+                    }
+                } header: {
+                    Text("Sessions")
+                }
+            }
+        }
+        .navigationTitle("\(monthName) \(String(year))")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadMonthData()
+        }
+    }
+    
+    private func loadMonthData() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        let calendar = Calendar.current
+        guard let startOfMonth = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
+              let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else {
+            return
+        }
+        
+        do {
+            // Fetch all sessions and filter by month
+            let allSessions = try await coordinator.fetchRecentSessions(limit: 100000)
+            sessions = allSessions.filter { $0.startTime >= startOfMonth && $0.startTime < endOfMonth }
+                .sorted { $0.startTime > $1.startTime }
+            
+            totalDuration = sessions.reduce(0) { $0 + $1.totalDuration }
+            
+            // Calculate word count
+            if let dbManager = coordinator.getDatabaseManager() {
+                var wordCount = 0
+                for session in sessions {
+                    let count = try await dbManager.fetchSessionWordCount(sessionId: session.sessionId)
+                    wordCount += count
+                }
+                totalWordCount = wordCount
+            }
+            
+        } catch {
+            print("❌ [MonthInsightsView] Failed to load month data: \(error)")
+            coordinator.showError("Failed to load month data")
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func formatWordCount(_ count: Int) -> String {
+        if count >= 1000 {
+            let formatted = Double(count) / 1000.0
+            return String(format: "%.1fK", formatted)
+        }
+        return "\(count)"
+    }
+}
+
+// MARK: - Session Row View for Month
+
+struct SessionRowView: View {
+    let session: RecordingSession
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(session.startTime, style: .date)
+                .font(.subheadline)
+                .fontWeight(.medium)
+            
+            HStack(spacing: 12) {
+                Label(formatTime(session.startTime), systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Label(formatDuration(session.totalDuration), systemImage: "timer")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+    
+    private func formatTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        } else {
+            return "\(seconds)s"
+        }
     }
 }
 
