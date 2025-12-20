@@ -340,7 +340,7 @@ struct HomeTab: View {
                 VStack(spacing: 16) {
                     // App Title - Centered and smaller
                     Text("Life Wrapped")
-                        .font(.title1)
+                        .font(Font.largeTitle.bold())
                         .fontWeight(.semibold)
                         .foregroundStyle(
                             LinearGradient(
