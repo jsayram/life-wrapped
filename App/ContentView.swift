@@ -396,17 +396,30 @@ struct AddLocalAIButton: View {
             HStack(spacing: 16) {
                 ZStack {
                     Circle()
-                        .fill(Color.purple.opacity(0.2))
-                        .frame(width: 48, height: 48)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.purple.opacity(0.15), AppTheme.magenta.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 56, height: 56)
                     
                     Image(systemName: "brain.head.profile")
-                        .font(.title2)
-                        .foregroundStyle(.purple)
+                        .font(.title)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.magenta],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Add Local AI")
                         .font(.headline)
+                        .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                     
                     Text("Enable smart summaries with on-device AI")
@@ -418,16 +431,24 @@ struct AddLocalAIButton: View {
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.tertiary)
             }
-            .padding()
+            .padding(20)
             .background(Color(.secondarySystemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(AppTheme.cardGradient(for: colorScheme))
+                    .allowsHitTesting(false)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(AppTheme.purple.opacity(0.2), lineWidth: 1)
+                    .allowsHitTesting(false)
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -781,6 +802,7 @@ struct StreakCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
@@ -824,13 +846,15 @@ struct RecordingButton: View {
     ])
     
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Button(action: handleRecordingAction) {
                 waveformView
+                    .contentShape(Circle())
             }
             .disabled(coordinator.recordingState.isProcessing)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityHint(accessibilityHint)
+            .buttonStyle(.plain)
             
             Text(statusText)
                 .font(.headline)
@@ -858,18 +882,48 @@ struct RecordingButton: View {
     // MARK: - Subviews
     
     private var waveformView: some View {
-        TimelineView(.animation(minimumInterval: 1/60)) { context in
-            Canvas { canvasContext, size in
-                drawFFTWaveform(
-                    context: canvasContext,
-                    size: size,
-                    magnitudes: smoothedMagnitudes
+        ZStack {
+            // Outer ring to indicate it's a button
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 4
                 )
+                .frame(width: 360, height: 360)
+            
+            // Background circle
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color(.systemBackground).opacity(0.8),
+                            Color(.secondarySystemBackground).opacity(0.9)
+                        ],
+                        center: .center,
+                        startRadius: 50,
+                        endRadius: 180
+                    )
+                )
+                .frame(width: 350, height: 350)
+            
+            // Waveform
+            TimelineView(.animation(minimumInterval: 1/60)) { context in
+                Canvas { canvasContext, size in
+                    drawFFTWaveform(
+                        context: canvasContext,
+                        size: size,
+                        magnitudes: smoothedMagnitudes
+                    )
+                }
+                .frame(width: 340, height: 160)
             }
-            .frame(width: 340, height: 160)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 20)
+        .frame(width: 360, height: 360)
+        .shadow(color: AppTheme.purple.opacity(0.15), radius: 20, x: 0, y: 10)
     }
     
     // MARK: - Drawing Methods
@@ -4523,6 +4577,7 @@ struct PrivacyPoint: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -4556,6 +4611,7 @@ struct RecordingDetailView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(AppTheme.cardGradient(for: colorScheme))
+                        .allowsHitTesting(false)
                 )
                 .cornerRadius(12)
                 
@@ -4587,23 +4643,59 @@ struct RecordingDetailView: View {
                     Button {
                         playRecording()
                     } label: {
-                        HStack {
+                        HStack(spacing: 12) {
                             Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.title)
+                                .font(.system(size: 32))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [AppTheme.purple, AppTheme.magenta],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
                             
-                            if isPlaying {
-                                Text("\(formatTime(coordinator.audioPlayback.currentTime)) / \(formatTime(coordinator.audioPlayback.duration))")
-                                    .font(.subheadline)
+                            VStack(alignment: .leading, spacing: 4) {
+                                if isPlaying {
+                                    Text("\(formatTime(coordinator.audioPlayback.currentTime)) / \(formatTime(coordinator.audioPlayback.duration))")
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                } else {
+                                    Text("Tap to Play")
+                                        .font(.body)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.primary)
+                                }
+                                
+                                Text(isPlaying ? "Playing..." : "Start playback")
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
-                            } else {
-                                Text("Tap to play")
-                                    .font(.subheadline)
                             }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.body)
+                                .foregroundStyle(.tertiary)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
+                        .padding(16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(.secondarySystemBackground))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [AppTheme.purple.opacity(0.3), AppTheme.magenta.opacity(0.2)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 2
+                                )
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -4612,6 +4704,7 @@ struct RecordingDetailView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(AppTheme.cardGradient(for: colorScheme))
+                        .allowsHitTesting(false)
                 )
                 .cornerRadius(12)
                 
@@ -4650,6 +4743,7 @@ struct RecordingDetailView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .fill(AppTheme.cardGradient(for: colorScheme))
+                        .allowsHitTesting(false)
                 )
                 .cornerRadius(12)
             }
@@ -5184,6 +5278,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -5226,6 +5321,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -5425,21 +5521,37 @@ struct SessionDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.on.doc")
+                                .font(.body)
                             Text("Copy All")
+                                .fontWeight(.medium)
                         }
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.purple)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
                         .background(
-                            RadialGradient(
-                                colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 50
-                            )
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(
+                                    RadialGradient(
+                                        colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                        center: .center,
+                                        startRadius: 0,
+                                        endRadius: 50
+                                    )
+                                )
                         )
-                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                        )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     
@@ -5447,21 +5559,37 @@ struct SessionDetailView: View {
                     ShareLink(item: transcriptText) {
                         HStack(spacing: 6) {
                             Image(systemName: "square.and.arrow.up")
+                                .font(.body)
                             Text("Share")
+                                .fontWeight(.medium)
                         }
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.skyBlue)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
                         .background(
-                            RadialGradient(
-                                colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 50
-                            )
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(
+                                    RadialGradient(
+                                        colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
+                                        center: .center,
+                                        startRadius: 0,
+                                        endRadius: 50
+                                    )
+                                )
                         )
-                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                        )
+                        .contentShape(Rectangle())
                     }
                 }
                 .padding(.horizontal, 12)
@@ -5474,6 +5602,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -5818,6 +5947,7 @@ struct SessionDetailView: View {
                         }
                         Text("Generate")
                             .font(.subheadline)
+                            .fontWeight(.medium)
                     }
                     .foregroundStyle(
                         LinearGradient(
@@ -5826,6 +5956,24 @@ struct SessionDetailView: View {
                             endPoint: .trailing
                         )
                     )
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.purple.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                lineWidth: 1.5
+                            )
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isRegeneratingSummary)
@@ -5841,6 +5989,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -5862,6 +6011,7 @@ struct SessionDetailView: View {
                     HStack(spacing: 4) {
                         if isRegeneratingSummary {
                             ProgressView()
+                                .tint(.orange)
                                 .scaleEffect(0.8)
                         } else {
                             Image(systemName: "arrow.clockwise")
@@ -5869,8 +6019,23 @@ struct SessionDetailView: View {
                         }
                         Text("Retry")
                             .font(.subheadline)
+                            .fontWeight(.medium)
                     }
                     .foregroundStyle(.orange)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.orange.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(
+                                Color.orange.opacity(0.4),
+                                lineWidth: 1.5
+                            )
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isRegeneratingSummary)
@@ -5901,6 +6066,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -5921,6 +6087,23 @@ struct SessionDetailView: View {
                     Image(systemName: "doc.on.doc")
                         .font(.body)
                         .foregroundStyle(AppTheme.skyBlue)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(AppTheme.skyBlue.opacity(0.1))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ),
+                                    lineWidth: 1.5
+                                )
+                        )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 
@@ -5933,6 +6116,7 @@ struct SessionDetailView: View {
                     HStack(spacing: 4) {
                         if isRegeneratingSummary {
                             ProgressView()
+                                .tint(AppTheme.purple)
                                 .scaleEffect(0.8)
                         } else {
                             Image(systemName: "sparkles")
@@ -5946,6 +6130,23 @@ struct SessionDetailView: View {
                             endPoint: .trailing
                         )
                     )
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.purple.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                ),
+                                lineWidth: 1.5
+                            )
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isRegeneratingSummary)
@@ -5972,6 +6173,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -5999,6 +6201,23 @@ struct SessionDetailView: View {
                         Image(systemName: "pencil.circle")
                             .font(.body)
                             .foregroundStyle(AppTheme.purple)
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(AppTheme.purple.opacity(0.1))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        ),
+                                        lineWidth: 1.5
+                                    )
+                            )
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -6026,6 +6245,7 @@ struct SessionDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(12)
     }
@@ -6729,6 +6949,7 @@ struct InsightSessionRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .fill(AppTheme.cardGradient(for: colorScheme))
+                .allowsHitTesting(false)
         )
         .cornerRadius(8)
     }
