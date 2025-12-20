@@ -1299,6 +1299,7 @@ struct InsightsTab: View {
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var wordLimit: Int = 20
+    @State private var showYearWrapConfirmation = false
     
     private let wordLimitKey = "insightsWordLimit"
     
@@ -1324,29 +1325,12 @@ struct InsightsTab: View {
                                     sessionCount: sessionCount,
                                     sessionsInPeriod: sessionsInPeriod,
                                     coordinator: coordinator,
-                                    onRegenerate: {
+                                    onRegenerate: selectedTimeRange == .yesterday ? nil : {
                                         await regeneratePeriodSummary()
                                     },
                                     wrapAction: selectedTimeRange == .allTime ? {
-                                        await wrapUpYear(forceRegenerate: false)
+                                        showYearWrapConfirmation = true
                                     } : nil,
-                                    wrapIsLoading: isWrappingUpYear
-                                )
-                            }
-                        }
-
-                        if selectedTimeRange == .allTime, let yearWrapSummary {
-                            Section {
-                                InsightsSummaryCard(
-                                    summary: yearWrapSummary,
-                                    periodTitle: "Year Wrap",
-                                    sessionCount: sessionCount,
-                                    sessionsInPeriod: sessionsInPeriod,
-                                    coordinator: coordinator,
-                                    onRegenerate: {
-                                        await wrapUpYear(forceRegenerate: true)
-                                    },
-                                    wrapAction: nil,
                                     wrapIsLoading: isWrappingUpYear
                                 )
                             }
@@ -1800,6 +1784,16 @@ struct InsightsTab: View {
                 Task {
                     await loadInsights()
                 }
+            }
+            .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Generate") {
+                    Task {
+                        await wrapUpYear(forceRegenerate: false)
+                    }
+                }
+            } message: {
+                Text("This will use your selected external AI service to create a comprehensive, beautifully crafted year-in-review summary.\n\n✨ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid external API credentials in Settings.\n\n📝 Use the orange refresh button to regenerate with your local AI model.")
             }
         }
     }
@@ -5712,15 +5706,14 @@ struct InsightsSummaryCard: View {
     let sessionCount: Int
     let sessionsInPeriod: [RecordingSession]
     let coordinator: AppCoordinator
-    let onRegenerate: () async -> Void
-    let wrapAction: (() async -> Void)?
+    let onRegenerate: (() async -> Void)?
+    let wrapAction: (() -> Void)?
     let wrapIsLoading: Bool
     
     @State private var showingSessions = false
     @State private var visibleSessionCount = 3
     @State private var isRegenerating = false
     @State private var selectedSession: RecordingSession?
-    @State private var isWrapping = false
     
     private var visibleSessions: [RecordingSession] {
         Array(sessionsInPeriod.prefix(visibleSessionCount))
@@ -5786,38 +5779,36 @@ struct InsightsSummaryCard: View {
             }
             .buttonStyle(.plain)
             
-            // Regenerate button
-            Button {
-                Task {
-                    isRegenerating = true
-                    await onRegenerate()
-                    isRegenerating = false
+            // Regenerate button (optional)
+            if let onRegenerate {
+                Button {
+                    Task {
+                        isRegenerating = true
+                        await onRegenerate()
+                        isRegenerating = false
+                    }
+                } label: {
+                    if isRegenerating {
+                        ProgressView()
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3)
+                            .foregroundStyle(.orange)
+                            .frame(width: 44, height: 44)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                    }
                 }
-            } label: {
-                if isRegenerating {
-                    ProgressView()
-                        .frame(width: 44, height: 44)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.title3)
-                        .foregroundStyle(.orange)
-                        .frame(width: 44, height: 44)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(8)
-                }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating)
             }
-            .buttonStyle(.plain)
-            .disabled(isRegenerating)
 
             if let wrapAction {
                 Button {
-                    Task {
-                        isWrapping = true
-                        await wrapAction()
-                        isWrapping = false
-                    }
+                    wrapAction()
                 } label: {
-                    if isWrapping || wrapIsLoading {
+                    if wrapIsLoading {
                         ProgressView()
                             .frame(width: 44, height: 44)
                     } else {
@@ -5830,8 +5821,8 @@ struct InsightsSummaryCard: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(isRegenerating || isWrapping)
-                .accessibilityLabel("Wrap Up Year")
+                .disabled(isRegenerating || wrapIsLoading)
+                .accessibilityLabel("Generate Year Wrap")
             }
         }
     }
