@@ -55,8 +55,17 @@ public struct UniversalPrompt {
     // MARK: - System Prompt (same for all levels)
     
     private static let systemInstruction = """
-    You are a private journaling assistant. You summarize faithfully and never invent facts. \
-    If something is unclear, write "unclear". No generic motivational fluff.
+    You are a private journaling assistant that extracts MEANING and INSIGHTS from spoken thoughts.
+    
+    Your goal is to:
+    - Identify the CORE IDEAS and reasoning behind what's being said
+    - Extract the INTENT and purpose of the discussion
+    - Recognize patterns, problems, and goals being explored
+    - Structure insights as clear, actionable bullet points
+    - Avoid simply repeating or paraphrasing - dig deeper into the "why"
+    
+    You summarize faithfully using only provided content. Never invent facts. If something is unclear, write "unclear".
+    No generic motivational fluff. Be concise and insightful.
     """
     
     // MARK: - Schemas per Level
@@ -78,15 +87,28 @@ public struct UniversalPrompt {
     /// Session schema - one recording session (multiple chunks)
     public static let sessionSchema = """
     {
-      "title": "string - short descriptive title",
-      "session_summary": "string - 2-3 sentence summary",
-      "key_moments": ["string array of important moments"],
-      "mood_arc": "string - how mood changed during session",
-      "topics": ["string array of main topics"],
-      "people": ["string array of mentioned people"],
-      "decisions": ["string array of decisions made"],
-      "next_actions": ["string array of planned actions"],
-      "open_loops": ["string array of unresolved items"]
+      "title": "string - short 3-5 word descriptive title capturing the essence",
+      "key_insights": [
+        "string array - bullet points of KEY INSIGHTS extracted from the content",
+        "each insight should capture the MEANING and REASONING behind what was said",
+        "focus on WHAT the person is trying to accomplish or understand",
+        "identify the CORE PROBLEMS, GOALS, or QUESTIONS being explored",
+        "avoid simply restating what was said - extract the underlying intent"
+      ],
+      "main_themes": [
+        "string array - the overarching themes/topics discussed",
+        "group related ideas together rather than listing disconnected items"
+      ],
+      "action_items": [
+        "string array - concrete next steps or decisions mentioned",
+        "structure as actionable bullets"
+      ],
+      "thought_process": "string - brief 2-3 sentence analysis of the person's reasoning, problem-solving approach, or mental framework",
+      "mood_tone": "string - the overall emotional tone and energy level",
+      "open_questions": [
+        "string array - unresolved questions or areas needing more thought",
+        "things the person is still figuring out"
+      ]
     }
     """
     

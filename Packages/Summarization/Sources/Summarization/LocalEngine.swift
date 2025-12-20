@@ -288,20 +288,69 @@ public actor LocalEngine: SummarizationEngine {
         do {
             let parsed = try decoder.decode(LLMSessionResponse.self, from: jsonData)
             
+            // Format the structured response into a readable summary
+            var summaryText = ""
+            
+            // Add key insights as bullet points
+            if !parsed.key_insights.isEmpty {
+                summaryText += "Key Insights:\n"
+                for insight in parsed.key_insights {
+                    summaryText += "• \(insight)\n"
+                }
+                summaryText += "\n"
+            }
+            
+            // Add thought process analysis
+            if !parsed.thought_process.isEmpty {
+                summaryText += "\(parsed.thought_process)\n\n"
+            }
+            
+            // Add action items if present
+            if !parsed.action_items.isEmpty {
+                summaryText += "Next Steps:\n"
+                for item in parsed.action_items {
+                    summaryText += "• \(item)\n"
+                }
+                summaryText += "\n"
+            }
+            
+            // Add open questions if present
+            if !parsed.open_questions.isEmpty {
+                summaryText += "Open Questions:\n"
+                for question in parsed.open_questions {
+                    summaryText += "• \(question)\n"
+                }
+            }
+            
+            // Determine sentiment from mood_tone
+            let sentiment = parseMoodToSentiment(parsed.mood_tone)
+            
             return SessionIntelligence(
                 sessionId: sessionId,
-                summary: parsed.summary,
-                topics: parsed.topics,
-                entities: parsed.entities,
-                sentiment: parsed.sentiment,
+                summary: summaryText.trimmingCharacters(in: .whitespacesAndNewlines),
+                topics: parsed.main_themes,
+                entities: [],  // No entities in new schema
+                sentiment: sentiment,
                 duration: duration,
                 wordCount: transcriptText.split(separator: " ").count,
                 languageCodes: [],
-                keyMoments: parsed.keyMoments
+                keyMoments: []  // No key moments in new schema
             )
         } catch {
             print("⚠️ [LocalEngine] JSON parsing failed: \(error), using fallback")
             return try await extractiveFallback(sessionId: sessionId, transcriptText: transcriptText, duration: duration)
+        }
+    }
+    
+    // Convert mood_tone string to sentiment score
+    private func parseMoodToSentiment(_ mood: String) -> Double {
+        let lowerMood = mood.lowercased()
+        if lowerMood.contains("positive") || lowerMood.contains("good") || lowerMood.contains("happy") || lowerMood.contains("excited") {
+            return 0.7
+        } else if lowerMood.contains("negative") || lowerMood.contains("bad") || lowerMood.contains("sad") || lowerMood.contains("frustrated") {
+            return -0.7
+        } else {
+            return 0.0  // neutral
         }
     }
     
@@ -413,11 +462,13 @@ public actor LocalEngine: SummarizationEngine {
 // MARK: - Response Models
 
 private struct LLMSessionResponse: Codable {
-    let summary: String
-    let topics: [String]
-    let entities: [Entity]
-    let sentiment: Double
-    let keyMoments: [KeyMoment]
+    let title: String
+    let key_insights: [String]
+    let main_themes: [String]
+    let action_items: [String]
+    let thought_process: String
+    let mood_tone: String
+    let open_questions: [String]
 }
 
 private struct LLMPeriodResponse: Codable {
