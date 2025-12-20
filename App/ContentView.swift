@@ -1193,17 +1193,26 @@ struct SessionRowClean: View {
                 
                 // Status indicators
                 HStack(spacing: 6) {
-                    if session.chunkCount > 1 {
-                        StatusPill(text: "\(session.chunkCount) parts", color: .blue)
+                    if session.chunkCount == 0 {
+                        StatusPill(text: "\(session.chunkCount)", color: .red, icon: "exclamationmark.triangle.fill")
+                    }
+
+                    if session.chunkCount >= 1 {
+                        StatusPill(text: "\(session.chunkCount)", color: .blue, icon: "waveform")
                     }
                     
                     if hasSummary {
-                        StatusPill(text: "Summarized", color: .green)
+                        StatusPill(text: "Summarized", color: .green, icon: "checkmark.circle.fill")
                     }
                     
-                    if wordCount == nil || wordCount == 0 {
-                        StatusPill(text: "Processing", color: .orange)
+                    if wordCount == nil {
+                        StatusPill(text: "Empty", color: .red, icon: "xmark.octagon.fill")
                     }
+
+                    if  wordCount == 0 {
+                        StatusPill(text: "Processing", color: .orange, icon: "gearshape.fill")
+                    }
+                    
                 }
             }
             
@@ -1234,16 +1243,37 @@ struct SessionRowClean: View {
 struct StatusPill: View {
     let text: String
     let color: Color
+    let icon: String?
+    @Environment(\.colorScheme) var colorScheme
+    
+    init(text: String, color: Color, icon: String? = nil) {
+        self.text = text
+        self.color = color
+        self.icon = icon
+    }
     
     var body: some View {
-        Text(text)
-            .font(.caption2)
-            .fontWeight(.medium)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15))
-            .clipShape(Capsule())
+        HStack(spacing: 4) {
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.caption2)
+            }
+            Text(text)
+                .font(.caption2)
+                .fontWeight(.medium)
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RadialGradient(
+                colors: [color.opacity(0.2), color.opacity(0.05)],
+                center: .center,
+                startRadius: 5,
+                endRadius: 20
+            )
+        )
+        .clipShape(Capsule())
     }
 }
 
@@ -4566,22 +4596,68 @@ struct TranscriptChunkView: View {
     
     @ViewBuilder
     private func transcriptionStatusBadge(for chunkId: UUID) -> some View {
-        if coordinator.transcribingChunkIds.contains(chunkId) {
-            HStack(spacing: 4) {
-                ProgressView()
-                    .scaleEffect(0.6)
-                Text("Transcribing...")
-                    .font(.caption2)
-                    .foregroundStyle(.blue)
-            }
-        } else if coordinator.transcribedChunkIds.contains(chunkId) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.caption)
+        Group {
+            if coordinator.transcribingChunkIds.contains(chunkId) {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                    Text("Transcribing...")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(.blue)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RadialGradient(
+                        colors: [Color.blue.opacity(0.2), Color.blue.opacity(0.05)],
+                        center: .center,
+                        startRadius: 5,
+                        endRadius: 20
+                    )
+                )
+                .clipShape(Capsule())
+            } else if coordinator.transcribedChunkIds.contains(chunkId) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2)
+                    Text("Done")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                }
                 .foregroundColor(.green)
-        } else if coordinator.failedChunkIds.contains(chunkId) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RadialGradient(
+                        colors: [Color.green.opacity(0.2), Color.green.opacity(0.05)],
+                        center: .center,
+                        startRadius: 5,
+                        endRadius: 20
+                    )
+                )
+                .clipShape(Capsule())
+            } else if coordinator.failedChunkIds.contains(chunkId) {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                    Text("Failed")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                }
                 .foregroundColor(.orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RadialGradient(
+                        colors: [Color.orange.opacity(0.2), Color.orange.opacity(0.05)],
+                        center: .center,
+                        startRadius: 5,
+                        endRadius: 20
+                    )
+                )
+                .clipShape(Capsule())
+            }
         }
     }
     
