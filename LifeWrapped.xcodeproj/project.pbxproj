@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -64,10 +64,12 @@
 		2CBE511C20A8C5633211A25E /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		303597C991FCE6CB954F0D29 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
+		4613C0252EF6468000A4434B /* MyPlayground.playground */ = {isa = PBXFileReference; lastKnownFileType = file.playground; name = MyPlayground.playground; path = "../LocalIOS-LLMTEST/MyPlayground.playground"; sourceTree = SOURCE_ROOT; xcLanguageSpecificationIdentifier = xcode.lang.swift; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
 		4C9255CE1AB102B4DF974A24 /* Storage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Storage; path = Packages/Storage; sourceTree = SOURCE_ROOT; };
+		57B2D17C3177F2F8337B0C9B /* LocalLLM */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LocalLLM; path = Packages/LocalLLM; sourceTree = SOURCE_ROOT; };
 		5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		77C5EF04CEB54A1460DC0F2A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8066CFE3A2B06F1666440F97 /* SharedModels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SharedModels; path = Packages/SharedModels; sourceTree = SOURCE_ROOT; };
@@ -126,14 +128,6 @@
 			path = App;
 			sourceTree = "<group>";
 		};
-		5C6D7E8F9G0H1I2J3K4L5M6N /* Constants */ = {
-			isa = PBXGroup;
-			children = (
-				4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */,
-			);
-			path = Constants;
-			sourceTree = "<group>";
-		};
 		3E9270F723F2E94ECF04E082 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -141,6 +135,14 @@
 				CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		5C6D7E8F9G0H1I2J3K4L5M6N /* Constants */ = {
+			isa = PBXGroup;
+			children = (
+				4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */,
+			);
+			path = Constants;
 			sourceTree = "<group>";
 		};
 		69ADF44AFFB30E6C8A86CF5E /* Components */ = {
@@ -155,6 +157,7 @@
 		AA4F27C9692EA729DDA632EA = {
 			isa = PBXGroup;
 			children = (
+				4613C0252EF6468000A4434B /* MyPlayground.playground */,
 				1DBB8D0ABAB53A6AE528F4AD /* App */,
 				BB2CBF013343BDECF27FFC31 /* Packages */,
 				DA1F14E43DC88CFBF29C46B1 /* WidgetExtension */,
@@ -177,6 +180,7 @@
 			children = (
 				A21F94DB4A9093E1953F782B /* AudioCapture */,
 				4BFA9A8C0292221E0BD75A6D /* InsightsRollup */,
+				57B2D17C3177F2F8337B0C9B /* LocalLLM */,
 				8066CFE3A2B06F1666440F97 /* SharedModels */,
 				4C9255CE1AB102B4DF974A24 /* Storage */,
 				0FD9013A86B8D02440ABE02C /* Summarization */,
@@ -306,13 +310,13 @@
 			packageReferences = (
 				4D754DE42878205E72A9AC79 /* XCLocalSwiftPackageReference "Packages/AudioCapture" */,
 				E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */,
+				F4D99A4CB3B7303D1762CBF7 /* XCLocalSwiftPackageReference "Packages/LocalLLM" */,
 				02D8BAF21912F2D47D5AACC7 /* XCLocalSwiftPackageReference "Packages/SharedModels" */,
 				49D1508E1F7F1B06FAD33759 /* XCLocalSwiftPackageReference "Packages/Storage" */,
 				DD0FAD72A9ACE6E6B8E0E128 /* XCLocalSwiftPackageReference "Packages/Summarization" */,
 				71015CF0937723FDBED548DF /* XCLocalSwiftPackageReference "Packages/Transcription" */,
 				D0F826A35D149D928EF0E855 /* XCLocalSwiftPackageReference "Packages/WidgetCore" */,
 			);
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -454,7 +458,11 @@
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
@@ -555,7 +563,11 @@
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
@@ -626,6 +638,10 @@
 		E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/InsightsRollup;
+		};
+		F4D99A4CB3B7303D1762CBF7 /* XCLocalSwiftPackageReference "Packages/LocalLLM" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LocalLLM;
 		};
 /* End XCLocalSwiftPackageReference section */
 
