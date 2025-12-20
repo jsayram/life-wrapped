@@ -4911,6 +4911,7 @@ struct SessionDetailView: View {
             let pendingCount = session.chunkCount - transcriptSegments.map({ $0.audioChunkID }).uniqueCount
             HStack(spacing: 12) {
                 ProgressView()
+                    .tint(AppTheme.purple)
                     .scaleEffect(0.8)
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -4929,16 +4930,23 @@ struct SessionDetailView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.body)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppTheme.purple)
                 }
                 .buttonStyle(.borderless)
             }
             .padding()
-            .background(Color.blue.opacity(0.1))
+            .background(
+                RadialGradient(
+                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 100
+                )
+            )
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                    .stroke(AppTheme.purple.opacity(0.3), lineWidth: 1)
             )
         }
     }
@@ -5009,7 +5017,13 @@ struct SessionDetailView: View {
                     HStack(spacing: 2) {
                         ForEach(0..<50, id: \.self) { index in
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.gray.opacity(0.3))
+                                .fill(
+                                    LinearGradient(
+                                        colors: [AppTheme.lightPurple.opacity(0.5), AppTheme.purple.opacity(0.3)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
                                 .frame(height: waveformHeight(for: index))
                         }
                     }
@@ -5020,9 +5034,9 @@ struct SessionDetailView: View {
                     if isPlayingThisSession {
                         let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
                         Rectangle()
-                            .fill(Color.white)
+                            .fill(AppTheme.magenta)
                             .frame(width: 3, height: 60)
-                            .shadow(color: .black.opacity(0.5), radius: 3)
+                            .shadow(color: AppTheme.magenta.opacity(0.5), radius: 3)
                             .offset(x: geometry.size.width * progress)
                             .animation(.linear(duration: 0.1), value: progress)
                     }
@@ -5046,7 +5060,7 @@ struct SessionDetailView: View {
             ),
             in: 0...max(session.totalDuration, 0.1)
         )
-        .tint(.blue)
+        .tint(AppTheme.purple)
     }
     
     private var timeDisplayRow: some View {
@@ -5062,7 +5076,7 @@ struct SessionDetailView: View {
                let idx = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
                 Text("Part \(idx + 1) of \(session.chunkCount)")
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppTheme.purple)
                     .fontWeight(.medium)
             }
             
@@ -5081,6 +5095,7 @@ struct SessionDetailView: View {
                 let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
                 Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title)
+                    .foregroundStyle(AppTheme.purple)
                 
                 VStack(alignment: .leading, spacing: 2) {
                     if isCurrentlyPlaying {
@@ -5099,7 +5114,14 @@ struct SessionDetailView: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color.blue.opacity(0.1))
+            .background(
+                RadialGradient(
+                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 150
+                )
+            )
             .cornerRadius(12)
         }
         .buttonStyle(.plain)
@@ -5134,10 +5156,17 @@ struct SessionDetailView: View {
                             Text("Copy All")
                         }
                         .font(.subheadline)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppTheme.purple)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.1))
+                        .background(
+                            RadialGradient(
+                                colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 50
+                            )
+                        )
                         .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
@@ -5149,10 +5178,17 @@ struct SessionDetailView: View {
                             Text("Share")
                         }
                         .font(.subheadline)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppTheme.skyBlue)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.1))
+                        .background(
+                            RadialGradient(
+                                colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 50
+                            )
+                        )
                         .cornerRadius(8)
                     }
                 }
@@ -5169,9 +5205,15 @@ struct SessionDetailView: View {
     @ViewBuilder
     private var transcriptionContent: some View {
         if isLoading {
-            ProgressView("Loading transcription...")
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+            VStack(spacing: 12) {
+                ProgressView()
+                    .tint(AppTheme.purple)
+                Text("Loading transcription...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
         } else if let error = loadError {
             Text("Error: \(error)")
                 .foregroundStyle(.red)
@@ -5247,7 +5289,7 @@ struct SessionDetailView: View {
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(AppTheme.magenta)
                 Text("Transcript was edited")
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -5271,10 +5313,17 @@ struct SessionDetailView: View {
                 .fontWeight(.medium)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.orange)
+            .tint(AppTheme.magenta)
         }
         .padding()
-        .background(Color.orange.opacity(0.1))
+        .background(
+            RadialGradient(
+                colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
+                center: .center,
+                startRadius: 0,
+                endRadius: 100
+            )
+        )
         .cornerRadius(12)
     }
     
@@ -5454,7 +5503,7 @@ struct SessionDetailView: View {
                     } label: {
                         Image(systemName: "pencil.circle")
                             .font(.title2)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(AppTheme.purple)
                     }
                 }
             }
@@ -5483,6 +5532,7 @@ struct SessionDetailView: View {
                     HStack(spacing: 4) {
                         if isRegeneratingSummary {
                             ProgressView()
+                                .tint(AppTheme.purple)
                                 .scaleEffect(0.8)
                         } else {
                             Image(systemName: "sparkles")
@@ -5493,7 +5543,7 @@ struct SessionDetailView: View {
                     }
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.purple, .pink, .orange],
+                            colors: [AppTheme.darkPurple, AppTheme.magenta],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -5584,7 +5634,7 @@ struct SessionDetailView: View {
                 } label: {
                     Image(systemName: "doc.on.doc")
                         .font(.body)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppTheme.skyBlue)
                 }
                 .buttonStyle(.plain)
                 
@@ -5605,7 +5655,7 @@ struct SessionDetailView: View {
                     }
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.purple, .pink, .orange],
+                            colors: [AppTheme.darkPurple, AppTheme.magenta],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -5658,7 +5708,7 @@ struct SessionDetailView: View {
                     } label: {
                         Image(systemName: "pencil.circle")
                             .font(.body)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(AppTheme.purple)
                     }
                     .buttonStyle(.plain)
                 }
