@@ -1685,32 +1685,90 @@ struct OverviewTab: View {
                         description: Text("Record more journal entries to generate summaries.")
                     )
                 } else {
-                    // New Feed Layout
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            // Year Wrapped Summary (only show for Year timerange)
-                            if selectedTimeRange == .allTime {
-                                if let yearWrap = yearWrapSummary {
-                                    YearWrappedCard(
-                                        summary: yearWrap,
-                                        coordinator: coordinator,
-                                        onRegenerate: {
-                                            showYearWrapConfirmation = true
-                                        },
-                                        isRegenerating: isWrappingUpYear
+                    VStack(spacing: 0) {
+                        // Time Range Picker
+                        Picker("Time Range", selection: $selectedTimeRange) {
+                            ForEach(TimeRange.allCases) { range in
+                                Text(range.rawValue).tag(range)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .tint(AppTheme.purple)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        
+                        // Copy All button
+                        if !sessionSummaries.isEmpty {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    copyAllSummaries()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption)
+                                        Text("Copy \(sessionSummaries.count)")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(AppTheme.purple)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(
+                                                RadialGradient(
+                                                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                                    center: .center,
+                                                    startRadius: 0,
+                                                    endRadius: 40
+                                                )
+                                            )
                                     )
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 8)
-                                } else if !sessionsInPeriod.isEmpty {
-                                    // Show generate button if no Year Wrap exists
-                                    GenerateYearWrapCard(
-                                        onGenerate: {
-                                            showYearWrapConfirmation = true
-                                        },
-                                        isGenerating: isWrappingUpYear
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                ),
+                                                lineWidth: 1.5
+                                            )
                                     )
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 8)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                        }
+                        
+                        // New Feed Layout
+                        ScrollView {
+                            LazyVStack(spacing: 16) {
+                                // Year Wrapped Summary (only show for Year timerange)
+                                if selectedTimeRange == .allTime {
+                                    if let yearWrap = yearWrapSummary {
+                                        YearWrappedCard(
+                                            summary: yearWrap,
+                                            coordinator: coordinator,
+                                            onRegenerate: {
+                                                showYearWrapConfirmation = true
+                                            },
+                                            isRegenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if !sessionsInPeriod.isEmpty {
+                                        // Show generate button if no Year Wrap exists
+                                        GenerateYearWrapCard(
+                                            onGenerate: {
+                                                showYearWrapConfirmation = true
+                                            },
+                                            isGenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    }
                                 }
                             }
                             
@@ -1726,115 +1784,61 @@ struct OverviewTab: View {
                                     )
                                     .padding(.top, 60)
                                 } else {
-                                ForEach(timeBuckets) { bucket in
-                                    Section {
-                                        if bucket.isEmpty {
-                                            // Empty bucket - show grayed out message
-                                            Text("No recordings")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                                .italic()
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.horizontal, 16)
-                                                .padding(.vertical, 8)
-                                        } else {
-                                            // Summaries in this bucket
-                                            ForEach(bucket.summaries) { summary in
-                                                SessionSummaryCard(summary: summary, coordinator: coordinator)
-                                                    .padding(.horizontal, 16)
-                                                    .padding(.vertical, 6)
-                                            }
-                                        }
-                                    } header: {
-                                        // Time bucket header
-                                        HStack {
-                                            Text(bucket.header)
-                                                .font(.headline)
-                                                .fontWeight(.semibold)
-                                                .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
-                                            
-                                            Spacer()
-                                            
-                                            if !bucket.isEmpty {
-                                                Text("\(bucket.summaries.count)")
+                                    ForEach(timeBuckets) { bucket in
+                                        Section {
+                                            if bucket.isEmpty {
+                                                // Empty bucket - show grayed out message
+                                                Text("No recordings")
                                                     .font(.caption)
-                                                    .fontWeight(.medium)
-                                                    .foregroundStyle(.secondary)
-                                                    .padding(.horizontal, 8)
-                                                    .padding(.vertical, 4)
-                                                    .background(
-                                                        Capsule()
-                                                            .fill(Color(.tertiarySystemFill))
-                                                    )
+                                                    .foregroundStyle(.tertiary)
+                                                    .italic()
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.vertical, 8)
+                                            } else {
+                                                // Summaries in this bucket
+                                                ForEach(bucket.summaries) { summary in
+                                                    SessionSummaryCard(summary: summary, coordinator: coordinator)
+                                                        .padding(.horizontal, 16)
+                                                        .padding(.vertical, 6)
+                                                }
                                             }
+                                        } header: {
+                                            // Time bucket header
+                                            HStack {
+                                                Text(bucket.header)
+                                                    .font(.headline)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
+                                                
+                                                Spacer()
+                                                
+                                                if !bucket.isEmpty {
+                                                    Text("\(bucket.summaries.count)")
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                        .foregroundStyle(.secondary)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 4)
+                                                        .background(
+                                                            Capsule()
+                                                                .fill(Color(.tertiarySystemFill))
+                                                        )
+                                                }
+                                            }
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 12)
+                                            .background(Color(.systemGroupedBackground))
                                         }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 12)
-                                        .background(Color(.systemGroupedBackground))
                                     }
                                 }
                             }
                         }
                     }
                     .background(Color(.systemGroupedBackground))
-                }}
+                }
             }
             .navigationTitle("Overview")
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Time Range", selection: $selectedTimeRange) {
-                        ForEach(TimeRange.allCases) { range in
-                            Text(range.rawValue).tag(range)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .tint(AppTheme.purple)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 8)
-                }
-                
-                // Copy All button
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !sessionSummaries.isEmpty {
-                        Button {
-                            copyAllSummaries()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.caption)
-                                Text("Copy \(sessionSummaries.count)")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundStyle(AppTheme.purple)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(
-                                        RadialGradient(
-                                            colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                                            center: .center,
-                                            startRadius: 0,
-                                            endRadius: 40
-                                        )
-                                    )
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        ),
-                                        lineWidth: 1.5
-                                    )
-                            )
-                        }
-                    }
-                }
-            }
             .task {
                 await loadInsights()
             }
@@ -2389,7 +2393,8 @@ struct OverviewTab: View {
             return "\(currentYear) Summary"
         }
     }
-}
+
+    }
 
 // MARK: - FilteredSessionsView
 

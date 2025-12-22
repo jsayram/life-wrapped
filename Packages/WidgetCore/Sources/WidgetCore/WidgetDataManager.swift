@@ -24,7 +24,18 @@ public final class WidgetDataManager: @unchecked Sendable {
     
     // MARK: - Initialization
     
-    public init(userDefaults: UserDefaults? = nil) {
+    /// Initialize with optional UserDefaults
+    /// - Parameters:
+    ///   - userDefaults: Custom UserDefaults to use. If nil and `disableAppGroup` is false, App Group will be used.
+    ///   - disableAppGroup: If true, skips App Group lookup entirely (for testing unavailable scenarios)
+    public init(userDefaults: UserDefaults? = nil, disableAppGroup: Bool = false) {
+        // If disableAppGroup is true, explicitly set userDefaults to nil
+        if disableAppGroup {
+            print("⚠️ [WidgetDataManager] App Group disabled for testing")
+            self.userDefaults = nil
+            return
+        }
+        
         // If userDefaults provided explicitly (for testing), use it
         if let providedDefaults = userDefaults {
             print("✅ [WidgetDataManager] Using provided UserDefaults")

@@ -1365,7 +1365,7 @@ public actor DatabaseManager {
     
     /// Update session title
     public func updateSessionTitle(sessionId: UUID, title: String?) throws {
-        guard let db = db else { throw StorageError.notOpen }
+        guard db != nil else { throw StorageError.notOpen }
         
         // First check if metadata exists
         if let existing = try fetchSessionMetadata(sessionId: sessionId) {
@@ -1382,7 +1382,7 @@ public actor DatabaseManager {
     
     /// Update session notes
     public func updateSessionNotes(sessionId: UUID, notes: String?) throws {
-        guard let db = db else { throw StorageError.notOpen }
+        guard db != nil else { throw StorageError.notOpen }
         
         if let existing = try fetchSessionMetadata(sessionId: sessionId) {
             var updated = existing
@@ -1397,7 +1397,7 @@ public actor DatabaseManager {
     
     /// Toggle session favorite status
     public func toggleSessionFavorite(sessionId: UUID) throws -> Bool {
-        guard let db = db else { throw StorageError.notOpen }
+        guard db != nil else { throw StorageError.notOpen }
         
         if let existing = try fetchSessionMetadata(sessionId: sessionId) {
             var updated = existing

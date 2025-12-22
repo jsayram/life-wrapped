@@ -11,7 +11,7 @@ final class LocalLLMSmokeTests: XCTestCase {
         #endif
 
         let manager = ModelFileManager.shared
-        let model = LocalLLM.ModelFileManager.ModelSize.llama32_1b
+        let model = LocalLLM.ModelFileManager.ModelSize.llama32_3b
 
         guard await manager.isModelAvailable(model) else {
             throw XCTSkip("Model not downloaded; run after downloading \(model.rawValue)")
@@ -21,7 +21,8 @@ final class LocalLLMSmokeTests: XCTestCase {
 
         // Load model
         try await context.loadModel()
-        XCTAssertTrue(await context.isReady(), "Context should be ready after load")
+        let isReady = await context.isReady()
+        XCTAssertTrue(isReady, "Context should be ready after load")
 
         // Generate a tiny response to ensure end-to-end works
         let output = try await context.generate(prompt: "Hello! Summarize: I went for a run and felt great.")

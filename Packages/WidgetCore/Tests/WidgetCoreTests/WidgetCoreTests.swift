@@ -135,9 +135,11 @@ struct WidgetDataTests {
     
     @Test("Widget data is Equatable")
     func equatableWidgetData() {
-        let data1 = WidgetData(streakDays: 5, todayWords: 100)
-        let data2 = WidgetData(streakDays: 5, todayWords: 100)
-        let data3 = WidgetData(streakDays: 6, todayWords: 100)
+        // Use a fixed date to avoid sub-millisecond timing differences
+        let fixedDate = Date(timeIntervalSince1970: 1700000000)
+        let data1 = WidgetData(streakDays: 5, todayWords: 100, lastUpdated: fixedDate)
+        let data2 = WidgetData(streakDays: 5, todayWords: 100, lastUpdated: fixedDate)
+        let data3 = WidgetData(streakDays: 6, todayWords: 100, lastUpdated: fixedDate)
         
         #expect(data1 == data2)
         #expect(data1 != data3)
@@ -168,7 +170,7 @@ struct WidgetDataManagerTests {
     
     @Test("Manager detects unavailable App Group")
     func unavailableAppGroup() {
-        let manager = WidgetDataManager(userDefaults: nil)
+        let manager = WidgetDataManager(disableAppGroup: true)
         
         #expect(manager.isAppGroupAvailable == false)
         #expect(manager.readWidgetData().streakDays == 0)
