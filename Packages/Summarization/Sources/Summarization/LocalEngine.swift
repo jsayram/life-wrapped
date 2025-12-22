@@ -109,6 +109,15 @@ public actor LocalEngine: SummarizationEngine {
             metadata: ["duration": Int(duration), "wordCount": wordCount]
         )
         
+        // Verify total message size doesn't exceed context
+        let totalMessageChars = messages.system.count + messages.user.count
+        let estimatedTokens = totalMessageChars / 4
+        if estimatedTokens > localConfiguration.contextSize {
+            print("⚠️ [LocalEngine] Prompt too large (\(estimatedTokens) est. tokens > \(localConfiguration.contextSize) ctx), using fallback")
+            return try await extractiveFallback(sessionId: sessionId, transcriptText: preparedTranscript, duration: duration)
+        }
+        print("📊 [LocalEngine] Session prompt size: ~\(estimatedTokens) tokens")
+        
         // Call LLM with proper system prompt
         let response: String
         do {
@@ -181,8 +190,19 @@ public actor LocalEngine: SummarizationEngine {
                 "sentiment": session.sentiment
             ] as [String: Any]
         }
-        let inputJSON = (try? JSONSerialization.data(withJSONObject: inputData))
+        var inputJSON = (try? JSONSerialization.data(withJSONObject: inputData))
             .flatMap { String(data: $0, encoding: .utf8) } ?? sessionSummaries.map { $0.summary }.joined(separator: "\n\n")
+        
+        // CRITICAL: Very aggressive truncation to prevent context overflow
+        // System prompt ~500 chars, schema ~400 chars, user message template ~200 chars = ~1100 overhead
+        // Response buffer needs ~600 tokens (~2400 chars)
+        // Total overhead: ~3500 chars
+        // Reserve 2/3 of context for overhead, use only 1/3 for actual input
+        let maxInputChars = (localConfiguration.contextSize / 3) * 4
+        if inputJSON.count > maxInputChars {
+            print("⚠️ [LocalEngine] Input too large (\(inputJSON.count) chars), truncating to \(maxInputChars) chars")
+            inputJSON = String(inputJSON.prefix(maxInputChars)) + "\n... (truncated due to size, \(sessionSummaries.count) sessions total)"
+        }
         
         // Generate prompt using universal template with separated messages
         let messages = UniversalPrompt.buildMessages(
@@ -191,6 +211,20 @@ public actor LocalEngine: SummarizationEngine {
             metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue]
         )
         
+        // Verify total message size doesn't exceed context
+        let totalMessageChars = messages.system.count + messages.user.count
+        let estimatedTokens = totalMessageChars / 4
+        if estimatedTokens > localConfiguration.contextSize {
+            print("⚠️ [LocalEngine] Prompt too large (\(estimatedTokens) est. tokens > \(localConfiguration.contextSize) ctx), using fallback")
+            return makePeriodFallback(
+                sessionSummaries: sessionSummaries,
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd
+            )
+        }
+        print("📊 [LocalEngine] Prompt size: ~\(estimatedTokens) tokens (system: \(messages.system.count) chars, user: \(messages.user.count) chars)")
+        
         // Call LLM with proper system prompt
         let response: String
         do {
@@ -198,6 +232,17 @@ public actor LocalEngine: SummarizationEngine {
                 systemPrompt: messages.system,
                 userMessage: messages.user
             )
+            
+            // Check if response is suspiciously short (likely hit token limit or failed)
+            if response.count < 50 {
+                print("⚠️ [LocalEngine] Response too short (\(response.count) chars: '\(response)'), likely generation failure. Using fallback.")
+                return makePeriodFallback(
+                    sessionSummaries: sessionSummaries,
+                    periodType: periodType,
+                    periodStart: periodStart,
+                    periodEnd: periodEnd
+                )
+            }
         } catch {
             print("⚠️ [LocalEngine] Period generation failed: \(error.localizedDescription). Using extractive fallback.")
             return makePeriodFallback(

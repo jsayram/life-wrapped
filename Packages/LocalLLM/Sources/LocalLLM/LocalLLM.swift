@@ -492,8 +492,9 @@ public actor LlamaContext {
         print("📂 [LlamaContext] Path: \(url.path)")
 
         do {
-            // Use configuration from LocalLLMConfiguration for optimal performance
-            let safeBatchSize = max(configuration.contextSize, configuration.maxTokens)
+            // CRITICAL: Batch must equal context size to handle large prompts
+            // llama.cpp requires n_batch >= prompt_tokens + generation_tokens
+            let safeBatchSize = configuration.contextSize
             print("⚙️ [LlamaContext] Using config (nCTX=\(configuration.contextSize), temp=\(configuration.temperature), maxTokens=\(configuration.maxTokens), batch=\(safeBatchSize))")
             let config = Configuration(
                 topK: 40,

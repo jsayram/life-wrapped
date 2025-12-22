@@ -2203,7 +2203,7 @@ struct OverviewTab: View {
             buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
         }
         
-        return buckets
+        return buckets.reversed() // Newest first (oldest at bottom)
     }
     
     private func groupByDay(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
