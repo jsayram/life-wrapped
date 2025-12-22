@@ -836,6 +836,9 @@ public final class AppCoordinator: ObservableObject {
         // Update period summaries (daily, weekly, monthly)
         print("📅 [AppCoordinator] Updating period summaries...")
         await updatePeriodSummaries(sessionId: sessionId, sessionDate: periodStart)
+        await MainActor.run {
+            NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
+        }
         print("🎉 [AppCoordinator] === SESSION SUMMARY COMPLETE ===")
     }
     
@@ -1353,35 +1356,37 @@ public final class AppCoordinator: ObservableObject {
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(sessionTexts.count) session summaries")
 
             if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay) {
-                print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
-                if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Daily rollup unchanged, skipping regeneration")
+                print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
+                let isLocal = existing.engineTier == "local"
+                if existing.inputHash == inputHash, isLocal, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Daily rollup unchanged and already local, skipping regeneration")
                     return
                 }
-                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating daily rollup")
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch or non-local engine - regenerating daily rollup")
             } else {
                 print("📝 [AppCoordinator] No existing daily summary found, will generate new rollup")
             }
 
-            let lines = sessionSummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+            guard let summarizationCoordinator else {
+                print("❌ [AppCoordinator] SummarizationCoordinator not available for daily AI summary")
+                return
             }
-            let rollupText = lines.joined(separator: "\n")
+
+            let aiSummary = try await summarizationCoordinator.generateLocalDailySummary(for: startOfDay)
 
             try await dbManager.upsertPeriodSummary(
                 type: .day,
-                text: rollupText,
+                text: aiSummary.text,
                 start: startOfDay,
                 end: endOfDay,
-                topicsJSON: nil,
-                entitiesJSON: nil,
-                engineTier: "rollup",
+                topicsJSON: aiSummary.topicsJSON,
+                entitiesJSON: aiSummary.entitiesJSON,
+                engineTier: aiSummary.engineTier ?? "local",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Daily rollup saved to database (engine: rollup, \(rollupText.count) chars)")
+            print("✅ [AppCoordinator] Daily AI summary saved (engine: \(aiSummary.engineTier ?? "local"), \(aiSummary.text.count) chars)")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
@@ -1427,35 +1432,37 @@ public final class AppCoordinator: ObservableObject {
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
 
             if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek) {
-                print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
-                if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly rollup unchanged, skipping regeneration")
+                print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
+                let isLocal = existing.engineTier == "local"
+                if existing.inputHash == inputHash, isLocal, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly rollup unchanged and already local, skipping regeneration")
                     return
                 }
-                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating weekly rollup")
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch or non-local engine - regenerating weekly rollup")
             } else {
                 print("📝 [AppCoordinator] No existing weekly summary found, will generate new rollup")
             }
 
-            let lines = dailySummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+            guard let summarizationCoordinator else {
+                print("❌ [AppCoordinator] SummarizationCoordinator not available for weekly AI summary")
+                return
             }
-            let rollupText = lines.joined(separator: "\n")
+
+            let aiSummary = try await summarizationCoordinator.generateLocalWeeklySummary(for: startOfWeek)
 
             try await dbManager.upsertPeriodSummary(
                 type: .week,
-                text: rollupText,
+                text: aiSummary.text,
                 start: startOfWeek,
                 end: endOfWeek,
-                topicsJSON: nil,
-                entitiesJSON: nil,
-                engineTier: "rollup",
+                topicsJSON: aiSummary.topicsJSON,
+                entitiesJSON: aiSummary.entitiesJSON,
+                engineTier: aiSummary.engineTier ?? "local",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Weekly rollup updated (engine: rollup)")
+            print("✅ [AppCoordinator] Weekly AI summary saved (engine: \(aiSummary.engineTier ?? "local"))")
         } catch {
             print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
         }
@@ -1506,35 +1513,37 @@ public final class AppCoordinator: ObservableObject {
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) rollups")
 
             if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
-                print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
-                if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly rollup unchanged, skipping regeneration")
+                print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
+                let isLocal = existing.engineTier == "local"
+                if existing.inputHash == inputHash, isLocal, !forceRegenerate {
+                    print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly rollup unchanged and already local, skipping regeneration")
                     return
                 }
-                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch - regenerating monthly rollup")
+                print(forceRegenerate ? "🔄 [AppCoordinator] Force regenerate enabled" : "🔄 [AppCoordinator] Hash mismatch or non-local engine - regenerating monthly rollup")
             } else {
                 print("📝 [AppCoordinator] No existing monthly summary found, will generate new rollup")
             }
 
-            let lines = weeklySummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+            guard let summarizationCoordinator else {
+                print("❌ [AppCoordinator] SummarizationCoordinator not available for monthly AI summary")
+                return
             }
-            let rollupText = lines.joined(separator: "\n")
+
+            let aiSummary = try await summarizationCoordinator.generateLocalMonthlySummary(for: startOfMonth)
 
             try await dbManager.upsertPeriodSummary(
                 type: .month,
-                text: rollupText,
+                text: aiSummary.text,
                 start: startOfMonth,
                 end: endOfMonth,
-                topicsJSON: nil,
-                entitiesJSON: nil,
-                engineTier: "rollup",
+                topicsJSON: aiSummary.topicsJSON,
+                entitiesJSON: aiSummary.entitiesJSON,
+                engineTier: aiSummary.engineTier ?? "local",
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Monthly rollup updated (engine: rollup)")
+            print("✅ [AppCoordinator] Monthly AI summary saved (engine: \(aiSummary.engineTier ?? "local"))")
         } catch {
             print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
         }
@@ -1824,6 +1833,12 @@ public final class AppCoordinator: ObservableObject {
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
 }
 
 // MARK: - Preview Support

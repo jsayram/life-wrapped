@@ -493,13 +493,14 @@ public actor LlamaContext {
 
         do {
             // Use configuration from LocalLLMConfiguration for optimal performance
-            print("⚙️ [LlamaContext] Using config (nCTX=\(configuration.contextSize), temp=\(configuration.temperature), maxTokens=\(configuration.maxTokens))")
+            let safeBatchSize = max(configuration.contextSize, configuration.maxTokens)
+            print("⚙️ [LlamaContext] Using config (nCTX=\(configuration.contextSize), temp=\(configuration.temperature), maxTokens=\(configuration.maxTokens), batch=\(safeBatchSize))")
             let config = Configuration(
                 topK: 40,
                 topP: configuration.topP,
                 nCTX: configuration.contextSize,
                 temperature: configuration.temperature,
-                batchSize: 256,  // Higher batch for better throughput
+                batchSize: safeBatchSize,  // Ensure batch can cover prompt + generation to avoid llama.cpp n_batch assertions
                 maxTokenCount: configuration.maxTokens,
                 stopTokens: StopToken.llama3  // Llama 3.2 uses llama3 format
             )

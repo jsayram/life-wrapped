@@ -1666,6 +1666,7 @@ struct OverviewTab: View {
     @State private var sessionsInPeriod: [RecordingSession] = []
     @State private var yearWrapSummary: Summary?
     @State private var isWrappingUpYear = false
+    @State private var isRegeneratingPeriodSummary = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
@@ -1745,6 +1746,41 @@ struct OverviewTab: View {
                         // New Feed Layout
                         ScrollView {
                             LazyVStack(spacing: 16) {
+                                // Local period summary card for Today/Week/Month
+                                if [.today, .week, .month].contains(selectedTimeRange) {
+                                    if let periodSummary {
+                                        PeriodSummaryCard(
+                                            title: periodSummaryTitle(for: selectedTimeRange),
+                                            subtitle: "Local AI rollup (on-device)",
+                                            summary: periodSummary,
+                                            isRegenerating: isRegeneratingPeriodSummary,
+                                            onCopy: {
+                                                UIPasteboard.general.string = periodSummary.text
+                                                coordinator.showSuccess("Summary copied")
+                                            },
+                                            onRegenerate: {
+                                                Task {
+                                                    await regenerateAndReloadPeriodSummary()
+                                                }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if !sessionsInPeriod.isEmpty {
+                                        GeneratePeriodSummaryCard(
+                                            title: periodSummaryTitle(for: selectedTimeRange),
+                                            isGenerating: isRegeneratingPeriodSummary,
+                                            onGenerate: {
+                                                Task {
+                                                    await regenerateAndReloadPeriodSummary()
+                                                }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    }
+                                }
+                                
                                 // Year Wrapped Summary (only show for Year timerange)
                                 if selectedTimeRange == .allTime {
                                     if let yearWrap = yearWrapSummary {
@@ -1845,6 +1881,11 @@ struct OverviewTab: View {
             .refreshable {
                 await loadInsights()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .periodSummariesUpdated)) { _ in
+                Task {
+                    await loadInsights()
+                }
+            }
             .onChange(of: selectedTimeRange) { oldValue, newValue in
                 Task {
                     await loadInsights()
@@ -1931,6 +1972,14 @@ struct OverviewTab: View {
         isLoading = false
     }
     
+    private func regenerateAndReloadPeriodSummary() async {
+        guard !isRegeneratingPeriodSummary else { return }
+        isRegeneratingPeriodSummary = true
+        defer { isRegeneratingPeriodSummary = false }
+        await regeneratePeriodSummary()
+        await loadInsights()
+    }
+
     private func regeneratePeriodSummary() async {
         let (startDate, _) = getDateRange(for: selectedTimeRange)
         
@@ -2022,7 +2071,8 @@ struct OverviewTab: View {
         case .yesterday:
             let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
             let start = calendar.startOfDay(for: yesterday)
-            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now
+            // Use end-of-day so hourly buckets cover the full 24 hours
+            let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: start) ?? now
             return (start, end)
         case .today:
             let start = calendar.startOfDay(for: now)
@@ -2038,6 +2088,15 @@ struct OverviewTab: View {
             let currentYear = calendar.component(.year, from: now)
             let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
             return (startOfYear, now)
+        }
+    }
+
+    private func periodSummaryTitle(for range: TimeRange) -> String {
+        switch range {
+        case .today: return "Today's Summary"
+        case .week: return "This Week's Summary"
+        case .month: return "This Month's Summary"
+        default: return "Summary"
         }
     }
     
@@ -2106,8 +2165,8 @@ struct OverviewTab: View {
             return groupByHour(dateRange: dateRange, calendar: calendar)
             
         case .week:
-            // Group by day (e.g., "December 22")
-            return groupByDay(dateRange: dateRange, calendar: calendar)
+            // Group by week range (e.g., "Dec 21 - Dec 27")
+            return groupByWeek(dateRange: dateRange, calendar: calendar)
             
         case .month:
             // Group by month (e.g., "December 2025")
@@ -7443,6 +7502,187 @@ struct SessionSummaryCard: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Local Period Summary Card
+
+struct PeriodSummaryCard: View {
+    let title: String
+    let subtitle: String
+    let summary: Summary
+    let isRegenerating: Bool
+    let onCopy: () -> Void
+    let onRegenerate: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("✨")
+                            .font(.title2)
+                        Text(title)
+                            .font(.title3)
+                            .fontWeight(.bold)
+                    }
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    // Copy
+                    Button(action: onCopy) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.body)
+                            .foregroundStyle(AppTheme.skyBlue)
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.skyBlue.opacity(0.1))
+                    )
+                    
+                    // Regenerate (local rollup)
+                    Button(action: onRegenerate) {
+                        if isRegenerating {
+                            ProgressView()
+                                .tint(AppTheme.purple)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                    .disabled(isRegenerating)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.magenta.opacity(0.1))
+                    )
+                }
+            }
+            
+            Divider()
+            
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(height: 260)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(8)
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppTheme.darkPurple.opacity(0.15),
+                    AppTheme.magenta.opacity(0.1),
+                    AppTheme.purple.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    LinearGradient(
+                        colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
+        )
+        .cornerRadius(16)
+        .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
+    }
+}
+
+struct GeneratePeriodSummaryCard: View {
+    let title: String
+    let isGenerating: Bool
+    let onGenerate: () -> Void
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        Button(action: onGenerate) {
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 48))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Text("Generate an on-device summary for this period")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                if isGenerating {
+                    ProgressView()
+                        .tint(AppTheme.purple)
+                        .scaleEffect(1.1)
+                        .padding(.top, 6)
+                } else {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                        Text("Generate with Local AI")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.purple, AppTheme.magenta],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(10)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(AppTheme.cardGradient(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: [AppTheme.magenta.opacity(0.35), AppTheme.purple.opacity(0.25)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -328,6 +328,29 @@ public actor SummarizationCoordinator {
             endDate: endOfMonth
         )
     }
+
+    // MARK: - Local-Only Period Summaries
+
+    /// Generate a daily summary using only the local engine
+    public func generateLocalDailySummary(for date: Date) async throws -> Summary {
+        try await withLocalEngine {
+            try await generateDailySummary(for: date)
+        }
+    }
+
+    /// Generate a weekly summary using only the local engine
+    public func generateLocalWeeklySummary(for date: Date) async throws -> Summary {
+        try await withLocalEngine {
+            try await generateWeeklySummary(for: date)
+        }
+    }
+
+    /// Generate a monthly summary using only the local engine
+    public func generateLocalMonthlySummary(for date: Date) async throws -> Summary {
+        try await withLocalEngine {
+            try await generateMonthlySummary(for: date)
+        }
+    }
     
     /// Generate a yearly summary by aggregating monthly summaries
     /// - Parameter date: A date within the year to summarize
@@ -456,6 +479,16 @@ public actor SummarizationCoordinator {
         
         // Convert to Summary for database storage
         return try convertToSummary(periodIntelligence: intelligence)
+    }
+
+    private func withLocalEngine<T>(_ block: () async throws -> T) async throws -> T {
+        guard let local = localEngine, await local.isAvailable() else {
+            throw SummarizationError.summarizationFailed("Local engine not available")
+        }
+        let previous = activeEngine
+        activeEngine = local
+        defer { activeEngine = previous }
+        return try await block()
     }
     
     // MARK: - Conversion Helpers
