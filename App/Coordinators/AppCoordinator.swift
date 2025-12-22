@@ -1367,26 +1367,57 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing daily summary found, will generate new rollup")
             }
 
-            guard let summarizationCoordinator else {
-                print("❌ [AppCoordinator] SummarizationCoordinator not available for daily AI summary")
-                return
-            }
+            // Try local AI first, fallback to rollup if it fails
+            var summaryText: String
+            var topicsJSON: String?
+            var entitiesJSON: String?
+            var engineTier: String
 
-            let aiSummary = try await summarizationCoordinator.generateLocalDailySummary(for: startOfDay)
+            if let summarizationCoordinator {
+                do {
+                    print("🤖 [AppCoordinator] Attempting local AI summary...")
+                    let aiSummary = try await summarizationCoordinator.generateLocalDailySummary(for: startOfDay)
+                    summaryText = aiSummary.text
+                    topicsJSON = aiSummary.topicsJSON
+                    entitiesJSON = aiSummary.entitiesJSON
+                    engineTier = aiSummary.engineTier ?? "local"
+                    print("✅ [AppCoordinator] Local AI summary generated")
+                } catch {
+                    print("⚠️ [AppCoordinator] Local AI failed: \(error), falling back to rollup")
+                    let lines = sessionSummaries.map { summary in
+                        let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                        return "• \(dateTimeLabel): \(summary.text)"
+                    }
+                    summaryText = lines.joined(separator: "\n")
+                    topicsJSON = nil
+                    entitiesJSON = nil
+                    engineTier = "rollup"
+                }
+            } else {
+                print("⚠️ [AppCoordinator] SummarizationCoordinator not available, using rollup")
+                let lines = sessionSummaries.map { summary in
+                    let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                    return "• \(dateTimeLabel): \(summary.text)"
+                }
+                summaryText = lines.joined(separator: "\n")
+                topicsJSON = nil
+                entitiesJSON = nil
+                engineTier = "rollup"
+            }
 
             try await dbManager.upsertPeriodSummary(
                 type: .day,
-                text: aiSummary.text,
+                text: summaryText,
                 start: startOfDay,
                 end: endOfDay,
-                topicsJSON: aiSummary.topicsJSON,
-                entitiesJSON: aiSummary.entitiesJSON,
-                engineTier: aiSummary.engineTier ?? "local",
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier,
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Daily AI summary saved (engine: \(aiSummary.engineTier ?? "local"), \(aiSummary.text.count) chars)")
+            print("✅ [AppCoordinator] Daily summary saved (engine: \(engineTier), \(summaryText.count) chars)")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
@@ -1443,26 +1474,57 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing weekly summary found, will generate new rollup")
             }
 
-            guard let summarizationCoordinator else {
-                print("❌ [AppCoordinator] SummarizationCoordinator not available for weekly AI summary")
-                return
-            }
+            // Try local AI first, fallback to rollup if it fails
+            var summaryText: String
+            var topicsJSON: String?
+            var entitiesJSON: String?
+            var engineTier: String
 
-            let aiSummary = try await summarizationCoordinator.generateLocalWeeklySummary(for: startOfWeek)
+            if let summarizationCoordinator {
+                do {
+                    print("🤖 [AppCoordinator] Attempting local AI summary...")
+                    let aiSummary = try await summarizationCoordinator.generateLocalWeeklySummary(for: startOfWeek)
+                    summaryText = aiSummary.text
+                    topicsJSON = aiSummary.topicsJSON
+                    entitiesJSON = aiSummary.entitiesJSON
+                    engineTier = aiSummary.engineTier ?? "local"
+                    print("✅ [AppCoordinator] Local AI summary generated")
+                } catch {
+                    print("⚠️ [AppCoordinator] Local AI failed: \(error), falling back to rollup")
+                    let lines = dailySummaries.map { summary in
+                        let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                        return "• \(dateTimeLabel): \(summary.text)"
+                    }
+                    summaryText = lines.joined(separator: "\n")
+                    topicsJSON = nil
+                    entitiesJSON = nil
+                    engineTier = "rollup"
+                }
+            } else {
+                print("⚠️ [AppCoordinator] SummarizationCoordinator not available, using rollup")
+                let lines = dailySummaries.map { summary in
+                    let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                    return "• \(dateTimeLabel): \(summary.text)"
+                }
+                summaryText = lines.joined(separator: "\n")
+                topicsJSON = nil
+                entitiesJSON = nil
+                engineTier = "rollup"
+            }
 
             try await dbManager.upsertPeriodSummary(
                 type: .week,
-                text: aiSummary.text,
+                text: summaryText,
                 start: startOfWeek,
                 end: endOfWeek,
-                topicsJSON: aiSummary.topicsJSON,
-                entitiesJSON: aiSummary.entitiesJSON,
-                engineTier: aiSummary.engineTier ?? "local",
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier,
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Weekly AI summary saved (engine: \(aiSummary.engineTier ?? "local"))")
+            print("✅ [AppCoordinator] Weekly summary saved (engine: \(engineTier))")
         } catch {
             print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
         }
@@ -1524,26 +1586,57 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing monthly summary found, will generate new rollup")
             }
 
-            guard let summarizationCoordinator else {
-                print("❌ [AppCoordinator] SummarizationCoordinator not available for monthly AI summary")
-                return
-            }
+            // Try local AI first, fallback to rollup if it fails
+            var summaryText: String
+            var topicsJSON: String?
+            var entitiesJSON: String?
+            var engineTier: String
 
-            let aiSummary = try await summarizationCoordinator.generateLocalMonthlySummary(for: startOfMonth)
+            if let summarizationCoordinator {
+                do {
+                    print("🤖 [AppCoordinator] Attempting local AI summary...")
+                    let aiSummary = try await summarizationCoordinator.generateLocalMonthlySummary(for: startOfMonth)
+                    summaryText = aiSummary.text
+                    topicsJSON = aiSummary.topicsJSON
+                    entitiesJSON = aiSummary.entitiesJSON
+                    engineTier = aiSummary.engineTier ?? "local"
+                    print("✅ [AppCoordinator] Local AI summary generated")
+                } catch {
+                    print("⚠️ [AppCoordinator] Local AI failed: \(error), falling back to rollup")
+                    let lines = weeklySummaries.map { summary in
+                        let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                        return "• \(dateTimeLabel): \(summary.text)"
+                    }
+                    summaryText = lines.joined(separator: "\n")
+                    topicsJSON = nil
+                    entitiesJSON = nil
+                    engineTier = "rollup"
+                }
+            } else {
+                print("⚠️ [AppCoordinator] SummarizationCoordinator not available, using rollup")
+                let lines = weeklySummaries.map { summary in
+                    let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                    return "• \(dateTimeLabel): \(summary.text)"
+                }
+                summaryText = lines.joined(separator: "\n")
+                topicsJSON = nil
+                entitiesJSON = nil
+                engineTier = "rollup"
+            }
 
             try await dbManager.upsertPeriodSummary(
                 type: .month,
-                text: aiSummary.text,
+                text: summaryText,
                 start: startOfMonth,
                 end: endOfMonth,
-                topicsJSON: aiSummary.topicsJSON,
-                entitiesJSON: aiSummary.entitiesJSON,
-                engineTier: aiSummary.engineTier ?? "local",
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier,
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Monthly AI summary saved (engine: \(aiSummary.engineTier ?? "local"))")
+            print("✅ [AppCoordinator] Monthly summary saved (engine: \(engineTier))")
         } catch {
             print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
         }

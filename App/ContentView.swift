@@ -6459,10 +6459,21 @@ struct SessionDetailView: View {
                 .disabled(isRegeneratingSummary)
             }
             
-            Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .italic()
+            if isRegeneratingSummary {
+                HStack {
+                    ProgressView()
+                        .tint(AppTheme.purple)
+                    Text("Generating AI summary...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+            } else {
+                Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground))
