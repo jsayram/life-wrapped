@@ -248,6 +248,13 @@ public struct UniversalPrompt {
         
         INPUT:
         \(input)
+        
+        IMPORTANT: 
+        - Output MUST be valid JSON with no extra text before or after
+        - Do NOT wrap in markdown code blocks (no ```json)
+        - Do NOT add explanations or commentary
+        - Start your response with { and end with }
+        - Follow the exact field names in the schema
         """
         
         return (system: systemInstruction, user: userMessage)

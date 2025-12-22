@@ -83,9 +83,9 @@ public struct LocalLLMConfiguration: Sendable, Equatable {
         modelName: String = "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
         preset: Preset = LocalLLMConfiguration.recommendedPreset(),
         contextSize: Int = 2048,  // Safe default matching SwiftLlama defaults
-        temperature: Float = 0.2,  // SwiftLlama default
-        topP: Float = 0.9,
-        maxTokens: Int = 1024,  // SwiftLlama default
+        temperature: Float = 0.7,  // Higher for better reasoning and creativity
+        topP: Float = 0.95,
+        maxTokens: Int = 2048,  // Doubled for complete summaries
         systemPrompt: String = "You are a helpful AI assistant."
     ) {
         self.modelName = modelName
@@ -116,22 +116,22 @@ public struct LocalLLMConfiguration: Sendable, Equatable {
         if profile.isLowMemory {
             // Low memory devices (< 5.5 GB) - conservative but still high quality
             contextSize = 2048
-            maxTokens = 768
+            maxTokens = 1024
         } else if profile.isProClass {
             // Pro devices (>= 7.5 GB or iPad) - maximum quality
             contextSize = 4096
-            maxTokens = 1536
+            maxTokens = 2560
         } else {
             // Standard devices (5.5-7.5 GB) - high quality
             contextSize = 3072
-            maxTokens = 1024
+            maxTokens = 2048
         }
         
         return LocalLLMConfiguration(
             preset: preset,
             contextSize: contextSize,
-            temperature: 0.2,   // Balanced creativity/accuracy
-            topP: 0.9,
+            temperature: 0.7,   // Higher for better reasoning
+            topP: 0.95,
             maxTokens: maxTokens
         )
     }
@@ -483,29 +483,25 @@ public actor LlamaContext {
         let fileSizeMB = fileSize / 1_048_576
         print("📂 [LlamaContext] Model file: \(fileSizeMB) MB")
         
-        // Sanity check - file should be ~770-810 MB
-        guard fileSizeMB > 700 && fileSizeMB < 900 else {
-            print("❌ [LlamaContext] Invalid file size: \(fileSizeMB) MB (expected ~771 MB)")
+        // Sanity check - 3B model should be ~1.8-2.2 GB (1800-2200 MB)
+        guard fileSizeMB > 1700 && fileSizeMB < 2300 else {
+            print("❌ [LlamaContext] Invalid file size: \(fileSizeMB) MB (expected ~2000 MB for 3B model)")
             throw LocalLLMError.modelLoadFailed("Corrupted model file")
         }
 
         print("📂 [LlamaContext] Path: \(url.path)")
 
         do {
-            // Safer, lower-memory config for mobile:
-            // - Smaller context (1024)
-            // - Smaller batch (128)
-            // - Lower max tokens (512)
-            // - Conservative sampling
-            print("⚙️ [LlamaContext] Using constrained config (nCTX=1024, batch=128, maxTokens=512)")
+            // Use configuration from LocalLLMConfiguration for optimal performance
+            print("⚙️ [LlamaContext] Using config (nCTX=\(configuration.contextSize), temp=\(configuration.temperature), maxTokens=\(configuration.maxTokens))")
             let config = Configuration(
-                topK: 30,
-                topP: 0.9,
-                nCTX: 1024,
-                temperature: 0.2,
-                batchSize: 128,
-                maxTokenCount: 512,
-                stopTokens: StopToken.phi
+                topK: 40,
+                topP: configuration.topP,
+                nCTX: configuration.contextSize,
+                temperature: configuration.temperature,
+                batchSize: 256,  // Higher batch for better throughput
+                maxTokenCount: configuration.maxTokens,
+                stopTokens: StopToken.llama3  // Llama 3.2 uses llama3 format
             )
 
             print("🔄 [LlamaContext] Creating SwiftLlama instance...")

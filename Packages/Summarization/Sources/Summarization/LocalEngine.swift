@@ -284,8 +284,32 @@ public actor LocalEngine: SummarizationEngine {
     }
     
     private func parseSessionResponse(_ response: String, sessionId: UUID, transcriptText: String, duration: TimeInterval) async throws -> SessionIntelligence {
+        // Log raw response for debugging
+        print("📄 [LocalEngine] Raw LLM response (\(response.count) chars):")
+        print(response.prefix(500))
+        if response.count > 500 {
+            print("... (truncated, full length: \(response.count))")
+        }
+        
+        // Try to extract JSON if wrapped in markdown or other text
+        let jsonString: String
+        if let jsonStart = response.firstIndex(of: "{"),
+           let jsonEnd = response.lastIndex(of: "}"),
+           jsonStart < jsonEnd {
+            // Use safe substring extraction
+            let startIndex = jsonStart
+            let endIndex = response.index(after: jsonEnd)
+            jsonString = String(response[startIndex..<endIndex])
+            print("🔍 [LocalEngine] Extracted JSON from response (from char \(response.distance(from: response.startIndex, to: startIndex)) to \(response.distance(from: response.startIndex, to: endIndex)))")
+        } else {
+            // No valid JSON brackets found, use full response
+            jsonString = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            print("⚠️ [LocalEngine] Could not find JSON brackets, using full response")
+        }
+        
         // Parse JSON response from LLM
-        guard let jsonData = response.data(using: .utf8) else {
+        guard let jsonData = jsonString.data(using: .utf8) else {
+            print("❌ [LocalEngine] Failed to convert response to data")
             throw LocalLLMError.invalidOutput
         }
         
