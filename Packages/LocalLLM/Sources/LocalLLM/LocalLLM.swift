@@ -553,7 +553,60 @@ public actor LlamaContext {
 
     // MARK: - Text Generation
 
-    /// Generate text - following article's async/await pattern
+    /// Generate text with custom system prompt and user message
+    public func generate(systemPrompt: String, userMessage: String) async throws -> String {
+        guard isLoaded, let llama = self.llama else {
+            print("❌ [LlamaContext] Not initialized!")
+            throw LocalLLMError.notInitialized
+        }
+
+        guard !userMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("❌ [LlamaContext] Empty user message!")
+            throw LocalLLMError.invalidOutput
+        }
+
+        print("🤖 [LlamaContext] Generating with custom system prompt...")
+        print("📝 [LlamaContext] System: \(systemPrompt.prefix(100))...")
+        print("📝 [LlamaContext] User: \(userMessage.prefix(100))...")
+
+        let startTime = Date()
+
+        do {
+            // Create prompt with custom system prompt
+            let promptObj = Prompt(
+                type: .llama3,  // Llama 3.2 uses llama3 format
+                systemPrompt: systemPrompt,
+                userMessage: userMessage
+            )
+
+            print("🎯 [LlamaContext] Starting generation loop...")
+
+            // Generate using async/await
+            var result = ""
+            var tokenCount = 0
+            for try await token in await llama.start(for: promptObj) {
+                result += token
+                tokenCount += 1
+                if tokenCount % 10 == 0 {
+                    print("   Generated \(tokenCount) tokens...")
+                }
+            }
+
+            let elapsed = Date().timeIntervalSince(startTime)
+            print("✅ [LlamaContext] Generated \(result.count) chars (\(tokenCount) tokens) in \(String(format: "%.2f", elapsed))s")
+
+            return result
+
+        } catch let error as SwiftLlamaError {
+            print("❌ [LlamaContext] SwiftLlamaError during generation: \(error)")
+            throw LocalLLMError.generationFailed(error.localizedDescription)
+        } catch {
+            print("❌ [LlamaContext] Error during generation: \(error)")
+            throw LocalLLMError.generationFailed(error.localizedDescription)
+        }
+    }
+
+    /// Generate text - legacy method for backward compatibility
     public func generate(prompt: String) async throws -> String {
         guard isLoaded, let llama = self.llama else {
             print("❌ [LlamaContext] Not initialized!")

@@ -55,17 +55,40 @@ public struct UniversalPrompt {
     // MARK: - System Prompt (same for all levels)
     
     private static let systemInstruction = """
-    You are a private journaling assistant that extracts MEANING and INSIGHTS from spoken thoughts.
+    You are an AI journaling assistant for Life Wrapped, a private voice journaling app.
     
-    Your goal is to:
+    CONTEXT:
+    - Users record spoken thoughts throughout their day via audio
+    - Audio is transcribed to text using on-device speech recognition
+    - You analyze transcribed speech to extract meaningful insights
+    - All processing happens on-device for privacy
+    
+    YOUR ROLE:
+    - Extract MEANING and INSIGHTS from conversational, spoken content
     - Identify the CORE IDEAS and reasoning behind what's being said
-    - Extract the INTENT and purpose of the discussion
-    - Recognize patterns, problems, and goals being explored
-    - Structure insights as clear, actionable bullet points
-    - Avoid simply repeating or paraphrasing - dig deeper into the "why"
+    - Understand the INTENT and purpose of the user's reflections
+    - Recognize patterns, problems, goals, and thought processes
+    - Provide ACTIONABLE insights structured as clear bullet points
     
-    You summarize faithfully using only provided content. Never invent facts. If something is unclear, write "unclear".
-    No generic motivational fluff. Be concise and insightful.
+    APPROACH:
+    - Think deeply about the "why" behind what's being said
+    - Consider emotional undertones and personal growth themes
+    - Connect related ideas into coherent narratives
+    - Identify open questions and areas needing more thought
+    - Be empathetic yet analytical
+    
+    CONSTRAINTS:
+    - Summarize FAITHFULLY using ONLY the provided content
+    - NEVER invent facts or make assumptions beyond the text
+    - If something is unclear, write "unclear" rather than guessing
+    - Avoid generic motivational fluff
+    - Keep insights concise, specific, and meaningful
+    - Use first-person perspective when summarizing (the user is reflecting)
+    
+    OUTPUT FORMAT:
+    - Return VALID JSON matching the provided schema exactly
+    - No extra keys, commentary, or markdown formatting
+    - Just the JSON object
     """
     
     // MARK: - Schemas per Level
@@ -195,7 +218,42 @@ public struct UniversalPrompt {
     
     // MARK: - Prompt Builder
     
-    /// Build a universal prompt for any summarization level
+    /// Build separate system and user messages for better LLM prompting
+    /// - Parameters:
+    ///   - level: The summarization level (chunk, session, day, week, month, year)
+    ///   - input: The input text or JSON to summarize
+    ///   - metadata: Optional metadata (duration, word count, session count, etc.)
+    /// - Returns: Tuple of (systemPrompt, userMessage)
+    public static func buildMessages(
+        level: SummaryLevel,
+        input: String,
+        metadata: [String: Any] = [:]
+    ) -> (system: String, user: String) {
+        let schema = schema(for: level)
+        
+        // Build metadata string if provided
+        var metadataStr = ""
+        if !metadata.isEmpty {
+            let parts = metadata.map { "\($0.key): \($0.value)" }
+            metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
+        }
+        
+        let userMessage = """
+        Task: Summarize at LEVEL = \(level.rawValue).
+        Use ONLY the provided INPUT below.
+        Return VALID JSON matching this schema exactly:
+        
+        \(schema)
+        \(metadataStr)
+        
+        INPUT:
+        \(input)
+        """
+        
+        return (system: systemInstruction, user: userMessage)
+    }
+    
+    /// Build a universal prompt for any summarization level (legacy single-string format)
     /// - Parameters:
     ///   - level: The summarization level (chunk, session, day, week, month, year)
     ///   - input: The input text or JSON to summarize
@@ -206,29 +264,11 @@ public struct UniversalPrompt {
         input: String,
         metadata: [String: Any] = [:]
     ) -> String {
-        let schema = schema(for: level)
-        
-        // Build metadata string if provided
-        var metadataStr = ""
-        if !metadata.isEmpty {
-            let parts = metadata.map { "\($0.key): \($0.value)" }
-            metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
-        }
-        
+        let messages = buildMessages(level: level, input: input, metadata: metadata)
         return """
-        \(systemInstruction)
+        \(messages.system)
         
-        Task: Summarize at LEVEL = \(level.rawValue).
-        Use ONLY the provided INPUT.
-        Return VALID JSON that matches the given schema exactly.
-        Do not include any extra keys or commentary.
-        
-        Schema:
-        \(schema)
-        \(metadataStr)
-        
-        Input:
-        \(input)
+        \(messages.user)
         
         JSON Response:
         """

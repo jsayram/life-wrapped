@@ -136,15 +136,15 @@ public actor ExternalAPIEngine: SummarizationEngine {
             throw SummarizationError.configurationError("No API key configured for \(selectedProvider.displayName)")
         }
         
-        // Build prompt using universal schema
-        let prompt = UniversalPrompt.build(
+        // Build prompt using universal schema with separated messages
+        let messages = UniversalPrompt.buildMessages(
             level: .session,
             input: transcriptText,
             metadata: ["duration": Int(duration), "wordCount": transcriptText.split(separator: " ").count]
         )
         
-        // Call API
-        let response = try await callAPI(prompt: prompt, apiKey: apiKey)
+        // Call API with proper message structure
+        let response = try await callAPI(systemPrompt: messages.system, userMessage: messages.user, apiKey: apiKey)
         
         // Parse response
         let intelligence = try parseSessionResponse(response, sessionId: sessionId, duration: duration, languageCodes: languageCodes)
@@ -204,15 +204,15 @@ public actor ExternalAPIEngine: SummarizationEngine {
         let inputJSON = (try? JSONSerialization.data(withJSONObject: inputData))
             .flatMap { String(data: $0, encoding: .utf8) } ?? ""
         
-        // Build prompt using universal schema
-        let prompt = UniversalPrompt.build(
+        // Build prompt using universal schema with separated messages
+        let messages = UniversalPrompt.buildMessages(
             level: summaryLevel,
             input: inputJSON,
             metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue]
         )
         
-        // Call API
-        let response = try await callAPI(prompt: prompt, apiKey: apiKey)
+        // Call API with proper message structure
+        let response = try await callAPI(systemPrompt: messages.system, userMessage: messages.user, apiKey: apiKey)
         
         // Parse response
         let intelligence = try parsePeriodResponse(response, periodType: periodType, periodStart: periodStart, periodEnd: periodEnd, sessionSummaries: sessionSummaries)
@@ -243,13 +243,13 @@ public actor ExternalAPIEngine: SummarizationEngine {
     
     // MARK: - API Calls
     
-    private func callAPI(prompt: String, apiKey: String) async throws -> [String: Any] {
+    private func callAPI(systemPrompt: String, userMessage: String, apiKey: String) async throws -> [String: Any] {
         let url = URL(string: selectedProvider.endpoint)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        // Build request body based on provider
+        // Build request body based on provider with proper message structure
         let requestBody: [String: Any]
         switch selectedProvider {
         case .openai:
@@ -257,7 +257,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
             requestBody = [
                 "model": selectedModel,
                 "messages": [
-                    ["role": "user", "content": prompt]
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": userMessage]
                 ],
                 "temperature": 0.7,
                 "response_format": ["type": "json_object"]
@@ -268,8 +269,9 @@ public actor ExternalAPIEngine: SummarizationEngine {
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
             requestBody = [
                 "model": selectedModel,
+                "system": systemPrompt,  // Anthropic uses separate system field
                 "messages": [
-                    ["role": "user", "content": prompt]
+                    ["role": "user", "content": userMessage]
                 ],
                 "max_tokens": 2000,
                 "temperature": 0.7

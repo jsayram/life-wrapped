@@ -102,17 +102,20 @@ public actor LocalEngine: SummarizationEngine {
             return try await extractiveFallback(sessionId: sessionId, transcriptText: preparedTranscript, duration: duration)
         }
         
-        // Generate prompt using universal template
-        let prompt = UniversalPrompt.build(
+        // Generate prompt using universal template with separated messages
+        let messages = UniversalPrompt.buildMessages(
             level: .session,
             input: preparedTranscript,
             metadata: ["duration": Int(duration), "wordCount": wordCount]
         )
         
-        // Call LLM
+        // Call LLM with proper system prompt
         let response: String
         do {
-            response = try await llamaContext.generate(prompt: prompt)
+            response = try await llamaContext.generate(
+                systemPrompt: messages.system,
+                userMessage: messages.user
+            )
         } catch {
             print("⚠️ [LocalEngine] Generation failed: \(error.localizedDescription). Falling back to extractive summary.")
             return try await extractiveFallback(sessionId: sessionId, transcriptText: preparedTranscript, duration: duration)
@@ -181,17 +184,20 @@ public actor LocalEngine: SummarizationEngine {
         let inputJSON = (try? JSONSerialization.data(withJSONObject: inputData))
             .flatMap { String(data: $0, encoding: .utf8) } ?? sessionSummaries.map { $0.summary }.joined(separator: "\n\n")
         
-        // Generate prompt using universal template
-        let prompt = UniversalPrompt.build(
+        // Generate prompt using universal template with separated messages
+        let messages = UniversalPrompt.buildMessages(
             level: summaryLevel,
             input: inputJSON,
             metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue]
         )
         
-        // Call LLM
+        // Call LLM with proper system prompt
         let response: String
         do {
-            response = try await llamaContext.generate(prompt: prompt)
+            response = try await llamaContext.generate(
+                systemPrompt: messages.system,
+                userMessage: messages.user
+            )
         } catch {
             print("⚠️ [LocalEngine] Period generation failed: \(error.localizedDescription). Using extractive fallback.")
             return makePeriodFallback(
