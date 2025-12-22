@@ -5716,45 +5716,72 @@ struct SessionDetailView: View {
     }
     
     private var regenerateSummaryPrompt: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(AppTheme.magenta)
-                Text("Transcript was edited")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-            }
-            
-            Text("The summary may be outdated. Would you like to regenerate it?")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            
-            Button {
-                Task {
-                    await regenerateSummary()
-                    transcriptWasEdited = false
-                }
-            } label: {
+        HStack {
+            Spacer()
+            VStack(spacing: 16) {
                 HStack {
-                    Image(systemName: "sparkles")
-                    Text("Regenerate Summary")
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(AppTheme.magenta)
+                    Text("Transcript was edited")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                 }
-                .font(.subheadline)
-                .fontWeight(.medium)
+                
+                Text("The summary may be outdated. Would you like to regenerate it?")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                HStack(spacing: 12) {
+                    // Dismiss button
+                    Button {
+                        transcriptWasEdited = false
+                    } label: {
+                        Text("Not Now")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.secondary)
+                    
+                    // Regenerate button with loading state
+                    Button {
+                        Task {
+                            await regenerateSummary()
+                            transcriptWasEdited = false
+                        }
+                    } label: {
+                        HStack {
+                            if isRegeneratingSummary {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text(isRegeneratingSummary ? "Regenerating..." : "Regenerate Summary")
+                        }
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.magenta)
+                    .disabled(isRegeneratingSummary)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AppTheme.magenta)
-        }
-        .padding()
-        .background(
-            RadialGradient(
-                colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
-                center: .center,
-                startRadius: 0,
-                endRadius: 100
+            .padding()
+            .background(
+                RadialGradient(
+                    colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 100
+                )
             )
-        )
-        .cornerRadius(12)
+            .cornerRadius(12)
+            .frame(maxWidth: 400)
+            Spacer()
+        }
     }
     
     private func saveTranscriptEdit(segmentId: UUID, newText: String) {
