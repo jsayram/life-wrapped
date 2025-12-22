@@ -32,11 +32,36 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         super.init()
     }
     
-    // MARK: - Public API
+    // MARK: - Public Methods
+    
+    /// Play a single audio file
+    /// - Parameter url: The URL of the audio file to play
+    public func play(url: URL) async throws {
+        try await playInternal(url: url)
+    }
+    
+    /// Play multiple audio files in sequence
+    /// - Parameters:
+    ///   - urls: Array of audio file URLs to play
+    ///   - onComplete: Optional completion handler called when all files finish
+    public func playSequence(urls: [URL], onComplete: (() -> Void)? = nil) async throws {
+        stop() // Stop any existing playback
+        
+        guard !urls.isEmpty else { return }
+        
+        playQueue = urls
+        currentQueueIndex = 0
+        onQueueComplete = onComplete
+        
+        // Start playing first file
+        if currentQueueIndex < playQueue.count {
+            try await playInternal(url: playQueue[currentQueueIndex])
+        }
+    }
     
     /// Play audio from a file URL
     /// - Parameter url: The URL of the audio file to play
-    private func play(url: URL) throws {
+    private func playInternal(url: URL) async throws {
         // Configure audio session for playback
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
@@ -61,14 +86,6 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         startProgressTimer()
         
         print("▶️ [AudioPlaybackManager] Started playing: \(url.lastPathComponent)")
-    }
-    
-    /// Play a single audio file (clears any queue)
-    /// - Parameter url: The URL of the audio file to play
-    public func playSingle(url: URL) throws {
-        // Stop any current playback and clear queue
-        stop()
-        try play(url: url)
     }
     
     /// Pause the current playback
@@ -123,33 +140,10 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     
     // MARK: - Sequential Playback
     
-    /// Play multiple audio files sequentially
-    /// - Parameters:
-    ///   - urls: Array of audio file URLs to play in order
-    ///   - completion: Optional callback when all files finish playing
-    public func playSequence(urls: [URL], completion: (() -> Void)? = nil) {
-        guard !urls.isEmpty else {
-            print("⚠️ [AudioPlaybackManager] Empty playback queue")
-            return
-        }
-        
-        // Stop current playback but don't clear timer
-        stopProgressTimer()
-        audioPlayer?.stop()
-        audioPlayer = nil
-        
-        playQueue = urls
-        currentQueueIndex = 0
-        onQueueComplete = completion
-        
-        print("🎵 [AudioPlaybackManager] Starting sequential playback: \(urls.count) files")
-        playNextInQueue()
-    }
-    
-    /// Play the next file in the queue
     private func playNextInQueue() {
         guard currentQueueIndex < playQueue.count else {
-            print("✅ [AudioPlaybackManager] Queue completed")
+            // Queue complete
+            print("✅ [AudioPlaybackManager] Queue complete")
             playQueue = []
             currentQueueIndex = 0
             onQueueComplete?()
@@ -157,38 +151,28 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
             return
         }
         
-        let url = playQueue[currentQueueIndex]
-        print("🎵 [AudioPlaybackManager] Playing \(currentQueueIndex + 1)/\(playQueue.count): \(url.lastPathComponent)")
-        
-        do {
-            try play(url: url)
-        } catch {
-            print("❌ [AudioPlaybackManager] Failed to play \(url.lastPathComponent): \(error)")
-            // Skip to next
-            currentQueueIndex += 1
-            playNextInQueue()
+        Task {
+            do {
+                try await playInternal(url: playQueue[currentQueueIndex])
+            } catch {
+                print("❌ [AudioPlaybackManager] Failed to play next in queue: \(error)")
+                currentQueueIndex += 1
+                playNextInQueue()
+            }
         }
     }
     
-    /// Check if currently playing from a queue
-    public var isPlayingSequence: Bool {
-        !playQueue.isEmpty
-    }
-    
-    /// Get current position in queue
-    public var queueProgress: (current: Int, total: Int)? {
-        guard !playQueue.isEmpty else { return nil }
-        return (currentQueueIndex + 1, playQueue.count)
-    }
-    
-    // MARK: - Private Helpers
+    // MARK: - Progress Timer
     
     private func startProgressTimer() {
         stopProgressTimer()
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateProgress()
             }
+        }
+        if let timer = progressTimer {
+            RunLoop.main.add(timer, forMode: .common)
         }
     }
     
