@@ -6643,6 +6643,9 @@ struct SessionDetailView: View {
     }
     
     private func playSession() {
+        // Trigger haptic feedback
+        coordinator.triggerHaptic(.medium)
+        
         if isPlayingThisSession {
             // Pause if playing
             if coordinator.audioPlayback.isPlaying {
