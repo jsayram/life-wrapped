@@ -280,7 +280,7 @@ struct ContentView: View {
                 }
                 .tag(1)
 
-            InsightsTab()
+            OverviewTab()
                 .tabItem {
                     Label("Overview", systemImage: "doc.text.fill")
                 }
@@ -1566,7 +1566,7 @@ struct RecordingRow: View {
     }
 }
 
-// MARK: - Insights Tab
+// MARK: - Overview Tab
 
 enum TimeRange: String, CaseIterable, Identifiable {
     case yesterday = "Yesterday"
@@ -1636,38 +1636,28 @@ class WordAnalyzer {
     }
 }
 
-struct InsightsTab: View {
+struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.colorScheme) var colorScheme
     @State private var periodSummary: Summary?
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
-    @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
-    @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
-    @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
-    @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
-    @State private var topWords: [WordFrequency] = []
-    @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
-    @State private var languageDistribution: [(language: String, wordCount: Int)] = []
     @State private var yearWrapSummary: Summary?
     @State private var isWrappingUpYear = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
-    @State private var wordLimit: Int = 20
     @State private var showYearWrapConfirmation = false
-    
-    private let wordLimitKey = "insightsWordLimit"
     
     var body: some View {
         NavigationStack {
             Group {
                 if isLoading {
                     LoadingView(size: .medium)
-                } else if periodSummary == nil && sessionsByHour.isEmpty {
+                } else if periodSummary == nil && sessionsInPeriod.isEmpty {
                     ContentUnavailableView(
-                        "No Insights Yet",
-                        systemImage: "chart.bar",
-                        description: Text("Record more journal entries to unlock insights.")
+                        "No Overview Yet",
+                        systemImage: "doc.text",
+                        description: Text("Record more journal entries to generate summaries.")
                     )
                 } else {
                     List {
@@ -1677,7 +1667,7 @@ struct InsightsTab: View {
                             // Year Wrap Summary (Pro AI) - if available
                             if let yearWrap = yearWrapSummary {
                                 Section {
-                                    InsightsSummaryCard(
+                                    OverviewSummaryCard(
                                         summary: yearWrap,
                                         periodTitle: "✨ Year Wrap (Pro AI)",
                                         sessionCount: sessionCount,
@@ -1695,7 +1685,7 @@ struct InsightsTab: View {
                             // Year Rollup (below Year Wrap)
                             if let rollup = periodSummary {
                                 Section {
-                                    InsightsSummaryCard(
+                                    OverviewSummaryCard(
                                         summary: rollup,
                                         periodTitle: "📅 Year Rollup",
                                         sessionCount: sessionCount,
@@ -1715,7 +1705,7 @@ struct InsightsTab: View {
                             // Other time ranges: show single period summary
                             if let summary = periodSummary {
                                 Section {
-                                    InsightsSummaryCard(
+                                    OverviewSummaryCard(
                                         summary: summary,
                                         periodTitle: periodTitle,
                                         sessionCount: sessionCount,
@@ -1731,463 +1721,8 @@ struct InsightsTab: View {
                             }
                         }
                         
-                        // Key Statistics section
-                        Section("Key Statistics") {
-                            // Longest session
-                            if let longest = longestSession {
-                                NavigationLink {
-                                    FilteredSessionsView(
-                                        title: "Longest Session",
-                                        sessionIds: [longest.sessionId]
-                                    )
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "timer")
-                                            .font(.title2)
-                                            .foregroundStyle(AppTheme.purple)
-                                            .frame(width: 40, height: 40)
-                                            .background(
-                                                RadialGradient(
-                                                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                                                    center: .center,
-                                                    startRadius: 0,
-                                                    endRadius: 20
-                                                )
-                                            )
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Longest Session")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            HStack {
-                                                Text(formatDuration(longest.duration))
-                                                    .font(.title3)
-                                                    .fontWeight(.semibold)
-                                                Spacer()
-                                                Text(longest.date.formatted(date: .abbreviated, time: .omitted))
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                    }
-                                    .padding(.vertical, 4)
-                                }
-                            }
-                            
-                            // Most active month
-                            if let mostActive = mostActiveMonth {
-                                NavigationLink {
-                                    FilteredSessionsView(
-                                        title: formatMonth(year: mostActive.year, month: mostActive.month),
-                                        sessionIds: mostActive.sessionIds
-                                    )
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "calendar.badge.plus")
-                                            .font(.title2)
-                                            .foregroundStyle(AppTheme.magenta)
-                                            .frame(width: 40, height: 40)
-                                            .background(
-                                                RadialGradient(
-                                                    colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
-                                                    center: .center,
-                                                    startRadius: 0,
-                                                    endRadius: 20
-                                                )
-                                            )
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Most Active Month")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            HStack {
-                                                Text(formatMonth(year: mostActive.year, month: mostActive.month))
-                                                    .font(.title3)
-                                                    .fontWeight(.semibold)
-                                                Spacer()
-                                                Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                    }
-                                    .padding(.vertical, 4)
-                                }
-                            }
-                        }
                         
-                        // Sessions by Hour section with chart
-                        if !sessionsByHour.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Sessions by Time of Day")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Bar chart
-                                    Chart(sessionsByHour, id: \.hour) { data in
-                                        BarMark(
-                                            x: .value("Hour", data.hour),
-                                            y: .value("Sessions", data.count),
-                                            width: .fixed(20)
-                                        )
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [AppTheme.skyBlue, AppTheme.darkPurple],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                    }
-                                    .chartXAxis {
-                                        AxisMarks(values: [0, 6, 12, 18, 23]) { value in
-                                            if let hour = value.as(Int.self) {
-                                                AxisValueLabel {
-                                                    Text(formatHourShort(hour))
-                                                        .font(.caption2)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .chartYAxis {
-                                        AxisMarks { value in
-                                            AxisGridLine()
-                                            AxisValueLabel()
-                                        }
-                                    }
-                                    .frame(minHeight: 200, maxHeight: 200)
-                                    
-                                    Divider()
-                                        .padding(.vertical, 4)
-                                    
-                                    Text("Tap an hour to view sessions")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Scrollable list of all hours
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 12) {
-                                            ForEach(sessionsByHour.sorted(by: { $0.hour < $1.hour }), id: \.hour) { data in
-                                                NavigationLink {
-                                                    FilteredSessionsView(
-                                                        title: formatHour(data.hour),
-                                                        sessionIds: data.sessionIds
-                                                    )
-                                                } label: {
-                                                    VStack(spacing: 4) {
-                                                        Text(formatHourShort(data.hour))
-                                                            .font(.caption)
-                                                            .fontWeight(.semibold)
-                                                            .foregroundStyle(AppTheme.skyBlue)
-                                                        Text("\(data.count)")
-                                                            .font(.title3)
-                                                            .fontWeight(.bold)
-                                                        Text(data.count == 1 ? "session" : "sessions")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                    .frame(width: 70)
-                                                    .padding(.vertical, 8)
-                                                    .background(
-                                                        RadialGradient(
-                                                            colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
-                                                            center: .center,
-                                                            startRadius: 0,
-                                                            endRadius: 35
-                                                        )
-                                                    )
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                        .padding(.horizontal, 4)
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
                         
-                        // Sessions by Day of Week section with chart
-                        if !sessionsByDayOfWeek.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Sessions by Day of Week")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Bar chart
-                                    Chart(sessionsByDayOfWeek, id: \.dayOfWeek) { data in
-                                        BarMark(
-                                            x: .value("Day", formatDayOfWeek(data.dayOfWeek)),
-                                            y: .value("Sessions", data.count),
-                                            width: .fixed(40)
-                                        )
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [AppTheme.emerald, AppTheme.skyBlue],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                    }
-                                    .chartXAxis {
-                                        AxisMarks { value in
-                                            AxisValueLabel {
-                                                if let day = value.as(String.self) {
-                                                    Text(day)
-                                                        .font(.caption2)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .chartYAxis {
-                                        AxisMarks { value in
-                                            AxisGridLine()
-                                            AxisValueLabel()
-                                        }
-                                    }
-                                    .frame(minHeight: 180, maxHeight: 180)
-                                    
-                                    Divider()
-                                        .padding(.vertical, 4)
-                                    
-                                    Text("Tap a day to view sessions")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Scrollable list of all days
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 12) {
-                                            ForEach(sessionsByDayOfWeek.sorted(by: { $0.dayOfWeek < $1.dayOfWeek }), id: \.dayOfWeek) { data in
-                                                NavigationLink {
-                                                    FilteredSessionsView(
-                                                        title: formatDayOfWeekFull(data.dayOfWeek),
-                                                        sessionIds: data.sessionIds
-                                                    )
-                                                } label: {
-                                                    VStack(spacing: 4) {
-                                                        Text(formatDayOfWeek(data.dayOfWeek))
-                                                            .font(.caption)
-                                                            .fontWeight(.semibold)
-                                                            .foregroundStyle(AppTheme.emerald)
-                                                        Text("\(data.count)")
-                                                            .font(.title3)
-                                                            .fontWeight(.bold)
-                                                        Text(data.count == 1 ? "session" : "sessions")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                    .frame(width: 70)
-                                                    .padding(.vertical, 8)
-                                                    .background(
-                                                        RadialGradient(
-                                                            colors: [AppTheme.emerald.opacity(0.15), AppTheme.emerald.opacity(0.05)],
-                                                            center: .center,
-                                                            startRadius: 0,
-                                                            endRadius: 35
-                                                        )
-                                                    )
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                        .padding(.horizontal, 4)
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Most Used Words section
-                        if !topWords.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Text("Most Used Words")
-                                            .font(.headline)
-                                        Spacer()
-                                        Text("Top \(topWords.count)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.bottom, 4)
-                                    
-                                    Text("Meaningful words from your transcripts")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 8)
-                                    
-                                    // Scrollable word cloud grid with fixed height
-                                    ScrollView(.vertical, showsIndicators: true) {
-                                        LazyVGrid(columns: [
-                                            GridItem(.flexible()),
-                                            GridItem(.flexible())
-                                        ], spacing: 12) {
-                                            ForEach(Array(topWords.enumerated()), id: \.element.id) { index, wordFreq in
-                                                VStack(spacing: 6) {
-                                                    // Word
-                                                    Text(wordFreq.word.capitalized)
-                                                        .font(.system(size: fontSizeForRank(index), weight: .bold))
-                                                        .foregroundStyle(colorForRank(index))
-                                                        .lineLimit(1)
-                                                        .minimumScaleFactor(0.7)
-                                                    
-                                                    // Count badge
-                                                    Text("\(wordFreq.count)")
-                                                        .font(.caption)
-                                                        .fontWeight(.semibold)
-                                                        .foregroundStyle(.white)
-                                                        .padding(.horizontal, 10)
-                                                        .padding(.vertical, 4)
-                                                        .background(colorForRank(index).gradient)
-                                                        .clipShape(Capsule())
-                                                }
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 12)
-                                                .background(colorForRank(index).opacity(0.08))
-                                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                            }
-                                        }
-                                        .padding(.horizontal, 2)
-                                    }
-                                    .frame(height: 400) // Fixed height for scrolling
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Emotional Trends section
-                        if !dailySentiment.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Emotional Trends")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    Text("Daily sentiment analysis from your journal entries")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 8)
-                                    
-                                    // Line chart showing sentiment over time
-                                    Chart(dailySentiment, id: \.date) { data in
-                                        LineMark(
-                                            x: .value("Date", data.date),
-                                            y: .value("Sentiment", data.sentiment)
-                                        )
-                                        .foregroundStyle(sentimentColor(data.sentiment).gradient)
-                                        .interpolationMethod(.catmullRom)
-                                        
-                                        PointMark(
-                                            x: .value("Date", data.date),
-                                            y: .value("Sentiment", data.sentiment)
-                                        )
-                                        .foregroundStyle(sentimentColor(data.sentiment))
-                                    }
-                                    .chartYScale(domain: -1...1)
-                                    .chartYAxis {
-                                        AxisMarks(values: [-1, -0.5, 0, 0.5, 1]) { value in
-                                            AxisGridLine()
-                                            AxisValueLabel {
-                                                if let score = value.as(Double.self) {
-                                                    Text(sentimentLabel(score))
-                                                        .font(.caption2)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .chartXAxis {
-                                        AxisMarks { value in
-                                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                                        }
-                                    }
-                                    .frame(minHeight: 200, maxHeight: 200)
-                                    
-                                    // Summary stats
-                                    HStack(spacing: 16) {
-                                        sentimentStatBox(
-                                            label: "Positive",
-                                            count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
-                                            color: .green
-                                        )
-                                        sentimentStatBox(
-                                            label: "Neutral",
-                                            count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
-                                            color: .gray
-                                        )
-                                        sentimentStatBox(
-                                            label: "Negative",
-                                            count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
-                                            color: .red
-                                        )
-                                    }
-                                    .padding(.top, 8)
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Languages Spoken section
-                        if !languageDistribution.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Languages Spoken")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    Text("Distribution of languages in your recordings")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 8)
-                                    
-                                    let totalWords = languageDistribution.reduce(0) { $0 + $1.wordCount }
-                                    
-                                    ForEach(languageDistribution.prefix(5), id: \.language) { item in
-                                        let percentage = totalWords > 0 ? (Double(item.wordCount) / Double(totalWords)) * 100 : 0
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack {
-                                                Text(LanguageDetector.displayName(for: item.language))
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                                Spacer()
-                                                Text("\(Int(percentage))%")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(.secondary)
-                                                    .monospacedDigit()
-                                            }
-                                            
-                                            GeometryReader { geometry in
-                                                ZStack(alignment: .leading) {
-                                                    RoundedRectangle(cornerRadius: 4)
-                                                        .fill(Color.secondary.opacity(0.2))
-                                                    
-                                                    RoundedRectangle(cornerRadius: 4)
-                                                        .fill(languageColor(index: languageDistribution.firstIndex(where: { $0.language == item.language }) ?? 0))
-                                                        .frame(width: geometry.size.width * (percentage / 100))
-                                                }
-                                            }
-                                            .frame(height: 8)
-                                        }
-                                        .padding(.vertical, 4)
-                                    }
-                                    
-                                    if languageDistribution.count > 1 {
-                                        Text("You speak \(languageDistribution.count) language\(languageDistribution.count == 1 ? "" : "s") in your recordings")
-                                            .font(.callout)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.top, 8)
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
                     }
                 }
             }
@@ -2206,11 +1741,6 @@ struct InsightsTab: View {
                 }
             }
             .task {
-                // Load word limit from UserDefaults
-                wordLimit = UserDefaults.standard.integer(forKey: wordLimitKey)
-                if wordLimit == 0 {
-                    wordLimit = 20 // Default if not set
-                }
                 await loadInsights()
             }
             .refreshable {
@@ -2240,48 +1770,6 @@ struct InsightsTab: View {
             // Get date range for filtering
             let dateRange = getDateRange(for: selectedTimeRange)
             
-            // Load key statistics (filtered)
-            let allLongest = try await coordinator.fetchLongestSession()
-            longestSession = filterSession(allLongest, in: dateRange)
-            
-            let allMostActive = try await coordinator.fetchMostActiveMonth()
-            mostActiveMonth = filterMonth(allMostActive, in: dateRange)
-            
-            // Load sessions by hour (filtered)
-            let allByHour = try await coordinator.fetchSessionsByHour()
-            sessionsByHour = await filterSessionsByHour(allByHour, in: dateRange)
-            
-            // Load sessions by day of week (filtered)
-            let allByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
-            sessionsByDayOfWeek = await filterSessionsByDayOfWeek(allByDayOfWeek, in: dateRange)
-            
-            // Load word frequency analysis
-            let transcriptTexts = try await coordinator.fetchTranscriptText(
-                startDate: dateRange.start,
-                endDate: dateRange.end
-            )
-            
-            // Load custom excluded words from UserDefaults
-            let customExcludedWords: Set<String> = {
-                if let savedWords = UserDefaults.standard.stringArray(forKey: "customExcludedWords") {
-                    return Set(savedWords)
-                }
-                return []
-            }()
-            
-            topWords = WordAnalyzer.analyzeWords(
-                from: transcriptTexts,
-                limit: wordLimit,
-                customExcludedWords: customExcludedWords
-            )
-            
-            // Load daily sentiment data
-            let (startDate, endDate) = getDateRange(for: selectedTimeRange)
-            dailySentiment = try await coordinator.fetchDailySentiment(from: startDate, to: endDate)
-            
-            // Load language distribution
-            languageDistribution = try await coordinator.fetchLanguageDistribution()
-            
             // Load period summary based on selected time range
             let periodType: PeriodType = {
                 switch selectedTimeRange {
@@ -2296,12 +1784,12 @@ struct InsightsTab: View {
             // Load sessions in this period first
             if let dbManager = coordinator.getDatabaseManager() {
                 if selectedTimeRange == .today || selectedTimeRange == .yesterday {
-                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: startDate)) ?? []
+                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
                 } else {
                     // For week/month/all, fetch ALL sessions and filter by date range
                     let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
                     sessionsInPeriod = allSessions?.filter { session in
-                        session.startTime >= startDate && session.startTime < endDate
+                        session.startTime >= dateRange.start && session.startTime < dateRange.end
                     } ?? []
                 }
                 sessionCount = sessionsInPeriod.count
@@ -2309,7 +1797,7 @@ struct InsightsTab: View {
             
             // Try to fetch existing period summary (don't auto-generate on view load)
             // For week/month/year, use Date() to get current period, for day use startDate
-            let dateForFetch = (periodType == .day) ? startDate : Date()
+            let dateForFetch = (periodType == .day) ? dateRange.start : Date()
             periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
 
             if selectedTimeRange == .allTime {
@@ -2320,14 +1808,14 @@ struct InsightsTab: View {
             
             // Debug logging
             if periodSummary == nil && !sessionsInPeriod.isEmpty {
-                print("ℹ️ [InsightsTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
+                print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
                 print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
                 print("   Sessions in period: \(sessionsInPeriod.count)")
             } else if periodSummary != nil {
-                print("✅ [InsightsTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
+                print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
             }
         } catch {
-            print("❌ [InsightsTab] Failed to load insights: \(error)")
+            print("❌ [OverviewTab] Failed to load insights: \(error)")
         }
         isLoading = false
     }
@@ -2348,7 +1836,7 @@ struct InsightsTab: View {
         // Use Date() (today) for week/month/year calculations, startDate for day
         let dateForGeneration = (periodType == .day) ? startDate : Date()
         
-        print("🔄 [InsightsTab] Regenerating \(periodType.rawValue) summary...")
+        print("🔄 [OverviewTab] Regenerating \(periodType.rawValue) summary...")
         
         switch periodType {
         case .day:
@@ -2785,7 +2273,7 @@ struct SettingsTab: View {
                 
                 // Statistics Section
                 Section {
-                    NavigationLink(destination: InsightsSettingsView()) {
+                    NavigationLink(destination: StatisticsView()) {
                         Label {
                             Text("Statistics")
                         } icon: {
@@ -4098,9 +3586,9 @@ enum KeychainHelper {
     }
 }
 
-// MARK: - Insights Settings View
+// MARK: - Statistics Settings View
 
-struct InsightsSettingsView: View {
+struct StatisticsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var wordLimit: Double = 20
     @State private var dateFormat: String = UserDefaults.standard.rollupDateFormat
@@ -4146,7 +3634,7 @@ struct InsightsSettingsView: View {
             } header: {
                 Text("Word Cloud")
             } footer: {
-                Text("Number of most-used words to display in the Insights tab.")
+                Text("Number of most-used words to display in the Statistics tab.")
             }
             
             Section {
@@ -4193,7 +3681,7 @@ struct InsightsSettingsView: View {
                 Text("Filters")
             }
         }
-        .navigationTitle("Insights")
+        .navigationTitle("Statistics")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
@@ -4230,7 +3718,7 @@ struct DataSettingsView: View {
             } header: {
                 Text("Browse Data")
             } footer: {
-                Text("The Insights tab always shows the current year. Use Historical Data to browse previous years.")
+                Text("The Overview tab always shows the current year. Use Historical Data to browse previous years.")
             }
             
             Section {
@@ -6792,9 +6280,9 @@ struct LanguageSettingsView: View {
     }
 }
 
-// MARK: - Insights Summary Card
+// MARK: - Overview Summary Card
 
-struct InsightsSummaryCard: View {
+struct OverviewSummaryCard: View {
     let summary: Summary
     let periodTitle: String
     let sessionCount: Int
