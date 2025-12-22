@@ -5877,8 +5877,7 @@ struct SessionDetailView: View {
     private func startPlaybackUpdateTimer() {
         stopPlaybackUpdateTimer()
         // Update at 30fps for smooth visual feedback (matches waveform animation)
-        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { _ in
             Task { @MainActor in
                 self.forceUpdateTrigger.toggle()
             }
