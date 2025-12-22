@@ -300,14 +300,33 @@ public actor LocalEngine: SummarizationEngine {
         
         // Try to extract JSON if wrapped in markdown or other text
         let jsonString: String
-        if let jsonStart = response.firstIndex(of: "{"),
-           let jsonEnd = response.lastIndex(of: "}"),
-           jsonStart < jsonEnd {
-            // Use safe substring extraction
-            let startIndex = jsonStart
-            let endIndex = response.index(after: jsonEnd)
-            jsonString = String(response[startIndex..<endIndex])
-            print("🔍 [LocalEngine] Extracted JSON from response (from char \(response.distance(from: response.startIndex, to: startIndex)) to \(response.distance(from: response.startIndex, to: endIndex)))")
+        if let jsonStart = response.firstIndex(of: "{") {
+            // Find the matching closing brace for the first opening brace
+            var braceCount = 0
+            var jsonEnd: String.Index?
+            
+            for index in response[jsonStart...].indices {
+                let char = response[index]
+                if char == "{" {
+                    braceCount += 1
+                } else if char == "}" {
+                    braceCount -= 1
+                    if braceCount == 0 {
+                        jsonEnd = index
+                        break
+                    }
+                }
+            }
+            
+            if let jsonEnd = jsonEnd, jsonStart < jsonEnd {
+                let endIndex = response.index(after: jsonEnd)
+                jsonString = String(response[jsonStart..<endIndex])
+                print("🔍 [LocalEngine] Extracted JSON from response (from char \(response.distance(from: response.startIndex, to: jsonStart)) to \(response.distance(from: response.startIndex, to: endIndex)))")
+            } else {
+                // Could not find matching closing brace
+                jsonString = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                print("⚠️ [LocalEngine] Could not find matching closing brace, using full response")
+            }
         } else {
             // No valid JSON brackets found, use full response
             jsonString = response.trimmingCharacters(in: .whitespacesAndNewlines)
