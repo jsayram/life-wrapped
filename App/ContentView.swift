@@ -5494,9 +5494,15 @@ struct SessionDetailView: View {
     }
     
     private var scrubberSlider: some View {
-        Slider(
+        // Force slider to update by using forceUpdateTrigger
+        let _ = forceUpdateTrigger
+        
+        return Slider(
             value: Binding(
-                get: { isPlayingThisSession ? totalElapsedTime : scrubbedTime },
+                get: { 
+                    let value = isPlayingThisSession ? totalElapsedTime : scrubbedTime
+                    return value
+                },
                 set: { newValue in
                     if isPlayingThisSession {
                         seekToTotalTime(newValue)
