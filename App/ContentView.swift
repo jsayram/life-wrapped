@@ -5652,6 +5652,11 @@ struct SessionDetailView: View {
     @State private var isRegeneratingSummary: Bool = false
     @FocusState private var isTextFieldFocused: Bool
     
+    // AI Generation progress
+    @State private var generationProgress: Double = 0.0
+    @State private var generationPhase: String = ""
+    @State private var showGenerationOverlay = false
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -5706,6 +5711,11 @@ struct SessionDetailView: View {
             stopTranscriptionCheckTimer()
             if isPlayingThisSession {
                 coordinator.audioPlayback.stop()
+            }
+        }
+        .overlay {
+            if showGenerationOverlay {
+                aiGenerationOverlay
             }
         }
     }
@@ -6723,12 +6733,12 @@ struct SessionDetailView: View {
         .cornerRadius(12)
     }
     
-    // MARK: - Personal Notes Section
+    // MARK: - Additional Notes Section
     
     private var personalNotesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Personal Notes")
+                Text("Additional Notes")
                     .font(.headline)
                 
                 Spacer()
@@ -6775,7 +6785,7 @@ struct SessionDetailView: View {
                     .background(Color(.tertiarySystemBackground))
                     .cornerRadius(8)
             } else if sessionNotes.isEmpty {
-                Text("Tap the pencil to add personal notes...")
+                Text("Tap the pencil to add additional notes...")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .italic()
@@ -6867,21 +6877,69 @@ struct SessionDetailView: View {
     private func regenerateSummary() async {
         isRegeneratingSummary = true
         summaryLoadError = nil
-        defer { isRegeneratingSummary = false }
+        showGenerationOverlay = true
+        generationProgress = 0.0
+        generationPhase = "Preparing..."
+        
+        defer { 
+            isRegeneratingSummary = false
+            showGenerationOverlay = false
+        }
         
         do {
             // Force regeneration if transcript was edited, otherwise check cache
             let forceRegenerate = transcriptWasEdited
+            
+            // Start progress simulation
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.1
+                    generationPhase = "Loading on-device AI model..."
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.3
+                    generationPhase = "Analyzing transcript..."
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.5
+                    generationPhase = "Processing key points..."
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.7
+                    generationPhase = "Generating summary..."
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.9
+                    generationPhase = "Finalizing..."
+                }
+            }
+            
+            // Actual generation
             try await coordinator.generateSessionSummary(sessionId: session.sessionId, forceRegenerate: forceRegenerate)
+            
+            generationProgress = 1.0
+            generationPhase = "Complete!"
+            
             await loadSessionSummary()
             // Reset edit tracking after summary is regenerated
             editedChunkIds.removeAll()
             transcriptWasEdited = false
-            coordinator.showSuccess("Summary regenerated")
+            
+            try? await Task.sleep(nanoseconds: 500_000_000) // Show complete state briefly
+            coordinator.showSuccess("Summary generated")
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
             summaryLoadError = error.localizedDescription
-            coordinator.showError("Failed to regenerate summary")
+            coordinator.showError("Failed to generate summary")
         }
     }
 
@@ -6979,6 +7037,138 @@ struct SessionDetailView: View {
             }
             
             remainingTime -= chunk.duration
+        }
+    }
+    
+    // MARK: - AI Generation Overlay
+    
+    private var aiGenerationOverlay: some View {
+        ZStack {
+            // Blurred background
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .blur(radius: 2)
+            
+            VStack(spacing: 24) {
+                // CPU icon with animation
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.purple.opacity(0.3), AppTheme.magenta.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                        .scaleEffect(1.0 + generationProgress * 0.2)
+                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: generationProgress)
+                    
+                    Image(systemName: "cpu")
+                        .font(.system(size: 50))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.magenta],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                
+                VStack(spacing: 12) {
+                    Text("On-Device AI Processing")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                    
+                    // Progress bar
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 280, height: 8)
+                        
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.purple, AppTheme.magenta],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: 280 * generationProgress, height: 8)
+                            .animation(.linear(duration: 0.3), value: generationProgress)
+                    }
+                    
+                    // Percentage
+                    Text("\(Int(generationProgress * 100))%")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                    
+                    // Current phase
+                    Text(generationPhase)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 20)
+                }
+                
+                // Info box
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundStyle(AppTheme.skyBlue)
+                        Text("Why does this take time?")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                    }
+                    
+                    Text("Life Wrapped performs a comprehensive analysis directly on your iPhone. No data leaves your device — it's completely private.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Once complete, future views of this session are instant!")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.white.opacity(0.1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal, 20)
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.systemBackground).opacity(0.95))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: [AppTheme.purple.opacity(0.5), AppTheme.magenta.opacity(0.5)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2
+                    )
+            )
+            .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 40)
         }
     }
     
