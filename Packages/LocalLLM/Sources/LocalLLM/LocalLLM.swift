@@ -506,7 +506,7 @@ public actor LlamaContext {
 
             print("🔄 [LlamaContext] Creating SwiftLlama instance...")
             print("   Model path: \(url.path)")
-            print("   Stop tokens: \(StopToken.phi)")
+            print("   Stop tokens: llama3 format")
             print("   ⏳ This may take 10-30 seconds...")
 
             // CRITICAL: Wrap in detached task to manage memory; capture Sendable values only

@@ -110,29 +110,21 @@ public struct UniversalPrompt {
     /// Session schema - one recording session (multiple chunks)
     public static let sessionSchema = """
     {
-      "title": "string - short 3-5 word descriptive title capturing the essence",
-      "key_insights": [
-        "string array - bullet points of KEY INSIGHTS extracted from the content",
-        "each insight should capture the MEANING and REASONING behind what was said",
-        "focus on WHAT the person is trying to accomplish or understand",
-        "identify the CORE PROBLEMS, GOALS, or QUESTIONS being explored",
-        "avoid simply restating what was said - extract the underlying intent"
-      ],
-      "main_themes": [
-        "string array - the overarching themes/topics discussed",
-        "group related ideas together rather than listing disconnected items"
-      ],
-      "action_items": [
-        "string array - concrete next steps or decisions mentioned",
-        "structure as actionable bullets"
-      ],
-      "thought_process": "string - brief 2-3 sentence analysis of the person's reasoning, problem-solving approach, or mental framework",
-      "mood_tone": "string - the overall emotional tone and energy level",
-      "open_questions": [
-        "string array - unresolved questions or areas needing more thought",
-        "things the person is still figuring out"
-      ]
+      "title": "short 3-5 word title",
+      "key_insights": ["insight 1", "insight 2", "..."],
+      "main_themes": ["theme 1", "theme 2", "..."],
+      "action_items": ["action 1", "action 2", "..."],
+      "thought_process": "2-3 sentence analysis",
+      "mood_tone": "emotional tone",
+      "open_questions": ["question 1", "question 2", "..."]
     }
+    
+    IMPORTANT FOR key_insights:
+    - Extract KEY INSIGHTS showing MEANING and REASONING behind what was said
+    - Focus on WHAT the person is trying to accomplish or understand
+    - Identify CORE PROBLEMS, GOALS, or QUESTIONS being explored
+    - Avoid simply restating - extract the underlying intent
+    - Group related ideas together in main_themes
     """
     
     /// Daily schema - all sessions from one day
