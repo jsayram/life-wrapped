@@ -949,13 +949,13 @@ struct RecordingButton: View {
                 )
                 .frame(width: 350, height: 350)
             
-            // Waveform
+            // Waveform - Simple overlapping sine waves
             TimelineView(.animation(minimumInterval: 1/60)) { context in
                 Canvas { canvasContext, size in
-                    drawFFTWaveform(
+                    drawSineWaveform(
                         context: canvasContext,
                         size: size,
-                        magnitudes: smoothedMagnitudes
+                        time: context.date.timeIntervalSince1970
                     )
                 }
                 .frame(width: 340, height: 160)
@@ -967,43 +967,57 @@ struct RecordingButton: View {
     
     // MARK: - Drawing Methods
     
-    private func drawFFTWaveform(context: GraphicsContext, size: CGSize, magnitudes: [Float]) {
-        let barCount = magnitudes.count // 80 bars
-        let barWidth: CGFloat = 3
-        let spacing: CGFloat = 1
-        let totalWidth = CGFloat(barCount) * (barWidth + spacing) - spacing
-        let startX = (size.width - totalWidth) / 2
-        let maxHeight = size.height - 20
+    private func drawSineWaveform(context: GraphicsContext, size: CGSize, time: TimeInterval) {
+        let centerY = size.height / 2
+        let isRecording = coordinator.recordingState.isRecording
         
-        // Draw each frequency bar
-        for (index, magnitude) in magnitudes.enumerated() {
-            let x = startX + CGFloat(index) * (barWidth + spacing)
+        // Get audio level for amplitude modulation (more responsive to loudness)
+        let audioLevel = coordinator.audioCapture.fftMagnitudes.reduce(0, +) / Float(max(coordinator.audioCapture.fftMagnitudes.count, 1))
+        let amplitudeScale = isRecording ? CGFloat(audioLevel) * 4.0 + 0.5 : 0.0
+        
+        if !isRecording {
+            // Draw flat line when idle
+            var flatPath = Path()
+            flatPath.move(to: CGPoint(x: 0, y: centerY))
+            flatPath.addLine(to: CGPoint(x: size.width, y: centerY))
             
-            // Calculate bar height based on FFT magnitude
-            let minHeight: CGFloat = 4
-            let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(magnitude)
+            context.stroke(
+                flatPath,
+                with: .color(AppTheme.purple.opacity(0.3)),
+                style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
+            )
+            return
+        }
+        
+        // Define 2 waves with larger amplitudes that respond to loudness
+        let waves: [(amplitude: CGFloat, frequency: CGFloat, thickness: CGFloat, speed: CGFloat, color: Color)] = [
+            (amplitude: 40 * amplitudeScale, frequency: 3.0, thickness: 4.0, speed: 1.2, color: Color(hex: "#A855F7")), // Purple
+            (amplitude: 30 * amplitudeScale, frequency: 5.0, thickness: 2.5, speed: 1.8, color: Color(hex: "#FF2D55")), // Pink
+        ]
+        
+        // Draw each sine wave
+        for wave in waves {
+            var path = Path()
+            let points = 200
             
-            // Center vertically
-            let y = (size.height - barHeight) / 2
+            for i in 0...points {
+                let x = (CGFloat(i) / CGFloat(points)) * size.width
+                let normalizedX = (x / size.width) * 2 * .pi * wave.frequency
+                let timeOffset = time * wave.speed
+                let y = centerY + wave.amplitude * sin(normalizedX - timeOffset)
+                
+                if i == 0 {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
             
-            // Create rounded rectangle for bar
-            let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-            let barPath = Path(roundedRect: barRect, cornerRadii: RectangleCornerRadii(
-                topLeading: barWidth / 2,
-                bottomLeading: barWidth / 2,
-                bottomTrailing: barWidth / 2,
-                topTrailing: barWidth / 2
-            ))
-            
-            // Calculate gradient position based on bar index
-            let gradientProgress = CGFloat(index) / CGFloat(barCount - 1)
-            
-            // Fill with gradient
-            context.fill(barPath, with: .linearGradient(
-                waveformGradient,
-                startPoint: CGPoint(x: 0, y: 0),
-                endPoint: CGPoint(x: size.width, y: 0)
-            ))
+            context.stroke(
+                path,
+                with: .color(wave.color),
+                style: StrokeStyle(lineWidth: wave.thickness, lineCap: .round, lineJoin: .round)
+            )
         }
     }
     
@@ -1012,12 +1026,6 @@ struct RecordingButton: View {
             recordingDuration = Date().timeIntervalSince(startTime)
         } else {
             recordingDuration = 0
-        }
-        
-        // Apply exponential moving average smoothing to FFT magnitudes
-        let rawMagnitudes = coordinator.audioCapture.fftMagnitudes
-        for i in 0..<min(smoothedMagnitudes.count, rawMagnitudes.count) {
-            smoothedMagnitudes[i] = smoothedMagnitudes[i] * 0.8 + rawMagnitudes[i] * 0.2
         }
     }
     
@@ -5410,72 +5418,52 @@ struct SessionDetailView: View {
     private var waveformView: some View {
         TimelineView(.animation(minimumInterval: 1/30)) { context in
             Canvas { canvasContext, size in
-                let barCount = 80
-                let barWidth: CGFloat = 3
-                let spacing: CGFloat = 1
-                let totalWidth = CGFloat(barCount) * (barWidth + spacing) - spacing
-                let startX = (size.width - totalWidth) / 2
-                let maxHeight = size.height - 20
+                let centerY = size.height / 2
+                let time = context.date.timeIntervalSince1970
+                let isPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
                 
-                // Get animated waveform pattern
-                let magnitudes: [Float]
-                if isPlayingThisSession && coordinator.audioPlayback.isPlaying {
-                    // Animated pattern based on time for visual effect (only when actively playing)
-                    let time = Date().timeIntervalSince1970
-                    magnitudes = (0..<barCount).map { index in
-                        let seed = Double(index) * 0.12345 + time * 2.0
-                        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
-                        return Float(0.3 + abs(height) * 0.5)
-                    }
+                if !isPlaying {
+                    // Draw flat line when not playing
+                    var flatPath = Path()
+                    flatPath.move(to: CGPoint(x: 0, y: centerY))
+                    flatPath.addLine(to: CGPoint(x: size.width, y: centerY))
+                    
+                    canvasContext.stroke(
+                        flatPath,
+                        with: .color(AppTheme.purple.opacity(0.3)),
+                        style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
+                    )
                 } else {
-                    // Static visualization when paused or not playing
-                    magnitudes = (0..<barCount).map { index in
-                        let seed = Double(index) * 0.12345
-                        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
-                        return Float(0.2 + abs(height) * 0.3)
+                    // Define 2 waves when playing
+                    let waves: [(amplitude: CGFloat, frequency: CGFloat, thickness: CGFloat, speed: CGFloat, color: Color)] = [
+                        (amplitude: 18, frequency: 4.0, thickness: 3.5, speed: 1.0, color: Color(hex: "#A855F7")), // Purple
+                        (amplitude: 14, frequency: 6.0, thickness: 2.0, speed: 1.5, color: Color(hex: "#3B82F6")), // Blue
+                    ]
+                    
+                    // Draw each sine wave
+                    for wave in waves {
+                        var path = Path()
+                        let points = 150
+                        
+                        for i in 0...points {
+                            let x = (CGFloat(i) / CGFloat(points)) * size.width
+                            let normalizedX = (x / size.width) * 2 * .pi * wave.frequency
+                            let timeOffset = time * wave.speed
+                            let y = centerY + wave.amplitude * sin(normalizedX - timeOffset)
+                            
+                            if i == 0 {
+                                path.move(to: CGPoint(x: x, y: y))
+                            } else {
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                        }
+                        
+                        canvasContext.stroke(
+                            path,
+                            with: .color(wave.color),
+                            style: StrokeStyle(lineWidth: wave.thickness, lineCap: .round, lineJoin: .round)
+                        )
                     }
-                }
-                
-                // Rainbow gradient colors (Apple Intelligence)
-                let waveformGradient = Gradient(colors: [
-                    Color(hex: "#FF9500"), // Orange
-                    Color(hex: "#FF2D55"), // Pink  
-                    Color(hex: "#A855F7"), // Purple
-                    Color(hex: "#3B82F6"), // Blue
-                    Color(hex: "#06B6D4"), // Cyan
-                    Color(hex: "#10B981"), // Green
-                    Color(hex: "#FBBF24")  // Yellow
-                ])
-                
-                // Draw each frequency bar
-                for (index, magnitude) in magnitudes.prefix(barCount).enumerated() {
-                    let x = startX + CGFloat(index) * (barWidth + spacing)
-                    
-                    // Calculate bar height based on magnitude
-                    let minHeight: CGFloat = 4
-                    let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(magnitude)
-                    
-                    // Center vertically
-                    let y = (size.height - barHeight) / 2
-                    
-                    // Create rounded rectangle for bar
-                    let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-                    let barPath = Path(roundedRect: barRect, cornerRadii: RectangleCornerRadii(
-                        topLeading: barWidth / 2,
-                        bottomLeading: barWidth / 2,
-                        bottomTrailing: barWidth / 2,
-                        topTrailing: barWidth / 2
-                    ))
-                    
-                    // Calculate gradient position based on bar index
-                    let gradientProgress = CGFloat(index) / CGFloat(barCount - 1)
-                    
-                    // Fill with gradient
-                    canvasContext.fill(barPath, with: .linearGradient(
-                        waveformGradient,
-                        startPoint: CGPoint(x: 0, y: 0),
-                        endPoint: CGPoint(x: size.width, y: 0)
-                    ))
                 }
                 
                 // Draw playhead indicator if playing
