@@ -11,7 +11,7 @@ final class LocalLLMSmokeTests: XCTestCase {
         #endif
 
         let manager = ModelFileManager.shared
-        let model = LocalLLM.ModelFileManager.ModelSize.llama32_3b
+        let model = LocalLLM.ModelFileManager.ModelSize.llama32_1b
 
         guard await manager.isModelAvailable(model) else {
             throw XCTSkip("Model not downloaded; run after downloading \(model.rawValue)")
