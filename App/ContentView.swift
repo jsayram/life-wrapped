@@ -2244,7 +2244,7 @@ struct SettingsTab: View {
                 Section {
                     NavigationLink(destination: RecordingSettingsView()) {
                         Label {
-                            Text("Recording")
+                            Text("Recording Chunks")
                         } icon: {
                             Image(systemName: "mic.fill")
                                 .foregroundStyle(AppTheme.magenta)
@@ -2283,20 +2283,6 @@ struct SettingsTab: View {
                     }
                 } footer: {
                     Text("View word clouds, charts, and statistical analysis.")
-                }
-                
-                // Languages Section
-                Section {
-                    NavigationLink(destination: LanguageSettingsView()) {
-                        Label {
-                            Text("Languages")
-                        } icon: {
-                            Image(systemName: "globe")
-                                .foregroundStyle(AppTheme.emerald)
-                        }
-                    }
-                } footer: {
-                    Text("Manage which languages Life Wrapped can detect.")
                 }
                 
                 // Data Section
@@ -2483,8 +2469,26 @@ struct RecordingSettingsView: View {
             } footer: {
                 Text("Optimized settings for voice recording with smaller file sizes.")
             }
+            
+            Section {
+                NavigationLink(destination: LanguageSettingsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Languages")
+                            Text("Manage which languages can be detected")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "globe")
+                            .foregroundStyle(AppTheme.emerald)
+                    }
+                }
+            } header: {
+                Text("Detection")
+            }
         }
-        .navigationTitle("Recording")
+        .navigationTitle("Recording Chunks")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             chunkDuration = coordinator.audioCapture.autoChunkDuration
