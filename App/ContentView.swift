@@ -2110,8 +2110,8 @@ struct OverviewTab: View {
             return groupByDay(dateRange: dateRange, calendar: calendar)
             
         case .month:
-            // Group by week (e.g., "Dec 15 - Dec 21")
-            return groupByWeek(dateRange: dateRange, calendar: calendar)
+            // Group by month (e.g., "December 2025")
+            return groupByMonth(dateRange: dateRange, calendar: calendar)
             
         case .allTime:
             // Group by month (e.g., "December 2025")
