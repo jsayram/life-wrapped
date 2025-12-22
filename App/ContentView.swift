@@ -1591,7 +1591,7 @@ struct RecordingRow: View {
 // MARK: - Overview Tab
 
 enum TimeRange: String, CaseIterable, Identifiable {
-    case yesterday = "Yesterday"
+    case yesterday = "Yest"
     case today = "Today"
     case week = "Week"
     case month = "Month"
@@ -1670,6 +1670,9 @@ struct OverviewTab: View {
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     
+    // New: Session summaries for feed view
+    @State private var sessionSummaries: [Summary] = []
+    
     var body: some View {
         NavigationStack {
             Group {
@@ -1682,71 +1685,99 @@ struct OverviewTab: View {
                         description: Text("Record more journal entries to generate summaries.")
                     )
                 } else {
-                    List {
-                        // Period Summary sections
-                        // For Year (All Time): Show Year Wrap first, then rollup below
-                        if selectedTimeRange == .allTime {
-                            // Year Wrap Summary (Pro AI) - if available
-                            if let yearWrap = yearWrapSummary {
-                                Section {
-                                    OverviewSummaryCard(
+                    // New Feed Layout
+                    ScrollView {
+                        LazyVStack(spacing: 16) {
+                            // Year Wrapped Summary (only show for Year timerange)
+                            if selectedTimeRange == .allTime {
+                                if let yearWrap = yearWrapSummary {
+                                    YearWrappedCard(
                                         summary: yearWrap,
-                                        periodTitle: "✨ Year Wrap (Pro AI)",
-                                        sessionCount: sessionCount,
-                                        sessionsInPeriod: sessionsInPeriod,
                                         coordinator: coordinator,
-                                        onRegenerate: nil,
-                                        wrapAction: {
+                                        onRegenerate: {
                                             showYearWrapConfirmation = true
                                         },
-                                        wrapIsLoading: isWrappingUpYear
+                                        isRegenerating: isWrappingUpYear
                                     )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                } else if !sessionsInPeriod.isEmpty {
+                                    // Show generate button if no Year Wrap exists
+                                    GenerateYearWrapCard(
+                                        onGenerate: {
+                                            showYearWrapConfirmation = true
+                                        },
+                                        isGenerating: isWrappingUpYear
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
                                 }
                             }
                             
-                            // Year Rollup (below Year Wrap)
-                            if let rollup = periodSummary {
-                                Section {
-                                    OverviewSummaryCard(
-                                        summary: rollup,
-                                        periodTitle: "📅 Year Rollup",
-                                        sessionCount: sessionCount,
-                                        sessionsInPeriod: sessionsInPeriod,
-                                        coordinator: coordinator,
-                                        onRegenerate: {
-                                            await regeneratePeriodSummary()
-                                        },
-                                        wrapAction: yearWrapSummary == nil ? {
-                                            showYearWrapConfirmation = true
-                                        } : nil,
-                                        wrapIsLoading: isWrappingUpYear
+                            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                let timeBuckets = groupSessionsByTimeBucket()
+                                
+                                if timeBuckets.isEmpty {
+                                    // No session summaries found
+                                    ContentUnavailableView(
+                                        "No Summaries Yet",
+                                        systemImage: "doc.text",
+                                        description: Text("Session summaries will appear here once recordings are summarized.")
                                     )
-                                }
-                            }
-                        } else {
-                            // Other time ranges: show single period summary
-                            if let summary = periodSummary {
-                                Section {
-                                    OverviewSummaryCard(
-                                        summary: summary,
-                                        periodTitle: periodTitle,
-                                        sessionCount: sessionCount,
-                                        sessionsInPeriod: sessionsInPeriod,
-                                        coordinator: coordinator,
-                                        onRegenerate: selectedTimeRange == .yesterday ? nil : {
-                                            await regeneratePeriodSummary()
-                                        },
-                                        wrapAction: nil,
-                                        wrapIsLoading: false
-                                    )
+                                    .padding(.top, 60)
+                                } else {
+                                ForEach(timeBuckets) { bucket in
+                                    Section {
+                                        if bucket.isEmpty {
+                                            // Empty bucket - show grayed out message
+                                            Text("No recordings")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                                .italic()
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 8)
+                                        } else {
+                                            // Summaries in this bucket
+                                            ForEach(bucket.summaries) { summary in
+                                                SessionSummaryCard(summary: summary, coordinator: coordinator)
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.vertical, 6)
+                                            }
+                                        }
+                                    } header: {
+                                        // Time bucket header
+                                        HStack {
+                                            Text(bucket.header)
+                                                .font(.headline)
+                                                .fontWeight(.semibold)
+                                                .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
+                                            
+                                            Spacer()
+                                            
+                                            if !bucket.isEmpty {
+                                                Text("\(bucket.summaries.count)")
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                                    .foregroundStyle(.secondary)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(
+                                                        Capsule()
+                                                            .fill(Color(.tertiarySystemFill))
+                                                    )
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 12)
+                                        .background(Color(.systemGroupedBackground))
+                                    }
                                 }
                             }
                         }
-                        
-                        
-                        
                     }
-                }
+                    .background(Color(.systemGroupedBackground))
+                }}
             }
             .navigationTitle("Overview")
             .toolbar {
@@ -1760,6 +1791,48 @@ struct OverviewTab: View {
                     .tint(AppTheme.purple)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 8)
+                }
+                
+                // Copy All button
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !sessionSummaries.isEmpty {
+                        Button {
+                            copyAllSummaries()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption)
+                                Text("Copy \(sessionSummaries.count)")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                            .foregroundStyle(AppTheme.purple)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(
+                                        RadialGradient(
+                                            colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 40
+                                        )
+                                    )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        ),
+                                        lineWidth: 1.5
+                                    )
+                            )
+                        }
+                    }
                 }
             }
             .task {
@@ -1815,6 +1888,13 @@ struct OverviewTab: View {
                     } ?? []
                 }
                 sessionCount = sessionsInPeriod.count
+                
+                // New: Fetch session summaries for feed view
+                sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                    from: dateRange.start,
+                    to: dateRange.end
+                )) ?? []
+                print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries for date range")
             }
             
             // Try to fetch existing period summary (don't auto-generate on view load)
@@ -1996,6 +2076,207 @@ struct OverviewTab: View {
         }
         
         return filtered.map { (dayOfWeek: $0.key, count: $0.value.count, sessionIds: $0.value) }
+    }
+    
+    // MARK: - Time Bucketing for Feed View
+    
+    struct TimeBucket: Identifiable {
+        let id = UUID()
+        let header: String
+        let summaries: [Summary]
+        let isEmpty: Bool
+    }
+    
+    private func groupSessionsByTimeBucket() -> [TimeBucket] {
+        let calendar = Calendar.current
+        let dateRange = getDateRange(for: selectedTimeRange)
+        
+        switch selectedTimeRange {
+        case .today, .yesterday:
+            // Group by hour (e.g., "2:00 PM - 3:00 PM")
+            return groupByHour(dateRange: dateRange, calendar: calendar)
+            
+        case .week:
+            // Group by day (e.g., "December 22")
+            return groupByDay(dateRange: dateRange, calendar: calendar)
+            
+        case .month:
+            // Group by week (e.g., "Dec 15 - Dec 21")
+            return groupByWeek(dateRange: dateRange, calendar: calendar)
+            
+        case .allTime:
+            // Group by month (e.g., "December 2025")
+            return groupByMonth(dateRange: dateRange, calendar: calendar)
+        }
+    }
+    
+    private func groupByHour(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        var summariesByHour: [Int: [Summary]] = [:]
+        
+        // Group existing summaries by hour
+        for summary in sessionSummaries {
+            let hour = calendar.component(.hour, from: summary.periodStart)
+            summariesByHour[hour, default: []].append(summary)
+        }
+        
+        // Create buckets for all hours in range
+        let startHour = calendar.component(.hour, from: dateRange.start)
+        let endHour = calendar.component(.hour, from: dateRange.end)
+        let actualEndHour = dateRange.end > dateRange.start ? endHour : 23
+        
+        for hour in startHour...actualEndHour {
+            let hourString = hour == 0 ? "12 AM" : (hour < 12 ? "\(hour) AM" : (hour == 12 ? "12 PM" : "\(hour - 12) PM"))
+            let nextHour = (hour + 1) % 24
+            let nextHourString = nextHour == 0 ? "12 AM" : (nextHour < 12 ? "\(nextHour) AM" : (nextHour == 12 ? "12 PM" : "\(nextHour - 12) PM"))
+            let header = "\(hourString) - \(nextHourString)"
+            
+            let summaries = summariesByHour[hour] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+        }
+        
+        return buckets
+    }
+    
+    private func groupByDay(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        var summariesByDay: [Date: [Summary]] = [:]
+        
+        // Group existing summaries by day
+        for summary in sessionSummaries {
+            let dayStart = calendar.startOfDay(for: summary.periodStart)
+            summariesByDay[dayStart, default: []].append(summary)
+        }
+        
+        // Create buckets for all days in range
+        var currentDate = calendar.startOfDay(for: dateRange.start)
+        let endDate = calendar.startOfDay(for: dateRange.end)
+        
+        while currentDate <= endDate {
+            let formatter = DateFormatter()
+            if calendar.isDateInToday(currentDate) {
+                formatter.dateFormat = "'Today' - MMMM d"
+            } else if calendar.isDateInYesterday(currentDate) {
+                formatter.dateFormat = "'Yesterday' - MMMM d"
+            } else {
+                formatter.dateFormat = "EEEE, MMMM d"
+            }
+            let header = formatter.string(from: currentDate)
+            
+            let summaries = summariesByDay[currentDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByWeek(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        var summariesByWeek: [Date: [Summary]] = [:]
+        
+        // Group existing summaries by week start
+        for summary in sessionSummaries {
+            let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: summary.periodStart)
+            if let weekStartDate = calendar.date(from: weekStart) {
+                summariesByWeek[weekStartDate, default: []].append(summary)
+            }
+        }
+        
+        // Create buckets for all weeks in range
+        var currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
+        let endWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.end)
+        
+        guard var currentWeekDate = calendar.date(from: currentWeekStart),
+              let endWeekDate = calendar.date(from: endWeekStart) else {
+            return buckets
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d"
+        
+        while currentWeekDate <= endWeekDate {
+            let weekEnd = calendar.date(byAdding: .day, value: 6, to: currentWeekDate) ?? currentWeekDate
+            let header = "\(dateFormatter.string(from: currentWeekDate)) - \(dateFormatter.string(from: weekEnd))"
+            
+            let summaries = summariesByWeek[currentWeekDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentWeekDate = calendar.date(byAdding: .weekOfYear, value: 1, to: currentWeekDate) ?? currentWeekDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByMonth(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        var summariesByMonth: [Date: [Summary]] = [:]
+        
+        // Group existing summaries by month start
+        for summary in sessionSummaries {
+            let monthStart = calendar.dateComponents([.year, .month], from: summary.periodStart)
+            if let monthStartDate = calendar.date(from: monthStart) {
+                summariesByMonth[monthStartDate, default: []].append(summary)
+            }
+        }
+        
+        // Create buckets for all months in range
+        var currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
+        let endMonthStart = calendar.dateComponents([.year, .month], from: dateRange.end)
+        
+        guard var currentMonthDate = calendar.date(from: currentMonthStart),
+              let endMonthDate = calendar.date(from: endMonthStart) else {
+            return buckets
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMMM yyyy"
+        
+        while currentMonthDate <= endMonthDate {
+            let header = dateFormatter.string(from: currentMonthDate)
+            
+            let summaries = summariesByMonth[currentMonthDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentMonthDate = calendar.date(byAdding: .month, value: 1, to: currentMonthDate) ?? currentMonthDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    // MARK: - Copy All Functionality
+    
+    private func copyAllSummaries() {
+        let timeBuckets = groupSessionsByTimeBucket()
+        var fullText = ""
+        
+        for bucket in timeBuckets {
+            if !bucket.summaries.isEmpty {
+                // Add bucket header
+                fullText += "\(bucket.header)\n"
+                fullText += String(repeating: "=", count: bucket.header.count) + "\n\n"
+                
+                // Add each summary in the bucket
+                for summary in bucket.summaries {
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+                    let timeString = dateFormatter.string(from: summary.periodStart)
+                    
+                    fullText += "• \(timeString)\n"
+                    fullText += summary.text + "\n\n"
+                }
+                
+                fullText += "\n"
+            }
+        }
+        
+        if !fullText.isEmpty {
+            UIPasteboard.general.string = fullText
+            coordinator.showSuccess("All summaries copied to clipboard")
+        } else {
+            coordinator.showError("No summaries to copy")
+        }
     }
     
     private func formatMonth(year: Int, month: Int) -> String {
@@ -6788,18 +7069,7 @@ struct OverviewSummaryCard: View {
     let wrapAction: (() -> Void)?
     let wrapIsLoading: Bool
     
-    @State private var showingSessions = false
-    @State private var visibleSessionCount = 3
     @State private var isRegenerating = false
-    @State private var selectedSession: RecordingSession?
-    
-    private var visibleSessions: [RecordingSession] {
-        Array(sessionsInPeriod.prefix(visibleSessionCount))
-    }
-    
-    private var hasMoreSessions: Bool {
-        visibleSessionCount < sessionsInPeriod.count
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -6817,13 +7087,6 @@ struct OverviewSummaryCard: View {
             // Engine tier badge
             if let engineTier = summary.engineTier {
                 engineBadge(tier: engineTier)
-            }
-            
-            Divider()
-            
-            // Sessions list - individually tappable
-            if !sessionsInPeriod.isEmpty {
-                sessionsSection
             }
         }
         .padding(.vertical, 8)
@@ -6936,97 +7199,6 @@ struct OverviewSummaryCard: View {
         .foregroundStyle(.secondary)
     }
     
-    // MARK: - Sessions Section
-    
-    private var sessionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Toggle button
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showingSessions.toggle()
-                    if !showingSessions {
-                        visibleSessionCount = 3 // Reset when closing
-                    }
-                }
-            } label: {
-                HStack {
-                    Text(showingSessions ? "Hide sessions" : "Show individual sessions (\(sessionsInPeriod.count))")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Spacer()
-                    Image(systemName: showingSessions ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                }
-                .foregroundStyle(.blue)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            
-            if showingSessions {
-                // Session rows - each individually tappable with Button
-                VStack(spacing: 8) {
-                    ForEach(visibleSessions, id: \.sessionId) { session in
-                        Button {
-                            selectedSession = session
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(session.startTime, style: .time)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.primary)
-                                    Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 16)
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                
-                // Load more button
-                if hasMoreSessions {
-                    Button {
-                        withAnimation {
-                            visibleSessionCount += 5
-                        }
-                    } label: {
-                        HStack {
-                            Text("Show more (\(sessionsInPeriod.count - visibleSessionCount) remaining)")
-                                .font(.caption)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(.blue)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.05))
-                        .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .sheet(item: $selectedSession) { session in
-            NavigationStack {
-                SessionDetailView(session: session)
-            }
-        }
-    }
-    
     // MARK: - Helpers
     
     private func engineIcon(for tier: String) -> String {
@@ -7087,6 +7259,380 @@ struct InsightSessionRow: View {
                 .allowsHitTesting(false)
         )
         .cornerRadius(8)
+    }
+}
+
+// MARK: - Session Summary Card (Feed View)
+
+struct SessionSummaryCard: View {
+    let summary: Summary
+    let coordinator: AppCoordinator
+    @Environment(\.colorScheme) var colorScheme
+    @State private var isLoadingSession = false
+    @State private var showSessionNotFoundAlert = false
+    @State private var fetchedSession: RecordingSession?
+    @State private var shouldNavigate = false
+    
+    var body: some View {
+        Button {
+            loadSessionAndNavigate()
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                // Summary text
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Footer with time and copy button
+                HStack(spacing: 12) {
+                    // Time display (relative + absolute)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(relativeTimeString)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        Text(absoluteTimeString)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Copy button
+                    Button {
+                        UIPasteboard.general.string = summary.text
+                        coordinator.showSuccess("Summary copied")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.body)
+                            .foregroundStyle(AppTheme.skyBlue)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(AppTheme.skyBlue.opacity(0.1))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        ),
+                                        lineWidth: 1.5
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(AppTheme.cardGradient(for: colorScheme))
+                    .allowsHitTesting(false)
+            )
+            .cornerRadius(12)
+            .overlay {
+                if isLoadingSession {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.3))
+                    ProgressView()
+                        .tint(.white)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .background(
+            NavigationLink(destination: destinationView, isActive: $shouldNavigate) {
+                EmptyView()
+            }
+            .hidden()
+        )
+        .alert("Session Not Found", isPresented: $showSessionNotFoundAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("The recording session for this summary could not be found.")
+        }
+    }
+    
+    @ViewBuilder
+    private var destinationView: some View {
+        if let session = fetchedSession {
+            SessionDetailView(session: session)
+        } else {
+            EmptyView()
+        }
+    }
+    
+    private var relativeTimeString: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: summary.periodStart, relativeTo: Date())
+    }
+    
+    private var absoluteTimeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+        return formatter.string(from: summary.periodStart)
+    }
+    
+    private func loadSessionAndNavigate() {
+        guard let sessionId = summary.sessionId else {
+            showSessionNotFoundAlert = true
+            return
+        }
+        
+        isLoadingSession = true
+        
+        Task {
+            do {
+                if let dbManager = await coordinator.getDatabaseManager() {
+                    // Fetch chunks for this session
+                    let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
+                    
+                    guard !chunks.isEmpty else {
+                        await MainActor.run {
+                            showSessionNotFoundAlert = true
+                            isLoadingSession = false
+                        }
+                        return
+                    }
+                    
+                    // Fetch metadata
+                    let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sessionId)
+                    
+                    // Build RecordingSession
+                    let session = RecordingSession(
+                        sessionId: sessionId,
+                        chunks: chunks,
+                        title: metadata?.title,
+                        notes: metadata?.notes,
+                        isFavorite: metadata?.isFavorite ?? false
+                    )
+                    
+                    await MainActor.run {
+                        fetchedSession = session
+                        shouldNavigate = true
+                        isLoadingSession = false
+                    }
+                } else {
+                    await MainActor.run {
+                        showSessionNotFoundAlert = true
+                        isLoadingSession = false
+                    }
+                }
+            } catch {
+                print("❌ [SessionSummaryCard] Failed to load session: \(error)")
+                await MainActor.run {
+                    showSessionNotFoundAlert = true
+                    isLoadingSession = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Year Wrapped Card
+
+struct YearWrappedCard: View {
+    let summary: Summary
+    let coordinator: AppCoordinator
+    let onRegenerate: () -> Void
+    let isRegenerating: Bool
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("✨")
+                            .font(.title2)
+                        Text("Year Wrapped")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                    }
+                    Text("AI-powered yearly summary")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    // Copy button
+                    Button {
+                        UIPasteboard.general.string = summary.text
+                        coordinator.showSuccess("Year Wrapped summary copied")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.body)
+                            .foregroundStyle(AppTheme.skyBlue)
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.skyBlue.opacity(0.1))
+                    )
+                    
+                    // Regenerate button
+                    Button {
+                        onRegenerate()
+                    } label: {
+                        if isRegenerating {
+                            ProgressView()
+                                .tint(AppTheme.purple)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                    .disabled(isRegenerating)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.magenta.opacity(0.1))
+                    )
+                }
+            }
+            
+            Divider()
+            
+            // Summary text - scrollable
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(height: 300)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(8)
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppTheme.darkPurple.opacity(0.15),
+                    AppTheme.magenta.opacity(0.1),
+                    AppTheme.purple.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    LinearGradient(
+                        colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
+        )
+        .cornerRadius(16)
+        .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
+    }
+}
+
+// MARK: - Generate Year Wrap Card
+
+struct GenerateYearWrapCard: View {
+    let onGenerate: () -> Void
+    let isGenerating: Bool
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        Button {
+            onGenerate()
+        } label: {
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 48))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                VStack(spacing: 8) {
+                    Text("Generate Year Wrapped")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Text("Create an AI-powered summary of your entire year")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                if isGenerating {
+                    ProgressView()
+                        .tint(AppTheme.purple)
+                        .scaleEffect(1.2)
+                        .padding(.top, 8)
+                } else {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                        Text("Generate with AI")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(12)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(24)
+            .background(
+                LinearGradient(
+                    colors: [
+                        AppTheme.darkPurple.opacity(0.1),
+                        AppTheme.magenta.opacity(0.05),
+                        AppTheme.purple.opacity(0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        style: StrokeStyle(lineWidth: 2, dash: [8, 4])
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
+        .disabled(isGenerating)
     }
 }
 
