@@ -1591,7 +1591,7 @@ struct RecordingRow: View {
 // MARK: - Overview Tab
 
 enum TimeRange: String, CaseIterable, Identifiable {
-    case yesterday = "Yest"
+    case yesterday = "Yesterday"
     case today = "Today"
     case week = "Week"
     case month = "Month"
@@ -1879,6 +1879,11 @@ struct OverviewTab: View {
                 case .allTime: return .year // Show yearly summary for current year
                 }
             }()
+            
+            // Clear previous data to avoid stale counts when DB is unavailable
+            sessionsInPeriod = []
+            sessionCount = 0
+            sessionSummaries = []
             
             // Load sessions in this period first
             if let dbManager = coordinator.getDatabaseManager() {
