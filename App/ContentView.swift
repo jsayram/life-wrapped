@@ -1701,7 +1701,9 @@ struct InsightsTab: View {
                                         sessionCount: sessionCount,
                                         sessionsInPeriod: sessionsInPeriod,
                                         coordinator: coordinator,
-                                        onRegenerate: nil,
+                                        onRegenerate: {
+                                            await regeneratePeriodSummary()
+                                        },
                                         wrapAction: yearWrapSummary == nil ? {
                                             showYearWrapConfirmation = true
                                         } : nil,
