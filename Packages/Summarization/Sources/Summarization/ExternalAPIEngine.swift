@@ -411,41 +411,35 @@ public actor ExternalAPIEngine: SummarizationEngine {
         // Extract summary based on schema structure
         // Session schema has: title, key_insights[], main_themes[], thought_process, etc.
         let summary: String
-        if let title = json["title"] as? String,
-           let keyInsights = json["key_insights"] as? [String] {
-            // Build comprehensive summary from session schema
-            var parts: [String] = []
+        if let keyInsights = json["key_insights"] as? [String] {
+            // Build paragraph narrative with first-person voice (matching LocalEngine format)
+            var paragraphs: [String] = []
             
-            // Add title as header
-            parts.append("**\(title)**")
-            
-            // Add key insights
+            // Add key insights if present
             if !keyInsights.isEmpty {
-                parts.append("\n\nKey Insights:")
-                for (index, insight) in keyInsights.enumerated() {
-                    parts.append("• \(insight)")
-                }
+                let insights = keyInsights.joined(separator: ". ")
+                paragraphs.append(insights)
             }
             
             // Add thought process if available
             if let thoughtProcess = json["thought_process"] as? String, !thoughtProcess.isEmpty {
-                parts.append("\n\n\(thoughtProcess)")
-            }
-            
-            // Add main themes if available
-            if let themes = json["main_themes"] as? [String], !themes.isEmpty {
-                parts.append("\n\nThemes: \(themes.joined(separator: ", "))")
+                paragraphs.append(thoughtProcess)
             }
             
             // Add action items if available
             if let actionItems = json["action_items"] as? [String], !actionItems.isEmpty {
-                parts.append("\n\nAction Items:")
-                for item in actionItems {
-                    parts.append("• \(item)")
-                }
+                let actions = "My next steps: " + actionItems.joined(separator: ", ") + "."
+                paragraphs.append(actions)
             }
             
-            summary = parts.joined(separator: "\n")
+            // Add open questions if available
+            if let openQuestions = json["open_questions"] as? [String], !openQuestions.isEmpty {
+                let questions = "I'm still figuring out: " + openQuestions.joined(separator: "; ") + "."
+                paragraphs.append(questions)
+            }
+            
+            // Join all paragraphs with periods and spaces
+            summary = paragraphs.joined(separator: " ")
         } else {
             // Fallback to simple field extraction
             summary = json["summary"] as? String 

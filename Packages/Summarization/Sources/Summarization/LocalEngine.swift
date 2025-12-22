@@ -325,39 +325,34 @@ public actor LocalEngine: SummarizationEngine {
         do {
             let parsed = try decoder.decode(LLMSessionResponse.self, from: jsonData)
             
-            // Format the structured response into a readable summary
-            var summaryText = ""
+            // Format as paragraph narrative with first-person voice
+            var paragraphs: [String] = []
             
-            // Add key insights as bullet points
+            // Add key insights if present
             if !parsed.key_insights.isEmpty {
-                summaryText += "Key Insights:\n"
-                for insight in parsed.key_insights {
-                    summaryText += "• \(insight)\n"
-                }
-                summaryText += "\n"
+                let insights = parsed.key_insights.joined(separator: ". ")
+                paragraphs.append(insights)
             }
             
-            // Add thought process analysis
+            // Add thought process
             if !parsed.thought_process.isEmpty {
-                summaryText += "\(parsed.thought_process)\n\n"
+                paragraphs.append(parsed.thought_process)
             }
             
             // Add action items if present
             if !parsed.action_items.isEmpty {
-                summaryText += "Next Steps:\n"
-                for item in parsed.action_items {
-                    summaryText += "• \(item)\n"
-                }
-                summaryText += "\n"
+                let actions = "My next steps: " + parsed.action_items.joined(separator: ", ") + "."
+                paragraphs.append(actions)
             }
             
             // Add open questions if present
             if !parsed.open_questions.isEmpty {
-                summaryText += "Open Questions:\n"
-                for question in parsed.open_questions {
-                    summaryText += "• \(question)\n"
-                }
+                let questions = "I'm still figuring out: " + parsed.open_questions.joined(separator: "; ") + "."
+                paragraphs.append(questions)
             }
+            
+            // Join all paragraphs with periods and spaces
+            let summaryText = paragraphs.joined(separator: " ")
             
             // Determine sentiment from mood_tone
             let sentiment = parseMoodToSentiment(parsed.mood_tone)

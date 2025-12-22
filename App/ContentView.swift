@@ -1657,24 +1657,61 @@ struct InsightsTab: View {
                     )
                 } else {
                     List {
-                        // Period Summary section (at the top)
-                        // For Year tab: prioritize yearWrapSummary (Pro AI) over periodSummary (rollup)
-                        if let summary = (selectedTimeRange == .allTime ? (yearWrapSummary ?? periodSummary) : periodSummary) {
-                            Section {
-                                InsightsSummaryCard(
-                                    summary: summary,
-                                    periodTitle: selectedTimeRange == .allTime && yearWrapSummary != nil ? "✨ Year Wrap (Pro AI)" : periodTitle,
-                                    sessionCount: sessionCount,
-                                    sessionsInPeriod: sessionsInPeriod,
-                                    coordinator: coordinator,
-                                    onRegenerate: selectedTimeRange == .yesterday ? nil : {
-                                        await regeneratePeriodSummary()
-                                    },
-                                    wrapAction: selectedTimeRange == .allTime ? {
-                                        showYearWrapConfirmation = true
-                                    } : nil,
-                                    wrapIsLoading: isWrappingUpYear
-                                )
+                        // Period Summary sections
+                        // For Year (All Time): Show Year Wrap first, then rollup below
+                        if selectedTimeRange == .allTime {
+                            // Year Wrap Summary (Pro AI) - if available
+                            if let yearWrap = yearWrapSummary {
+                                Section {
+                                    InsightsSummaryCard(
+                                        summary: yearWrap,
+                                        periodTitle: "✨ Year Wrap (Pro AI)",
+                                        sessionCount: sessionCount,
+                                        sessionsInPeriod: sessionsInPeriod,
+                                        coordinator: coordinator,
+                                        onRegenerate: nil,
+                                        wrapAction: {
+                                            showYearWrapConfirmation = true
+                                        },
+                                        wrapIsLoading: isWrappingUpYear
+                                    )
+                                }
+                            }
+                            
+                            // Year Rollup (below Year Wrap)
+                            if let rollup = periodSummary {
+                                Section {
+                                    InsightsSummaryCard(
+                                        summary: rollup,
+                                        periodTitle: "📅 Year Rollup",
+                                        sessionCount: sessionCount,
+                                        sessionsInPeriod: sessionsInPeriod,
+                                        coordinator: coordinator,
+                                        onRegenerate: nil,
+                                        wrapAction: yearWrapSummary == nil ? {
+                                            showYearWrapConfirmation = true
+                                        } : nil,
+                                        wrapIsLoading: isWrappingUpYear
+                                    )
+                                }
+                            }
+                        } else {
+                            // Other time ranges: show single period summary
+                            if let summary = periodSummary {
+                                Section {
+                                    InsightsSummaryCard(
+                                        summary: summary,
+                                        periodTitle: periodTitle,
+                                        sessionCount: sessionCount,
+                                        sessionsInPeriod: sessionsInPeriod,
+                                        coordinator: coordinator,
+                                        onRegenerate: selectedTimeRange == .yesterday ? nil : {
+                                            await regeneratePeriodSummary()
+                                        },
+                                        wrapAction: nil,
+                                        wrapIsLoading: false
+                                    )
+                                }
                             }
                         }
                         
