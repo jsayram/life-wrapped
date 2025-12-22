@@ -5408,7 +5408,6 @@ struct SessionDetailView: View {
     
     private var playbackControlsSection: some View {
         VStack(spacing: 16) {
-            waveformView
             scrubberSlider
             timeDisplayRow
             playPauseButton
@@ -5539,38 +5538,52 @@ struct SessionDetailView: View {
     
     private var playPauseButton: some View {
         Button { playSession() } label: {
-            HStack(spacing: 12) {
-                let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
-                Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(AppTheme.purple)
+            let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
+            
+            HStack(spacing: 16) {
+                // Icon in a circular background
+                ZStack {
+                    Circle()
+                        .fill(AppTheme.purple.opacity(0.15))
+                        .frame(width: 56, height: 56)
+                    
+                    Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(AppTheme.purple)
+                }
                 
-                VStack(alignment: .leading, spacing: 2) {
+                // Text label
+                VStack(alignment: .leading, spacing: 4) {
                     if isCurrentlyPlaying {
                         Text("Pause")
                             .font(.headline)
+                            .foregroundStyle(.primary)
                     } else if isPlayingThisSession {
                         Text("Resume")
                             .font(.headline)
+                            .foregroundStyle(.primary)
                     } else {
                         Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
                             .font(.headline)
+                            .foregroundStyle(.primary)
                     }
+                    
+                    Text(formatTime(session.totalDuration))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
             }
-            .frame(maxWidth: .infinity)
             .padding()
             .background(
-                RadialGradient(
-                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: 150
-                )
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.tertiarySystemBackground))
             )
-            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(AppTheme.purple.opacity(0.2), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -5864,10 +5877,15 @@ struct SessionDetailView: View {
     private func startPlaybackUpdateTimer() {
         stopPlaybackUpdateTimer()
         // Update at 30fps for smooth visual feedback (matches waveform animation)
-        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { _ in
+        playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             Task { @MainActor in
                 self.forceUpdateTrigger.toggle()
             }
+        }
+        // Add timer to common run loop mode to ensure it fires during UI interactions
+        if let timer = playbackUpdateTimer {
+            RunLoop.main.add(timer, forMode: .common)
         }
     }
     
