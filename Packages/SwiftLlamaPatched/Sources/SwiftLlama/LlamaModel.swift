@@ -10,7 +10,6 @@ class LlamaModel {
     private var tokens: [Token]
     private var generatedTokenAccount: Int32 = 0
     private var ended = false
-    private let n_len: Int32 = 1024
 
     var shouldContinue: Bool {
         generatedTokenAccount < configuration.maxTokenCount && !ended
@@ -74,7 +73,7 @@ class LlamaModel {
     func `continue`() throws -> String {
         let newToken = llama_sampler_sample(sampler, context, batch.n_tokens - 1)
 
-        if llama_token_is_eog(model, newToken) || generatedTokenAccount == n_len {
+        if llama_token_is_eog(model, newToken) || generatedTokenAccount >= Int32(configuration.maxTokenCount) {
             ended = true
             return ""
         }

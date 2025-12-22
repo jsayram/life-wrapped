@@ -291,6 +291,13 @@ public actor LocalEngine: SummarizationEngine {
             print("... (truncated, full length: \(response.count))")
         }
         
+        // Check if response looks incomplete (missing closing brace)
+        let openBraces = response.filter { $0 == "{" }.count
+        let closeBraces = response.filter { $0 == "}" }.count
+        if openBraces > closeBraces {
+            print("⚠️ [LocalEngine] Incomplete JSON detected (\(openBraces) '{' vs \(closeBraces) '}'), likely hit token limit")
+        }
+        
         // Try to extract JSON if wrapped in markdown or other text
         let jsonString: String
         if let jsonStart = response.firstIndex(of: "{"),
@@ -437,12 +444,17 @@ public actor LocalEngine: SummarizationEngine {
     }
 
     private func clampTranscript(_ transcript: String) -> String {
-        // Roughly 4 characters per token; clamp to avoid blowing past context
-        let maxTokens = min(localConfiguration.contextSize, configuration.maxContextLength)
-        let maxCharacters = maxTokens * 4
+        // Reserve tokens for: system prompt (~400), schema (~300), and JSON output (~400-600)
+        let reservedForOutput = 1200  // Conservative reserve for complete JSON response
+        let availableForInput = min(localConfiguration.contextSize, configuration.maxContextLength) - reservedForOutput
+        
+        // Roughly 4 characters per token
+        let maxCharacters = availableForInput * 4
         guard transcript.count > maxCharacters else { return transcript }
+        
         let clamped = String(transcript.prefix(maxCharacters))
-        print("✂️ [LocalEngine] Clamped transcript to \(clamped.count) chars (~\(maxTokens) tokens)")
+        print("✂️ [LocalEngine] Clamped transcript: \(transcript.count) → \(clamped.count) chars")
+        print("   Context budget: \(localConfiguration.contextSize) total, \(reservedForOutput) reserved for output, \(availableForInput) for input")
         return clamped
     }
 

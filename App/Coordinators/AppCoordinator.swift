@@ -7,6 +7,7 @@ import SwiftUI
 import UIKit
 import AVFoundation
 import Speech
+import CryptoKit
 import SharedModels
 import Summarization
 import Storage
@@ -731,9 +732,10 @@ public final class AppCoordinator: ObservableObject {
     }
     
     /// Generate a summary for an entire session
-    public func generateSessionSummary(sessionId: UUID) async throws {
+    public func generateSessionSummary(sessionId: UUID, forceRegenerate: Bool = false) async throws {
         print("🚀 [AppCoordinator] === GENERATING SESSION SUMMARY ===")
         print("📌 [AppCoordinator] Session ID: \(sessionId)")
+        print("🔄 [AppCoordinator] Force regenerate: \(forceRegenerate)")
         
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else {
@@ -759,6 +761,27 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.transcriptionFailed(NSError(domain: "AppCoordinator", code: -1, userInfo: [NSLocalizedDescriptionKey: "No transcript text"]))
         }
         
+        // Calculate hash of transcript content for cache checking
+        let inputHash = calculateHash(for: fullText)
+        
+        // Check if we can skip regeneration (cache hit)
+        if !forceRegenerate {
+            if let existingSummary = try? await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+                if let existingHash = existingSummary.inputHash, existingHash == inputHash {
+                    print("✅ [AppCoordinator] Summary cache HIT - transcript unchanged, skipping regeneration")
+                    print("🔑 [AppCoordinator] Hash match: \(inputHash.prefix(8))...")
+                    return
+                } else {
+                    print("🔄 [AppCoordinator] Summary cache MISS - transcript changed, regenerating")
+                    if let existingHash = existingSummary.inputHash {
+                        print("🔑 [AppCoordinator] Old hash: \(existingHash.prefix(8))..., New hash: \(inputHash.prefix(8))...")
+                    }
+                }
+            }
+        } else {
+            print("🔄 [AppCoordinator] Forced regeneration - skipping cache check")
+        }
+        
         // Get session time range
         let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
         guard let firstChunk = chunks.first, let lastChunk = chunks.last else {
@@ -780,7 +803,7 @@ public final class AppCoordinator: ObservableObject {
         print("✅ [AppCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
         print("📝 [AppCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
         
-        // Update time range
+        // Update time range and include inputHash for caching
         generatedSummary = Summary(
             id: generatedSummary.id,
             periodType: .session,
@@ -791,7 +814,9 @@ public final class AppCoordinator: ObservableObject {
             sessionId: sessionId,
             topicsJSON: generatedSummary.topicsJSON,
             entitiesJSON: generatedSummary.entitiesJSON,
-            engineTier: generatedSummary.engineTier
+            engineTier: generatedSummary.engineTier,
+            sourceIds: generatedSummary.sourceIds,
+            inputHash: inputHash  // Store hash for future cache checks
         )
         
         // Delete old session summary if it exists (to prevent duplicates in rollups)
@@ -1790,6 +1815,15 @@ public final class AppCoordinator: ObservableObject {
         } catch {
             print("❌ [SessionTest] Error: \(error)")
         }
+    }
+    
+    // MARK: - Hash Utilities
+    
+    /// Calculate SHA256 hash of input text for cache validation
+    private func calculateHash(for text: String) -> String {
+        guard let data = text.data(using: .utf8) else { return "" }
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 }
 

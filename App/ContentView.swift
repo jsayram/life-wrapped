@@ -6350,7 +6350,9 @@ struct SessionDetailView: View {
         defer { isRegeneratingSummary = false }
         
         do {
-            try await coordinator.generateSessionSummary(sessionId: session.sessionId)
+            // Force regeneration if transcript was edited, otherwise check cache
+            let forceRegenerate = transcriptWasEdited
+            try await coordinator.generateSessionSummary(sessionId: session.sessionId, forceRegenerate: forceRegenerate)
             await loadSessionSummary()
             // Reset edit tracking after summary is regenerated
             editedChunkIds.removeAll()

@@ -503,6 +503,12 @@ public actor LlamaContext {
                 maxTokenCount: configuration.maxTokens,
                 stopTokens: StopToken.llama3  // Llama 3.2 uses llama3 format
             )
+            
+            print("⚙️ [LlamaContext] Configuration details:")
+            print("   - maxTokenCount: \(config.maxTokenCount)")
+            print("   - stopTokens: \(config.stopTokens)")
+            print("   - temperature: \(config.temperature)")
+            print("   - topP: \(config.topP)")
 
             print("🔄 [LlamaContext] Creating SwiftLlama instance...")
             print("   Model path: \(url.path)")
@@ -574,6 +580,9 @@ public actor LlamaContext {
                 systemPrompt: systemPrompt,
                 userMessage: userMessage
             )
+            
+            // Log the configuration being used
+            print("⚙️ [LlamaContext] Generation will use maxTokenCount from model configuration")
 
             print("🎯 [LlamaContext] Starting generation loop...")
 
