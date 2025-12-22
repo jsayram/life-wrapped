@@ -971,10 +971,6 @@ struct RecordingButton: View {
         let centerY = size.height / 2
         let isRecording = coordinator.recordingState.isRecording
         
-        // Get audio level for amplitude modulation (more responsive to loudness)
-        let audioLevel = coordinator.audioCapture.fftMagnitudes.reduce(0, +) / Float(max(coordinator.audioCapture.fftMagnitudes.count, 1))
-        let amplitudeScale = isRecording ? CGFloat(audioLevel) * 4.0 + 0.5 : 0.0
-        
         if !isRecording {
             // Draw flat line when idle
             var flatPath = Path()
@@ -989,10 +985,16 @@ struct RecordingButton: View {
             return
         }
         
-        // Define 2 waves with larger amplitudes that respond to loudness
-        let waves: [(amplitude: CGFloat, frequency: CGFloat, thickness: CGFloat, speed: CGFloat, color: Color)] = [
-            (amplitude: 40 * amplitudeScale, frequency: 3.0, thickness: 4.0, speed: 1.2, color: Color(hex: "#A855F7")), // Purple
-            (amplitude: 30 * amplitudeScale, frequency: 5.0, thickness: 2.5, speed: 1.8, color: Color(hex: "#FF2D55")), // Pink
+        // Get audio level from smoothed FFT magnitudes
+        let audioLevel = smoothedMagnitudes.reduce(0, +) / Float(max(smoothedMagnitudes.count, 1))
+        // Clamp to prevent cutoff (max amplitude should be ~60% of height)
+        let maxAmplitude = size.height * 0.3
+        let amplitudeScale = min(CGFloat(audioLevel) * 150.0 + 20.0, maxAmplitude)
+        
+        // Define 2 waves that respond to loudness
+        let waves: [(amplitudeMultiplier: CGFloat, frequency: CGFloat, thickness: CGFloat, speed: CGFloat, color: Color)] = [
+            (amplitudeMultiplier: 1.0, frequency: 3.0, thickness: 4.0, speed: 1.2, color: Color(hex: "#A855F7")), // Purple
+            (amplitudeMultiplier: 0.7, frequency: 5.0, thickness: 2.5, speed: 1.8, color: Color(hex: "#FF2D55")), // Pink
         ]
         
         // Draw each sine wave
@@ -1004,7 +1006,7 @@ struct RecordingButton: View {
                 let x = (CGFloat(i) / CGFloat(points)) * size.width
                 let normalizedX = (x / size.width) * 2 * .pi * wave.frequency
                 let timeOffset = time * wave.speed
-                let y = centerY + wave.amplitude * sin(normalizedX - timeOffset)
+                let y = centerY + (amplitudeScale * wave.amplitudeMultiplier) * sin(normalizedX - timeOffset)
                 
                 if i == 0 {
                     path.move(to: CGPoint(x: x, y: y))
@@ -1026,6 +1028,12 @@ struct RecordingButton: View {
             recordingDuration = Date().timeIntervalSince(startTime)
         } else {
             recordingDuration = 0
+        }
+        
+        // Apply exponential moving average smoothing to FFT magnitudes
+        let rawMagnitudes = coordinator.audioCapture.fftMagnitudes
+        for i in 0..<min(smoothedMagnitudes.count, rawMagnitudes.count) {
+            smoothedMagnitudes[i] = smoothedMagnitudes[i] * 0.7 + rawMagnitudes[i] * 0.3
         }
     }
     
@@ -5416,71 +5424,74 @@ struct SessionDetailView: View {
     }
     
     private var waveformView: some View {
-        TimelineView(.animation(minimumInterval: 1/30)) { context in
-            Canvas { canvasContext, size in
-                let centerY = size.height / 2
-                let time = context.date.timeIntervalSince1970
-                let isPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
+        Canvas { canvasContext, size in
+            let centerY = size.height / 2
+            let barCount = 80
+            let barWidth = size.width / CGFloat(barCount)
+            let maxBarHeight = size.height * 0.8
+            
+            // Calculate amplitude for each bar based on transcript segments
+            let totalDuration = session.totalDuration
+            
+            for i in 0..<barCount {
+                let barStartTime = (Double(i) / Double(barCount)) * totalDuration
+                let barEndTime = (Double(i + 1) / Double(barCount)) * totalDuration
                 
-                if !isPlaying {
-                    // Draw flat line when not playing
-                    var flatPath = Path()
-                    flatPath.move(to: CGPoint(x: 0, y: centerY))
-                    flatPath.addLine(to: CGPoint(x: size.width, y: centerY))
+                // Check if any transcript segments overlap with this bar's time range
+                var hasContent = false
+                for segment in transcriptSegments {
+                    let segmentStart = segment.startTime
+                    let segmentEnd = segment.startTime + (segment.duration ?? 1.0)
                     
-                    canvasContext.stroke(
-                        flatPath,
-                        with: .color(AppTheme.purple.opacity(0.3)),
-                        style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
-                    )
+                    if (segmentStart <= barEndTime && segmentEnd >= barStartTime) {
+                        hasContent = true
+                        break
+                    }
+                }
+                
+                // Calculate bar height (tall where speech exists, short elsewhere)
+                let barHeight: CGFloat
+                if hasContent {
+                    // Add variation for visual interest
+                    let variation = sin(Double(i) * 0.5) * 0.3 + 0.7
+                    barHeight = maxBarHeight * CGFloat(variation)
                 } else {
-                    // Define 2 waves when playing
-                    let waves: [(amplitude: CGFloat, frequency: CGFloat, thickness: CGFloat, speed: CGFloat, color: Color)] = [
-                        (amplitude: 18, frequency: 4.0, thickness: 3.5, speed: 1.0, color: Color(hex: "#A855F7")), // Purple
-                        (amplitude: 14, frequency: 6.0, thickness: 2.0, speed: 1.5, color: Color(hex: "#3B82F6")), // Blue
-                    ]
-                    
-                    // Draw each sine wave
-                    for wave in waves {
-                        var path = Path()
-                        let points = 150
-                        
-                        for i in 0...points {
-                            let x = (CGFloat(i) / CGFloat(points)) * size.width
-                            let normalizedX = (x / size.width) * 2 * .pi * wave.frequency
-                            let timeOffset = time * wave.speed
-                            let y = centerY + wave.amplitude * sin(normalizedX - timeOffset)
-                            
-                            if i == 0 {
-                                path.move(to: CGPoint(x: x, y: y))
-                            } else {
-                                path.addLine(to: CGPoint(x: x, y: y))
-                            }
-                        }
-                        
-                        canvasContext.stroke(
-                            path,
-                            with: .color(wave.color),
-                            style: StrokeStyle(lineWidth: wave.thickness, lineCap: .round, lineJoin: .round)
-                        )
-                    }
+                    barHeight = 4.0 // Minimal height for silence
                 }
                 
-                // Draw playhead indicator if playing
-                if isPlayingThisSession {
-                    let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
-                    let playheadX = size.width * progress
-                    
-                    let playheadPath = Path { path in
-                        path.move(to: CGPoint(x: playheadX, y: 0))
-                        path.addLine(to: CGPoint(x: playheadX, y: size.height))
-                    }
-                    
-                    canvasContext.stroke(playheadPath, with: .color(AppTheme.magenta), lineWidth: 3)
+                let x = CGFloat(i) * barWidth
+                let y = centerY - barHeight / 2
+                
+                let barRect = CGRect(x: x, y: y, width: max(barWidth - 1, 1), height: barHeight)
+                let barPath = Path(roundedRect: barRect, cornerRadius: barWidth / 2)
+                
+                // Color based on playback state
+                let color: Color
+                if isPlayingThisSession && coordinator.audioPlayback.isPlaying {
+                    let progress = totalDuration > 0 ? totalElapsedTime / totalDuration : 0
+                    let barProgress = Double(i) / Double(barCount)
+                    color = barProgress <= progress ? AppTheme.magenta : AppTheme.purple.opacity(0.5)
+                } else {
+                    color = AppTheme.purple.opacity(0.4)
                 }
+                
+                canvasContext.fill(barPath, with: .color(color))
             }
-            .frame(height: 100)
+            
+            // Draw playhead indicator if playing
+            if isPlayingThisSession {
+                let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
+                let playheadX = size.width * progress
+                
+                let playheadPath = Path { path in
+                    path.move(to: CGPoint(x: playheadX, y: 0))
+                    path.addLine(to: CGPoint(x: playheadX, y: size.height))
+                }
+                
+                canvasContext.stroke(playheadPath, with: .color(AppTheme.magenta), lineWidth: 3)
+            }
         }
+        .frame(height: 100)
     }
     
     private var scrubberSlider: some View {
