@@ -1671,8 +1671,10 @@ struct OverviewTab: View {
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     
-    // New: Session summaries for feed view
+    // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
+    // Period rollups for Week/Month/Year feed
+    @State private var periodRollups: [Summary] = []
     
     var body: some View {
         NavigationStack {
@@ -1925,6 +1927,7 @@ struct OverviewTab: View {
             sessionsInPeriod = []
             sessionCount = 0
             sessionSummaries = []
+            periodRollups = []
             
             // Load sessions in this period first
             if let dbManager = coordinator.getDatabaseManager() {
@@ -1939,12 +1942,40 @@ struct OverviewTab: View {
                 }
                 sessionCount = sessionsInPeriod.count
                 
-                // New: Fetch session summaries for feed view
-                sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
-                    from: dateRange.start,
-                    to: dateRange.end
-                )) ?? []
-                print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries for date range")
+                // Load summaries based on time range
+                switch selectedTimeRange {
+                case .today, .yesterday:
+                    // Load session summaries for individual sessions
+                    sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
+                    
+                case .week:
+                    // Load weekly rollup summaries (one card per week)
+                    periodRollups = (try? await dbManager.fetchWeeklySummaries(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
+                    
+                case .month:
+                    // Load monthly rollup summaries (one card per month)
+                    periodRollups = (try? await dbManager.fetchMonthlySummaries(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
+                    
+                case .allTime:
+                    // Load yearly rollup summary (single card for whole year)
+                    let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
+                    periodRollups = allYearlySummaries.filter { summary in
+                        summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
+                    }
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
+                }
             }
             
             // Try to fetch existing period summary (don't auto-generate on view load)
@@ -2078,8 +2109,11 @@ struct OverviewTab: View {
             let start = calendar.startOfDay(for: now)
             return (start, now)
         case .week:
-            let start = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-            return (start, now)
+            // Current week: Monday to Sunday (or today if mid-week)
+            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            components.weekday = 2 // Monday
+            let startOfWeek = calendar.date(from: components) ?? now
+            return (startOfWeek, now)
         case .month:
             let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
             return (start, now)
@@ -2093,10 +2127,10 @@ struct OverviewTab: View {
 
     private func periodSummaryTitle(for range: TimeRange) -> String {
         switch range {
-        case .today: return "Today's Summary"
-        case .week: return "This Week's Summary"
-        case .month: return "This Month's Summary"
-        default: return "Summary"
+        case .today: return "Today's Recordings"
+        case .week: return "This Week's Recordings"
+        case .month: return "This Month's Recordings"
+        default: return "Recordings"
         }
     }
     
@@ -2161,20 +2195,20 @@ struct OverviewTab: View {
         
         switch selectedTimeRange {
         case .today, .yesterday:
-            // Group by hour (e.g., "2:00 PM - 3:00 PM")
+            // Show individual session summaries grouped by hour
             return groupByHour(dateRange: dateRange, calendar: calendar)
             
         case .week:
-            // Group by week range (e.g., "Dec 21 - Dec 27")
-            return groupByWeek(dateRange: dateRange, calendar: calendar)
+            // Show weekly rollup summaries (one card per week)
+            return groupByWeekRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
             
         case .month:
-            // Group by month (e.g., "December 2025")
-            return groupByMonth(dateRange: dateRange, calendar: calendar)
+            // Show monthly rollup summaries (one card per month)
+            return groupByMonthRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
             
         case .allTime:
-            // Group by month (e.g., "December 2025")
-            return groupByMonth(dateRange: dateRange, calendar: calendar)
+            // Show yearly rollup summary (single card for whole year)
+            return groupByYearRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
         }
     }
     
@@ -2206,12 +2240,11 @@ struct OverviewTab: View {
         return buckets.reversed() // Newest first (oldest at bottom)
     }
     
-    private func groupByDay(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+    private func groupByDayRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
         var buckets: [TimeBucket] = []
-        var summariesByDay: [Date: [Summary]] = [:]
         
-        // Group existing summaries by day
-        for summary in sessionSummaries {
+        var summariesByDay: [Date: [Summary]] = [:]
+        for summary in rollups {
             let dayStart = calendar.startOfDay(for: summary.periodStart)
             summariesByDay[dayStart, default: []].append(summary)
         }
@@ -2223,11 +2256,11 @@ struct OverviewTab: View {
         while currentDate <= endDate {
             let formatter = DateFormatter()
             if calendar.isDateInToday(currentDate) {
-                formatter.dateFormat = "'Today' - MMMM d"
+                formatter.dateFormat = "'Today' - EEEE, MMM d"
             } else if calendar.isDateInYesterday(currentDate) {
-                formatter.dateFormat = "'Yesterday' - MMMM d"
+                formatter.dateFormat = "'Yesterday' - EEEE, MMM d"
             } else {
-                formatter.dateFormat = "EEEE, MMMM d"
+                formatter.dateFormat = "EEEE, MMM d"
             }
             let header = formatter.string(from: currentDate)
             
@@ -2240,12 +2273,11 @@ struct OverviewTab: View {
         return buckets.reversed() // Most recent first
     }
     
-    private func groupByWeek(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+    private func groupByWeekRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
         var buckets: [TimeBucket] = []
-        var summariesByWeek: [Date: [Summary]] = [:]
         
-        // Group existing summaries by week start
-        for summary in sessionSummaries {
+        var summariesByWeek: [Date: [Summary]] = [:]
+        for summary in rollups {
             let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: summary.periodStart)
             if let weekStartDate = calendar.date(from: weekStart) {
                 summariesByWeek[weekStartDate, default: []].append(summary)
@@ -2266,7 +2298,8 @@ struct OverviewTab: View {
         
         while currentWeekDate <= endWeekDate {
             let weekEnd = calendar.date(byAdding: .day, value: 6, to: currentWeekDate) ?? currentWeekDate
-            let header = "\(dateFormatter.string(from: currentWeekDate)) - \(dateFormatter.string(from: weekEnd))"
+            // Format: "Monday, Dec 16 - Sunday, Dec 22"
+            let header = "Monday, \(dateFormatter.string(from: currentWeekDate)) - Sunday, \(dateFormatter.string(from: weekEnd))"
             
             let summaries = summariesByWeek[currentWeekDate] ?? []
             buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
@@ -2277,12 +2310,11 @@ struct OverviewTab: View {
         return buckets.reversed() // Most recent first
     }
     
-    private func groupByMonth(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+    private func groupByMonthRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
         var buckets: [TimeBucket] = []
-        var summariesByMonth: [Date: [Summary]] = [:]
         
-        // Group existing summaries by month start
-        for summary in sessionSummaries {
+        var summariesByMonth: [Date: [Summary]] = [:]
+        for summary in rollups {
             let monthStart = calendar.dateComponents([.year, .month], from: summary.periodStart)
             if let monthStartDate = calendar.date(from: monthStart) {
                 summariesByMonth[monthStartDate, default: []].append(summary)
@@ -2308,6 +2340,28 @@ struct OverviewTab: View {
             buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
             
             currentMonthDate = calendar.date(byAdding: .month, value: 1, to: currentMonthDate) ?? currentMonthDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByYearRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByYear: [Int: [Summary]] = [:]
+        for summary in rollups {
+            let year = calendar.component(.year, from: summary.periodStart)
+            summariesByYear[year, default: []].append(summary)
+        }
+        
+        // Create buckets for all years in range
+        let startYear = calendar.component(.year, from: dateRange.start)
+        let endYear = calendar.component(.year, from: dateRange.end)
+        
+        for year in startYear...endYear {
+            let header = "\(year)"
+            let summaries = summariesByYear[year] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
         }
         
         return buckets.reversed() // Most recent first
@@ -7358,12 +7412,15 @@ struct SessionSummaryCard: View {
             loadSessionAndNavigate()
         } label: {
             VStack(alignment: .leading, spacing: 12) {
-                // Summary text
-                Text(summary.text)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Summary text (scrollable with max height)
+                ScrollView {
+                    Text(summary.text)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 450)
                 
                 // Footer with time and copy button
                 HStack(spacing: 12) {

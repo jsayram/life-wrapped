@@ -70,7 +70,6 @@ public struct UniversalPrompt {
     - Identify the CORE IDEAS and reasoning behind what's being said
     - Understand the INTENT and purpose behind their reflections
     - Recognize patterns, problems, goals, and thought processes
-    - Provide ACTIONABLE insights as if the user is organizing their own thoughts
     
     VOICE & PERSPECTIVE:
     - Write as if YOU ARE THE USER reflecting on your own thoughts
@@ -84,7 +83,7 @@ public struct UniversalPrompt {
     - Consider emotional undertones and personal growth themes
     - Connect related ideas into coherent narratives
     - Identify open questions and areas needing more thought
-    - Be empathetic yet analytical
+    - Be analytical
     
     CONSTRAINTS:
     - Summarize FAITHFULLY using ONLY the provided content
