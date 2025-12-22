@@ -348,6 +348,7 @@ public final class AppCoordinator: ObservableObject {
     /// Provide haptic feedback
     public func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
         let generator = UIImpactFeedbackGenerator(style: style)
+        generator.prepare()
         generator.impactOccurred()
     }
     

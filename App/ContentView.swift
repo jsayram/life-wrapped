@@ -1027,7 +1027,7 @@ struct RecordingButton: View {
         switch coordinator.recordingState {
         case .idle: return "Tap to start recording"
         case .recording: 
-            return "Recording... \(formatDuration(recordingDuration))"
+            return "Tap to stop Recording... \(formatDuration(recordingDuration))"
         case .processing: return "Processing..."
         case .completed: return "Saved!"
         case .failed(let message): return message
@@ -1061,8 +1061,14 @@ struct RecordingButton: View {
     private func handleRecordingAction() {
         print("🔘 [RecordingButton] Button tapped, current state: \(coordinator.recordingState)")
         
-        // Haptic feedback on tap
-        coordinator.triggerHaptic(.medium)
+        // Trigger haptic immediately on button press (before async work)
+        if coordinator.recordingState.isRecording {
+            print("📳 [RecordingButton] Triggering STOP haptic (.medium)")
+            coordinator.triggerHaptic(.medium)
+        } else if case .idle = coordinator.recordingState {
+            print("📳 [RecordingButton] Triggering START haptic (.heavy)")
+            coordinator.triggerHaptic(.heavy)
+        }
         
         Task {
             do {
@@ -1075,7 +1081,7 @@ struct RecordingButton: View {
                     print("▶️ [RecordingButton] Starting recording...")
                     try await coordinator.startRecording()
                     print("✅ [RecordingButton] Recording started")
-                    coordinator.showInfo("Recording started")
+                    coordinator.showSuccess("Recording started")
                 }
             } catch {
                 print("❌ [RecordingButton] Action failed: \(error.localizedDescription)")
