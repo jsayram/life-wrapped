@@ -80,7 +80,7 @@ public struct LocalLLMConfiguration: Sendable, Equatable {
     public let systemPrompt: String
 
     public init(
-        modelName: String = "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+        modelName: String = "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
         preset: Preset = LocalLLMConfiguration.recommendedPreset(),
         contextSize: Int = 2048,  // Safe default matching SwiftLlama defaults
         temperature: Float = 0.2,  // SwiftLlama default
@@ -220,18 +220,18 @@ public actor ModelFileManager {
 
     /// Supported model configurations
     public enum ModelSize: String, CaseIterable, Sendable {
-        case llama32_1b = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"  // ~771MB quantized
+        case llama32_3b = "Llama-3.2-3B-Instruct-Q4_K_M.gguf"  // ~2.0GB quantized
 
         public var displayName: String {
-            return "Llama 3.2 1B (4-bit)"
+            return "Llama 3.2 3B (4-bit)"
         }
 
         public var fullDisplayName: String {
-            return "Llama 3.2 1B Instruct (Q4_K_M)"
+            return "Llama 3.2 3B Instruct (Q4_K_M)"
         }
 
         public var approximateSizeMB: Int {
-            return 771
+            return 2048
         }
 
         public var contextLength: Int {
@@ -300,9 +300,9 @@ public actor ModelFileManager {
     /// Download URLs for models (Hugging Face)
     private func downloadURL(for model: ModelSize) -> URL? {
         switch model {
-        case .llama32_1b:
-            // Llama 3.2 1B Instruct - efficient on-device model with 128K context
-            return URL(string: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf")
+        case .llama32_3b:
+            // Llama 3.2 3B Instruct - higher quality on-device model with 128K context
+            return URL(string: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf")
         }
     }
 
@@ -461,7 +461,7 @@ public actor LlamaContext {
         }
 
         // Get model path
-        let modelSize = ModelFileManager.ModelSize.llama32_1b
+        let modelSize = ModelFileManager.ModelSize.llama32_3b
         guard await modelFileManager.isModelAvailable(modelSize) else {
             print("❌ [LlamaContext] Model not available")
             throw LocalLLMError.modelNotFound(configuration.modelName)
@@ -475,7 +475,7 @@ public actor LlamaContext {
 
         // Verify file size
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let fileSize = attrs[.size] as? Int64 else {
+              let fileSize = attrs[FileAttributeKey.size] as? Int64 else {
             print("❌ [LlamaContext] Cannot read file attributes")
             throw LocalLLMError.modelLoadFailed("Invalid model file")
         }
