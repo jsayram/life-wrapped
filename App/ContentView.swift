@@ -1452,12 +1452,12 @@ struct SessionRowClean: View {
                     }
                     
                     // Show processing if wordCount is nil (still being transcribed)
-                    if wordCount == 0 {
+                    if wordCount == nil {
                         StatusPill(text: "Processing", color: .orange, icon: "gearshape.fill")
                     }
-                    // Show empty if processing done but no words found
-                    else if let count = wordCount, count == nil {
-                        StatusPill(text: "Empty", color: .red, icon: "xmark.octagon.fill")
+                    // Show "No Words" badge if transcription complete but 0 words
+                    else if let count = wordCount, count == 0 {
+                        StatusPill(text: "No Words To Transcribe", color: .gray, icon: "mic.slash.fill")
                     }
                 }
             }
