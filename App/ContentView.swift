@@ -118,6 +118,20 @@ extension Color {
     }
 }
 
+// MARK: - UserDefaults Extension for Rollup Settings
+
+extension UserDefaults {
+    var rollupDateFormat: String {
+        get { string(forKey: "rollupDateFormat") ?? "MMM d, yyyy" }
+        set { set(newValue, forKey: "rollupDateFormat") }
+    }
+    
+    var rollupTimeFormat: String {
+        get { string(forKey: "rollupTimeFormat") ?? "h:mm a" }
+        set { set(newValue, forKey: "rollupTimeFormat") }
+    }
+}
+
 // MARK: - LoadingView
 
 /// Custom loading indicator with Apple Intelligence aesthetic
@@ -4085,8 +4099,24 @@ enum KeychainHelper {
 struct InsightsSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var wordLimit: Double = 20
+    @State private var dateFormat: String = UserDefaults.standard.rollupDateFormat
+    @State private var timeFormat: String = UserDefaults.standard.rollupTimeFormat
     
     private let wordLimitKey = "insightsWordLimit"
+    
+    private let dateFormatOptions = [
+        ("MM/dd/yyyy", "12/22/2025"),
+        ("dd/MM/yyyy", "22/12/2025"),
+        ("yyyy-MM-dd", "2025-12-22"),
+        ("MMM d, yyyy", "Dec 22, 2025"),
+        ("MMMM d, yyyy", "December 22, 2025")
+    ]
+    
+    private let timeFormatOptions = [
+        ("HH:mm", "14:30 (24-hour)"),
+        ("hh:mm a", "02:30 PM (12-hour)"),
+        ("h:mm a", "2:30 PM (12-hour)")
+    ]
     
     var body: some View {
         List {
@@ -4113,6 +4143,32 @@ struct InsightsSettingsView: View {
                 Text("Word Cloud")
             } footer: {
                 Text("Number of most-used words to display in the Insights tab.")
+            }
+            
+            Section {
+                Picker("Date Format", selection: $dateFormat) {
+                    ForEach(dateFormatOptions, id: \.0) { format, example in
+                        Text(example).tag(format)
+                    }
+                }
+                .onChange(of: dateFormat) { oldValue, newValue in
+                    UserDefaults.standard.rollupDateFormat = newValue
+                    coordinator.showSuccess("Date format updated")
+                }
+                
+                Picker("Time Format", selection: $timeFormat) {
+                    ForEach(timeFormatOptions, id: \.0) { format, example in
+                        Text(example).tag(format)
+                    }
+                }
+                .onChange(of: timeFormat) { oldValue, newValue in
+                    UserDefaults.standard.rollupTimeFormat = newValue
+                    coordinator.showSuccess("Time format updated")
+                }
+            } header: {
+                Text("Rollup Date & Time Format")
+            } footer: {
+                Text("Date and time format used in period rollups (hour, day, week, month, year).")
             }
             
             Section {

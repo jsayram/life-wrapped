@@ -1363,13 +1363,10 @@ public final class AppCoordinator: ObservableObject {
             }
 
             let lines = sessionSummaries.map { summary in
-                let timeLabel = rollupTimeFormatter.string(from: summary.periodStart)
-                return "- [\(timeLabel)] \(summary.text)"
+                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                return "• \(dateTimeLabel): \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Day rollup (\(sessionSummaries.count) sessions)",
-                lines: lines
-            )
+            let rollupText = lines.joined(separator: "\n")
 
             try await dbManager.upsertPeriodSummary(
                 type: .day,
@@ -1440,13 +1437,10 @@ public final class AppCoordinator: ObservableObject {
             }
 
             let lines = dailySummaries.map { summary in
-                let dateLabel = rollupDateFormatter.string(from: summary.periodStart)
-                return "- \(dateLabel): \(summary.text)"
+                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                return "• \(dateTimeLabel): \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Week rollup (\(dailySummaries.count) days)",
-                lines: lines
-            )
+            let rollupText = lines.joined(separator: "\n")
 
             try await dbManager.upsertPeriodSummary(
                 type: .week,
@@ -1522,13 +1516,10 @@ public final class AppCoordinator: ObservableObject {
             }
 
             let lines = weeklySummaries.map { summary in
-                let rangeLabel = rollupMonthRangeFormatter.string(from: summary.periodStart)
-                return "- \(rangeLabel): \(summary.text)"
+                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                return "• \(dateTimeLabel): \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Month rollup (\(weeklySummaries.count) entries)",
-                lines: lines
-            )
+            let rollupText = lines.joined(separator: "\n")
 
             try await dbManager.upsertPeriodSummary(
                 type: .month,
@@ -1608,13 +1599,10 @@ public final class AppCoordinator: ObservableObject {
             }
 
             let lines = monthlySummaries.map { summary in
-                let monthLabel = rollupYearMonthFormatter.string(from: summary.periodStart)
-                return "- \(monthLabel): \(summary.text)"
+                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
+                return "• \(dateTimeLabel): \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Year rollup (\(monthlySummaries.count) entries)",
-                lines: lines
-            )
+            let rollupText = lines.joined(separator: "\n")
 
             try await dbManager.upsertPeriodSummary(
                 type: .year,
@@ -1750,6 +1738,16 @@ public final class AppCoordinator: ObservableObject {
         formatter.dateFormat = "LLLL"
         return formatter
     }()
+    
+    /// Format date and time for rollup bulletins using user-configured formats
+    private func formatRollupDateTime(_ date: Date) -> String {
+        let dateFormat = UserDefaults.standard.rollupDateFormat
+        let timeFormat = UserDefaults.standard.rollupTimeFormat
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "\(dateFormat) \(timeFormat)"
+        return formatter.string(from: date)
+    }
     
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
