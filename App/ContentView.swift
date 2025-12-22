@@ -282,7 +282,7 @@ struct ContentView: View {
 
             InsightsTab()
                 .tabItem {
-                    Label("Insights", systemImage: "chart.bar.fill")
+                    Label("Overview", systemImage: "doc.text.fill")
                 }
                 .tag(2)
 
@@ -2191,7 +2191,7 @@ struct InsightsTab: View {
                     }
                 }
             }
-            .navigationTitle("Insights")
+            .navigationTitle("Overview")
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("Time Range", selection: $selectedTimeRange) {
@@ -2783,16 +2783,18 @@ struct SettingsTab: View {
                     Text("Configure how your recordings are summarized.")
                 }
                 
-                // Insights Section
+                // Statistics Section
                 Section {
                     NavigationLink(destination: InsightsSettingsView()) {
                         Label {
-                            Text("Insights")
+                            Text("Statistics")
                         } icon: {
-                            Image(systemName: "chart.bar.fill")
+                            Image(systemName: "chart.xyaxis.line")
                                 .foregroundStyle(AppTheme.skyBlue)
                         }
                     }
+                } footer: {
+                    Text("View word clouds, charts, and statistical analysis.")
                 }
                 
                 // Languages Section
