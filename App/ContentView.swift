@@ -5463,7 +5463,7 @@ struct SessionDetailView: View {
     private var transcriptionSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header - just the title
-            Text("Transcription")
+            Text("Recording Transcript")
                 .font(.headline)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -5919,7 +5919,7 @@ struct SessionDetailView: View {
     private var sessionSummaryPlaceholderSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("AI Summary")
+                Text("Recording Chunks")
                     .font(.headline)
                 
                 Spacer()
@@ -6002,7 +6002,7 @@ struct SessionDetailView: View {
     private func sessionSummaryErrorSection(error: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("AI Summary")
+                Text("Transcript Sanitized")
                     .font(.headline)
                 
                 Spacer()
@@ -6079,7 +6079,7 @@ struct SessionDetailView: View {
     private func sessionSummarySection(summary: Summary) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("AI Summary")
+                Text("Transcipt Cleaned")
                     .font(.headline)
                 
                 Spacer()

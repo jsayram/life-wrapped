@@ -496,7 +496,7 @@ public actor BasicEngine: SummarizationEngine {
     
     // MARK: - Summary Generation
     
-    /// Generate summary using enhanced multi-factor scoring
+    /// Generate summary using enhanced multi-factor scoring with de-duplication
     private nonisolated func generateSummary(
         sentences: [String],
         tfidfScores: [String: Double],
@@ -514,8 +514,8 @@ public actor BasicEngine: SummarizationEngine {
             documentEmbedding = sentenceEmbedding(allText)
         }
         
-        // Score each sentence
-        let scoredSentences = sentences.enumerated().map { index, sentence -> (sentence: String, score: Double) in
+        // Score each sentence (now tracking index for de-duplication)
+        let scoredSentences = sentences.enumerated().map { index, sentence -> (sentence: String, score: Double, index: Int) in
             var score = 0.0
             
             // 1. Position score (first and last sentences often important)
@@ -565,30 +565,119 @@ public actor BasicEngine: SummarizationEngine {
             let entityScore = hasNamedEntities(sentence) ? 0.15 : 0
             score += entityScore
             
-            return (sentence, score)
+            return (sentence, score, index)
         }
         
-        // Select top sentences
+        // Select top sentences WITH de-duplication
         let avgWordsPerSentence = 15
         let maxSentences = max(1, maxWords / avgWordsPerSentence)
         
-        let selected = scoredSentences
-            .sorted { $0.score > $1.score }
-            .prefix(min(maxSentences, sentences.count))
-            // Restore original order for coherence
-            .sorted { 
-                sentences.firstIndex(of: $0.sentence) ?? 0 < 
-                sentences.firstIndex(of: $1.sentence) ?? 0 
-            }
+        let selected = selectWithDeduplication(
+            scoredSentences: scoredSentences,
+            maxSentences: maxSentences,
+            useSemanticScoring: useSemanticScoring,
+            similarityThreshold: 0.75  // Skip if >75% similar to already selected
+        )
+        
+        // Restore original order for coherence
+        let ordered = selected
+            .sorted { $0.index < $1.index }
             .map { $0.sentence }
         
         // Join with proper punctuation
-        var summary = selected.joined(separator: ". ")
+        var summary = ordered.joined(separator: ". ")
         if !summary.isEmpty && !summary.hasSuffix(".") && !summary.hasSuffix("!") && !summary.hasSuffix("?") {
             summary += "."
         }
         
         return summary
+    }
+    
+    // MARK: - De-duplication
+    
+    /// Select sentences while filtering out semantically similar ones
+    /// Uses both semantic similarity (embeddings) and lexical overlap (Jaccard)
+    private nonisolated func selectWithDeduplication(
+        scoredSentences: [(sentence: String, score: Double, index: Int)],
+        maxSentences: Int,
+        useSemanticScoring: Bool,
+        similarityThreshold: Double
+    ) -> [(sentence: String, score: Double, index: Int)] {
+        // Sort by score (highest first)
+        let sorted = scoredSentences.sorted { $0.score > $1.score }
+        
+        var selected: [(sentence: String, score: Double, index: Int)] = []
+        var selectedEmbeddings: [[Double]] = []
+        var selectedWordSets: [Set<String>] = []
+        
+        for candidate in sorted {
+            guard selected.count < maxSentences else { break }
+            
+            // Get candidate's word set for Jaccard similarity
+            let candidateWords = Set(
+                tokenize(candidate.sentence, unit: .word)
+                    .map { $0.lowercased() }
+                    .filter { isContentWord($0) }
+            )
+            
+            // Skip very short sentences (likely fragments)
+            guard candidateWords.count >= 3 else { continue }
+            
+            // Check for duplicates
+            var isDuplicate = false
+            
+            // 1. Check lexical similarity (Jaccard) - works for all languages
+            for selectedWords in selectedWordSets {
+                let jaccardSim = jaccardSimilarity(candidateWords, selectedWords)
+                if jaccardSim >= similarityThreshold {
+                    isDuplicate = true
+                    #if DEBUG
+                    print("🔄 [Dedup] Skipping (Jaccard=\(String(format: "%.2f", jaccardSim))): \(candidate.sentence.prefix(50))...")
+                    #endif
+                    break
+                }
+            }
+            
+            // 2. Check semantic similarity (embeddings) - English only
+            if !isDuplicate && useSemanticScoring {
+                if let candidateEmbed = sentenceEmbedding(candidate.sentence) {
+                    for selectedEmbed in selectedEmbeddings {
+                        let semanticSim = cosineSimilarity(candidateEmbed, selectedEmbed)
+                        if semanticSim >= similarityThreshold {
+                            isDuplicate = true
+                            #if DEBUG
+                            print("🔄 [Dedup] Skipping (Semantic=\(String(format: "%.2f", semanticSim))): \(candidate.sentence.prefix(50))...")
+                            #endif
+                            break
+                        }
+                    }
+                    
+                    // Store embedding for future comparisons
+                    if !isDuplicate {
+                        selectedEmbeddings.append(candidateEmbed)
+                    }
+                }
+            }
+            
+            // Add if not duplicate
+            if !isDuplicate {
+                selected.append(candidate)
+                selectedWordSets.append(candidateWords)
+            }
+        }
+        
+        return selected
+    }
+    
+    /// Calculate Jaccard similarity between two word sets
+    /// Returns value between 0.0 (no overlap) and 1.0 (identical)
+    private nonisolated func jaccardSimilarity(_ set1: Set<String>, _ set2: Set<String>) -> Double {
+        guard !set1.isEmpty || !set2.isEmpty else { return 0.0 }
+        
+        let intersection = set1.intersection(set2).count
+        let union = set1.union(set2).count
+        
+        return Double(intersection) / Double(union)
     }
     
     /// Check if sentence contains named entities
