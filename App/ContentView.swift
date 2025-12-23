@@ -5098,6 +5098,7 @@ struct SessionDetailView: View {
     @State private var generationProgress: Double = 0.0
     @State private var generationPhase: String = ""
     @State private var showGenerationOverlay = false
+    @State private var activeEngineForGeneration: EngineTier?
     
     var body: some View {
         ScrollView {
@@ -6318,14 +6319,24 @@ struct SessionDetailView: View {
         isRegeneratingSummary = true
         summaryLoadError = nil
         
-        // Only show AI processing overlay for on-device engines (Basic or Apple Intelligence)
-        // External API (Smartest) doesn't need this as it's server-based
+        // Get active engine to customize overlay message
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         let activeEngine = await summCoord.getActiveEngine()
-        let shouldShowOverlay = (activeEngine == .basic || activeEngine == .apple)
-        showGenerationOverlay = shouldShowOverlay
+        activeEngineForGeneration = activeEngine
+        
+        // Show overlay for all engines with different messages
+        showGenerationOverlay = true
         generationProgress = 0.0
-        generationPhase = "Preparing..."
+        
+        // Set initial phase based on engine
+        switch activeEngine {
+        case .basic:
+            generationPhase = "Processing transcript..."
+        case .apple:
+            generationPhase = "Preparing..."
+        case .external:
+            generationPhase = "Connecting to AI service..."
+        }
         
         defer { 
             isRegeneratingSummary = false
@@ -6336,38 +6347,64 @@ struct SessionDetailView: View {
             // Force regeneration if transcript was edited, otherwise check cache
             let forceRegenerate = transcriptWasEdited
             
-            // Start progress simulation (only if showing overlay for on-device processing)
-            if shouldShowOverlay {
-                Task {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
-                    if !Task.isCancelled && showGenerationOverlay {
-                        generationProgress = 0.1
+            // Start progress simulation with engine-specific phases
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.1
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Extracting key information..."
+                    case .apple:
                         generationPhase = "Loading on-device AI model..."
+                    case .external:
+                        generationPhase = "Uploading transcript securely..."
                     }
-                    
-                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                    if !Task.isCancelled && showGenerationOverlay {
-                        generationProgress = 0.3
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.3
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Analyzing content..."
+                    case .apple:
                         generationPhase = "Analyzing transcript..."
+                    case .external:
+                        generationPhase = "AI analyzing your transcript..."
                     }
-                    
-                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                    if !Task.isCancelled && showGenerationOverlay {
-                        generationProgress = 0.5
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.5
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Identifying main topics..."
+                    case .apple:
                         generationPhase = "Processing key points..."
+                    case .external:
+                        generationPhase = "Generating intelligent insights..."
                     }
-                    
-                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                    if !Task.isCancelled && showGenerationOverlay {
-                        generationProgress = 0.7
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.7
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Creating summary..."
+                    case .apple:
                         generationPhase = "Generating summary..."
+                    case .external:
+                        generationPhase = "Crafting comprehensive summary..."
                     }
-                    
-                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                    if !Task.isCancelled && showGenerationOverlay {
-                        generationProgress = 0.9
-                        generationPhase = "Finalizing..."
-                    }
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.9
+                    generationPhase = "Finalizing..."
                 }
             }
             
@@ -6539,7 +6576,7 @@ struct SessionDetailView: View {
                 }
                 
                 VStack(spacing: 12) {
-                    Text("AI Processing")
+                    Text(activeEngineForGeneration == .basic ? "Processing" : "AI Processing")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundStyle(.white)
@@ -6578,41 +6615,54 @@ struct SessionDetailView: View {
                         .padding(.horizontal, 20)
                 }
                 
-                // Info box
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundStyle(AppTheme.skyBlue)
-                        Text("Why does this take time?")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                    }
-                    
-                    Text("Life Wrapped performs a comprehensive analysis directly on your iPhone. No data leaves your device — it's completely private.")
+                // Info box with engine-specific message
+                if let engineTier = activeEngineForGeneration {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundStyle(AppTheme.skyBlue)
+                            Text(engineTier == .basic ? "What's happening?" : "Why does this take time?")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                        }
+                        
+                        // Engine-specific description
+                        Group {
+                            switch engineTier {
+                            case .basic:
+                                Text("Life Wrapped is creating a basic summary by extracting key information from your transcript. This is a simple, fast process that works offline.")
+                            case .apple:
+                                Text("Life Wrapped performs a comprehensive analysis directly on your iPhone using Apple Intelligence. No data leaves your device — it's completely private.")
+                            case .external:
+                                let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+                                Text("Life Wrapped uses \(provider)'s advanced AI to perform intelligent processing and generate the best possible summary of your transcript. This provides the most comprehensive and insightful analysis.")
+                            }
+                        }
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
-                    
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Once complete, future views of this session are instant!")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.white.opacity(0.9))
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Once complete, future views of this session are instant!")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
                     }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.white.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 20)
                 }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.1))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                )
-                .padding(.horizontal, 20)
             }
             .padding(32)
             .background(
@@ -7065,7 +7115,7 @@ struct SessionSummaryCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 // Summary text (scrollable with max height)
                 ScrollView {
-                    Text(summary.text)
+                    Text(cleanedSummaryText)
                         .font(.body)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
@@ -7076,10 +7126,13 @@ struct SessionSummaryCard: View {
                 // Footer with time and copy button
                 HStack(spacing: 12) {
                     // Time display (relative + absolute)
+                    // Only show relative time for individual sessions, not rollups
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(relativeTimeString)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if summary.sessionId != nil {
+                            Text(relativeTimeString)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         
                         Text(absoluteTimeString)
                             .font(.caption2)
@@ -7166,6 +7219,19 @@ struct SessionSummaryCard: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
         return formatter.string(from: summary.periodStart)
+    }
+    
+    // Clean up any stray timestamps from the summary text
+    private var cleanedSummaryText: String {
+        var text = summary.text
+        
+        // Remove all occurrences of timestamp patterns
+        // Pattern matches: "• Dec 22, 2025 8:23 PM:" or "Dec 22, 2025 8:23 PM:" or "• Dec 1, 2025 12:00 AM:"
+        while let range = text.range(of: #"[•\s]*\w{3,9}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#, options: .regularExpression) {
+            text.removeSubrange(range)
+        }
+        
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     private func loadSessionAndNavigate() {

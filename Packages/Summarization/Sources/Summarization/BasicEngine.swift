@@ -102,10 +102,18 @@ public actor BasicEngine: SummarizationEngine {
             throw SummarizationError.noTranscriptData
         }
         
-        // Combine all session summaries
-        let combinedText = sessionSummaries.map { $0.summary }.joined(separator: " ")
+        // Combine all session summaries with timestamps
+        // Format: "Summary text (brief excerpt)" for rollup readability
+        let combinedText = sessionSummaries.map { intelligence -> String in
+            // Clean any existing timestamp prefix from the text
+            var cleanedText = intelligence.summary
+            while let range = cleanedText.range(of: #"^[•\s]*\w{3,9}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#, options: .regularExpression) {
+                cleanedText.removeSubrange(range)
+            }
+            return cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.joined(separator: " ")
         
-        // Generate period summary
+        // Generate period summary from the combined text
         let summaryText = try extractiveSummarize(text: combinedText, maxWords: 200)
         
         // Aggregate topics (deduplicated and sorted by frequency)
