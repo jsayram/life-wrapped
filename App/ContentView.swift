@@ -4562,27 +4562,33 @@ struct PrivacyPolicyView: View {
                 
                 VStack(alignment: .leading, spacing: 12) {
                     PrivacyPoint(
-                        icon: "lock.shield.fill",
-                        title: "100% On-Device",
-                        description: "All audio processing and transcription happens on your device."
+                        icon: "waveform",
+                        title: "Transcription: 100% On-Device",
+                        description: "All audio recording and speech-to-text happens locally using Apple's Speech framework. Zero network calls."
                     )
                     
                     PrivacyPoint(
-                        icon: "wifi.slash",
-                        title: "Zero Network Calls",
-                        description: "Life Wrapped never sends your data to any server."
+                        icon: "sparkles",
+                        title: "AI Summaries: User-Controlled",
+                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, on-device processing with Apple Intelligence or Basic summaries."
+                    )
+                    
+                    PrivacyPoint(
+                        icon: "network",
+                        title: "Network Calls: Transparent",
+                        description: "With API keys: Connects to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) using YOUR keys. Without keys: 100% offline."
                     )
                     
                     PrivacyPoint(
                         icon: "eye.slash.fill",
                         title: "No Tracking",
-                        description: "We don't collect analytics, telemetry, or usage data."
+                        description: "We don't collect analytics, telemetry, or usage data. Your API keys are stored securely in Keychain."
                     )
                     
                     PrivacyPoint(
                         icon: "square.and.arrow.up",
                         title: "Your Data, Your Control",
-                        description: "Export or delete your data anytime."
+                        description: "Export or delete your data anytime. Audio files and transcripts never leave your device."
                     )
                 }
             }
