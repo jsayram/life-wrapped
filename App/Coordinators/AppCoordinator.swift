@@ -1201,6 +1201,43 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSummaryForSession(sessionId: sessionId)
     }
     
+    /// Append user notes to existing session summary without AI regeneration
+    public func appendNotesToSessionSummary(sessionId: UUID, notes: String) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Get existing summary
+        guard let existingSummary = try await dbManager.fetchSummaryForSession(sessionId: sessionId) else {
+            throw AppCoordinatorError.transcriptionFailed(NSError(domain: "AppCoordinator", code: -1, userInfo: [NSLocalizedDescriptionKey: "No summary found for session"]))
+        }
+        
+        // Append notes to summary text
+        let updatedText = existingSummary.text + "\n\nAdditional Notes:\n" + notes
+        
+        // Create updated summary with new text
+        let updatedSummary = Summary(
+            id: existingSummary.id,
+            periodType: existingSummary.periodType,
+            periodStart: existingSummary.periodStart,
+            periodEnd: existingSummary.periodEnd,
+            text: updatedText,
+            createdAt: existingSummary.createdAt,
+            sessionId: existingSummary.sessionId,
+            topicsJSON: existingSummary.topicsJSON,
+            entitiesJSON: existingSummary.entitiesJSON,
+            engineTier: existingSummary.engineTier,
+            sourceIds: existingSummary.sourceIds,
+            inputHash: existingSummary.inputHash
+        )
+        
+        // Delete old and insert updated
+        try await dbManager.deleteSummary(id: existingSummary.id)
+        try await dbManager.insertSummary(updatedSummary)
+        
+        print("✅ [AppCoordinator] Appended notes to session summary")
+    }
+    
     /// Fetch recent summaries
     public func fetchRecentSummaries(limit: Int = 10) async throws -> [Summary] {
         guard let dbManager = databaseManager else {

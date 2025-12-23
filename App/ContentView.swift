@@ -5430,20 +5430,20 @@ struct SessionDetailView: View {
                 aiGenerationOverlay
             }
         }
-        .alert("Regenerate Summary?", isPresented: $showRegenerateConfirmation) {
+        .alert("Append Notes to Summary?", isPresented: $showRegenerateConfirmation) {
             Button("Cancel", role: .cancel) {
                 // Reset count on cancel
                 regenerationCount = 0
             }
-            Button("Yes, Regenerate") {
+            Button("Yes, Append") {
                 Task {
-                    // Force regenerate with notes
-                    await regenerateSummary(forceWithNotes: true)
+                    // Append notes to existing summary
+                    await regenerateSummaryWithNotes()
                     regenerationCount = 0
                 }
             }
         } message: {
-            Text("This will regenerate the summary with your transcript and any notes you've added.")
+            Text("This will append your notes to the end of the existing summary.")
         }
     }
     
@@ -6522,7 +6522,7 @@ struct SessionDetailView: View {
                     .foregroundStyle(.primary)
             }
             
-            // Subtle button to regenerate summary with notes (only if notes were added after summary)
+            // Subtle button to append notes to summary
             if shouldShowRegenerateWithNotesButton {
                 Button {
                     Task {
@@ -6530,9 +6530,9 @@ struct SessionDetailView: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "sparkles")
+                        Image(systemName: "plus.circle")
                             .font(.caption)
-                        Text("Regenerate Summary with Notes")
+                        Text("Append to Summary")
                             .font(.caption)
                             .fontWeight(.medium)
                     }
@@ -6647,81 +6647,25 @@ struct SessionDetailView: View {
     private func regenerateSummaryWithNotes() async {
         guard !sessionNotes.isEmpty else { return }
         
-        isRegeneratingSummary = true
-        summaryLoadError = nil
-        
-        // Get active engine to customize overlay message
-        guard let summCoord = coordinator.summarizationCoordinator else { 
-            isRegeneratingSummary = false
-            return 
-        }
-        let activeEngine = await summCoord.getActiveEngine()
-        activeEngineForGeneration = activeEngine
-        
-        // Show overlay
-        showGenerationOverlay = true
-        generationProgress = 0.0
-        
-        // Set initial phase based on engine
-        switch activeEngine {
-        case .basic:
-            generationPhase = "Processing transcript with notes..."
-        case .local:
-            generationPhase = "Running local AI model with notes..."
-        case .apple:
-            generationPhase = "Preparing with notes..."
-        case .external:
-            generationPhase = "Connecting to AI service with notes..."
-        }
-        
-        defer { 
-            isRegeneratingSummary = false
-            showGenerationOverlay = false
-        }
+        print("📝 [SessionDetailView] Appending notes to existing summary...")
         
         do {
-            // Start progress simulation
-            Task {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.3
-                    generationPhase = "Including your notes..."
-                }
-                
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.6
-                    generationPhase = "Generating enhanced summary..."
-                }
-                
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.9
-                    generationPhase = "Finalizing..."
-                }
-            }
+            // Call coordinator to append notes
+            try await coordinator.appendNotesToSessionSummary(sessionId: session.sessionId, notes: sessionNotes)
             
-            // Regenerate summary with includeNotes parameter
-            try await coordinator.generateSessionSummary(
-                sessionId: session.sessionId,
-                forceRegenerate: true,
-                includeNotes: true
-            )
+            print("✅ [SessionDetailView] Successfully appended notes to summary")
             
-            // Reload summary
+            // Reload summary to show changes
             await loadSessionSummary()
             
-            // Update initial notes state so button disappears
+            // Mark that notes were incorporated
             initialSessionNotes = sessionNotes
             
-            // Reset transcript edited flag
-            transcriptWasEdited = false
-            
-            coordinator.showSuccess("Summary regenerated with notes")
+            coordinator.showSuccess("Notes appended to summary")
         } catch {
-            print("❌ [SessionDetailView] Failed to regenerate summary with notes: \(error)")
+            print("❌ [SessionDetailView] Failed to append notes to summary: \(error)")
             summaryLoadError = error.localizedDescription
-            coordinator.showError("Failed to regenerate summary")
+            coordinator.showError("Failed to append notes")
         }
     }
     
