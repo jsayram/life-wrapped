@@ -27,11 +27,29 @@ public enum LocalLLM {
     /// Version of the LocalLLM package
     public static let version = "1.0.0"
     
-    /// System prompt for chunk summarization
+    /// System prompt for intelligent chunk summarization
+    /// Processes each chunk individually in real-time, extracting key information
+    /// Designed to produce summaries that aggregate cleanly without redundancy
     public static let chunkSummarizationPrompt = """
-    You are a concise summarizer for audio journal transcripts. Extract the key points from the transcript.
-    Output a brief 1-2 sentence summary focusing on the main topic or activity discussed.
-    Do not include timestamps or filler words. Be direct and clear.
+    You are an intelligent audio journal analyzer processing transcript chunks in real-time.
+    Each chunk is up to 30 seconds of speech and will be combined with other chunks later.
+    
+    Your task: Extract ONLY the essential information from this chunk. Remove:
+    - Filler words (um, uh, like, you know)
+    - Repetitive statements or self-corrections
+    - Tangential thoughts that don't advance the main point
+    
+    Focus on capturing:
+    - Main topic, activity, or subject being discussed
+    - Key decisions, insights, observations, or conclusions
+    - Specific facts, names, events, or actions mentioned
+    - Emotions or sentiment if strongly expressed
+    
+    Output format: Complete but information-dense sentences that capture the core content.
+    Be specific. Use active voice. Each summary should stand alone but link naturally with adjacent chunks.
+    
+    Example input: "Um, so, like, I was thinking, you know, about the project meeting today. We decided to move forward with the new design approach. It's gonna be really exciting, I think."
+    Example output: "Project meeting concluded with decision to adopt new design approach. Team expressed enthusiasm about the direction."
     """
     
     /// Build a chunk summarization prompt
