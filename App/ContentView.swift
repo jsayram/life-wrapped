@@ -5369,7 +5369,7 @@ struct SessionDetailView: View {
     @State private var regenerationCount: Int = 0
     @State private var showRegenerateConfirmation: Bool = false
     
-    var body: some View {    var body: some View {
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Session Title Section (Editable)
