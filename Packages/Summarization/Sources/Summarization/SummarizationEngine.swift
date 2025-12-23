@@ -13,17 +13,19 @@ import SharedModels
 /// Tiers of summarization engines, ordered by capability
 public enum EngineTier: String, Codable, Sendable, CaseIterable {
     case basic      // Simple extractive + keyword extraction
+    case local      // Local LLM (Phi-3.5 via llama.cpp)
     case apple      // Apple Intelligence / Foundation Models (iOS 18.1+)
     case external   // External API (OpenAI, Anthropic with user keys)
     
     /// Private/on-device tiers only (excludes external)
     public static var privateTiers: [EngineTier] {
-        [.basic, .apple]
+        [.basic, .local, .apple]
     }
     
     public var displayName: String {
         switch self {
         case .basic: return "Basic"
+        case .local: return "Local AI (Phi-3.5)"
         case .apple: return "Apple Intelligence"
         case .external: return "Year Wrapped Pro AI"
         }
@@ -32,6 +34,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     public var subtitle: String {
         switch self {
         case .basic: return "Fast, simple summarization"
+        case .local: return "On-device LLM processing"
         case .apple: return "Apple's on-device AI (iOS 18.1+)"
         case .external: return "OpenAI, Anthropic with your API keys"
         }
@@ -40,6 +43,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     public var icon: String {
         switch self {
         case .basic: return "bolt.fill"
+        case .local: return "cpu.fill"
         case .apple: return "apple.intelligence"
         case .external: return "sparkles"
         }
@@ -49,6 +53,8 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .basic:
             return "Fast on-device extractive summarization using sentence scoring and keyword analysis. Works offline."
+        case .local:
+            return "On-device LLM (Phi-3.5 Mini) for smart chunk-by-chunk processing. Each audio chunk is summarized by local AI, then aggregated. Works offline."
         case .apple:
             return "Advanced AI using Apple's on-device Foundation Models (iOS 18.1+, Apple Intelligence enabled). Works offline."
         case .external:
@@ -59,7 +65,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     /// Whether this tier requires internet connectivity
     public var requiresInternet: Bool {
         switch self {
-        case .basic, .apple: return false
+        case .basic, .local, .apple: return false
         case .external: return true
         }
     }
@@ -67,7 +73,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     /// Whether this tier is privacy-preserving (fully on-device)
     public var isPrivacyPreserving: Bool {
         switch self {
-        case .basic, .apple: return true
+        case .basic, .local, .apple: return true
         case .external: return false
         }
     }
@@ -155,6 +161,15 @@ public struct EngineConfiguration: Sendable {
                 temperature: 0.0,  // Basic engine doesn't use temperature
                 maxTokens: 500
             )
+        case .local:
+            return EngineConfiguration(
+                tier: .local,
+                minimumWords: 1,
+                maxContextLength: 2000,  // Smaller context for local LLM
+                timeoutSeconds: 60.0,    // Longer timeout for local inference
+                temperature: 0.2,
+                maxTokens: 256
+            )
         case .apple:
             return EngineConfiguration(
                 tier: .apple,
@@ -191,6 +206,7 @@ extension SummarizationEngine {
     public var icon: String {
         switch tier {
         case .basic: return "bolt.fill"
+        case .local: return "cpu"
         case .apple: return "apple.intelligence"
         case .external: return "network"
         }

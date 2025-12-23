@@ -8,8 +8,9 @@
 import Foundation
 import SharedModels
 import Storage
+import LocalLLM
 
-/// Orchestrates summarization across multiple engines (Basic, Apple, External)
+/// Orchestrates summarization across multiple engines (Basic, Local, Apple, External)
 /// Selects the appropriate engine based on availability and user settings
 public actor SummarizationCoordinator {
     
@@ -20,6 +21,7 @@ public actor SummarizationCoordinator {
     
     // Available engines
     private var basicEngine: BasicEngine
+    private var localEngine: LocalEngine
     private var appleEngine: (any SummarizationEngine)?
     private var externalEngine: (any SummarizationEngine)?
     
@@ -41,6 +43,9 @@ public actor SummarizationCoordinator {
         // Initialize basic engine (always available)
         self.basicEngine = BasicEngine(storage: storage)
         self.activeEngine = basicEngine
+        
+        // Initialize local LLM engine (Phi-3.5)
+        self.localEngine = LocalEngine()
         
         // Initialize Apple Intelligence engine (Phase 2B - iOS 18.1+)
         if #available(iOS 18.1, *) {
@@ -97,6 +102,10 @@ public actor SummarizationCoordinator {
             available.append(.basic)
         }
         
+        if await localEngine.isAvailable() {
+            available.append(.local)
+        }
+        
         if let apple = appleEngine, await apple.isAvailable() {
             available.append(.apple)
         }
@@ -138,6 +147,12 @@ public actor SummarizationCoordinator {
             activeEngine = basicEngine
             return
             
+        case .local:
+            if await localEngine.isAvailable() {
+                activeEngine = localEngine
+                return
+            }
+            
         case .apple:
             if let apple = appleEngine, await apple.isAvailable() {
                 activeEngine = apple
@@ -153,6 +168,43 @@ public actor SummarizationCoordinator {
         
         // Fallback to basic if preferred unavailable
         activeEngine = basicEngine
+    }
+    
+    // MARK: - Chunk-Level Summarization (Local AI)
+    
+    /// Summarize a single chunk using the local LLM engine
+    /// Called after transcription completes for each chunk when using Local AI tier
+    /// - Parameters:
+    ///   - chunkId: The UUID of the audio chunk
+    ///   - transcriptText: The transcribed text for this chunk
+    /// - Returns: AI-generated summary of the chunk
+    /// - Throws: Error if summarization fails
+    public func summarizeChunk(
+        chunkId: UUID,
+        transcriptText: String
+    ) async throws -> String {
+        // Only use local engine for chunk summarization
+        let isLocalAvailable = await localEngine.isAvailable()
+        if preferredTier == .local && isLocalAvailable {
+            return try await localEngine.summarizeChunk(
+                chunkId: chunkId,
+                transcriptText: transcriptText
+            )
+        }
+        
+        // For other tiers, skip per-chunk summarization
+        // (full text will be summarized at session level)
+        return ""
+    }
+    
+    /// Check if the active tier supports per-chunk AI processing
+    public func supportsChunkProcessing() -> Bool {
+        return preferredTier == .local
+    }
+    
+    /// Get the local engine for direct access (for loading model, etc.)
+    public func getLocalEngine() -> LocalEngine {
+        return localEngine
     }
     
     // MARK: - Session Summarization
@@ -204,8 +256,8 @@ public actor SummarizationCoordinator {
         var lastError: Error?
         var engineToTry = activeEngine
         
-        // Define fallback chain: External → Apple → Basic
-        let fallbackChain: [EngineTier] = [.external, .apple, .basic]
+        // Define fallback chain: External → Local → Apple → Basic
+        let fallbackChain: [EngineTier] = [.external, .local, .apple, .basic]
         var triedEngines: [EngineTier] = []
         
         for tier in fallbackChain {
@@ -217,6 +269,8 @@ public actor SummarizationCoordinator {
             // Get the engine for this tier
             if tier == activeEngine.tier {
                 engineToTry = activeEngine
+            } else if tier == .local {
+                engineToTry = localEngine
             } else if tier == .apple, let apple = appleEngine {
                 engineToTry = apple
             } else if tier == .external, let external = externalEngine {

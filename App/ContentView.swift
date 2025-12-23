@@ -3006,6 +3006,8 @@ struct OnDeviceEnginesView: View {
         switch tier {
         case .basic:
             return "Basic engine should always be available. Please restart the app."
+        case .local:
+            return "Download the local AI model to use on-device intelligence."
         case .apple:
             return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
         case .external:
@@ -6339,6 +6341,8 @@ struct SessionDetailView: View {
         switch activeEngine {
         case .basic:
             generationPhase = "Processing transcript..."
+        case .local:
+            generationPhase = "Running local AI model..."
         case .apple:
             generationPhase = "Preparing..."
         case .external:
@@ -6362,6 +6366,8 @@ struct SessionDetailView: View {
                     switch activeEngine {
                     case .basic:
                         generationPhase = "Extracting key information..."
+                    case .local:
+                        generationPhase = "Loading local AI model..."
                     case .apple:
                         generationPhase = "Loading on-device AI model..."
                     case .external:
@@ -6375,6 +6381,8 @@ struct SessionDetailView: View {
                     switch activeEngine {
                     case .basic:
                         generationPhase = "Analyzing content..."
+                    case .local:
+                        generationPhase = "Running inference..."
                     case .apple:
                         generationPhase = "Analyzing transcript..."
                     case .external:
@@ -6388,6 +6396,8 @@ struct SessionDetailView: View {
                     switch activeEngine {
                     case .basic:
                         generationPhase = "Identifying main topics..."
+                    case .local:
+                        generationPhase = "Processing with Phi-3.5..."
                     case .apple:
                         generationPhase = "Processing key points..."
                     case .external:
@@ -6401,6 +6411,8 @@ struct SessionDetailView: View {
                     switch activeEngine {
                     case .basic:
                         generationPhase = "Creating summary..."
+                    case .local:
+                        generationPhase = "Generating local summary..."
                     case .apple:
                         generationPhase = "Generating summary..."
                     case .external:
@@ -6639,6 +6651,8 @@ struct SessionDetailView: View {
                             switch engineTier {
                             case .basic:
                                 Text("Life Wrapped is creating a basic summary by extracting key information from your transcript. This is a simple, fast process that works offline.")
+                            case .local:
+                                Text("Life Wrapped is using Phi-3.5, a powerful local AI model running directly on your device. This provides high-quality summaries while keeping all your data private.")
                             case .apple:
                                 Text("Life Wrapped performs a comprehensive analysis directly on your iPhone using Apple Intelligence. No data leaves your device — it's completely private.")
                             case .external:
@@ -7841,6 +7855,8 @@ struct IntelligenceEngineView: View {
         switch tier {
         case .basic:
             return "Basic engine should always be available. Please restart the app."
+        case .local:
+            return "Local AI model needs to be downloaded. Go to Settings to download Phi-3.5."
         case .apple:
             return "Apple Intelligence requires iOS 18.1+ and compatible hardware. Your device or OS version doesn't support it yet."
         case .external:
@@ -7952,6 +7968,7 @@ struct EngineRow: View {
     private var iconName: String {
         switch tier {
         case .basic: return "text.alignleft"
+        case .local: return "cpu"
         case .apple: return "apple.logo"
         case .external: return "cloud"
         }
@@ -7960,6 +7977,7 @@ struct EngineRow: View {
     private var iconColor: Color {
         switch tier {
         case .basic: return .gray
+        case .local: return .purple
         case .apple: return .blue
         case .external: return .orange
         }

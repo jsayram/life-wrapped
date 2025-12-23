@@ -651,6 +651,23 @@ public final class AppCoordinator: ObservableObject {
                     }
                     print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) segments saved")
                     
+                    // If using Local AI tier, run chunk through LLM for processing
+                    if let coordinator = self.summarizationCoordinator,
+                       await coordinator.supportsChunkProcessing() {
+                        let chunkText = segments.map { $0.text }.joined(separator: " ")
+                        if !chunkText.isEmpty {
+                            do {
+                                let chunkSummary = try await coordinator.summarizeChunk(
+                                    chunkId: chunkId,
+                                    transcriptText: chunkText
+                                )
+                                print("🤖 [AppCoordinator] Chunk \(chunk.chunkIndex) AI summary: \(chunkSummary.prefix(50))...")
+                            } catch {
+                                print("⚠️ [AppCoordinator] Chunk AI processing failed: \(error)")
+                            }
+                        }
+                    }
+                    
                     // Update status tracking
                     await MainActor.run {
                         self.transcribingChunkIds.remove(chunkId)

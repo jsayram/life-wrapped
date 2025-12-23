@@ -41,8 +41,8 @@ public final class AudioCaptureManager: ObservableObject {
     private var currentChunkIndex: Int = 0
     private var autoChunkTimer: Timer?
     
-    /// Duration in seconds after which to automatically start a new chunk (default: 180 = 3 minutes)
-    public var autoChunkDuration: TimeInterval = 180
+    /// Duration in seconds after which to automatically start a new chunk (default: 15 = 15 seconds)
+    public var autoChunkDuration: TimeInterval = 15
     
     // Callback for when a chunk is completed
     public var onChunkCompleted: (@Sendable (AudioChunk) async -> Void)?
