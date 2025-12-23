@@ -1372,10 +1372,11 @@ public final class AppCoordinator: ObservableObject {
             }
 
             // Generate rollup summary from session summaries (oldest to newest)
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
             print("📝 [AppCoordinator] Generating rollup from \(sessionSummaries.count) session summaries (oldest to newest)")
             let lines = sessionSummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
             let summaryText = lines.joined(separator: "\n")
             let topicsJSON: String? = nil
@@ -1451,10 +1452,11 @@ public final class AppCoordinator: ObservableObject {
             }
 
             // Generate rollup summary from daily summaries (oldest to newest)
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
             print("📝 [AppCoordinator] Generating rollup from \(dailySummaries.count) daily summaries (oldest to newest)")
             let lines = dailySummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
             let summaryText = lines.joined(separator: "\n")
             let topicsJSON: String? = nil
@@ -1535,10 +1537,11 @@ public final class AppCoordinator: ObservableObject {
             }
 
             // Generate rollup summary from weekly summaries (oldest to newest)
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
             print("📝 [AppCoordinator] Generating rollup from \(weeklySummaries.count) weekly summaries (oldest to newest)")
             let lines = weeklySummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
             let summaryText = lines.joined(separator: "\n")
             let topicsJSON: String? = nil
@@ -1622,9 +1625,10 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing yearly summary found, will generate new rollup")
             }
 
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
             let lines = monthlySummaries.map { summary in
-                let dateTimeLabel = formatRollupDateTime(summary.periodStart)
-                return "• \(dateTimeLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
             let rollupText = lines.joined(separator: "\n")
 

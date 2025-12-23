@@ -3,6 +3,7 @@
 //  Summarization
 //
 //  Created by Life Wrapped on 12/16/2025.
+//  Enhanced with TF-IDF, NLEmbedding, NLTokenizer, Key Moments, and Trend Detection
 //
 
 import Foundation
@@ -10,8 +11,53 @@ import NaturalLanguage
 import SharedModels
 import Storage
 
-/// Basic summarization engine using extractive approach
-/// Uses sentence scoring, keyword extraction, and sentiment analysis
+// MARK: - Embedding Cache
+
+/// Thread-safe cache for word embeddings to improve performance
+/// Caches top 1000 most frequently used words
+private final class EmbeddingCache: @unchecked Sendable {
+    private var cache: [String: [Double]] = [:]
+    private let lock = NSLock()
+    private let maxSize = 1000
+    private var accessCount: [String: Int] = [:]
+    
+    func get(_ word: String) -> [Double]? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let vector = cache[word] {
+            accessCount[word, default: 0] += 1
+            return vector
+        }
+        return nil
+    }
+    
+    func set(_ word: String, vector: [Double]) {
+        lock.lock()
+        defer { lock.unlock() }
+        
+        // Evict least accessed if at capacity
+        if cache.count >= maxSize {
+            if let leastAccessed = accessCount.min(by: { $0.value < $1.value })?.key {
+                cache.removeValue(forKey: leastAccessed)
+                accessCount.removeValue(forKey: leastAccessed)
+            }
+        }
+        
+        cache[word] = vector
+        accessCount[word] = 1
+    }
+    
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache.count
+    }
+}
+
+// MARK: - BasicEngine
+
+/// Enhanced basic summarization engine using Apple's Natural Language framework
+/// Features: TF-IDF ranking, semantic embeddings, proper tokenization, key moments detection
 public actor BasicEngine: SummarizationEngine {
     
     // MARK: - Protocol Properties
@@ -22,6 +68,49 @@ public actor BasicEngine: SummarizationEngine {
     
     private let storage: DatabaseManager
     private let config: EngineConfiguration
+    
+    // MARK: - NLP Resources
+    
+    /// Shared embedding for semantic similarity (English)
+    /// NLEmbedding is thread-safe for reads; marked nonisolated(unsafe) for Swift 6 concurrency
+    nonisolated(unsafe) private static let wordEmbedding: NLEmbedding? = NLEmbedding.wordEmbedding(for: .english)
+    
+    /// Cache for frequently used word embeddings
+    private static let embeddingCache = EmbeddingCache()
+    
+    /// Combined stopwords: custom list + NLTagger detection
+    private static let stopWords: Set<String> = {
+        var words: Set<String> = [
+            // Articles
+            "a", "an", "the",
+            // Pronouns
+            "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
+            "my", "your", "his", "its", "our", "their", "mine", "yours", "hers", "ours", "theirs",
+            "myself", "yourself", "himself", "herself", "itself", "ourselves", "themselves",
+            "this", "that", "these", "those", "who", "whom", "whose", "what", "which",
+            // Prepositions
+            "about", "above", "across", "after", "against", "along", "among", "around", "as", "at",
+            "before", "behind", "below", "beneath", "beside", "between", "beyond", "by", "down",
+            "during", "for", "from", "in", "inside", "into", "near", "of", "off", "on", "onto",
+            "out", "outside", "over", "past", "through", "to", "toward", "towards", "under",
+            "until", "up", "upon", "with", "within", "without",
+            // Conjunctions
+            "and", "but", "or", "nor", "so", "yet", "because", "although", "if", "when", "while",
+            // Common verbs
+            "am", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having",
+            "do", "does", "did", "doing", "done", "can", "could", "may", "might", "must", "shall",
+            "should", "will", "would", "get", "got", "go", "goes", "going", "gone", "went",
+            "come", "comes", "coming", "came", "make", "makes", "making", "made",
+            // Adverbs
+            "very", "really", "quite", "rather", "too", "so", "just", "only", "even", "also",
+            "now", "then", "here", "there", "always", "never", "often", "sometimes",
+            // Fillers (important for speech transcripts!)
+            "um", "uh", "er", "ah", "oh", "hmm", "huh", "mhm", "yeah", "yep", "yup", "nope",
+            "like", "okay", "ok", "alright", "right", "well", "anyway", "basically", "actually",
+            "literally", "gonna", "wanna", "gotta", "kinda", "sorta"
+        ]
+        return words
+    }()
     
     // MARK: - Statistics
     
@@ -35,16 +124,15 @@ public actor BasicEngine: SummarizationEngine {
         self.config = config ?? .defaults(for: .basic)
         
         #if DEBUG
-        // Run timestamp removal test on initialization in Debug builds
         print("🧪 [BasicEngine] Running timestamp removal test...")
         _ = testTimestampRemoval()
+        print("🧠 [BasicEngine] Word embedding available: \(Self.wordEmbedding != nil)")
         #endif
     }
     
     // MARK: - SummarizationEngine Protocol
     
     public func isAvailable() async -> Bool {
-        // Basic engine is always available - no external dependencies
         return true
     }
     
@@ -56,8 +144,13 @@ public actor BasicEngine: SummarizationEngine {
     ) async throws -> SessionIntelligence {
         let startTime = Date()
         
-        // Check minimum content requirement
-        let wordCount = transcriptText.split(separator: " ").count
+        // Clean timestamps from input
+        let cleanedText = removeTimestamps(from: transcriptText)
+        
+        // Tokenize properly using NLTokenizer
+        let words = tokenize(cleanedText, unit: .word)
+        let wordCount = words.count
+        
         guard wordCount >= config.minimumWords else {
             throw SummarizationError.insufficientContent(
                 minimumWords: config.minimumWords,
@@ -65,25 +158,55 @@ public actor BasicEngine: SummarizationEngine {
             )
         }
         
-        // Truncate if exceeds max context length
-        let processedText = truncateText(transcriptText, maxWords: config.maxContextLength)
+        // Detect language for fallback handling
+        let detectedLanguage = detectLanguage(cleanedText)
+        let useSemanticScoring = detectedLanguage == .english && Self.wordEmbedding != nil
         
-        // Generate extractive summary
-        let summaryText = try extractiveSummarize(text: processedText, maxWords: 150)
+        // Truncate if needed
+        let processedText = truncateToWords(cleanedText, maxWords: config.maxContextLength)
         
-        // Extract topics (top keywords)
-        let topics = extractKeyTopics(from: processedText, limit: 5)
+        // Extract sentences properly
+        let sentences = tokenize(processedText, unit: .sentence)
+            .filter { $0.split(separator: " ").count > 3 }
         
-        // Extract entities (basic implementation using NLTagger)
+        // Build TF-IDF scores for keywords
+        let tfidfScores = computeTFIDF(sentences: sentences)
+        
+        // Extract topics using TF-IDF ranking
+        let topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores, limit: 5)
+        
+        // Generate summary using enhanced scoring
+        let summaryText = generateSummary(
+            sentences: sentences,
+            tfidfScores: tfidfScores,
+            useSemanticScoring: useSemanticScoring,
+            maxWords: 150
+        )
+        
+        // Extract entities
         let entities = extractEntities(from: processedText)
         
         // Analyze sentiment
         let sentiment = analyzeSentiment(from: processedText)
         
+        // Extract key moments (high-sentiment or entity-rich sentences)
+        let keyMoments = extractKeyMoments(
+            sentences: sentences,
+            entities: entities,
+            limit: 3
+        )
+        
         // Update statistics
         let processingTime = Date().timeIntervalSince(startTime)
         summariesGenerated += 1
         totalProcessingTime += processingTime
+        
+        #if DEBUG
+        print("📊 [BasicEngine] Summary generated in \(String(format: "%.2f", processingTime))s")
+        print("   - Words: \(wordCount), Sentences: \(sentences.count)")
+        print("   - Semantic scoring: \(useSemanticScoring)")
+        print("   - Cache size: \(Self.embeddingCache.count)")
+        #endif
         
         return SessionIntelligence(
             sessionId: sessionId,
@@ -94,7 +217,7 @@ public actor BasicEngine: SummarizationEngine {
             duration: duration,
             wordCount: wordCount,
             languageCodes: languageCodes,
-            keyMoments: nil  // Basic engine doesn't generate key moments
+            keyMoments: keyMoments.isEmpty ? nil : keyMoments
         )
     }
     
@@ -108,19 +231,41 @@ public actor BasicEngine: SummarizationEngine {
             throw SummarizationError.noTranscriptData
         }
         
-        // For rollups, format as bullet-pointed list of session summaries
-        let bulletedSummaries = sessionSummaries.map { intelligence -> String in
-            // Use helper function to remove all timestamps
-            let cleaned = removeTimestamps(from: intelligence.summary)
-            return "• \(cleaned)"
+        // Clean and format summaries WITHOUT timestamps
+        let cleanedSummaries = sessionSummaries.map { intelligence -> String in
+            removeTimestamps(from: intelligence.summary)
         }
         
-        // Join with double newlines for readability
-        let summaryText = bulletedSummaries.joined(separator: "\n\n")
+        // For period summaries, create a coherent narrative
+        let combinedText = cleanedSummaries.joined(separator: " ")
+        let sentences = tokenize(combinedText, unit: .sentence)
+            .filter { $0.split(separator: " ").count > 3 }
         
-        // Aggregate topics (deduplicated and sorted by frequency)
+        // Build TF-IDF for the combined text
+        let tfidfScores = computeTFIDF(sentences: sentences)
+        
+        // Detect language
+        let detectedLanguage = detectLanguage(combinedText)
+        let useSemanticScoring = detectedLanguage == .english && Self.wordEmbedding != nil
+        
+        // Generate a coherent period summary (not just bullet points)
+        let periodSummary: String
+        if sentences.count <= 3 {
+            // Few sentences - use them all
+            periodSummary = sentences.joined(separator: ". ") + (sentences.isEmpty ? "" : ".")
+        } else {
+            // Generate extractive summary
+            periodSummary = generateSummary(
+                sentences: sentences,
+                tfidfScores: tfidfScores,
+                useSemanticScoring: useSemanticScoring,
+                maxWords: periodType == .day ? 100 : (periodType == .week ? 150 : 200)
+            )
+        }
+        
+        // Aggregate topics with frequency
         let allTopics = sessionSummaries.flatMap { $0.topics }
-        let topics = aggregateTopics(allTopics, limit: 10)
+        let topics = aggregateTopicsWithFrequency(allTopics, limit: 10)
         
         // Aggregate entities
         let allEntities = sessionSummaries.flatMap { $0.entities }
@@ -133,18 +278,21 @@ public actor BasicEngine: SummarizationEngine {
         let totalDuration = sessionSummaries.map { $0.duration }.reduce(0, +)
         let totalWords = sessionSummaries.map { $0.wordCount }.reduce(0, +)
         
+        // Detect trends (topic changes across sessions)
+        let trends = detectTrends(sessionSummaries: sessionSummaries)
+        
         return PeriodIntelligence(
             periodType: periodType,
             periodStart: periodStart,
             periodEnd: periodEnd,
-            summary: summaryText,
+            summary: periodSummary,
             topics: topics,
             entities: entities,
             sentiment: avgSentiment,
             sessionCount: sessionSummaries.count,
             totalDuration: totalDuration,
             totalWordCount: totalWords,
-            trends: nil  // Basic engine doesn't detect trends
+            trends: trends.isEmpty ? nil : trends
         )
     }
     
@@ -160,123 +308,282 @@ public actor BasicEngine: SummarizationEngine {
         totalProcessingTime = 0
     }
     
-    // MARK: - Testing Helper
+    // MARK: - NLP Tokenization
     
-    /// Test the timestamp removal function - returns true if no timestamps remain
-    public nonisolated func testTimestampRemoval() -> Bool {
-        let testCases = [
-            "• Dec 22, 2025 12:00 AM: • Dec 22, 2025 12:00 AM: • Dec 22, 2025 9:08 PM: OK, I'm gonna just start recording this.",
-            "• Dec 22, 2025 8:47 PM: OK, so I'm gonna try to see this.",
-            "Dec 22, 2025 12:00 AM: Text without bullet",
-            "• Dec 1, 2025 12:00 AM: Some text here"
-        ]
+    /// Proper tokenization using NLTokenizer
+    private nonisolated func tokenize(_ text: String, unit: NLTokenUnit) -> [String] {
+        let tokenizer = NLTokenizer(unit: unit)
+        tokenizer.string = text
         
-        print("🧪 [BasicEngine] Testing timestamp removal:")
-        var allPassed = true
+        var tokens: [String] = []
+        tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { tokenRange, _ in
+            let token = String(text[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !token.isEmpty {
+                tokens.append(token)
+            }
+            return true
+        }
+        return tokens
+    }
+    
+    /// Detect text language
+    private nonisolated func detectLanguage(_ text: String) -> NLLanguage? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        return recognizer.dominantLanguage
+    }
+    
+    // MARK: - TF-IDF Implementation
+    
+    /// Compute TF-IDF scores for all words across sentences
+    private nonisolated func computeTFIDF(sentences: [String]) -> [String: Double] {
+        guard !sentences.isEmpty else { return [:] }
         
-        for (index, test) in testCases.enumerated() {
-            let cleaned = removeTimestamps(from: test)
-            let hasTimestamp = cleaned.range(of: #"\d{1,2}:\d{2}\s+[AP]M"#, options: .regularExpression) != nil
-            let hasBullet = cleaned.hasPrefix("•") || cleaned.hasPrefix("●")
+        // Term frequency per sentence
+        var termFrequencies: [[String: Int]] = []
+        var documentFrequency: [String: Int] = [:]
+        
+        for sentence in sentences {
+            let words = tokenize(sentence, unit: .word)
+                .map { $0.lowercased() }
+                .filter { isContentWord($0) }
             
-            if hasTimestamp {
-                print("❌ Test \(index + 1) FAILED: Timestamp remains in '\(cleaned)'")
-                allPassed = false
-            } else if hasBullet {
-                print("⚠️  Test \(index + 1) WARNING: Bullet remains in '\(cleaned)'")
-            } else {
-                print("✅ Test \(index + 1) PASSED: '\(cleaned)'")
+            var tf: [String: Int] = [:]
+            for word in words {
+                tf[word, default: 0] += 1
+            }
+            termFrequencies.append(tf)
+            
+            // Count documents containing each word
+            for word in Set(words) {
+                documentFrequency[word, default: 0] += 1
             }
         }
         
-        return allPassed
-    }
-    
-    // MARK: - Private Helper Methods
-    
-    /// Aggressively remove all timestamp patterns from text
-    private nonisolated func removeTimestamps(from text: String) -> String {
-        var cleaned = text
+        // Calculate TF-IDF
+        let n = Double(sentences.count)
+        var tfidfScores: [String: Double] = [:]
         
-        // Step 1: Remove ALL timestamp patterns globally (one or more consecutive)
-        // This pattern matches: "• Dec 22, 2025 12:00 AM: " repeated any number of times
-        // Example: "• Dec 22, 2025 12:00 AM: • Dec 22, 2025 12:00 AM: text" -> "text"
-        let anyTimestampPattern = #"(?:[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#
-        cleaned = cleaned.replacingOccurrences(of: anyTimestampPattern, with: "", options: .regularExpression)
-        
-        // Step 2: Safety pass - remove any remaining individual timestamps
-        let singlePattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
-        cleaned = cleaned.replacingOccurrences(of: singlePattern, with: "", options: .regularExpression)
-        
-        // Step 3: Remove leading bullets and whitespace
-        cleaned = cleaned.replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
-        
-        // Step 4: Additional cleanup - remove multiple spaces and trim
-        cleaned = cleaned.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        let result = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Verification log - this will help debug if timestamps still appear
-        if text.contains(":") && text.contains("AM") || text.contains("PM") {
-            print("🧹 [BasicEngine] Cleaned timestamp from: '\(text.prefix(100))'")
-            print("🧹 [BasicEngine] Result: '\(result.prefix(100))'")
+        for (index, tf) in termFrequencies.enumerated() {
+            let sentenceWords = tokenize(sentences[index], unit: .word)
+            let totalWords = Double(sentenceWords.count)
+            guard totalWords > 0 else { continue }
+            
+            for (word, count) in tf {
+                let termFreq = Double(count) / totalWords
+                let docFreq = Double(documentFrequency[word] ?? 1)
+                let idf = log(n / docFreq) + 1.0  // Smoothed IDF
+                let tfidf = termFreq * idf
+                
+                // Accumulate score (higher = more important across document)
+                tfidfScores[word, default: 0] += tfidf
+            }
         }
         
-        return result
+        return tfidfScores
     }
     
-    /// Truncate text to maximum word count
-    private func truncateText(_ text: String, maxWords: Int) -> String {
-        let words = text.split(separator: " ")
-        guard words.count > maxWords else { return text }
-        return words.prefix(maxWords).joined(separator: " ") + "..."
-    }
-    
-    /// Perform extractive summarization using sentence scoring
-    private func extractiveSummarize(text: String, maxWords: Int) throws -> String {
-        // Split into sentences
-        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && $0.split(separator: " ").count > 3 }
+    /// Check if word is a content word (not a stopword)
+    private nonisolated func isContentWord(_ word: String) -> Bool {
+        let lowered = word.lowercased()
         
+        // Check custom stopwords
+        if Self.stopWords.contains(lowered) {
+            return false
+        }
+        
+        // Filter very short words
+        if lowered.count < 3 {
+            return false
+        }
+        
+        // Filter numbers
+        if Double(lowered) != nil {
+            return false
+        }
+        
+        // Use NLTagger to check lexical class
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = word
+        
+        if let tag = tagger.tag(at: word.startIndex, unit: .word, scheme: .lexicalClass).0 {
+            // Keep nouns, verbs (non-auxiliary), adjectives, adverbs
+            switch tag {
+            case .noun, .verb, .adjective, .adverb:
+                return true
+            default:
+                return false
+            }
+        }
+        
+        return true
+    }
+    
+    /// Extract topics using TF-IDF scores
+    private nonisolated func extractTopicsWithTFIDF(tfidfScores: [String: Double], limit: Int) -> [String] {
+        return tfidfScores
+            .sorted { $0.value > $1.value }
+            .prefix(limit)
+            .map { $0.key }
+    }
+    
+    // MARK: - Semantic Scoring with NLEmbedding
+    
+    /// Get word embedding vector with caching
+    private nonisolated func getEmbedding(for word: String) -> [Double]? {
+        let lowered = word.lowercased()
+        
+        // Check cache first
+        if let cached = Self.embeddingCache.get(lowered) {
+            return cached
+        }
+        
+        // Get from NLEmbedding
+        guard let embedding = Self.wordEmbedding,
+              let vector = embedding.vector(for: lowered) else {
+            return nil
+        }
+        
+        let vectorArray = Array(vector)
+        Self.embeddingCache.set(lowered, vector: vectorArray)
+        return vectorArray
+    }
+    
+    /// Compute average embedding for a sentence
+    private nonisolated func sentenceEmbedding(_ sentence: String) -> [Double]? {
+        let words = tokenize(sentence, unit: .word)
+            .filter { isContentWord($0) }
+        
+        guard !words.isEmpty else { return nil }
+        
+        var sumVector: [Double]? = nil
+        var count = 0
+        
+        for word in words {
+            if let vector = getEmbedding(for: word) {
+                if sumVector == nil {
+                    sumVector = vector
+                } else {
+                    for i in 0..<vector.count {
+                        sumVector![i] += vector[i]
+                    }
+                }
+                count += 1
+            }
+        }
+        
+        guard let sum = sumVector, count > 0 else { return nil }
+        return sum.map { $0 / Double(count) }
+    }
+    
+    /// Compute cosine similarity between two vectors
+    private nonisolated func cosineSimilarity(_ a: [Double], _ b: [Double]) -> Double {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        
+        var dotProduct = 0.0
+        var normA = 0.0
+        var normB = 0.0
+        
+        for i in 0..<a.count {
+            dotProduct += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+        
+        let denominator = sqrt(normA) * sqrt(normB)
+        return denominator > 0 ? dotProduct / denominator : 0
+    }
+    
+    // MARK: - Summary Generation
+    
+    /// Generate summary using enhanced multi-factor scoring
+    private nonisolated func generateSummary(
+        sentences: [String],
+        tfidfScores: [String: Double],
+        useSemanticScoring: Bool,
+        maxWords: Int
+    ) -> String {
         guard !sentences.isEmpty else {
             return "No content available for summary."
         }
         
-        // Calculate target number of sentences
-        let avgWordsPerSentence = 15
-        let maxSentences = max(1, maxWords / avgWordsPerSentence)
+        // Calculate document centroid for semantic scoring
+        var documentEmbedding: [Double]? = nil
+        if useSemanticScoring {
+            let allText = sentences.joined(separator: " ")
+            documentEmbedding = sentenceEmbedding(allText)
+        }
         
-        // Score sentences
-        let keywords = extractKeyTopics(from: text, limit: 10)
-        let scoredSentences = sentences.enumerated().map { index, sentence in
+        // Score each sentence
+        let scoredSentences = sentences.enumerated().map { index, sentence -> (sentence: String, score: Double) in
             var score = 0.0
             
-            // Position score (earlier sentences often more important)
-            let positionScore = 1.0 - (Double(index) / Double(sentences.count))
-            score += positionScore * 0.3
+            // 1. Position score (first and last sentences often important)
+            let position = Double(index) / Double(sentences.count)
+            let positionScore: Double
+            if position < 0.2 {
+                positionScore = 1.0  // First 20%
+            } else if position > 0.8 {
+                positionScore = 0.7  // Last 20%
+            } else {
+                positionScore = 0.5 - (position - 0.5).magnitude * 0.5
+            }
+            score += positionScore * 0.15
             
-            // Length score (prefer medium-length sentences)
+            // 2. Length score (prefer medium-length sentences)
             let wordCount = sentence.split(separator: " ").count
-            let lengthScore = wordCount >= 8 && wordCount <= 25 ? 1.0 : 0.5
-            score += lengthScore * 0.2
+            let lengthScore: Double
+            if wordCount >= 10 && wordCount <= 30 {
+                lengthScore = 1.0
+            } else if wordCount >= 5 && wordCount <= 40 {
+                lengthScore = 0.7
+            } else {
+                lengthScore = 0.3
+            }
+            score += lengthScore * 0.10
             
-            // Keyword presence
-            let sentenceLower = sentence.lowercased()
-            let keywordCount = keywords.filter { sentenceLower.contains($0) }.count
-            score += Double(keywordCount) * 0.5
+            // 3. TF-IDF keyword score
+            let words = tokenize(sentence, unit: .word).map { $0.lowercased() }
+            var keywordScore = 0.0
+            for word in words {
+                keywordScore += tfidfScores[word] ?? 0
+            }
+            keywordScore = min(keywordScore / Double(max(words.count, 1)), 1.0)
+            score += keywordScore * 0.35
             
-            return (sentence: sentence, score: score)
+            // 4. Semantic similarity score (if available)
+            if useSemanticScoring, let docEmbed = documentEmbedding,
+               let sentEmbed = sentenceEmbedding(sentence) {
+                let similarity = cosineSimilarity(sentEmbed, docEmbed)
+                score += similarity * 0.25
+            } else {
+                // Fallback: boost keyword score weight
+                score += keywordScore * 0.15
+            }
+            
+            // 5. Entity presence bonus
+            let entityScore = hasNamedEntities(sentence) ? 0.15 : 0
+            score += entityScore
+            
+            return (sentence, score)
         }
         
         // Select top sentences
-        let selectedSentences = scoredSentences
+        let avgWordsPerSentence = 15
+        let maxSentences = max(1, maxWords / avgWordsPerSentence)
+        
+        let selected = scoredSentences
             .sorted { $0.score > $1.score }
             .prefix(min(maxSentences, sentences.count))
-            .sorted { sentences.firstIndex(of: $0.sentence) ?? 0 < sentences.firstIndex(of: $1.sentence) ?? 0 }
+            // Restore original order for coherence
+            .sorted { 
+                sentences.firstIndex(of: $0.sentence) ?? 0 < 
+                sentences.firstIndex(of: $1.sentence) ?? 0 
+            }
             .map { $0.sentence }
         
-        // Combine into summary
-        var summary = selectedSentences.joined(separator: ". ")
+        // Join with proper punctuation
+        var summary = selected.joined(separator: ". ")
         if !summary.isEmpty && !summary.hasSuffix(".") && !summary.hasSuffix("!") && !summary.hasSuffix("?") {
             summary += "."
         }
@@ -284,36 +591,124 @@ public actor BasicEngine: SummarizationEngine {
         return summary
     }
     
-    /// Extract key topics using word frequency analysis
-    private func extractKeyTopics(from text: String, limit: Int = 5) -> [String] {
-        // Use NLTagger to extract nouns only
-        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+    /// Check if sentence contains named entities
+    private nonisolated func hasNamedEntities(_ text: String) -> Bool {
+        let tagger = NLTagger(tagSchemes: [.nameType])
         tagger.string = text
         
-        var nouns: [String] = []
-        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass) { tag, tokenRange in
-            if tag == .noun {
-                let word = String(text[tokenRange]).lowercased()
-                if word.count > 3 {  // Filter short words
-                    nouns.append(word)
-                }
+        var hasEntity = false
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .nameType, options: [.omitWhitespace]) { tag, _ in
+            if tag != nil {
+                hasEntity = true
+                return false  // Stop enumeration
             }
             return true
         }
-        
-        // Count frequencies
-        var frequencies: [String: Int] = [:]
-        for noun in nouns {
-            frequencies[noun, default: 0] += 1
-        }
-        
-        // Get top nouns by frequency
-        return Array(frequencies.sorted { $0.value > $1.value }
-            .prefix(limit)
-            .map { $0.key })
+        return hasEntity
     }
     
-    /// Extract entities using NaturalLanguage framework
+    // MARK: - Key Moments Extraction
+    
+    /// Extract key moments (high-impact sentences)
+    private func extractKeyMoments(
+        sentences: [String],
+        entities: [Entity],
+        limit: Int
+    ) -> [KeyMoment] {
+        var scoredMoments: [(sentence: String, score: Double, index: Int)] = []
+        
+        for (index, sentence) in sentences.enumerated() {
+            var score = 0.0
+            
+            // Sentiment intensity
+            let sentiment = analyzeSentiment(from: sentence)
+            score += abs(sentiment) * 2.0  // Strong emotions = interesting
+            
+            // Entity density
+            let sentenceEntities = extractEntities(from: sentence)
+            score += Double(sentenceEntities.count) * 0.5
+            
+            // Exclamation/question = emphasis
+            if sentence.contains("!") { score += 0.3 }
+            if sentence.contains("?") { score += 0.2 }
+            
+            // Length (not too short, not too long)
+            let wordCount = sentence.split(separator: " ").count
+            if wordCount >= 8 && wordCount <= 25 {
+                score += 0.3
+            }
+            
+            scoredMoments.append((sentence, score, index))
+        }
+        
+        // Sort by score and take top moments
+        let topMoments = scoredMoments
+            .sorted { $0.score > $1.score }
+            .prefix(limit)
+        
+        // Convert to KeyMoment objects
+        // Use sentence index as approximate timestamp position (normalized 0-1)
+        let totalSentences = max(sentences.count, 1)
+        return topMoments.map { moment in
+            KeyMoment(
+                timestamp: Double(moment.index) / Double(totalSentences),
+                description: moment.sentence,
+                importance: min(moment.score / 3.0, 1.0)  // Normalize to 0-1
+            )
+        }
+    }
+    
+    // MARK: - Trend Detection
+    
+    /// Detect trends across sessions
+    private func detectTrends(sessionSummaries: [SessionIntelligence]) -> [String] {
+        guard sessionSummaries.count >= 2 else { return [] }
+        
+        // Split into halves
+        let midpoint = sessionSummaries.count / 2
+        let firstHalf = Array(sessionSummaries.prefix(midpoint))
+        let secondHalf = Array(sessionSummaries.suffix(from: midpoint))
+        
+        // Count topics in each half
+        var firstTopics: [String: Int] = [:]
+        var secondTopics: [String: Int] = [:]
+        
+        for session in firstHalf {
+            for topic in session.topics {
+                firstTopics[topic, default: 0] += 1
+            }
+        }
+        
+        for session in secondHalf {
+            for topic in session.topics {
+                secondTopics[topic, default: 0] += 1
+            }
+        }
+        
+        // Find emerging topics (new or significantly increased)
+        var trends: [String] = []
+        
+        for (topic, count) in secondTopics {
+            let firstCount = firstTopics[topic] ?? 0
+            if count > firstCount * 2 || (firstCount == 0 && count >= 2) {
+                trends.append("📈 \(topic)")
+            }
+        }
+        
+        // Find declining topics
+        for (topic, count) in firstTopics {
+            let secondCount = secondTopics[topic] ?? 0
+            if count > secondCount * 2 && count >= 2 {
+                trends.append("📉 \(topic)")
+            }
+        }
+        
+        return Array(trends.prefix(5))
+    }
+    
+    // MARK: - Entity Extraction
+    
+    /// Extract entities using NLTagger
     private func extractEntities(from text: String) -> [Entity] {
         let tagger = NLTagger(tagSchemes: [.nameType])
         tagger.string = text
@@ -346,44 +741,43 @@ public actor BasicEngine: SummarizationEngine {
         }
     }
     
-    /// Analyze sentiment using NaturalLanguage framework
+    // MARK: - Sentiment Analysis
+    
+    /// Analyze sentiment using NLTagger
     private func analyzeSentiment(from text: String) -> Double {
         let tagger = NLTagger(tagSchemes: [.sentimentScore])
         tagger.string = text
         
-        let (tag, _) = tagger.tag(
-            at: text.startIndex,
-            unit: .paragraph,
-            scheme: .sentimentScore
-        )
+        let (tag, _) = tagger.tag(at: text.startIndex, unit: .paragraph, scheme: .sentimentScore)
         
         guard let tag = tag, let score = Double(tag.rawValue) else {
-            return 0.0  // Neutral
+            return 0.0
         }
         
         return score
     }
     
-    /// Aggregate topics from multiple sessions
-    private func aggregateTopics(_ topics: [String], limit: Int) -> [String] {
+    // MARK: - Topic Aggregation
+    
+    /// Aggregate topics with frequency weighting
+    private func aggregateTopicsWithFrequency(_ topics: [String], limit: Int) -> [String] {
         var frequencies: [String: Int] = [:]
         for topic in topics {
             frequencies[topic.lowercased(), default: 0] += 1
         }
         
-        return Array(frequencies.sorted { $0.value > $1.value }
+        return frequencies
+            .sorted { $0.value > $1.value }
             .prefix(limit)
-            .map { $0.key })
+            .map { $0.key }
     }
     
     /// Aggregate entities from multiple sessions
     private func aggregateEntities(_ entities: [Entity], limit: Int) -> [Entity] {
-        // Group by name (case-insensitive)
         var grouped: [String: Entity] = [:]
         for entity in entities {
             let key = entity.name.lowercased()
             if let existing = grouped[key] {
-                // Keep entity with higher confidence
                 if entity.confidence > existing.confidence {
                     grouped[key] = entity
                 }
@@ -392,7 +786,70 @@ public actor BasicEngine: SummarizationEngine {
             }
         }
         
-        // Sort by confidence and take top N
         return Array(grouped.values.sorted { $0.confidence > $1.confidence }.prefix(limit))
+    }
+    
+    // MARK: - Text Utilities
+    
+    /// Truncate text to maximum word count
+    private nonisolated func truncateToWords(_ text: String, maxWords: Int) -> String {
+        let words = tokenize(text, unit: .word)
+        guard words.count > maxWords else { return text }
+        return words.prefix(maxWords).joined(separator: " ") + "..."
+    }
+    
+    /// Remove timestamps from text
+    private nonisolated func removeTimestamps(from text: String) -> String {
+        var cleaned = text
+        
+        // Remove timestamp patterns: "• Dec 22, 2025 12:00 AM: "
+        let anyTimestampPattern = #"(?:[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#
+        cleaned = cleaned.replacingOccurrences(of: anyTimestampPattern, with: "", options: .regularExpression)
+        
+        // Safety pass
+        let singlePattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
+        cleaned = cleaned.replacingOccurrences(of: singlePattern, with: "", options: .regularExpression)
+        
+        // Remove leading bullets
+        cleaned = cleaned.replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
+        
+        // Clean whitespace
+        cleaned = cleaned.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    // MARK: - Testing
+    
+    public nonisolated func testTimestampRemoval() -> Bool {
+        let testCases = [
+            "• Dec 22, 2025 12:00 AM: • Dec 22, 2025 12:00 AM: • Dec 22, 2025 9:08 PM: OK, I'm gonna just start recording this.",
+            "• Dec 22, 2025 8:47 PM: OK, so I'm gonna try to see this.",
+            "Dec 22, 2025 12:00 AM: Text without bullet",
+            "• Dec 1, 2025 12:00 AM: Some text here"
+        ]
+        
+        #if DEBUG
+        print("🧪 [BasicEngine] Testing timestamp removal:")
+        #endif
+        
+        var allPassed = true
+        for (index, test) in testCases.enumerated() {
+            let cleaned = removeTimestamps(from: test)
+            let hasTimestamp = cleaned.range(of: #"\d{1,2}:\d{2}\s+[AP]M"#, options: .regularExpression) != nil
+            
+            if hasTimestamp {
+                #if DEBUG
+                print("❌ Test \(index + 1) FAILED: Timestamp remains in '\(cleaned)'")
+                #endif
+                allPassed = false
+            } else {
+                #if DEBUG
+                print("✅ Test \(index + 1) PASSED: '\(cleaned)'")
+                #endif
+            }
+        }
+        
+        return allPassed
     }
 }
