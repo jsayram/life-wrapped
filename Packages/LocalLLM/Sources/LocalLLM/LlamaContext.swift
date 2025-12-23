@@ -72,7 +72,8 @@ public actor LlamaContext {
     // MARK: - Text Generation
     
     /// Generate text using the loaded model
-    /// Currently uses extractive summarization as fallback
+    /// Currently uses improved extractive summarization as fallback
+    /// Full llama.cpp integration pending
     /// - Parameters:
     ///   - prompt: The input prompt (already formatted for model type)
     ///   - maxTokens: Maximum tokens to generate (overrides default)
@@ -83,16 +84,11 @@ public actor LlamaContext {
             throw LlamaError.modelNotLoaded
         }
         
-        // Extract the transcript text from the structured prompt
-        // The prompt format is:
-        // <system prompt>
-        // <|user|>
-        // Summarize this transcript chunk:
-        //
-        // <transcript text>
-        // <|end|>
-        // <|assistant|>
+        // TODO: Implement full llama.cpp inference
+        // For now, use improved extractive summarization
+        print("⚠️ [LlamaContext] Using improved extractive fallback - full llama.cpp integration pending")
         
+        // Extract the transcript text from the structured prompt
         var transcriptText = ""
         
         // Find the text after "Summarize this transcript chunk:"
@@ -112,12 +108,41 @@ public actor LlamaContext {
             return "Content recorded."
         }
         
-        // Simple extractive summary: take first 1-2 meaningful sentences
-        let sentences = transcriptText.components(separatedBy: CharacterSet(charactersIn: ".!?"))
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && $0.split(separator: " ").count >= 3 }
+        // Improved extractive summarization
+        return improvedExtractiveSummary(from: transcriptText)
+    }
+    
+    /// Improved extractive summary that mimics LLM behavior
+    private func improvedExtractiveSummary(from text: String) -> String {
+        // Remove common filler words and clean up
+        let fillerWords = Set(["um", "uh", "like", "you know", "basically", "actually", "literally", "right", "okay", "ok", "so", "well", "i mean"])
         
-        let summary = sentences.prefix(2).joined(separator: ". ")
+        // Split into sentences
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        
+        var cleanedSentences: [String] = []
+        
+        for sentence in sentences {
+            // Skip very short sentences (likely fragments)
+            guard sentence.split(separator: " ").count >= 3 else { continue }
+            
+            // Clean up filler words
+            var words = sentence.lowercased().split(separator: " ").map(String.init)
+            words = words.filter { !fillerWords.contains($0) }
+            
+            // Skip if too many words were removed (likely all filler)
+            guard words.count >= 3 else { continue }
+            
+            // Reconstruct sentence with first word capitalized
+            let cleaned = words.joined(separator: " ")
+            let capitalized = cleaned.prefix(1).uppercased() + cleaned.dropFirst()
+            cleanedSentences.append(capitalized)
+        }
+        
+        // Take first 2-3 meaningful sentences
+        let summary = cleanedSentences.prefix(2).joined(separator: ". ")
         return summary.isEmpty ? "Content recorded." : summary + "."
     }
     
