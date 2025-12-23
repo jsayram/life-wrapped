@@ -7225,11 +7225,18 @@ struct SessionSummaryCard: View {
     private var cleanedSummaryText: String {
         var text = summary.text
         
-        // Remove all occurrences of timestamp patterns
-        // Pattern matches: "• Dec 22, 2025 8:23 PM:" or "Dec 22, 2025 8:23 PM:" or "• Dec 1, 2025 12:00 AM:"
-        while let range = text.range(of: #"[•\s]*\w{3,9}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#, options: .regularExpression) {
-            text.removeSubrange(range)
+        // Remove multiple consecutive timestamps (the main problem)
+        let multiTimestampPattern = #"([•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#
+        text = text.replacingOccurrences(of: multiTimestampPattern, with: "", options: .regularExpression)
+        
+        // Remove any remaining single timestamps
+        let singleTimestampPattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
+        while text.range(of: singleTimestampPattern, options: .regularExpression) != nil {
+            text = text.replacingOccurrences(of: singleTimestampPattern, with: "", options: .regularExpression)
         }
+        
+        // Remove any leading bullets or whitespace
+        text = text.replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
         
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
