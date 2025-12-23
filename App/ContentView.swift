@@ -2333,7 +2333,7 @@ struct SettingsTab: View {
                     
                     HStack {
                         Label {
-                            Text("On-Device Processing")
+                            Text("Transcription: On-Device")
                         } icon: {
                             Image(systemName: "checkmark.shield.fill")
                                 .foregroundStyle(AppTheme.emerald)
@@ -2344,6 +2344,8 @@ struct SettingsTab: View {
                     }
                 } header: {
                     Text("About")
+                } footer: {
+                    Text("AI summaries use your API keys or on-device fallback.")
                 }
                 
                 // Debug Section (hidden by default)
@@ -4208,11 +4210,34 @@ struct PrivacySettingsView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Label("On-Device Processing", systemImage: "checkmark.shield.fill")
-                    Spacer()
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("Transcription", systemImage: "waveform")
+                        Spacer()
+                        Text("On-Device")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                    }
+                    Text("100% local, uses Apple Speech framework")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 32)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("AI Summaries", systemImage: "sparkles")
+                        Spacer()
+                        Text("User-Controlled")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.blue)
+                    }
+                    Text("Uses your API keys (OpenAI/Anthropic) or on-device fallback")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 32)
                 }
                 
                 HStack {
@@ -4231,7 +4256,7 @@ struct PrivacySettingsView: View {
             } header: {
                 Text("Privacy Status")
             } footer: {
-                Text("Life Wrapped processes all data locally. No data is sent to external servers unless you configure External API.")
+                Text("Transcription always happens on-device. AI summaries use external APIs only if you provide API keys, otherwise on-device processing.")
             }
             
             Section {
