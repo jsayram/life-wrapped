@@ -457,24 +457,15 @@ struct RecordingButton: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var recordingDuration: TimeInterval = 0
-    @State private var smoothedMagnitudes: [Float] = Array(repeating: 0, count: 80)
     
     // Timer that fires every 0.1 seconds to update the recording duration
     private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
-    // Gradient for the waveform (Apple Intelligence colors)
-    private let waveformGradient = Gradient(colors: [
-        Color(hex: "#FF9500"), // Orange
-        Color(hex: "#FF2D55"), // Pink  
-        Color(hex: "#A855F7"), // Purple
-        Color(hex: "#3B82F6"), // Blue
-        Color(hex: "#06B6D4"), // Cyan
-        Color(hex: "#10B981"), // Green
-        Color(hex: "#FBBF24")  // Yellow
-    ])
-    
     var body: some View {
         VStack(spacing: 20) {
+            Spacer()
+            Spacer()
+            
             Button(action: handleRecordingAction) {
                 waveformView
                     .contentShape(Circle())
@@ -488,9 +479,17 @@ struct RecordingButton: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            
+            Spacer()
+            Spacer()
+            Spacer()
         }
         .onReceive(timer) { _ in
-            updateRecordingState()
+            if case .recording(let startTime) = coordinator.recordingState {
+                recordingDuration = Date().timeIntervalSince(startTime)
+            } else {
+                recordingDuration = 0
+            }
         }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {
@@ -511,119 +510,95 @@ struct RecordingButton: View {
     
     private var waveformView: some View {
         ZStack {
-            // Outer ring to indicate it's a button
-            Circle()
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 4
-                )
-                .frame(width: 360, height: 360)
-            
-            // Background circle
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color(.systemBackground).opacity(0.8),
-                            Color(.secondarySystemBackground).opacity(0.9)
-                        ],
-                        center: .center,
-                        startRadius: 50,
-                        endRadius: 180
+            if coordinator.recordingState.isRecording {
+                // Animated pulsing circles when recording with Siri/Apple Intelligence gradients
+                Circle()
+                    .fill(
+                        AngularGradient(
+                            colors: [
+                                Color(hex: "#FF9500"), // Orange
+                                Color(hex: "#FF2D55"), // Pink
+                                Color(hex: "#A855F7"), // Purple
+                                Color(hex: "#3B82F6"), // Blue
+                                Color(hex: "#FF9500")  // Back to orange
+                            ],
+                            center: .center
+                        )
                     )
-                )
-                .frame(width: 350, height: 350)
-            
-            // Waveform - Simple overlapping sine waves
-            TimelineView(.animation(minimumInterval: 1/60)) { context in
-                Canvas { canvasContext, size in
-                    drawSineWaveform(
-                        context: canvasContext,
-                        size: size,
-                        time: context.date.timeIntervalSince1970
-                    )
-                }
-                .frame(width: 340, height: 160)
-            }
-        }
-        .frame(width: 360, height: 360)
-        .shadow(color: AppTheme.purple.opacity(0.15), radius: 20, x: 0, y: 10)
-    }
-    
-    // MARK: - Drawing Methods
-    
-    private func drawSineWaveform(context: GraphicsContext, size: CGSize, time: TimeInterval) {
-        let centerY = size.height / 2
-        let isRecording = coordinator.recordingState.isRecording
-        
-        if !isRecording {
-            // Draw flat line when idle
-            var flatPath = Path()
-            flatPath.move(to: CGPoint(x: 0, y: centerY))
-            flatPath.addLine(to: CGPoint(x: size.width, y: centerY))
-            
-            context.stroke(
-                flatPath,
-                with: .color(AppTheme.purple.opacity(0.3)),
-                style: StrokeStyle(lineWidth: 2.0, lineCap: .round)
-            )
-            return
-        }
-        
-        // Get audio level from smoothed FFT magnitudes
-        let audioLevel = smoothedMagnitudes.reduce(0, +) / Float(max(smoothedMagnitudes.count, 1))
-        // Clamp to prevent cutoff (max amplitude should be ~60% of height)
-        let maxAmplitude = size.height * 0.3
-        let amplitudeScale = min(CGFloat(audioLevel) * 150.0 + 20.0, maxAmplitude)
-        
-        // Define 2 waves that respond to loudness
-        let waves: [(amplitudeMultiplier: CGFloat, frequency: CGFloat, thickness: CGFloat, speed: CGFloat, color: Color)] = [
-            (amplitudeMultiplier: 1.0, frequency: 3.0, thickness: 4.0, speed: 1.2, color: Color(hex: "#A855F7")), // Purple
-            (amplitudeMultiplier: 0.7, frequency: 5.0, thickness: 2.5, speed: 1.8, color: Color(hex: "#FF2D55")), // Pink
-        ]
-        
-        // Draw each sine wave
-        for wave in waves {
-            var path = Path()
-            let points = 200
-            
-            for i in 0...points {
-                let x = (CGFloat(i) / CGFloat(points)) * size.width
-                let normalizedX = (x / size.width) * 2 * .pi * wave.frequency
-                let timeOffset = time * wave.speed
-                let y = centerY + (amplitudeScale * wave.amplitudeMultiplier) * sin(normalizedX - timeOffset)
+                    .frame(width: 220, height: 220)
+                    .opacity(0.3)
+                    .phaseAnimator([false, true]) { content, phase in
+                        content
+                            .scaleEffect(phase ? 0.8 : 1.3)
+                            .rotationEffect(.degrees(phase ? 0 : 360))
+                    } animation: { phase in
+                            .easeOut(duration: 1.2)
+                    }
                 
-                if i == 0 {
-                    path.move(to: CGPoint(x: x, y: y))
-                } else {
-                    path.addLine(to: CGPoint(x: x, y: y))
-                }
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(hex: "#A855F7"), // Purple center
+                                Color(hex: "#06B6D4"), // Cyan
+                                Color(hex: "#10B981")  // Green edge
+                            ],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 110
+                        )
+                    )
+                    .frame(width: 220, height: 220)
+                    .opacity(0.6)
+                    .phaseAnimator([false, true]) { content, phase in
+                        content
+                            .scaleEffect(phase ? 0.7 : 1.2)
+                    } animation: { phase in
+                            .easeIn(duration: 1.0)
+                    }
+                
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "#FF2D55"), // Pink
+                                Color(hex: "#FBBF24"), // Yellow
+                                Color(hex: "#3B82F6")  // Blue
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 220, height: 220)
+                    .opacity(0.4)
+                    .phaseAnimator([false, true]) { content, phase in
+                        content
+                            .scaleEffect(phase ? 0.5 : 1.1)
+                    } animation: { phase in
+                            .easeInOut(duration: 0.9)
+                    }
+            } else {
+                // Static circle when idle with subtle gradient
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(hex: "#A855F7"),
+                                Color(hex: "#3B82F6")
+                            ],
+                            center: .center,
+                            startRadius: 30,
+                            endRadius: 110
+                        )
+                    )
+                    .frame(width: 220, height: 220)
+                    .opacity(0.7)
             }
-            
-            context.stroke(
-                path,
-                with: .color(wave.color),
-                style: StrokeStyle(lineWidth: wave.thickness, lineCap: .round, lineJoin: .round)
-            )
         }
-    }
-    
-    private func updateRecordingState() {
-        if case .recording(let startTime) = coordinator.recordingState {
-            recordingDuration = Date().timeIntervalSince(startTime)
-        } else {
-            recordingDuration = 0
-        }
-        
-        // Apply exponential moving average smoothing to FFT magnitudes
-        let rawMagnitudes = coordinator.audioCapture.fftMagnitudes
-        for i in 0..<min(smoothedMagnitudes.count, rawMagnitudes.count) {
-            smoothedMagnitudes[i] = smoothedMagnitudes[i] * 0.7 + rawMagnitudes[i] * 0.3
-        }
+        .frame(width: 240, height: 240)
+        .shadow(color: Color(hex: "#A855F7").opacity(0.5), radius: 30, x: 0, y: 0)
+        .shadow(color: Color(hex: "#3B82F6").opacity(0.3), radius: 50, x: 0, y: 0)
+        .blendMode(.hardLight)
     }
     
     // MARK: - Helpers
