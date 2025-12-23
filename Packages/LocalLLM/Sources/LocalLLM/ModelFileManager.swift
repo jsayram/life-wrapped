@@ -145,23 +145,14 @@ public actor ModelFileManager: NSObject {
 
 public enum ModelDownloadError: Error, LocalizedError {
     case invalidPath
-    case downloadFailed(statusCode: Int)
-    case moveFailed(error: Error)
-    case verificationFailed
-    case invalidSize(expected: ClosedRange<Int64>, actual: Int64)
+    case downloadFailed(Error)
     
     public var errorDescription: String? {
         switch self {
         case .invalidPath:
             return "Could not determine model storage path"
-        case .downloadFailed(let code):
-            return "Download failed with status code: \(code)"
-        case .moveFailed(let error):
-            return "Failed to save model: \(error.localizedDescription)"
-        case .verificationFailed:
-            return "Could not verify downloaded file"
-        case .invalidSize(let expected, let actual):
-            return "Downloaded file size \(actual)MB outside expected range \(expected)MB"
+        case .downloadFailed(let error):
+            return "Download failed: \(error.localizedDescription)"
         }
     }
 }

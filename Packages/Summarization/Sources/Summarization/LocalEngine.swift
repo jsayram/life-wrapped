@@ -79,11 +79,15 @@ public actor LocalEngine: SummarizationEngine {
             try await loadModel()
         }
         
-        // Build prompt for chunk summarization
-        let prompt = LocalLLM.buildChunkPrompt(transcript: transcriptText)
+        // Build prompt using UniversalPrompt (session level for complete context)
+        let prompt = UniversalPrompt.build(
+            level: .session,
+            input: transcriptText,
+            metadata: [:]
+        )
         
-        // Generate summary
-        let summary = try await llamaContext.generate(prompt: prompt, maxTokens: 128)
+        // Generate summary with increased token limit for full session response
+        let summary = try await llamaContext.generate(prompt: prompt, maxTokens: 256)
         
         // Cache the chunk summary
         chunkSummaries[chunkId] = summary
@@ -222,12 +226,19 @@ public actor LocalEngine: SummarizationEngine {
                 
                 print("🧩 [LocalEngine] Processing chunk \(chunkNumber): words \(currentIndex+1)-\(endIndex) of \(words.count)")
                 
-                // Generate summary for this chunk
-                let prompt = LocalLLM.buildChunkPrompt(transcript: chunkText)
-                let chunkSummary = try await llamaContext.generate(prompt: prompt, maxTokens: 128)
+                // Generate summary with error handling
+                let chunkSummary: String
+                do {
+                    // Use simplified prompt for Local AI (less memory intensive)
+                    let simplePrompt = buildSimplifiedPrompt(text: chunkText)
+                    chunkSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 256)
+                    print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
+                } catch {
+                    print("⚠️ [LocalEngine] MLX generation failed for chunk \(chunkNumber): \(error)")
+                    print("🔄 [LocalEngine] Falling back to extractive summary for chunk")
+                    chunkSummary = extractiveSummary(from: chunkText)
+                }
                 chunkSummaries.append(chunkSummary)
-                
-                print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
                 
                 currentIndex = endIndex
                 chunkNumber += 1

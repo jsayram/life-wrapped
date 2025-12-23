@@ -1,6 +1,6 @@
-# AI Architecture (Local + External)
+# AI Architecture (4 Engines: Basic, Apple Intelligence, Local AI, External API)
 
-Comprehensive guide to how Life Wrapped wires AI summarization engines on iOS with Swift 6.2, covering both on-device (Local AI) and remote (Year Wrapped Pro AI) engines. Use this as a playbook to replicate or extend the setup.
+Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS with Swift 6.2. Covers all four engines: on-device processing (Basic, Apple Intelligence, Local AI) and cloud-based (External API).
 
 ---
 
@@ -9,16 +9,15 @@ Comprehensive guide to how Life Wrapped wires AI summarization engines on iOS wi
 1. [Prerequisites & Requirements](#prerequisites--requirements)
 2. [Goals & Principles](#goals--principles)
 3. [Engine Overview](#engine-overview)
-4. [Project Setup from Scratch](#project-setup-from-scratch)
-5. [Local AI Setup (Phi-3.5 via llama.cpp)](#local-ai-setup-phi-35-via-llamacpp)
-6. [External AI Setup (OpenAI/Anthropic)](#external-ai-setup-openai-anthropic)
-7. [Core Components](#core-components-swift-packages)
-8. [Version Matrix](#version-matrix)
-9. [Data Flow](#data-flow-session-summaries)
+4. [Architecture Comparison Matrix](#architecture-comparison-matrix)
+5. [Universal Prompt System](#universal-prompt-system)
+6. [Basic Engine (NaturalLanguage Framework)](#basic-engine-naturallanguage-framework)
+7. [Apple Intelligence Engine](#apple-intelligence-engine)
+8. [Local AI Engine (Phi-3.5 via MLX)](#local-ai-engine-phi-35-via-mlx)
+9. [External API Engine (OpenAI/Anthropic)](#external-api-engine-openai-anthropic)
 10. [Engine Selection & Availability](#engine-selection--availability)
-11. [Universal Prompt & Schemas](#universal-prompt--schemas)
-12. [Troubleshooting & Lessons Learned](#things-we-learned-to-watch-out-for)
-13. [Quick Reference](#quick-reference)
+11. [Data Flow](#data-flow-session-summaries)
+12. [Troubleshooting & Lessons Learned](#troubleshooting--lessons-learned)
 
 ---
 
@@ -33,77 +32,1048 @@ Comprehensive guide to how Life Wrapped wires AI summarization engines on iOS wi
 | Swift       | 6.2         | Strict concurrency enabled                              |
 | iOS Target  | 18.0+       | For Apple Intelligence; 17.0 minimum for basic features |
 
-### Device Requirements (Local AI)
+### Device Requirements by Engine
 
-| Device          | RAM   | Local AI Support | Notes                  |
-| --------------- | ----- | ---------------- | ---------------------- |
-| iPhone 15 Pro+  | 8GB   | ✅ Full          | Best performance       |
-| iPhone 14 Pro   | 6GB   | ✅ Good          | Constrained context    |
-| iPhone 13/14    | 4-6GB | ⚠️ Limited       | May need smaller model |
-| iPhone SE/older | <4GB  | ❌ No            | Use External AI only   |
-| Simulator       | N/A   | ⚠️ Slow          | CPU-only, for testing  |
-
-### Required Capabilities
-
-```xml
-<!-- Info.plist additions -->
-<key>NSAppTransportSecurity</key>
-<dict>
-    <key>NSAllowsArbitraryLoads</key>
-    <false/>
-</dict>
-
-<!-- For microphone (if recording) -->
-<key>NSMicrophoneUsageDescription</key>
-<string>Record audio for transcription and summarization</string>
-
-<!-- For speech recognition (if using) -->
-<key>NSSpeechRecognitionUsageDescription</key>
-<string>Transcribe your recordings on-device</string>
-```
-
-### Entitlements
-
-```xml
-<!-- App.entitlements -->
-<key>com.apple.security.application-groups</key>
-<array>
-    <string>group.com.yourcompany.yourapp</string>
-</array>
-
-<!-- Keychain sharing for API keys -->
-<key>keychain-access-groups</key>
-<array>
-    <string>$(AppIdentifierPrefix)com.yourcompany.yourapp</string>
-</array>
-```
+| Engine             | Minimum iOS | Device Requirements    | Network  | Notes                         |
+| ------------------ | ----------- | ---------------------- | -------- | ----------------------------- |
+| Basic              | 15.0+       | Any iPhone             | Offline  | Always available              |
+| Apple Intelligence | 18.1+       | A17 Pro / M1+, 8GB RAM | Offline  | Placeholder (APIs not public) |
+| Local AI (Phi-3.5) | 17.0+       | 4GB+ RAM recommended   | Offline  | ~2.1 GB model download        |
+| External API       | 15.0+       | Any iPhone             | Required | User API key required         |
 
 ---
 
 ## Goals & Principles
 
-- Privacy-first: default to on-device; external calls require explicit API keys.
-- Strict concurrency: Swift 6 `actor` isolation for storage; `@MainActor` for UI-bound managers.
-- Schema-first prompts: Universal JSON schemas per summary level (session/day/week/month/year).
-- Clear fallbacks: graceful degradations when a chosen engine is unavailable.
-
-## Engine Overview
-
-- **Local AI**: Phi-3.5 (instruct) via `llama.cpp` (SwiftLlama patched). Fully offline.
-- **External AI (Year Wrapped Pro AI)**: OpenAI `gpt-4o-mini` (default) with Anthropic optional. JSON responses parsed into structured summaries.
-
-## Core Components (Swift packages)
-
-- `SummarizationCoordinator` (actor): orchestrates engine selection, availability checks, preference persistence.
-- `UniversalPrompt`: builds schema-specific prompts for all levels.
-- `ExternalAPIEngine`: wraps OpenAI/Anthropic chat completion APIs; parses JSON into domain models.
-- `LocalEngine` + `LocalLLM`: loads Phi-3.5 GGUF, builds Phi-style prompts, streams tokens locally.
-- `DatabaseManager` (actor): stores summaries, transcripts, rollups (SQLite).
-- `AppCoordinator` (`@MainActor`): entry point that requests summaries and persists results.
+- **Privacy-first**: Default to on-device; external calls require explicit API keys
+- **Graceful degradation**: Automatic fallback when preferred engine unavailable
+- **Strict concurrency**: Swift 6 `actor` isolation for thread safety
+- **Schema-first prompts**: Universal JSON schemas across all AI engines
+- **User choice**: Let users select preferred engine with smart defaults
 
 ---
 
-## Project Setup from Scratch
+## Engine Overview
+
+### 1. **Basic Engine** (Always Available)
+
+- **Technology**: Apple NaturalLanguage framework + TF-IDF
+- **Features**: Extractive summarization, topic extraction, sentiment analysis
+- **Quality**: ⭐⭐⭐ (Good for basic insights)
+- **Speed**: ⚡⚡⚡⚡ (Instant, <1s)
+- **Privacy**: 🔒 100% on-device
+- **Use Case**: Fallback when no AI available
+
+### 2. **Apple Intelligence** (iOS 18.1+)
+
+- **Technology**: On-device Foundation Models
+- **Status**: ⚠️ Placeholder (APIs not yet public)
+- **Quality**: Expected ⭐⭐⭐⭐⭐
+- **Speed**: Expected ⚡⚡⚡⚡
+- **Privacy**: 🔒 100% on-device
+- **Use Case**: When Apple releases public APIs
+
+### 3. **Local AI (Phi-3.5)**
+
+- **Technology**: MLX framework + Phi-3.5-mini-instruct-4bit
+- **Model Size**: ~2.1 GB (4-bit quantized)
+- **Quality**: ⭐⭐⭐⭐ (Near GPT-3.5 quality)
+- **Speed**: ⚡⚡⚡ (5-15s per session, device dependent)
+- **Privacy**: 🔒 100% on-device
+- **Use Case**: Best on-device AI quality without API costs
+
+### 4. **External API (OpenAI/Anthropic)**
+
+- **Technology**: Cloud-based GPT-4/Claude
+- **Quality**: ⭐⭐⭐⭐⭐ (Best available)
+- **Speed**: ⚡⚡ (2-10s, network dependent)
+- **Privacy**: ⚠️ Sends data to external servers (user's API key)
+- **Use Case**: Highest quality summaries, requires internet + API key
+
+---
+
+## Architecture Comparison Matrix
+
+| Feature                 | Basic           | Apple Intelligence | Local AI (MLX)         | External API           |
+| ----------------------- | --------------- | ------------------ | ---------------------- | ---------------------- |
+| **Framework**           | NaturalLanguage | Foundation Models  | MLX + Phi-3.5          | HTTP API               |
+| **Model**               | TF-IDF + Rules  | Undisclosed        | Phi-3.5-mini-4bit      | GPT-4/Claude-Sonnet    |
+| **Model Size**          | 0 MB            | Built-in           | 2.1 GB                 | N/A                    |
+| **First Setup**         | Instant         | Instant            | ~2 min download        | API key entry          |
+| **Processing Location** | On-device       | On-device          | On-device              | Cloud                  |
+| **Network Required**    | No              | No                 | No                     | Yes                    |
+| **Privacy**             | 100% private    | 100% private       | 100% private           | Data sent to API       |
+| **Cost**                | Free            | Free               | Free                   | Pay-per-use            |
+| **Memory Usage**        | <50 MB          | Unknown            | 500-1500 MB            | <10 MB                 |
+| **Session Summary**     | 0.5-2s          | Unknown            | 5-15s                  | 2-10s                  |
+| **Output Format**       | Extractive      | Expected JSON      | JSON (UniversalPrompt) | JSON (UniversalPrompt) |
+| **Temperature**         | N/A             | Unknown            | 0.2                    | 0.3                    |
+
+---
+
+## Universal Prompt System
+
+All AI engines (Local AI, External API, and future Apple Intelligence) share the same prompt architecture:
+
+---
+
+## Universal Prompt System
+
+All AI engines (Local AI, External API, and future Apple Intelligence) share the same prompt architecture:
+
+### System Instruction (Shared)
+
+```swift
+// UniversalPrompt.swift - System instruction used by all AI engines
+private static let systemInstruction = """
+You are an AI journaling assistant for Life Wrapped, a private voice journaling app.
+
+VOICE & PERSPECTIVE (HARD RULES):
+- Write strictly in first person as if I wrote it: "I", "me", "my"
+- NEVER use: "the user", "they", "them", "their", "he/she", "the person"
+
+FIDELITY (HARD RULES):
+- Use ONLY information present in the transcript
+- Do NOT invent tasks, facts, timelines, emotions, or motivations
+- Do NOT add psychological interpretation unless explicitly stated
+
+OUTPUT FORMAT:
+- Return VALID JSON matching the provided schema exactly
+- No extra keys, no commentary, no markdown
+"""
+```
+
+### Session Schema (Most Common)
+
+```json
+{
+  "title": "3-5 word descriptive title (no 'user', no third-person)",
+  "summary": "FIRST-PERSON cleaned rewrite of what I said. Remove filler/repetition, but KEEP all distinct tasks, ideas, and uncertainties.",
+  "key_points": ["Distinct point 1", "Distinct point 2", "..."]
+}
+```
+
+### Prompt Building
+
+```swift
+// All engines use UniversalPrompt.build()
+let messages = UniversalPrompt.buildMessages(
+    level: .session,
+    input: transcriptText,
+    metadata: ["duration": Int(duration), "wordCount": wordCount]
+)
+
+// Returns: (system: String, user: String)
+// - system: System instruction above
+// - user: Schema + metadata + transcript
+```
+
+**Key Benefits:**
+
+- Consistent output format across all engines
+- Easy to switch engines without changing parsing logic
+- Centralized prompt engineering improvements benefit all engines
+
+---
+
+## Basic Engine (NaturalLanguage Framework)
+
+### Overview
+
+The Basic Engine provides intelligent summarization without any external dependencies or model downloads.
+
+**Technology Stack:**
+
+- `NaturalLanguage` framework (iOS 15+)
+- TF-IDF ranking for sentence importance
+- `NLEmbedding` for semantic similarity
+- `NLTokenizer` for proper word/sentence tokenization
+- Custom stopword filtering
+
+### Features
+
+```swift
+public actor BasicEngine: SummarizationEngine {
+    public let tier: EngineTier = .basic
+
+    // Key capabilities:
+    // - Extractive summarization (selects important sentences)
+    // - Topic extraction with TF-IDF scoring
+    // - Sentiment analysis (positive/negative/neutral)
+    // - Entity recognition (people, places, organizations)
+    // - Key moments detection
+    // - Semantic deduplication using word embeddings
+}
+```
+
+### Processing Pipeline
+
+```
+1. Preprocessing
+   ├─ Remove filler words ("um", "uh", "like")
+   ├─ Clean bullet points from transcript
+   └─ Normalize whitespace
+
+2. Sentence Ranking (TF-IDF)
+   ├─ Tokenize into sentences
+   ├─ Calculate term frequency per sentence
+   ├─ Apply inverse document frequency weights
+   └─ Score each sentence
+
+3. Extractive Summary
+   ├─ Select top 3-5 sentences by score
+   ├─ Deduplicate semantically similar sentences
+   ├─ Order chronologically
+   └─ Join into paragraph
+
+4. Topic Extraction
+   ├─ Extract nouns and proper nouns
+   ├─ Filter stopwords
+   ├─ Rank by TF-IDF score
+   └─ Return top 5-10 topics
+
+5. Sentiment Analysis
+   ├─ Use NLTagger for sentiment
+   ├─ Aggregate across sentences
+   └─ Return positive/negative/neutral
+
+6. Entity Extraction
+   ├─ Use NLTagger for named entities
+   ├─ Extract person names, places, organizations
+   └─ Deduplicate and return
+```
+
+### Performance Characteristics
+
+| Metric              | Value         |
+| ------------------- | ------------- |
+| Processing Time     | 0.5-2s        |
+| Memory Usage        | <50 MB        |
+| Accuracy            | 70-80%        |
+| Sentence Extraction | 3-5 sentences |
+| Topic Limit         | 10 max        |
+
+### Advantages
+
+✅ Always available (no setup required)
+✅ Instant processing (<2s)
+✅ Minimal memory footprint
+✅ 100% privacy (on-device)
+✅ No network required
+
+### Limitations
+
+⚠️ Extractive only (no rewriting)
+⚠️ May miss context or connections
+⚠️ Can't reorganize information
+⚠️ Basic sentiment analysis only
+
+---
+
+## Apple Intelligence Engine
+
+### Overview
+
+Placeholder for Apple's on-device Foundation Models (iOS 18.1+).
+
+**Status:** ⚠️ APIs not yet publicly available
+
+### Expected Architecture
+
+```swift
+@available(iOS 18.1, *)
+public actor AppleEngine: SummarizationEngine {
+    public let tier: EngineTier = .apple
+
+    public func isAvailable() async -> Bool {
+        // TODO: Check Apple Intelligence availability
+        // 1. Verify iOS 18.1+ with Apple Intelligence enabled
+        // 2. Check compatible hardware (A17 Pro / M1+)
+        // 3. Verify required entitlements
+        return false // Placeholder
+    }
+
+    public func summarizeSession(...) async throws -> SessionIntelligence {
+        // TODO: Replace with real Apple Intelligence API
+        // Expected workflow:
+        // 1. Create request with transcript text
+        // 2. Specify desired outputs: summary, topics, entities, sentiment
+        // 3. Call Foundation Models API
+        // 4. Parse structured response
+        // 5. Return SessionIntelligence
+    }
+}
+```
+
+### Expected Requirements
+
+- iOS 18.1 or later
+- Apple Intelligence enabled in Settings > Apple Intelligence & Siri
+- Compatible hardware:
+  - iPhone 15 Pro / Pro Max (A17 Pro)
+  - iPad with M1 or later
+  - Mac with M1 or later
+- 8GB+ RAM recommended
+
+### Integration Plan
+
+When APIs become available:
+
+1. Update `isAvailable()` to check system capabilities
+2. Implement real API calls in `summarizeSession()`
+3. Add UniversalPrompt integration (if Apple APIs support custom prompts)
+4. Test quality vs Local AI and External API
+5. Update UI to show Apple Intelligence as option
+
+---
+
+## Local AI Engine (Phi-3.5 via MLX)
+
+### Overview
+
+On-device AI using Microsoft's Phi-3.5-mini-instruct model via Apple's MLX framework.
+
+**Technology Stack:**
+
+- **Model**: Phi-3.5-mini-instruct-4bit (~2.1 GB)
+- **Framework**: MLX (Apple's native ML framework for Apple Silicon)
+- **Format**: Hugging Face model directory (config.json, tokenizer, safetensors)
+- **Quantization**: 4-bit for memory efficiency
+- **Context Window**: 2048 tokens (configurable)
+
+### Model Configuration
+
+```swift
+public enum LocalModelType: String, Codable, CaseIterable, Sendable {
+    case phi35 = "phi-3.5"
+
+    public var displayName: String { "Phi-3.5 Mini" }
+
+    public var modelDirectory: String { "mlx-community/Phi-3.5-mini-instruct-4bit" }
+
+    public var huggingFaceRepo: String { "mlx-community/Phi-3.5-mini-instruct-4bit" }
+
+    public var expectedSizeMB: ClosedRange<Int64> { 2000...2500 }
+
+    public var temperature: Float { 0.2 } // Conservative for factual summaries
+}
+```
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│           LocalEngine (Actor)               │
+├─────────────────────────────────────────────┤
+│  - Model management                         │
+│  - Prompt building (UniversalPrompt)        │
+│  - Response parsing                         │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│        LlamaContext (Actor)                 │
+├─────────────────────────────────────────────┤
+│  - MLX model loading                        │
+│  - Token generation with streaming          │
+│  - Memory management (256 MB GPU cache)     │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│         MLX Framework (Apple)               │
+├─────────────────────────────────────────────┤
+│  - GPU acceleration on Apple Silicon        │
+│  - Unified memory architecture              │
+│  - Native Swift integration                 │
+└──────────────┬──────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────┐
+│      ModelFileManager (Actor)               │
+├─────────────────────────────────────────────┤
+│  - Download via HubApi (Hugging Face)       │
+│  - Model verification (config.json)         │
+│  - Storage management                       │
+└─────────────────────────────────────────────┘
+```
+
+### Model Download
+
+Models are downloaded using the `swift-transformers` Hub API:
+
+```swift
+public actor ModelFileManager {
+    public func downloadModel(_ modelType: LocalModelType) async throws {
+        let hub = HubApi()
+        let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
+
+        // Download full model directory (~2.1 GB)
+        try await hub.snapshot(from: repo) { progress in
+            // Update UI with progress.fractionCompleted (0.0-1.0)
+        }
+
+        // Model stored at: ~/Library/Caches/huggingface/hub/models--mlx-community--Phi-3.5-mini-instruct-4bit/
+    }
+
+    public func isModelDownloaded(_ modelType: LocalModelType) -> Bool {
+        let localPath = HubApi().localRepoLocation(repo)
+        let configPath = localPath.appendingPathComponent("config.json")
+        return FileManager.default.fileExists(atPath: configPath.path)
+    }
+}
+```
+
+### Inference Pipeline
+
+```swift
+public actor LlamaContext {
+    private var modelContainer: ModelContainer?
+
+    public func loadModel(_ modelType: LocalModelType) async throws {
+        let modelPath = HubApi().localRepoLocation(repo)
+
+        // Create MLX configuration
+        let configuration = ModelConfiguration(
+            id: modelPath.path,
+            maxTokens: 512
+        )
+
+        // Load model using MLX
+        self.modelContainer = try await LLMModelFactory.shared.loadContainer(
+            configuration: configuration
+        )
+
+        // Set GPU memory limits for iOS
+        MLX.GPU.set(cacheLimit: 256 * 1024 * 1024) // 256 MB
+    }
+
+    public func generate(prompt: String, maxTokens: Int = 512) async throws -> String {
+        guard let container = modelContainer else {
+            throw LLMError.modelNotLoaded
+        }
+
+        // Generate with streaming (using MLXLMCommon.generate)
+        var fullResponse = ""
+        let stream = try await MLXLMCommon.generate(
+            input: container.perform { $0.tokenize(text: prompt) },
+            parameters: GenerateParameters(temperature: 0.2),
+            context: container
+        )
+
+        for await token in stream {
+            fullResponse += token.text
+        }
+
+        return fullResponse
+    }
+}
+```
+
+### Performance Characteristics
+
+| Device           | Tokens/Sec | Session Time | RAM Usage   |
+| ---------------- | ---------- | ------------ | ----------- |
+| iPhone 15 Pro    | 15-25 t/s  | 5-8s         | 800-1200MB  |
+| iPhone 14 Pro    | 10-18 t/s  | 8-12s        | 700-1000MB  |
+| iPhone 13 Pro    | 8-15 t/s   | 10-15s       | 600-900MB   |
+| MacBook Pro (M1) | 40-60 t/s  | 3-5s         | 1000-1500MB |
+
+### Prompt Integration
+
+Uses UniversalPrompt for consistency with External API:
+
+```swift
+public actor LocalEngine: SummarizationEngine {
+    public func summarizeSession(...) async throws -> SessionIntelligence {
+        // Build prompt using UniversalPrompt
+        let prompt = UniversalPrompt.build(
+            level: .session,
+            input: transcriptText,
+            metadata: ["duration": Int(duration), "wordCount": wordCount]
+        )
+
+        // Generate with Phi-3.5
+        let jsonResponse = try await llamaContext.generate(
+            prompt: prompt,
+            maxTokens: 512
+        )
+
+        // Parse JSON into SessionIntelligence
+        let summary = try parseSessionResponse(jsonResponse)
+        return summary
+    }
+}
+```
+
+### Advantages
+
+✅ Near GPT-3.5 quality
+✅ 100% privacy (on-device)
+✅ No API costs
+✅ Works offline
+✅ Native Apple Silicon optimization (MLX)
+✅ Consistent JSON output (UniversalPrompt)
+
+### Limitations
+
+⚠️ 2.1 GB model download required
+⚠️ 4GB+ RAM recommended
+⚠️ Slower than cloud APIs (5-15s)
+⚠️ First run compiles shaders (~30-60s)
+⚠️ Battery impact on older devices
+
+---
+
+## External API Engine (OpenAI/Anthropic)
+
+## External API Engine (OpenAI/Anthropic)
+
+### Overview
+
+Cloud-based AI using GPT-4 or Claude Sonnet for highest quality summaries.
+
+**Supported Providers:**
+
+- OpenAI (GPT-4, GPT-4o-mini, GPT-3.5-turbo)
+- Anthropic (Claude Sonnet 4.5, Claude Opus 3.5)
+
+### Architecture
+
+```swift
+public actor ExternalAPIEngine: SummarizationEngine {
+    public let tier: EngineTier = .external
+
+    private let keychainManager: KeychainManager
+    private var selectedProvider: Provider // openai or anthropic
+    private var selectedModel: String // e.g., "gpt-4", "claude-sonnet-4-5"
+}
+```
+
+### Provider Configuration
+
+```swift
+public enum Provider: String, Codable, CaseIterable, Sendable {
+    case openai = "OpenAI"
+    case anthropic = "Anthropic"
+
+    public var defaultModel: String {
+        switch self {
+        case .openai: return "gpt-4o-mini"
+        case .anthropic: return "claude-sonnet-4-5"
+        }
+    }
+
+    public var endpoint: String {
+        switch self {
+        case .openai: return "https://api.openai.com/v1/chat/completions"
+        case .anthropic: return "https://api.anthropic.com/v1/messages"
+        }
+    }
+}
+```
+
+### API Request Format
+
+#### OpenAI
+
+```json
+{
+  "model": "gpt-4o-mini",
+  "temperature": 0.3,
+  "response_format": { "type": "json_object" },
+  "messages": [
+    {
+      "role": "system",
+      "content": "<UniversalPrompt system instruction>"
+    },
+    {
+      "role": "user",
+      "content": "<Schema + metadata + transcript>"
+    }
+  ]
+}
+```
+
+#### Anthropic
+
+```json
+{
+  "model": "claude-sonnet-4-5",
+  "max_tokens": 1024,
+  "temperature": 0.3,
+  "system": "<UniversalPrompt system instruction>",
+  "messages": [
+    {
+      "role": "user",
+      "content": "<Schema + metadata + transcript>"
+    }
+  ]
+}
+```
+
+### Implementation
+
+```swift
+public actor ExternalAPIEngine: SummarizationEngine {
+    public func summarizeSession(...) async throws -> SessionIntelligence {
+        // Get API key from Keychain
+        guard let apiKey = await keychainManager.getAPIKey(for: selectedProvider) else {
+            throw SummarizationError.configurationError("No API key configured")
+        }
+
+        // Build messages using UniversalPrompt
+        let messages = UniversalPrompt.buildMessages(
+            level: .session,
+            input: transcriptText,
+            metadata: ["duration": Int(duration), "wordCount": wordCount]
+        )
+
+        // Call API
+        let response = try await callAPI(
+            systemPrompt: messages.system,
+            userMessage: messages.user,
+            apiKey: apiKey
+        )
+
+        // Parse JSON response
+        let intelligence = try parseSessionResponse(response, ...)
+        return intelligence
+    }
+
+    private func callAPI(
+        systemPrompt: String,
+        userMessage: String,
+        apiKey: String
+    ) async throws -> String {
+        let request = buildRequest(system: systemPrompt, user: userMessage, apiKey: apiKey)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        // Handle provider-specific response format
+        switch selectedProvider {
+        case .openai:
+            return try parseOpenAIResponse(data)
+        case .anthropic:
+            return try parseAnthropicResponse(data)
+        }
+    }
+}
+```
+
+### API Key Management
+
+Stored securely in Keychain:
+
+```swift
+public actor KeychainManager {
+    public func setAPIKey(_ key: String, for provider: Provider) async {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: "\(provider.rawValue)_api_key",
+            kSecValueData as String: key.data(using: .utf8)!
+        ]
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    public func getAPIKey(for provider: Provider) async -> String? {
+        // Retrieve from Keychain
+    }
+
+    public func deleteAPIKey(for provider: Provider) async {
+        // Remove from Keychain
+    }
+}
+```
+
+### Performance Characteristics
+
+| Provider  | Model             | Speed | Quality    | Cost (per 1M tokens) |
+| --------- | ----------------- | ----- | ---------- | -------------------- |
+| OpenAI    | GPT-4             | 3-8s  | ⭐⭐⭐⭐⭐ | $5-$15               |
+| OpenAI    | GPT-4o-mini       | 2-5s  | ⭐⭐⭐⭐   | $0.15-$0.60          |
+| Anthropic | Claude Sonnet 4.5 | 4-10s | ⭐⭐⭐⭐⭐ | $3-$15               |
+| Anthropic | Claude Opus 3.5   | 5-12s | ⭐⭐⭐⭐⭐ | $15-$75              |
+
+### Advantages
+
+✅ Highest quality summaries
+✅ Continuously improving models
+✅ Fast response times (2-10s)
+✅ Handles complex contexts well
+✅ Consistent JSON output (UniversalPrompt)
+
+### Limitations
+
+⚠️ Requires internet connection
+⚠️ Privacy: sends data to external servers
+⚠️ Costs money (user's API key)
+⚠️ Rate limits and quotas
+⚠️ Latency from network
+
+---
+
+## Engine Selection & Availability
+
+### SummarizationCoordinator
+
+Central actor that manages engine selection and availability:
+
+```swift
+public actor SummarizationCoordinator {
+    // Available engines
+    private let basicEngine: BasicEngine
+    private let appleEngine: AppleEngine?
+    private let localEngine: LocalEngine
+    private let externalEngine: ExternalAPIEngine
+
+    // User preferences
+    @Published public private(set) var preferredEngine: EngineTier
+    @Published public private(set) var activeEngine: EngineTier
+
+    public func getAvailableEngines() async -> [EngineTier] {
+        var available: [EngineTier] = [.basic] // Always available
+
+        if await appleEngine?.isAvailable() == true {
+            available.append(.apple)
+        }
+
+        if await localEngine.isAvailable() {
+            available.append(.local)
+        }
+
+        if await externalEngine.isAvailable() {
+            available.append(.external)
+        }
+
+        return available
+    }
+
+    public func setPreferredEngine(_ tier: EngineTier) async {
+        self.preferredEngine = tier
+        UserDefaults.standard.set(tier.rawValue, forKey: "preferredEngine")
+
+        // Update active engine based on availability
+        await updateActiveEngine()
+    }
+
+    private func updateActiveEngine() async {
+        let available = await getAvailableEngines()
+
+        if available.contains(preferredEngine) {
+            activeEngine = preferredEngine
+        } else {
+            // Fallback priority: External → Local → Apple → Basic
+            if available.contains(.external) {
+                activeEngine = .external
+            } else if available.contains(.local) {
+                activeEngine = .local
+            } else if available.contains(.apple) {
+                activeEngine = .apple
+            } else {
+                activeEngine = .basic
+            }
+        }
+    }
+}
+```
+
+### Availability Checks
+
+Each engine implements availability check:
+
+```swift
+// BasicEngine - Always available
+public func isAvailable() async -> Bool {
+    return true
+}
+
+// AppleEngine - Check iOS version and hardware
+public func isAvailable() async -> Bool {
+    guard #available(iOS 18.1, *) else { return false }
+    // TODO: Check Apple Intelligence enabled
+    return false // Placeholder
+}
+
+// LocalEngine - Check if model downloaded
+public func isAvailable() async -> Bool {
+    return await modelFileManager.isModelDownloaded(.phi35)
+}
+
+// ExternalAPIEngine - Check API key and internet
+public func isAvailable() async -> Bool {
+    let hasAPIKey = await keychainManager.hasAPIKey(for: selectedProvider)
+    let hasInternet = await checkInternetConnectivity()
+    return hasAPIKey && hasInternet
+}
+```
+
+### Fallback Chain
+
+```
+User's Preferred Engine
+         │
+         ▼
+    Available? ─No─→ Try Fallback Chain
+         │
+        Yes
+         │
+         ▼
+    Use Preferred
+
+Fallback Priority:
+1. External API (if configured)
+2. Local AI (if downloaded)
+3. Apple Intelligence (if available)
+4. Basic (always works)
+```
+
+---
+
+## Data Flow (Session Summaries)
+
+### Complete Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     User Records Audio                      │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Transcription (On-Device)                      │
+│  - Apple Speech Framework                                   │
+│  - requiresOnDeviceRecognition = true                       │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│           Store in Database (SQLite)                        │
+│  - transcript_segments table                                │
+│  - session_id, text, word_count, timestamps                 │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│          AppCoordinator.generateSessionSummary()            │
+│  - Fetch transcript from database                           │
+│  - Check for cached summary (hash-based)                    │
+│  - Request summarization if needed                          │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│      SummarizationCoordinator.summarize()                   │
+│  - Get active engine                                        │
+│  - Route to appropriate engine                              │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+           ┌───────────┼───────────┬────────────┐
+           │           │           │            │
+           ▼           ▼           ▼            ▼
+     ┌─────────┐ ┌──────────┐ ┌────────┐ ┌──────────┐
+     │ Basic   │ │  Apple   │ │ Local  │ │ External │
+     │ Engine  │ │  Intel.  │ │   AI   │ │   API    │
+     └────┬────┘ └────┬─────┘ └───┬────┘ └────┬─────┘
+          │           │            │           │
+          │  Extractive│  (Future) │ MLX+Phi3.5│ GPT/Claude
+          │           │            │           │
+          └───────────┴────────────┴───────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│             SessionIntelligence (Result)                    │
+│  - summary: String                                          │
+│  - topics: [String]                                         │
+│  - entities: Entities                                       │
+│  - sentiment: String                                        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│        Store Summary in Database                            │
+│  - summaries table                                          │
+│  - session_id, engine, text, topics, cached_hash            │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│          Update Period Rollups                              │
+│  - Daily: Aggregate session summaries                       │
+│  - Weekly: Aggregate daily summaries                        │
+│  - Monthly: Aggregate weekly summaries                      │
+│  - Yearly: Aggregate monthly summaries                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Troubleshooting & Lessons Learned
+
+### Common Issues
+
+#### 1. Local AI Model Not Loading
+
+**Symptoms:**
+
+- "Model not loaded" errors
+- Slow first run (shader compilation)
+
+**Solutions:**
+
+- Ensure model fully downloaded (~2.1 GB)
+- Check for `config.json` in model directory
+- First run takes 30-60s for Metal shader compilation
+- Verify 4GB+ RAM available
+
+#### 2. External API Failures
+
+**Symptoms:**
+
+- Rate limit errors
+- Network timeout
+- Invalid API key
+
+**Solutions:**
+
+- Check API key in Keychain
+- Verify internet connectivity
+- Check provider API status
+- Implement retry logic with exponential backoff
+
+#### 3. Memory Issues (Local AI)
+
+**Symptoms:**
+
+- App crashes during inference
+- "Memory pressure" warnings
+
+**Solutions:**
+
+- Reduce context window (2048 → 1024)
+- Lower batch size (128 → 64)
+- Unload model when not in use
+- Use 4-bit quantized models only
+
+#### 4. JSON Parsing Failures
+
+**Symptoms:**
+
+- "Invalid JSON" errors
+- Missing fields in response
+
+**Solutions:**
+
+- Verify UniversalPrompt schema matches model output
+- Add JSON validation before parsing
+- Implement fallback to Basic Engine on parse failure
+- Log raw responses for debugging
+
+### Performance Optimization
+
+**Basic Engine:**
+
+- Cache word embeddings (top 1000 words)
+- Precompute stopword sets
+- Use NLTokenizer for accurate word boundaries
+
+**Local AI:**
+
+- Set GPU cache limit: `MLX.GPU.set(cacheLimit: 256MB)`
+- Use streaming generation for responsiveness
+- Unload model after 5 minutes of inactivity
+- Profile with Instruments to find bottlenecks
+
+**External API:**
+
+- Implement request caching (hash-based)
+- Use gpt-4o-mini for speed/cost balance
+- Batch multiple requests when possible
+- Handle rate limits gracefully
+
+---
+
+## Quick Reference
+
+### Engine Selection Flowchart
+
+```
+User opens SessionDetailView
+         │
+         ▼
+Check cached summary exists? ───Yes──→ Display cached summary
+         │
+        No
+         │
+         ▼
+Get active engine from SummarizationCoordinator
+         │
+    ┌────┴────┬────────┬──────────┐
+    │         │        │          │
+  Basic    Apple   Local AI   External
+    │         │        │          │
+    └────┬────┴────┬───┴──────┬───┘
+         │         │          │
+         ▼         ▼          ▼
+   Generate   Generate   Generate
+   Summary    Summary    Summary
+         │         │          │
+         └────┬────┴──────┬───┘
+              │           │
+              ▼           ▼
+         Store in     Display
+         Database     to User
+```
+
+### Performance Comparison
+
+| Task              | Basic | Apple (Est.) | Local AI   | External |
+| ----------------- | ----- | ------------ | ---------- | -------- |
+| 100-word session  | 0.5s  | 1-2s         | 3-5s       | 2-4s     |
+| 500-word session  | 1-2s  | 2-4s         | 8-12s      | 3-6s     |
+| 1000-word session | 2-3s  | 3-6s         | 15-20s     | 5-10s    |
+| Cold start        | 0s    | 0s           | 30-60s     | 0s       |
+| Memory overhead   | <50MB | Unknown      | 500-1500MB | <10MB    |
+
+### File Structure
+
+```
+Packages/
+├── Summarization/
+│   ├── BasicEngine.swift          # NaturalLanguage framework
+│   ├── AppleEngine.swift          # Apple Intelligence (placeholder)
+│   ├── LocalEngine.swift          # Phi-3.5 via MLX
+│   ├── ExternalAPIEngine.swift    # OpenAI/Anthropic
+│   ├── SummarizationEngine.swift  # Protocol
+│   ├── SummarizationCoordinator.swift # Orchestration
+│   └── UniversalPrompt.swift      # Shared prompt system
+├── LocalLLM/
+│   ├── LlamaContext.swift         # MLX inference
+│   ├── ModelFileManager.swift     # Model downloads
+│   ├── LocalModelType.swift       # Model configuration
+│   └── Package.swift              # MLX dependencies
+└── Storage/
+    └── DatabaseManager.swift      # SQLite persistence
+```
+
+---
+
+## Conclusion
+
+Life Wrapped's 4-engine architecture provides:
+
+1. **Always works** - Basic Engine ensures no failures
+2. **Best on-device** - Local AI (Phi-3.5) for quality without cloud
+3. **Future-ready** - Apple Intelligence placeholder for when APIs release
+4. **Highest quality** - External API for users willing to use cloud services
+
+The Universal Prompt system ensures consistent output across all engines, making it easy to switch between them without changing parsing logic.
+
+**Next Steps:**
+
+- Monitor Apple Intelligence API releases
+- Optimize Local AI inference speed
+- Add more model options (Llama 3.2, Mistral, etc.)
+- Implement hybrid strategies (Basic + AI refinement)
 
 ### Step 1: Create Swift Package Structure
 
