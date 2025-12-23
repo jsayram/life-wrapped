@@ -5346,6 +5346,7 @@ struct SessionDetailView: View {
     // Session metadata
     @State private var sessionTitle: String = ""
     @State private var sessionNotes: String = ""
+    @State private var initialSessionNotes: String = ""  // Track initial notes to detect changes
     @State private var isFavorite: Bool = false
     @State private var isEditingTitle: Bool = false
     @State private var isEditingNotes: Bool = false
@@ -5379,6 +5380,9 @@ struct SessionDetailView: View {
                 // Playback Controls
                 playbackControlsSection
                 
+                // Personal Notes Section (moved here from bottom)
+                personalNotesSection
+                
                 // Transcription Section
                 transcriptionSection
                 
@@ -5390,9 +5394,6 @@ struct SessionDetailView: View {
                 } else if isTranscriptionComplete {
                     sessionSummaryPlaceholderSection
                 }
-                
-                // Personal Notes Section
-                personalNotesSection
             }
             .padding()
         }
@@ -5746,14 +5747,14 @@ struct SessionDetailView: View {
                                 .fontWeight(.medium)
                         }
                         .font(.subheadline)
-                        .foregroundStyle(AppTheme.purple)
+                        .foregroundStyle(AppTheme.skyBlue)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(
                                     RadialGradient(
-                                        colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                        colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
                                         center: .center,
                                         startRadius: 0,
                                         endRadius: 50
@@ -5764,7 +5765,7 @@ struct SessionDetailView: View {
                             RoundedRectangle(cornerRadius: 10)
                                 .stroke(
                                     LinearGradient(
-                                        colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.skyBlue.opacity(0.3)],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     ),
@@ -6161,7 +6162,7 @@ struct SessionDetailView: View {
                     } label: {
                         Image(systemName: "pencil.circle")
                             .font(.title2)
-                            .foregroundStyle(AppTheme.purple)
+                            .foregroundStyle(AppTheme.skyBlue)
                     }
                 }
             }
@@ -6462,17 +6463,17 @@ struct SessionDetailView: View {
                     } label: {
                         Image(systemName: "pencil.circle")
                             .font(.body)
-                            .foregroundStyle(AppTheme.purple)
+                            .foregroundStyle(AppTheme.skyBlue)
                             .padding(10)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(AppTheme.purple.opacity(0.1))
+                                    .fill(AppTheme.skyBlue.opacity(0.1))
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(
                                         LinearGradient(
-                                            colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                            colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.skyBlue.opacity(0.3)],
                                             startPoint: .leading,
                                             endPoint: .trailing
                                         ),
@@ -6501,6 +6502,36 @@ struct SessionDetailView: View {
                     .font(.body)
                     .foregroundStyle(.primary)
             }
+            
+            // Subtle button to regenerate summary with notes (only if notes were added after summary)
+            if shouldShowRegenerateWithNotesButton {
+                Button {
+                    Task {
+                        await regenerateSummaryWithNotes()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.caption)
+                        Text("Regenerate Summary with Notes")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(AppTheme.purple)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.purple.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(AppTheme.purple.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground))
@@ -6510,6 +6541,13 @@ struct SessionDetailView: View {
                 .allowsHitTesting(false)
         )
         .cornerRadius(12)
+    }
+    
+    /// Show regenerate button only if: notes exist, summary exists, and notes changed after summary
+    private var shouldShowRegenerateWithNotesButton: Bool {
+        !sessionNotes.isEmpty &&
+        sessionSummary != nil &&
+        sessionNotes != initialSessionNotes
     }
     
     // MARK: - Helper Methods
@@ -6538,20 +6576,57 @@ struct SessionDetailView: View {
     
     private func loadSessionMetadata() async {
         do {
-            if let metadata = try await coordinator.fetchSessionMetadata(sessionId: session.sessionId) {
-                sessionTitle = metadata.title ?? ""
-                sessionNotes = metadata.notes ?? ""
-                isFavorite = metadata.isFavorite
-            } else {
-                sessionTitle = session.title ?? ""
-                sessionNotes = session.notes ?? ""
-                isFavorite = session.isFavorite
+            // Load metadata and track initial notes value
+            let metadata = try await coordinator.fetchSessionMetadata(sessionId: session.sessionId)
+            await MainActor.run {
+                sessionTitle = metadata?.title ?? ""
+                sessionNotes = metadata?.notes ?? ""
+                initialSessionNotes = metadata?.notes ?? ""  // Track initial state
+                isFavorite = metadata?.isFavorite ?? false
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load metadata: \(error)")
-            sessionTitle = session.title ?? ""
-            sessionNotes = session.notes ?? ""
-            isFavorite = session.isFavorite
+        }
+    }
+    
+    private func saveNotes() {
+        Task {
+            do {
+                try await coordinator.updateSessionNotes(
+                    sessionId: session.sessionId,
+                    notes: sessionNotes.isEmpty ? nil : sessionNotes
+                )
+            } catch {
+                print("❌ [SessionDetailView] Failed to save notes: \(error)")
+            }
+        }
+    }
+    
+    private func regenerateSummaryWithNotes() async {
+        guard !sessionNotes.isEmpty else { return }
+        
+        do {
+            isRegeneratingSummary = true
+            
+            // Regenerate summary with includeNotes parameter
+            try await coordinator.generateSessionSummary(
+                sessionId: session.sessionId,
+                forceRegenerate: true,
+                includeNotes: true
+            )
+            
+            // Reload summary
+            await loadSessionSummary()
+            
+            // Update initial notes state so button disappears
+            await MainActor.run {
+                initialSessionNotes = sessionNotes
+            }
+            
+            isRegeneratingSummary = false
+        } catch {
+            print("❌ [SessionDetailView] Failed to regenerate summary with notes: \(error)")
+            isRegeneratingSummary = false
         }
     }
     
@@ -6563,18 +6638,6 @@ struct SessionDetailView: View {
                 coordinator.showSuccess("Title saved")
             } catch {
                 print("❌ [SessionDetailView] Failed to save title: \(error)")
-            }
-        }
-    }
-    
-    private func saveNotes() {
-        Task {
-            do {
-                let notesToSave = sessionNotes.isEmpty ? nil : sessionNotes
-                try await coordinator.updateSessionNotes(sessionId: session.sessionId, notes: notesToSave)
-                coordinator.showSuccess("Notes saved")
-            } catch {
-                print("❌ [SessionDetailView] Failed to save notes: \(error)")
             }
         }
     }

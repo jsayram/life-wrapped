@@ -781,10 +781,11 @@ public final class AppCoordinator: ObservableObject {
     }
     
     /// Generate a summary for an entire session
-    public func generateSessionSummary(sessionId: UUID, forceRegenerate: Bool = false) async throws {
+    public func generateSessionSummary(sessionId: UUID, forceRegenerate: Bool = false, includeNotes: Bool = false) async throws {
         print("🚀 [AppCoordinator] === GENERATING SESSION SUMMARY ===")
         print("📌 [AppCoordinator] Session ID: \(sessionId)")
         print("🔄 [AppCoordinator] Force regenerate: \(forceRegenerate)")
+        print("📝 [AppCoordinator] Include notes: \(includeNotes)")
         
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else {
@@ -799,7 +800,17 @@ public final class AppCoordinator: ObservableObject {
         let allSegments = try await fetchSessionTranscript(sessionId: sessionId)
         
         // Combine all text
-        let fullText = allSegments.map { $0.text }.joined(separator: " ")
+        var fullText = allSegments.map { $0.text }.joined(separator: " ")
+        
+        // Optionally append user notes if requested
+        if includeNotes {
+            if let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sessionId),
+               let notes = metadata.notes, !notes.isEmpty {
+                print("📝 [AppCoordinator] Appending user notes to transcript for summary generation")
+                fullText += "\n\nAdditional context from user notes:\n\(notes)"
+            }
+        }
+        
         let wordCount = fullText.split(separator: " ").count
         
         print("📊 [AppCoordinator] Session transcript: \(allSegments.count) segments, \(wordCount) words")
@@ -1442,10 +1453,22 @@ public final class AppCoordinator: ObservableObject {
             // Generate rollup summary from session summaries (oldest to newest)
             // Store clean text without timestamps - metadata is in periodStart/periodEnd
             print("📝 [AppCoordinator] Generating rollup from \(sessionSummaries.count) session summaries (oldest to newest)")
-            let lines = sessionSummaries.map { summary in
-                // Clean text only - no timestamps to prevent accumulation in nested rollups
-                return "• \(summary.text)"
+            
+            // Build lines, appending user notes if they exist for each session
+            var lines: [String] = []
+            for summary in sessionSummaries {
+                var lineText = "• \(summary.text)"
+                
+                // Append user notes if they exist for this session
+                if let sid = summary.sessionId,
+                   let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sid),
+                   let notes = metadata.notes, !notes.isEmpty {
+                    lineText += "\n  (Notes: \(notes))"
+                }
+                
+                lines.append(lineText)
             }
+            
             let summaryText = lines.joined(separator: "\n")
             let topicsJSON: String? = nil
             let entitiesJSON: String? = nil
