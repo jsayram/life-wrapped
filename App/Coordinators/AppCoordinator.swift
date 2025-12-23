@@ -1893,10 +1893,17 @@ public final class AppCoordinator: ObservableObject {
         localModelDownloadTask = Task {
             do {
                 try await coordinator.getLocalEngine().downloadModel(progress: nil)
+                
+                // After successful download, switch to Local AI
+                await coordinator.setPreferredEngine(.local)
+                
                 await MainActor.run {
                     self.isDownloadingLocalModel = false
-                    self.showSuccess("Local AI model downloaded")
+                    self.showSuccess("Local AI model downloaded and activated")
                 }
+                
+                // Notify that engine changed
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             } catch {
                 await MainActor.run {
                     self.isDownloadingLocalModel = false
@@ -1941,7 +1948,7 @@ public final class AppCoordinator: ObservableObject {
         showSuccess("Local AI model deleted")
     }
     
-    /// Get formatted model size string: "Downloaded (770 MB)" or "Not Downloaded"
+    /// Get formatted model size string: "Downloaded (2282 MB)" or "Not Downloaded"
     public func localModelSizeFormatted() async -> String {
         guard let coordinator = summarizationCoordinator else { return "Not Downloaded" }
         return await coordinator.getLocalEngine().modelSizeFormatted()
@@ -1949,7 +1956,7 @@ public final class AppCoordinator: ObservableObject {
     
     /// Get the expected model size for display before download
     public var expectedLocalModelSizeMB: String {
-        return "~770 MB"
+        return "~2.3 GB"
     }
     
     /// Get the local model display name

@@ -2881,11 +2881,10 @@ struct AISettingsView: View {
             // Update activeEngine immediately so section appears right away
             activeEngine = .local
             
-            // Persist engine preference in background
+            // Persist engine preference in background (without triggering refresh)
             Task {
                 guard let summCoord = coordinator.summarizationCoordinator else { return }
                 await summCoord.setPreferredEngine(tier)
-                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             }
             
             // Scroll to the section after a brief delay to ensure it's rendered
@@ -2924,11 +2923,10 @@ struct AISettingsView: View {
             // Update activeEngine immediately so section appears right away
             activeEngine = .external
             
-            // Persist engine preference in background
+            // Persist engine preference in background (without triggering refresh)
             Task {
                 guard let summCoord = coordinator.summarizationCoordinator else { return }
                 await summCoord.setPreferredEngine(tier)
-                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             }
             
             // Show config and trigger wiggle animation

@@ -32,7 +32,7 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
     
     public var expectedSizeMB: ClosedRange<Int64> {
         switch self {
-        case .phi35: return 700...900   // ~770 MB
+        case .phi35: return 2200...2400   // ~2.3 GB (Q4_K_M quantization)
         }
     }
     

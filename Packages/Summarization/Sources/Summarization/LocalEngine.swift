@@ -418,7 +418,7 @@ public actor LocalEngine: SummarizationEngine {
         return await modelFileManager.modelSize(.phi35)
     }
     
-    /// Get formatted model size string: "Downloaded (770 MB)" or "Not Downloaded"
+    /// Get formatted model size string: "Downloaded (2282 MB)" or "Not Downloaded"
     public func modelSizeFormatted() async -> String {
         if let size = await modelFileManager.modelSize(.phi35) {
             let sizeMB = size / (1024 * 1024)
@@ -429,7 +429,7 @@ public actor LocalEngine: SummarizationEngine {
     
     /// Get the expected model size for display before download
     public var expectedModelSizeMB: String {
-        return "~770 MB"
+        return "~2.3 GB"
     }
     
     /// Get the model display name
