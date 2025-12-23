@@ -450,6 +450,75 @@ struct StreakCard: View {
     }
 }
 
+// MARK: - Siri Wave Animation
+
+struct SiriWave: Shape {
+    var frequency: CGFloat = 1.5
+    var density: CGFloat = 1.0
+    var phase: CGFloat
+    var normedAmplitude: CGFloat
+    
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(normedAmplitude, phase) }
+        set {
+            normedAmplitude = newValue.first
+            phase = newValue.second
+        }
+    }
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let maxAmplitude = rect.height / 2.0
+        let mid = rect.width / 2
+        
+        for x in stride(from: 0, to: rect.width + density, by: density) {
+            // Parabolic scaling
+            let scaling = -pow(1 / mid * (x - mid), 2) + 1
+            let y = scaling * maxAmplitude * normedAmplitude * sin(CGFloat(2 * Double.pi) * frequency * (x / rect.width) + phase) + rect.height / 2
+            if x == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+        
+        return path
+    }
+}
+
+struct SiriWaveView: View {
+    var amplitude: CGFloat
+    var phase: CGFloat
+    
+    var body: some View {
+        ZStack {
+            ForEach(0..<5, id: \.self) { index in
+                singleWave(index: index)
+            }
+        }
+    }
+    
+    func singleWave(index: Int) -> some View {
+        let progress = 1.0 - CGFloat(index) / 5.0
+        let normedAmplitude = (1.5 * progress - 0.8) * amplitude
+        let alphaComponent = min(1.0, (progress / 3.0 * 2.0) + (1.0 / 3.0))
+        
+        return SiriWave(phase: phase, normedAmplitude: normedAmplitude)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        Color(hex: "#A855F7").opacity(Double(alphaComponent)),
+                        Color(hex: "#3B82F6").opacity(Double(alphaComponent)),
+                        Color(hex: "#06B6D4").opacity(Double(alphaComponent))
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                lineWidth: 1.5 / CGFloat(index + 1)
+            )
+    }
+}
+
 // MARK: - Recording Button
 
 struct RecordingButton: View {
@@ -457,6 +526,8 @@ struct RecordingButton: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var recordingDuration: TimeInterval = 0
+    @State private var waveAmplitude: CGFloat = 0.5
+    @State private var wavePhase: CGFloat = 0.0
     
     // Timer that fires every 0.1 seconds to update the recording duration
     private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
@@ -511,103 +582,61 @@ struct RecordingButton: View {
     private var waveformView: some View {
         ZStack {
             if coordinator.recordingState.isRecording {
-                // Siri-style organic flowing animation with Apple Intelligence gradients
-                Circle()
-                    .fill(
-                        AngularGradient(
-                            colors: [
-                                Color(hex: "#FF9500"), // Orange
-                                Color(hex: "#FF2D55"), // Pink
-                                Color(hex: "#A855F7"), // Purple
-                                Color(hex: "#3B82F6"), // Blue
-                                Color(hex: "#FF9500")  // Back to orange
-                            ],
-                            center: .center
-                        )
-                    )
-                    .frame(width: 220, height: 220)
-                    .opacity(0.4)
-                    .phaseAnimator([false, true]) { content, phase in
-                        content
-                            .scaleEffect(x: phase ? 0.85 : 1.35, y: phase ? 1.25 : 0.95)
-                            .rotationEffect(.degrees(phase ? 0 : 360))
-                            .offset(x: phase ? 10 : -8, y: phase ? -5 : 8)
-                    } animation: { phase in
-                            .spring(duration: 1.4, bounce: 0.3)
-                    }
-                
+                // Background gradient pulse
                 Circle()
                     .fill(
                         RadialGradient(
                             colors: [
-                                Color(hex: "#A855F7"), // Purple center
-                                Color(hex: "#06B6D4"), // Cyan
-                                Color(hex: "#10B981")  // Green edge
+                                Color(hex: "#A855F7").opacity(0.3),
+                                Color(hex: "#3B82F6").opacity(0.2),
+                                Color.clear
                             ],
                             center: .center,
                             startRadius: 20,
-                            endRadius: 110
+                            endRadius: 90
                         )
                     )
-                    .frame(width: 220, height: 220)
-                    .opacity(0.6)
-                    .phaseAnimator([false, true]) { content, phase in
-                        content
-                            .scaleEffect(x: phase ? 1.1 : 0.8, y: phase ? 0.75 : 1.3)
-                            .rotationEffect(.degrees(phase ? 180 : -90))
-                            .offset(x: phase ? -12 : 6, y: phase ? 8 : -10)
-                    } animation: { phase in
-                            .spring(duration: 1.8, bounce: 0.4)
-                    }
+                    .frame(width: 180, height: 180)
+                    .scaleEffect(waveAmplitude * 0.3 + 0.9)
+                    .animation(.easeInOut(duration: 0.15), value: waveAmplitude)
                 
+                // Floating orbs
+                ForEach(0..<6, id: \.self) { index in
+                    Circle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: CGFloat.random(in: 15...30), height: CGFloat.random(in: 15...30))
+                        .blur(radius: 8)
+                        .offset(
+                            x: cos(wavePhase * 0.5 + CGFloat(index) * .pi / 3) * 50,
+                            y: sin(wavePhase * 0.5 + CGFloat(index) * .pi / 3) * 50
+                        )
+                }
+                
+                // Siri-style wave animation clipped to circle
+                SiriWaveView(amplitude: waveAmplitude, phase: wavePhase)
+                    .frame(width: 180, height: 180)
+                    .clipShape(Circle())
+                
+                // Thin circle outline
                 Circle()
-                    .fill(
+                    .strokeBorder(
                         LinearGradient(
                             colors: [
-                                Color(hex: "#FF2D55"), // Pink
-                                Color(hex: "#FBBF24"), // Yellow
-                                Color(hex: "#3B82F6")  // Blue
+                                Color(hex: "#A855F7").opacity(0.4),
+                                Color(hex: "#3B82F6").opacity(0.4),
+                                Color(hex: "#06B6D4").opacity(0.4)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
-                        )
+                        ),
+                        lineWidth: 1
                     )
-                    .frame(width: 220, height: 220)
-                    .opacity(0.5)
-                    .phaseAnimator([false, true]) { content, phase in
-                        content
-                            .scaleEffect(x: phase ? 0.6 : 1.25, y: phase ? 1.15 : 0.7)
-                            .rotationEffect(.degrees(phase ? -120 : 240))
-                            .offset(x: phase ? 15 : -10, y: phase ? -12 : 5)
-                    } animation: { phase in
-                            .spring(duration: 2.1, bounce: 0.35)
-                    }
-                
-                // Additional flowing layer for more organic movement
-                Circle()
-                    .fill(
-                        AngularGradient(
-                            colors: [
-                                Color(hex: "#06B6D4"), // Cyan
-                                Color(hex: "#10B981"), // Green
-                                Color(hex: "#FBBF24"), // Yellow
-                                Color(hex: "#06B6D4")  // Back to cyan
-                            ],
-                            center: .center
-                        )
-                    )
-                    .frame(width: 220, height: 220)
-                    .opacity(0.3)
-                    .phaseAnimator([false, true]) { content, phase in
-                        content
-                            .scaleEffect(x: phase ? 1.2 : 0.65, y: phase ? 0.8 : 1.4)
-                            .rotationEffect(.degrees(phase ? 270 : -180))
-                            .offset(x: phase ? -8 : 12, y: phase ? 10 : -7)
-                    } animation: { phase in
-                            .spring(duration: 1.6, bounce: 0.45)
+                    .frame(width: 180, height: 180)
+                    .onAppear {
+                        startWaveAnimation()
                     }
             } else {
-                // Static circle when idle with subtle gradient
+                // Static circle when idle
                 Circle()
                     .fill(
                         RadialGradient(
@@ -617,17 +646,30 @@ struct RecordingButton: View {
                             ],
                             center: .center,
                             startRadius: 30,
-                            endRadius: 110
+                            endRadius: 75
                         )
                     )
-                    .frame(width: 220, height: 220)
+                    .frame(width: 150, height: 150)
                     .opacity(0.7)
             }
         }
-        .frame(width: 240, height: 240)
+        .frame(width: 180, height: 180)
         .shadow(color: Color(hex: "#A855F7").opacity(0.5), radius: 30, x: 0, y: 0)
         .shadow(color: Color(hex: "#3B82F6").opacity(0.3), radius: 50, x: 0, y: 0)
-        .blendMode(.hardLight)
+    }
+    
+    private func startWaveAnimation() {
+        withAnimation(Animation.linear(duration: 0.15).repeatForever(autoreverses: false)) {
+            wavePhase -= 1.5
+        }
+        
+        // Random amplitude changes
+        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+            guard coordinator.recordingState.isRecording else { return }
+            withAnimation(.linear(duration: 0.15)) {
+                waveAmplitude = CGFloat.random(in: 0.3...0.9)
+            }
+        }
     }
     
     // MARK: - Helpers
