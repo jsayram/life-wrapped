@@ -766,6 +766,14 @@ public final class AppCoordinator: ObservableObject {
             try await generateSessionSummary(sessionId: sessionId)
             print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
             
+            // Unload model after session is complete to free memory
+            if let coordinator = self.summarizationCoordinator,
+               let localEngine = await coordinator.getLocalEngine() {
+                print("🧹 [AppCoordinator] Unloading Local AI model after session completion...")
+                await localEngine.unloadModel()
+                print("✅ [AppCoordinator] Model memory freed, reducing thermal and battery impact")
+            }
+            
         } catch {
             print("❌ [AppCoordinator] ⚠️ Failed to check/generate session summary: \(error)")
             print("❌ [AppCoordinator] Error details: \(error.localizedDescription)")
@@ -897,6 +905,14 @@ public final class AppCoordinator: ObservableObject {
             NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
         }
         print("🎉 [AppCoordinator] === SESSION SUMMARY COMPLETE ===")
+        
+        // Unload Local AI model from memory to free resources
+        if let coordinator = self.summarizationCoordinator,
+           let localEngine = await coordinator.getLocalEngine() {
+            print("🧹 [AppCoordinator] Unloading Local AI model to free memory...")
+            await localEngine.unloadModel()
+            print("✅ [AppCoordinator] Model unloaded, memory released")
+        }
     }
     
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {

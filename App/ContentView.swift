@@ -511,7 +511,7 @@ struct RecordingButton: View {
     private var waveformView: some View {
         ZStack {
             if coordinator.recordingState.isRecording {
-                // Animated pulsing circles when recording with Siri/Apple Intelligence gradients
+                // Siri-style organic flowing animation with Apple Intelligence gradients
                 Circle()
                     .fill(
                         AngularGradient(
@@ -526,13 +526,14 @@ struct RecordingButton: View {
                         )
                     )
                     .frame(width: 220, height: 220)
-                    .opacity(0.3)
+                    .opacity(0.4)
                     .phaseAnimator([false, true]) { content, phase in
                         content
-                            .scaleEffect(phase ? 0.8 : 1.3)
+                            .scaleEffect(x: phase ? 0.85 : 1.35, y: phase ? 1.25 : 0.95)
                             .rotationEffect(.degrees(phase ? 0 : 360))
+                            .offset(x: phase ? 10 : -8, y: phase ? -5 : 8)
                     } animation: { phase in
-                            .easeOut(duration: 1.2)
+                            .spring(duration: 1.4, bounce: 0.3)
                     }
                 
                 Circle()
@@ -552,9 +553,11 @@ struct RecordingButton: View {
                     .opacity(0.6)
                     .phaseAnimator([false, true]) { content, phase in
                         content
-                            .scaleEffect(phase ? 0.7 : 1.2)
+                            .scaleEffect(x: phase ? 1.1 : 0.8, y: phase ? 0.75 : 1.3)
+                            .rotationEffect(.degrees(phase ? 180 : -90))
+                            .offset(x: phase ? -12 : 6, y: phase ? 8 : -10)
                     } animation: { phase in
-                            .easeIn(duration: 1.0)
+                            .spring(duration: 1.8, bounce: 0.4)
                     }
                 
                 Circle()
@@ -570,12 +573,38 @@ struct RecordingButton: View {
                         )
                     )
                     .frame(width: 220, height: 220)
-                    .opacity(0.4)
+                    .opacity(0.5)
                     .phaseAnimator([false, true]) { content, phase in
                         content
-                            .scaleEffect(phase ? 0.5 : 1.1)
+                            .scaleEffect(x: phase ? 0.6 : 1.25, y: phase ? 1.15 : 0.7)
+                            .rotationEffect(.degrees(phase ? -120 : 240))
+                            .offset(x: phase ? 15 : -10, y: phase ? -12 : 5)
                     } animation: { phase in
-                            .easeInOut(duration: 0.9)
+                            .spring(duration: 2.1, bounce: 0.35)
+                    }
+                
+                // Additional flowing layer for more organic movement
+                Circle()
+                    .fill(
+                        AngularGradient(
+                            colors: [
+                                Color(hex: "#06B6D4"), // Cyan
+                                Color(hex: "#10B981"), // Green
+                                Color(hex: "#FBBF24"), // Yellow
+                                Color(hex: "#06B6D4")  // Back to cyan
+                            ],
+                            center: .center
+                        )
+                    )
+                    .frame(width: 220, height: 220)
+                    .opacity(0.3)
+                    .phaseAnimator([false, true]) { content, phase in
+                        content
+                            .scaleEffect(x: phase ? 1.2 : 0.65, y: phase ? 0.8 : 1.4)
+                            .rotationEffect(.degrees(phase ? 270 : -180))
+                            .offset(x: phase ? -8 : 12, y: phase ? 10 : -7)
+                    } animation: { phase in
+                            .spring(duration: 1.6, bounce: 0.45)
                     }
             } else {
                 // Static circle when idle with subtle gradient
