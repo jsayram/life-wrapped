@@ -7888,17 +7888,16 @@ struct PeriodSummaryCard: View {
     let onCancelEdit: (() -> Void)?
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header Row
+            HStack(alignment: .top) {
+                Text("✨")
+                    .font(.title2)
+                
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text("✨")
-                            .font(.title2)
-                        Text(title)
-                            .font(.title3)
-                            .fontWeight(.bold)
-                    }
+                    Text(title)
+                        .font(.title3)
+                        .fontWeight(.bold)
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -7906,26 +7905,27 @@ struct PeriodSummaryCard: View {
                 
                 Spacer()
                 
-                HStack(spacing: 12) {
-                    // Edit button
-                    if let onEdit = onEdit, !isEditing {
-                        Button(action: onEdit) {
-                            Image(systemName: "pencil")
-                                .font(.body)
-                                .foregroundStyle(AppTheme.purple)
+                // Action buttons - only show when not editing
+                if !isEditing {
+                    HStack(spacing: 8) {
+                        // Edit button
+                        if let onEdit = onEdit {
+                            Button(action: onEdit) {
+                                Image(systemName: "pencil")
+                                    .font(.subheadline)
+                                    .foregroundStyle(AppTheme.purple)
+                            }
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(AppTheme.purple.opacity(0.1))
+                            )
                         }
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(AppTheme.purple.opacity(0.1))
-                        )
-                    }
-                    
-                    // Copy
-                    if !isEditing {
+                        
+                        // Copy
                         Button(action: onCopy) {
                             Image(systemName: "doc.on.doc")
-                                .font(.body)
+                                .font(.subheadline)
                                 .foregroundStyle(AppTheme.skyBlue)
                         }
                         .padding(8)
@@ -7933,39 +7933,40 @@ struct PeriodSummaryCard: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(AppTheme.skyBlue.opacity(0.1))
                         )
-                    }
-                    
-                    // Regenerate (local rollup)
-                    if !isEditing {
+                        
+                        // Regenerate
                         Button(action: onRegenerate) {
-                        if isRegenerating {
-                            ProgressView()
-                                .tint(AppTheme.purple)
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.body)
-                                .foregroundStyle(AppTheme.magenta)
+                            if isRegenerating {
+                                ProgressView()
+                                    .tint(AppTheme.purple)
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.subheadline)
+                                    .foregroundStyle(AppTheme.magenta)
+                            }
                         }
+                        .disabled(isRegenerating)
+                        .padding(8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(AppTheme.magenta.opacity(0.1))
+                        )
                     }
-                    .disabled(isRegenerating)
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.magenta.opacity(0.1))
-                    )
                 }
             }
             
             Divider()
             
+            // Content area
             if isEditing, let editedText = editedText {
-                VStack(spacing: 8) {
+                VStack(spacing: 12) {
                     TextEditor(text: editedText)
                         .font(.body)
                         .foregroundStyle(.primary)
+                        .scrollContentBackground(.hidden)
                         .padding(12)
-                        .frame(height: 260)
+                        .frame(minHeight: 200)
                         .background(Color(.tertiarySystemBackground))
                         .cornerRadius(8)
                     
@@ -7995,7 +7996,7 @@ struct PeriodSummaryCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                 }
-                .frame(height: 260)
+                .frame(minHeight: 150, maxHeight: 250)
                 .background(Color(.tertiarySystemBackground))
                 .cornerRadius(8)
             }
@@ -8026,8 +8027,6 @@ struct PeriodSummaryCard: View {
         .cornerRadius(16)
         .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
     }
-}
-
 }
 
 struct GeneratePeriodSummaryCard: View {
