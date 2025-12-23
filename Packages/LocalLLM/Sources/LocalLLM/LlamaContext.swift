@@ -83,28 +83,36 @@ public actor LlamaContext {
             throw LlamaError.modelNotLoaded
         }
         
-        // Extract key sentences from the user prompt (the transcript part)
-        let lines = prompt.components(separatedBy: .newlines)
+        // Extract the transcript text from the structured prompt
+        // The prompt format is:
+        // <system prompt>
+        // <|user|>
+        // Summarize this transcript chunk:
+        //
+        // <transcript text>
+        // <|end|>
+        // <|assistant|>
         
-        // Find the transcript content (after "Summarize this transcript chunk:")
         var transcriptText = ""
-        var foundTranscript = false
-        for line in lines {
-            if foundTranscript && !line.isEmpty {
-                transcriptText = line
-                break
-            }
-            if line.contains("transcript") || line.contains("Summarize") {
-                foundTranscript = true
+        
+        // Find the text after "Summarize this transcript chunk:"
+        if let range = prompt.range(of: "Summarize this transcript chunk:") {
+            let afterMarker = prompt[range.upperBound...]
+            // Get the text before the next special token
+            if let endRange = afterMarker.range(of: "<|end|>") {
+                transcriptText = String(afterMarker[..<endRange.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                transcriptText = String(afterMarker)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
         
         if transcriptText.isEmpty {
-            // Use the whole prompt if we can't find transcript section
-            transcriptText = prompt
+            return "Content recorded."
         }
         
-        // Simple extractive summary: take first 2-3 meaningful sentences
+        // Simple extractive summary: take first 1-2 meaningful sentences
         let sentences = transcriptText.components(separatedBy: CharacterSet(charactersIn: ".!?"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && $0.split(separator: " ").count >= 3 }
