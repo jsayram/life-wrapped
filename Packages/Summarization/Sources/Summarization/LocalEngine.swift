@@ -30,6 +30,7 @@ public actor LocalEngine: SummarizationEngine {
     
     // Track per-chunk AI summaries
     private var chunkSummaries: [UUID: String] = [:]
+    private var chunkOrder: [UUID] = []  // Maintain insertion order for correct aggregation
     
     // MARK: - Initialization
     
@@ -86,6 +87,9 @@ public actor LocalEngine: SummarizationEngine {
         
         // Cache the chunk summary
         chunkSummaries[chunkId] = summary
+        if !chunkOrder.contains(chunkId) {
+            chunkOrder.append(chunkId)
+        }
         chunksProcessed += 1
         
         let processingTime = Date().timeIntervalSince(startTime)
@@ -144,18 +148,23 @@ public actor LocalEngine: SummarizationEngine {
         // If called directly, fall back to processing the full text
         let wordCount = transcriptText.split(separator: " ").count
         
-        // Get cached chunk summaries
+        // Get cached chunk summaries IN ORDER
         var aggregatedSummaries: [String] = []
         
-        for chunkId in chunkIds {
-            if let cachedSummary = chunkSummaries[chunkId] {
-                aggregatedSummaries.append(cachedSummary)
+        if !chunkIds.isEmpty {
+            // Use provided chunk IDs in order
+            for chunkId in chunkIds {
+                if let cachedSummary = chunkSummaries[chunkId] {
+                    aggregatedSummaries.append(cachedSummary)
+                }
             }
-        }
-        
-        // If no specific chunk IDs provided, check all cached summaries
-        if chunkIds.isEmpty {
-            aggregatedSummaries = Array(chunkSummaries.values)
+        } else {
+            // No specific chunk IDs provided - use insertion order from chunkOrder array
+            for chunkId in chunkOrder {
+                if let cachedSummary = chunkSummaries[chunkId] {
+                    aggregatedSummaries.append(cachedSummary)
+                }
+            }
         }
         
         // If we have cached chunk summaries, aggregate them
@@ -171,7 +180,7 @@ public actor LocalEngine: SummarizationEngine {
                 finalSummary = extractiveSummary(from: transcriptText)
             }
         } else {
-            // Combine chunk summaries into final summary
+            // Combine chunk summaries into final summary with deduplication
             finalSummary = aggregateSummaries(aggregatedSummaries)
         }
         
@@ -283,21 +292,39 @@ public actor LocalEngine: SummarizationEngine {
             return summaries[0]
         }
         
-        // Join summaries with proper formatting
-        // Remove redundant phrases and clean up
+        // Clean and deduplicate summaries while preserving order
         var cleanedSummaries: [String] = []
-        var seenContent: Set<String> = []
+        var seenSentences: Set<String> = []
         
         for summary in summaries {
-            let normalized = summary.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            // Skip if too similar to existing summary
-            if !seenContent.contains(normalized) && !summary.isEmpty {
-                cleanedSummaries.append(summary)
-                seenContent.insert(normalized)
+            // Split into sentences to check for duplicates at sentence level
+            let sentences = summary.components(separatedBy: CharacterSet(charactersIn: ".!?"))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            
+            var uniqueSentences: [String] = []
+            for sentence in sentences {
+                let normalized = sentence.lowercased()
+                // Only add if we haven't seen a very similar sentence
+                if !seenSentences.contains(where: { existing in
+                    // Check for substantial overlap (>70% similarity)
+                    let commonWords = Set(existing.split(separator: " ")).intersection(Set(normalized.split(separator: " ")))
+                    let similarity = Double(commonWords.count) / Double(max(existing.split(separator: " ").count, normalized.split(separator: " ").count))
+                    return similarity > 0.7
+                }) {
+                    uniqueSentences.append(sentence)
+                    seenSentences.insert(normalized)
+                }
+            }
+            
+            if !uniqueSentences.isEmpty {
+                cleanedSummaries.append(uniqueSentences.joined(separator: ". "))
             }
         }
         
-        return cleanedSummaries.joined(separator: " ")
+        // Join all unique summaries
+        let combined = cleanedSummaries.joined(separator: ". ")
+        return combined.isEmpty ? "Recording captured." : (combined.hasSuffix(".") ? combined : combined + ".")
     }
     
     /// Simple extractive summary as fallback
