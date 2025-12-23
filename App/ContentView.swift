@@ -2504,6 +2504,8 @@ struct AISettingsView: View {
     @State private var activeEngine: EngineTier?
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
+    @State private var showingSmartestConfig = false
+    @State private var wiggleAPIKeyField = false
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -2570,10 +2572,10 @@ struct AISettingsView: View {
                     emoji: "✨",
                     title: "Smartest",
                     subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic",
-                    detail: hasValidAPIKey() ? "Best quality, requires internet" : "Add API key below to unlock",
+                    detail: hasValidAPIKey() ? "Best quality, requires internet" : "Tap to configure your API key",
                     tier: .external,
                     isSelected: activeEngine == .external,
-                    isAvailable: hasValidAPIKey(),
+                    isAvailable: true,
                     onSelect: { selectEngine(.external) }
                 )
             } header: {
@@ -2583,7 +2585,7 @@ struct AISettingsView: View {
             }
             
             // MARK: - Smartest Configuration
-            if activeEngine == .external || showAPIKeyField || hasValidAPIKey() {
+            if activeEngine == .external || showingSmartestConfig || showAPIKeyField || hasValidAPIKey() {
                 Section {
                     // Provider Selection
                     Picker("Provider", selection: $selectedProvider) {
@@ -2611,36 +2613,50 @@ struct AISettingsView: View {
                     
                     // API Key Input
                     if showAPIKeyField {
-                        HStack {
-                            SecureField("API Key", text: $apiKey)
-                                .textContentType(.password)
-                                .autocapitalization(.none)
-                                .autocorrectionDisabled()
-                                .onChange(of: apiKey) { _, newValue in
-                                    let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if normalized != newValue {
-                                        apiKey = normalized
+                        VStack(spacing: 8) {
+                            HStack {
+                                SecureField("API Key", text: $apiKey)
+                                    .textContentType(.password)
+                                    .autocapitalization(.none)
+                                    .autocorrectionDisabled()
+                                    .onChange(of: apiKey) { _, newValue in
+                                        let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if normalized != newValue {
+                                            apiKey = normalized
+                                        }
+                                        testResult = nil
                                     }
-                                    testResult = nil
+                                
+                                Button("Test") {
+                                    testAPIKey()
                                 }
-                            
-                            Button("Test") {
-                                testAPIKey()
+                                .buttonStyle(.bordered)
+                                .disabled(apiKey.isEmpty || isTesting)
+                                
+                                Button("Save") {
+                                    saveAPIKey()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(apiKey.isEmpty)
                             }
-                            .buttonStyle(.bordered)
-                            .disabled(apiKey.isEmpty || isTesting)
+                            .modifier(WiggleModifier(wiggle: $wiggleAPIKeyField))
                             
-                            Button("Save") {
-                                saveAPIKey()
+                            // Instructional text
+                            if !hasValidAPIKey() {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("Save your API key to activate Smartest summaries")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(apiKey.isEmpty)
-                        }
-                        
-                        if let result = testResult {
-                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(testSuccess ? .green : .red)
+                            
+                            if let result = testResult {
+                                Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(testSuccess ? .green : .red)
+                            }
                         }
                     } else {
                         Button {
@@ -2670,7 +2686,11 @@ struct AISettingsView: View {
                 } header: {
                     Text("Smartest Configuration")
                 } footer: {
-                    Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
+                    if hasValidAPIKey() {
+                        Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
+                    } else {
+                        Text("Add your own OpenAI or Anthropic API key to unlock the Smartest summaries. Keys are stored securely in your device's Keychain.")
+                    }
                 }
             }
         }
@@ -2702,8 +2722,27 @@ struct AISettingsView: View {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
             return
         }
+        
+        // If selecting Smartest without API key, show config section with feedback
         if tier == .external && !hasValidAPIKey() {
-            coordinator.showError("Add an API key first")
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
+            // Show config and trigger wiggle animation
+            showingSmartestConfig = true
+            showAPIKeyField = true
+            
+            // Trigger wiggle animation
+            withAnimation(.default) {
+                wiggleAPIKeyField = true
+            }
+            
+            // Reset wiggle after animation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                wiggleAPIKeyField = false
+            }
+            
             return
         }
         
@@ -2745,11 +2784,15 @@ struct AISettingsView: View {
             UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
             UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
             showAPIKeyField = false
-            coordinator.showSuccess("API key saved")
+            showingSmartestConfig = false
             
+            // Now that we have a valid key, switch to Smartest engine
             Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(.external)
                 await loadEngineStatus()
                 NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+                coordinator.showSuccess("API key saved - Switched to Smartest")
             }
         } else {
             coordinator.showError("Failed to save API key")
@@ -2795,6 +2838,7 @@ struct AISettingsView: View {
         KeychainHelper.delete(key: keychainKey)
         apiKey = ""
         showAPIKeyField = false
+        showingSmartestConfig = false
         
         if activeEngine == .external {
             selectEngine(.basic)
@@ -6270,7 +6314,12 @@ struct SessionDetailView: View {
     private func regenerateSummary() async {
         isRegeneratingSummary = true
         summaryLoadError = nil
-        showGenerationOverlay = true
+        
+        // Only show AI processing overlay for on-device engines (Basic or Apple Intelligence)
+        // External API (Smartest) doesn't need this as it's server-based
+        let activeEngine = await coordinator.summCoord.getActiveEngine()
+        let shouldShowOverlay = (activeEngine == .basic || activeEngine == .apple)
+        showGenerationOverlay = shouldShowOverlay
         generationProgress = 0.0
         generationPhase = "Preparing..."
         
@@ -6283,36 +6332,38 @@ struct SessionDetailView: View {
             // Force regeneration if transcript was edited, otherwise check cache
             let forceRegenerate = transcriptWasEdited
             
-            // Start progress simulation
-            Task {
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.1
-                    generationPhase = "Loading on-device AI model..."
-                }
-                
-                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.3
-                    generationPhase = "Analyzing transcript..."
-                }
-                
-                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.5
-                    generationPhase = "Processing key points..."
-                }
-                
-                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.7
-                    generationPhase = "Generating summary..."
-                }
-                
-                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
-                if !Task.isCancelled && showGenerationOverlay {
-                    generationProgress = 0.9
-                    generationPhase = "Finalizing..."
+            // Start progress simulation (only if showing overlay for on-device processing)
+            if shouldShowOverlay {
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                    if !Task.isCancelled && showGenerationOverlay {
+                        generationProgress = 0.1
+                        generationPhase = "Loading on-device AI model..."
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                    if !Task.isCancelled && showGenerationOverlay {
+                        generationProgress = 0.3
+                        generationPhase = "Analyzing transcript..."
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                    if !Task.isCancelled && showGenerationOverlay {
+                        generationProgress = 0.5
+                        generationPhase = "Processing key points..."
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                    if !Task.isCancelled && showGenerationOverlay {
+                        generationProgress = 0.7
+                        generationPhase = "Generating summary..."
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                    if !Task.isCancelled && showGenerationOverlay {
+                        generationProgress = 0.9
+                        generationPhase = "Finalizing..."
+                    }
                 }
             }
             
@@ -8936,3 +8987,17 @@ struct ContentView_Previews: PreviewProvider {
     }
 }
 
+// MARK: - Wiggle Animation Modifier
+
+struct WiggleModifier: ViewModifier {
+    @Binding var wiggle: Bool
+    
+    func body(content: Content) -> some View {
+        content
+            .offset(x: wiggle ? -8 : 0)
+            .animation(
+                wiggle ? Animation.default.repeatCount(3, autoreverses: true).speed(6) : .default,
+                value: wiggle
+            )
+    }
+}

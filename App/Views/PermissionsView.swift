@@ -59,7 +59,7 @@ struct PermissionsView: View {
                                 Text("Your Privacy Matters")
                                     .font(.subheadline.bold())
                                 
-                                Text("All processing happens on your device. Nothing is sent to the cloud.")
+                                Text("Transcription happens entirely on your device. Nothing is sent to the cloud.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -68,53 +68,53 @@ struct PermissionsView: View {
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(12)
                         
-                        // Local AI Recommendation
+                        // AI Summary Information
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 12) {
-                                Image(systemName: "cpu.fill")
+                                Image(systemName: "sparkles")
                                     .font(.title2)
                                     .foregroundStyle(.purple.gradient)
                                 
-                                Text("Enhance with Local AI")
+                                Text("AI-Powered Summaries")
                                     .font(.headline)
                                 
                                 Spacer()
                             }
                             
-                            Text("Get AI-powered summaries similar to ChatGPT and Apple Intelligence, but running entirely on your device for maximum privacy.")
+                            Text("Get intelligent summaries of your recordings and yearly insights using advanced AI.")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             
-                            // Comparison badges
+                            // Feature badges
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "apple.logo")
-                                        .foregroundColor(.secondary)
-                                    Text("Apple Intelligence quality")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                HStack(spacing: 8) {
-                                    Image(systemName: "lock.fill")
+                                    Image(systemName: "waveform")
                                         .foregroundColor(.green)
-                                    Text("100% private, on-device")
+                                    Text("Transcription: 100% on-device")
                                         .font(.caption)
                                         .foregroundColor(.green)
                                 }
                                 
                                 HStack(spacing: 8) {
-                                    Image(systemName: "wifi.slash")
+                                    Image(systemName: "wifi")
                                         .foregroundColor(.blue)
-                                    Text("Works offline")
+                                    Text("AI summaries: requires internet")
                                         .font(.caption)
                                         .foregroundColor(.blue)
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    Image(systemName: "key.fill")
+                                        .foregroundColor(.secondary)
+                                    Text("Optional: bring your own API key")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                             .padding(.top, 4)
                             
-                            Text("~2.4GB download • Optional • Available in Settings after setup")
+                            Text("Configure AI settings after setup • OpenAI or Anthropic supported")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)
