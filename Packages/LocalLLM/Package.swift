@@ -15,13 +15,21 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // llama.cpp will be integrated when a stable Swift API is available
-        // For now, LocalLLM provides the interface and stub implementation
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.29.1"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.0")
     ],
     targets: [
         .target(
             name: "LocalLLM",
-            dependencies: [],
+            dependencies: [
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXNN", package: "mlx-swift"),
+                .product(name: "MLXRandom", package: "mlx-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Hub", package: "swift-transformers")
+            ],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]

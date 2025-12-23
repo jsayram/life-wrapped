@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Hub
 
 /// Manages downloading and storing local LLM model files
 public actor ModelFileManager: NSObject {
@@ -36,29 +37,43 @@ public actor ModelFileManager: NSObject {
     
     /// Check if a model is downloaded
     public func isModelDownloaded(_ modelType: LocalModelType) -> Bool {
-        guard let path = modelPath(for: modelType) else { return false }
-        return fileManager.fileExists(atPath: path.path)
+        let hub = HubApi()
+        let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
+        let localPath = hub.localRepoLocation(repo)
+        let configPath = localPath.appendingPathComponent("config.json")
+        return fileManager.fileExists(atPath: configPath.path)
     }
     
-    /// Get the file path for a model
+    /// Get the directory path for a model
     public func modelPath(for modelType: LocalModelType) -> URL? {
-        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return nil
-        }
-        return documentsURL.appendingPathComponent("Models/\(modelType.filename)")
+        let hub = HubApi()
+        let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
+        return hub.localRepoLocation(repo)
     }
     
-    /// Get the size of a downloaded model in bytes
+    /// Get the size of a downloaded model directory in bytes
     public func modelSize(_ modelType: LocalModelType) -> Int64? {
-        guard let path = modelPath(for: modelType),
-              let attrs = try? fileManager.attributesOfItem(atPath: path.path),
-              let size = attrs[.size] as? Int64 else {
+        guard let path = modelPath(for: modelType) else {
             return nil
         }
-        return size
+        
+        guard let enumerator = fileManager.enumerator(at: path, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return nil
+        }
+        
+        var totalSize: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path),
+                  let fileSize = attributes[.size] as? Int64 else {
+                continue
+            }
+            totalSize += fileSize
+        }
+        
+        return totalSize
     }
     
-    /// Download a model from Hugging Face
+    /// Download a model from Hugging Face using HubApi
     /// - Parameters:
     ///   - modelType: The model to download
     ///   - progress: Progress callback (0.0-1.0)
@@ -77,96 +92,45 @@ public actor ModelFileManager: NSObject {
             activeDownloadProgressId = nil
         }
         
-        // Create Models directory if needed
-        guard let destPath = modelPath(for: modelType) else {
-            throw ModelDownloadError.invalidPath
-        }
+        print("📥 [ModelFileManager] Downloading \(modelType.displayName) from \(modelType.huggingFaceRepo)...")
         
-        let modelsDir = destPath.deletingLastPathComponent()
-        try fileManager.createDirectory(at: modelsDir, withIntermediateDirectories: true)
+        // Use HubApi to download the full model repo
+        let hub = HubApi()
+        let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
         
-        // Check if already downloaded
-        if fileManager.fileExists(atPath: destPath.path) {
-            print("✅ [ModelFileManager] Model already exists: \(modelType.filename)")
+        // Check if already downloaded (look for config.json)
+        let localPath = hub.localRepoLocation(repo)
+        let configPath = localPath.appendingPathComponent("config.json")
+        
+        if fileManager.fileExists(atPath: configPath.path) {
+            print("✅ [ModelFileManager] Model already exists at: \(localPath.path)")
             if let handler = progressHandlers[progressId] {
                 await handler(1.0)
             }
             return
         }
         
-        print("⬇️ [ModelFileManager] Downloading \(modelType.displayName)...")
-        
-        // Report initial progress
-        if let handler = progressHandlers[progressId] {
-            await handler(0.0)
-        }
-        
-        // Create download task with progress simulation
-        // Note: For production, implement URLSessionDownloadDelegate for real progress
-        let downloadTask = Task {
-            let (tempURL, response) = try await urlSession.download(from: modelType.downloadURL)
-            return (tempURL, response)
-        }
-        
-        // Simulate progress while downloading (since URLSession.download doesn't report progress easily)
-        let simulatedProgressTask = Task {
-            var currentProgress = 0.0
-            while !downloadTask.isCancelled && currentProgress < 0.95 {
-                try? await Task.sleep(for: .seconds(1))
-                currentProgress += 0.05
-                if let handler = progressHandlers[progressId] {
-                    await handler(currentProgress)
+        // Download model with progress tracking
+        let progressHandler = progressHandlers[progressId]
+        try await hub.snapshot(from: repo) { @Sendable downloadProgress in
+            if let handler = progressHandler {
+                Task { @MainActor in
+                    await handler(downloadProgress.fractionCompleted)
                 }
             }
         }
         
-        let (tempURL, response) = try await downloadTask.value
-        simulatedProgressTask.cancel()
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw ModelDownloadError.downloadFailed(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
-        }
-        
-        // Report near completion
-        if let handler = progressHandlers[progressId] {
-            await handler(0.95)
-        }
-        
-        // Move to final location
-        do {
-            if fileManager.fileExists(atPath: destPath.path) {
-                try fileManager.removeItem(at: destPath)
-            }
-            try fileManager.moveItem(at: tempURL, to: destPath)
-        } catch {
-            throw ModelDownloadError.moveFailed(error: error)
-        }
-        
-        // Verify size
-        guard let size = modelSize(modelType) else {
-            throw ModelDownloadError.verificationFailed
-        }
-        
-        let sizeMB = size / (1024 * 1024)
-        guard modelType.expectedSizeMB.contains(sizeMB) else {
-            try? fileManager.removeItem(at: destPath)
-            throw ModelDownloadError.invalidSize(expected: modelType.expectedSizeMB, actual: sizeMB)
-        }
-        
-        // Report completion
-        if let handler = progressHandlers[progressId] {
-            await handler(1.0)
-        }
-        
-        print("✅ [ModelFileManager] Downloaded \(modelType.displayName) (\(sizeMB) MB)")
+        print("✅ [ModelFileManager] Model downloaded to: \(localPath.path)")
     }
     
     /// Delete a downloaded model
     public func deleteModel(_ modelType: LocalModelType) throws {
-        guard let path = modelPath(for: modelType) else { return }
-        if fileManager.fileExists(atPath: path.path) {
-            try fileManager.removeItem(at: path)
+        let hub = HubApi()
+        let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
+        let localPath = hub.localRepoLocation(repo)
+        
+        if fileManager.fileExists(atPath: localPath.path) {
+            try fileManager.removeItem(at: localPath)
             print("🗑️ [ModelFileManager] Deleted \(modelType.displayName)")
         }
     }

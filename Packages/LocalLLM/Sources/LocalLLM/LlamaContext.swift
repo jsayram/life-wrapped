@@ -4,155 +4,145 @@
 //
 //  Created by Life Wrapped on 12/22/2025.
 //
-//  NOTE: This is a stub implementation. Full llama.cpp integration
-//  requires a stable Swift wrapper. For now, this provides the interface
-//  and uses extractive summarization as a fallback.
-//
 
 import Foundation
+import MLX
+import MLXLLM
+import MLXLMCommon
+import MLXNN
+import Hub
 
-/// Thread-safe wrapper around llama.cpp for local LLM inference
-/// Currently uses extractive fallback - full llama.cpp implementation requires stable Swift bindings
+/// Main context for MLX-based LLM inference
+/// Handles model loading, tokenization, and text generation using Apple's MLX framework
 public actor LlamaContext {
     
     // MARK: - Properties
     
+    private var modelContainer: ModelContainer?
+    private var modelType: LocalModelType?
+    
     private var isModelLoaded = false
-    private var currentModelType: LocalModelType = .phi35
     
     // MARK: - Initialization
     
-    public init() {}
+    public init() {
+        // Set reasonable memory limits for iOS
+        MLX.GPU.set(cacheLimit: 256 * 1024 * 1024) // 256 MB cache
+    }
     
     // MARK: - Model Management
     
-    /// Check if a model is loaded and ready
+    /// Check if model is loaded and ready
     public func isReady() -> Bool {
         return isModelLoaded
     }
     
-    /// Get the currently loaded model type
-    public func currentModel() -> LocalModelType {
-        return currentModelType
-    }
-    
-    /// Load a model from disk
-    /// - Parameter modelType: The model type to load
-    /// - Throws: LlamaError if loading fails
-    public func loadModel(_ modelType: LocalModelType = .phi35) async throws {
-        currentModelType = modelType
+    /// Load a model into memory
+    public func loadModel(_ modelType: LocalModelType) async throws {
+        // Unload existing model if any
+        if isModelLoaded {
+            unloadModel()
+        }
         
-        // Get model path from app's Documents directory
         let modelPath = try getModelPath(for: modelType)
         
+        // Verify model directory exists
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaError.modelNotFound(path: modelPath)
         }
         
-        // Verify file size is reasonable
-        let fileSize = try FileManager.default.attributesOfItem(atPath: modelPath)[.size] as? Int64 ?? 0
-        let expectedRange = modelType.expectedSizeMB
-        let fileSizeMB = fileSize / (1024 * 1024)
+        print("✅ [LlamaContext] Model directory found: \(modelType.displayName)")
+        print("📂 [LlamaContext] Path: \(modelPath)")
         
-        guard expectedRange.contains(fileSizeMB) else {
-            throw LlamaError.invalidModelSize(expected: expectedRange, actual: fileSizeMB)
+        // Load model using MLX LLM infrastructure
+        let modelURL = URL(fileURLWithPath: modelPath)
+        let configuration = ModelConfiguration(directory: modelURL)
+        
+        print("🔄 [LlamaContext] Loading model with MLX...")
+        
+        // Load model container using MLX LLM factory
+        let container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
+        
+        self.modelContainer = container
+        self.modelType = modelType
+        self.isModelLoaded = true
+        
+        print("✅ [LlamaContext] Model loaded with MLX: \(modelType.displayName)")
+        
+        // Eval model to ensure weights are loaded
+        await container.perform { context in
+            eval(context.model)
         }
         
-        // Mark as loaded if file exists with correct size
-        isModelLoaded = true
-        print("✅ [LlamaContext] Model file verified: \(modelType.displayName) (\(fileSizeMB) MB)")
-        print("⚠️ [LlamaContext] Using extractive fallback - full llama.cpp integration pending")
+        let config = modelType.recommendedConfig
+        print("📊 [LlamaContext] Context size: \(config.nCTX) tokens, Temperature: \(config.temp)")
     }
     
-    /// Unload the current model
+    /// Unload the model from memory
     public func unloadModel() {
+        modelContainer = nil
         isModelLoaded = false
+        modelType = nil
     }
     
     // MARK: - Text Generation
     
     /// Generate text using the loaded model
-    /// Currently uses improved extractive summarization as fallback
-    /// Full llama.cpp integration pending
     /// - Parameters:
     ///   - prompt: The input prompt (already formatted for model type)
     ///   - maxTokens: Maximum tokens to generate (overrides default)
     /// - Returns: Generated text
     /// - Throws: LlamaError if generation fails
     public func generate(prompt: String, maxTokens: Int32? = nil) async throws -> String {
-        guard isModelLoaded else {
+        guard isModelLoaded, let container = modelContainer, let modelType = modelType else {
             throw LlamaError.modelNotLoaded
         }
         
-        // TODO: Implement full llama.cpp inference
-        // For now, use improved extractive summarization
-        print("⚠️ [LlamaContext] Using improved extractive fallback - full llama.cpp integration pending")
+        let config = modelType.recommendedConfig
+        let maxTokensToGenerate = maxTokens ?? config.maxTokens
         
-        // Extract the transcript text from the structured prompt
-        var transcriptText = ""
+        print("🔄 [LlamaContext] Generating with temperature: \(config.temp), maxTokens: \(maxTokensToGenerate)")
         
-        // Find the text after "Summarize this transcript chunk:"
-        if let range = prompt.range(of: "Summarize this transcript chunk:") {
-            let afterMarker = prompt[range.upperBound...]
-            // Get the text before the next special token
-            if let endRange = afterMarker.range(of: "<|end|>") {
-                transcriptText = String(afterMarker[..<endRange.lowerBound])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            } else {
-                transcriptText = String(afterMarker)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Generate using MLX
+        let (result, _) = try await container.perform { context in
+            // Prepare input
+            let input = try await context.processor.prepare(input: .init(prompt: prompt))
+            
+            // Set generation parameters
+            let parameters = GenerateParameters(
+                maxTokens: Int(maxTokensToGenerate),
+                temperature: config.temp,
+                topP: 0.95
+            )
+            
+            // Generate text
+            var output = ""
+            let stream = try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
+            
+            for try await item in stream {
+                switch item {
+                case .chunk(let text):
+                    output += text
+                case .info:
+                    break
+                case .toolCall:
+                    break
+                }
             }
+            
+            return (output, ())
         }
         
-        if transcriptText.isEmpty {
-            return "Content recorded."
-        }
-        
-        // Improved extractive summarization
-        return improvedExtractiveSummary(from: transcriptText)
-    }
-    
-    /// Improved extractive summary that mimics LLM behavior
-    private func improvedExtractiveSummary(from text: String) -> String {
-        // Remove common filler words and clean up
-        let fillerWords = Set(["um", "uh", "like", "you know", "basically", "actually", "literally", "right", "okay", "ok", "so", "well", "i mean"])
-        
-        // Split into sentences
-        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?"))
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        
-        var cleanedSentences: [String] = []
-        
-        for sentence in sentences {
-            // Skip very short sentences (likely fragments)
-            guard sentence.split(separator: " ").count >= 3 else { continue }
-            
-            // Clean up filler words
-            var words = sentence.lowercased().split(separator: " ").map(String.init)
-            words = words.filter { !fillerWords.contains($0) }
-            
-            // Skip if too many words were removed (likely all filler)
-            guard words.count >= 3 else { continue }
-            
-            // Reconstruct sentence with first word capitalized
-            let cleaned = words.joined(separator: " ")
-            let capitalized = cleaned.prefix(1).uppercased() + cleaned.dropFirst()
-            cleanedSentences.append(capitalized)
-        }
-        
-        // Take first 2-3 meaningful sentences
-        let summary = cleanedSentences.prefix(2).joined(separator: ". ")
-        return summary.isEmpty ? "Content recorded." : summary + "."
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     // MARK: - Helpers
     
     private func getModelPath(for modelType: LocalModelType) throws -> String {
-        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            throw LlamaError.documentsDirectoryNotFound
-        }
-        return documentsURL.appendingPathComponent("Models/\(modelType.filename)").path
+        // Use HubApi to get the local repo location
+        let hub = HubApi()
+        let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
+        return hub.localRepoLocation(repo).path
     }
 }
 

@@ -17,22 +17,21 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
         }
     }
     
-    public var filename: String {
+    public var modelDirectory: String {
         switch self {
-        case .phi35: return "Phi-3.5-mini-instruct-Q4_K_M.gguf"
+        case .phi35: return "Phi-3.5-mini-instruct-4bit"
         }
     }
     
-    public var downloadURL: URL {
+    public var huggingFaceRepo: String {
         switch self {
-        case .phi35:
-            return URL(string: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf")!
+        case .phi35: return "mlx-community/Phi-3.5-mini-instruct-4bit"
         }
     }
     
     public var expectedSizeMB: ClosedRange<Int64> {
         switch self {
-        case .phi35: return 2200...2400   // ~2.3 GB (Q4_K_M quantization)
+        case .phi35: return 2000...2500   // ~2.1 GB (4-bit MLX quantization)
         }
     }
     
