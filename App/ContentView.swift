@@ -1531,14 +1531,34 @@ struct OverviewTab: View {
             }
             .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
                 Button("Cancel", role: .cancel) { }
-                Button("✨ Generate with Pro AI") {
-                    Task {
-                        await wrapUpYear(forceRegenerate: false)
+                if hasExternalAPIConfigured() {
+                    Button("Generate") {
+                        Task {
+                            await wrapUpYear(forceRegenerate: false)
+                        }
+                    }
+                } else {
+                    Button("Open Settings") {
+                        coordinator.selectedTab = 3
                     }
                 }
             } message: {
-                Text("✨ Clicking 'Generate with Pro AI' will use your configured Year Wrapped Pro AI service (OpenAI or Anthropic) to create a comprehensive, beautifully crafted year-in-review summary.\n\n⏱️ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid Pro AI credentials configured in Settings.\n\n🔄 Use the orange refresh button to roll up the monthly summaries (no Pro AI needed).")
+                Text(yearWrapMessage())
             }
+        }
+    }
+    
+    private func hasExternalAPIConfigured() -> Bool {
+        let openaiKey = KeychainHelper.load(key: "openai_api_key")
+        let anthropicKey = KeychainHelper.load(key: "anthropic_api_key")
+        return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
+    }
+    
+    private func yearWrapMessage() -> String {
+        if hasExternalAPIConfigured() {
+            return "This will use ChatGPT or Claude to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
+        } else {
+            return "To generate a Year Wrap, you need to configure your ChatGPT (OpenAI) or Claude (Anthropic) API key in Settings.\n\nTap 'Open Settings' to add your API credentials."
         }
     }
     
