@@ -2523,6 +2523,9 @@ struct AISettingsView: View {
     @State private var showDeleteConfirmation: Bool = false
     @State private var wiggleLocalAIButton = false
     
+    // Scroll proxy for programmatic scrolling
+    @State private var scrollProxy: ScrollViewProxy?
+    
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
     @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
@@ -2556,9 +2559,10 @@ struct AISettingsView: View {
     }
     
     var body: some View {
-        List {
-            // MARK: - Summary Quality Picker
-            Section {
+        ScrollViewReader { proxy in
+            List {
+                // MARK: - Summary Quality Picker
+                Section {
                 // Smart (Basic)
                 SummaryQualityCard(
                     emoji: "⚡️",
@@ -2720,6 +2724,7 @@ struct AISettingsView: View {
                         Text("Add your own OpenAI or Anthropic API key to unlock the Smartest summaries. Keys are stored securely in your device's Keychain.")
                     }
                 }
+                .id("smartestConfig")
             }
             
             // MARK: - Local AI Model Management
@@ -2800,6 +2805,7 @@ struct AISettingsView: View {
             } message: {
                 Text("This will remove the \\(coordinator.expectedLocalModelSizeMB) model from your device. You can re-download it anytime.")
             }
+            .id("localAIConfig")
             } // End of if activeEngine == .local
         }
         .navigationTitle("AI & Summaries")
@@ -2820,6 +2826,11 @@ struct AISettingsView: View {
                     localModelStatus = await coordinator.localModelSizeFormatted()
                 }
             }
+        }
+        .onAppear {
+            // Store proxy for scrolling
+            scrollProxy = proxy
+        }
         }
     }
     
@@ -2877,6 +2888,13 @@ struct AISettingsView: View {
                 NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             }
             
+            // Scroll to the section after a brief delay to ensure it's rendered
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("localAIConfig", anchor: .top)
+                }
+            }
+            
             // If model not downloaded, trigger wiggle animation on button
             if !isLocalModelDownloaded {
                 withAnimation(.default) {
@@ -2916,6 +2934,13 @@ struct AISettingsView: View {
             // Show config and trigger wiggle animation
             showingSmartestConfig = true
             showAPIKeyField = true
+            
+            // Scroll to the section after a brief delay to ensure it's rendered
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("smartestConfig", anchor: .top)
+                }
+            }
             
             // Trigger wiggle animation
             withAnimation(.default) {
