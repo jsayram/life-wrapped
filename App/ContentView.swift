@@ -2539,136 +2539,67 @@ struct AISettingsView: View {
     
     var body: some View {
         List {
-            // MARK: - How It Works Section
+            // MARK: - Summary Quality Picker
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label {
-                        Text("Session Summaries")
-                            .font(.headline)
-                    } icon: {
-                        Image(systemName: "doc.text")
-                            .foregroundStyle(AppTheme.purple)
-                    }
-                    HStack {
-                        Text("Uses your ACTIVE engine →")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let activeEngine {
-                            Text(activeEngine.displayName)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundStyle(AppTheme.emerald)
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    Label {
-                        Text("Period Rollups (Day/Week/Month/Year)")
-                            .font(.headline)
-                    } icon: {
-                        Image(systemName: "calendar")
-                            .foregroundStyle(AppTheme.skyBlue)
-                    }
-                    Text("Combines session summaries (no additional AI processing)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Divider()
-                    
-                    Label {
-                        Text("✨ Year Wrap (Special)")
-                            .font(.headline)
-                    } icon: {
-                        Image(systemName: "sparkles")
-                            .foregroundStyle(AppTheme.magenta)
-                    }
-                    Text("Always uses Year Wrapped Pro AI (OpenAI or Anthropic) for a beautifully crafted year-in-review. Requires valid Pro AI credentials below.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Label {
-                    Text("How AI Works in Life Wrapped")
-                } icon: {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(AppTheme.lightPurple)
-                }
-            }
-            
-            // MARK: - On-Device Engines Section
-            Section {
-                // Basic Engine
-                EngineOptionCard(
+                // Smart (Basic)
+                SummaryQualityCard(
+                    emoji: "⚡️",
+                    title: "Smart",
+                    subtitle: "Quick word-based summaries",
+                    detail: "Always available, works offline",
                     tier: .basic,
                     isSelected: activeEngine == .basic,
                     isAvailable: true,
-                    subtitle: "Simple word-based summaries",
                     onSelect: { selectEngine(.basic) }
                 )
                 
-                // Apple Intelligence
-                EngineOptionCard(
+                // Smarter (Apple Intelligence)
+                SummaryQualityCard(
+                    emoji: "🧠",
+                    title: "Smarter",
+                    subtitle: "Apple Intelligence",
+                    detail: availableEngines.contains(.apple) ? "On-device AI, works offline" : "Requires iOS 18.1+ and compatible device",
                     tier: .apple,
                     isSelected: activeEngine == .apple,
                     isAvailable: availableEngines.contains(.apple),
-                    subtitle: "Requires iOS 18.1+ & compatible device",
                     onSelect: { selectEngine(.apple) }
                 )
-            } header: {
-                Label {
-                    Text("Privacy-Preserving Engines")
-                } icon: {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(AppTheme.darkPurple)
-                }
-            } footer: {
-                Text("Basic and Apple Intelligence run entirely on-device. External requires internet but offers highest quality.")
-            }
-            
-            // MARK: - Year Wrapped Pro AI Section
-            Section {
-                // Pro AI Engine Toggle
-                EngineOptionCard(
+                
+                // Smartest (External API)
+                SummaryQualityCard(
+                    emoji: "✨",
+                    title: "Smartest",
+                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic",
+                    detail: hasValidAPIKey() ? "Best quality, requires internet" : "Add API key below to unlock",
                     tier: .external,
                     isSelected: activeEngine == .external,
                     isAvailable: hasValidAPIKey(),
-                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "Configure API key below",
                     onSelect: { selectEngine(.external) }
                 )
-                
-                // Provider Selection
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Provider")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
+            } header: {
+                Text("Summary Quality")
+            } footer: {
+                Text("Choose how you want your audio summaries generated. Smartest requires your own API key.")
+            }
+            
+            // MARK: - Smartest Configuration
+            if activeEngine == .external || showAPIKeyField || hasValidAPIKey() {
+                Section {
+                    // Provider Selection
                     Picker("Provider", selection: $selectedProvider) {
                         Text("OpenAI").tag("OpenAI")
                         Text("Anthropic").tag("Anthropic")
                     }
                     .pickerStyle(.segmented)
-                    .tint(AppTheme.purple)
                     .onChange(of: selectedProvider) { _, newValue in
                         UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
-                        // Reset to default model for new provider
                         let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
                         selectedModel = defaultModel
                         UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
-                        // Load the appropriate key
                         loadAPIKey()
                     }
-                }
-                .padding(.vertical, 4)
-                .opacity(activeEngine == .external ? 1.0 : 0.6)
-                
-                // Model Selection
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Model")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     
+                    // Model Selection
                     Picker("Model", selection: $selectedModel) {
                         ForEach(currentModels, id: \.0) { model in
                             Text(model.1).tag(model.0)
@@ -2677,152 +2608,78 @@ struct AISettingsView: View {
                     .onChange(of: selectedModel) { _, newValue in
                         UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
                     }
-                }
-                .padding(.vertical, 4)
-                .opacity(activeEngine == .external ? 1.0 : 0.6)
-                
-                // API Key Input
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("API Key")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        
-                        Spacer()
-                        
-                        if hasValidAPIKey() {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(AppTheme.emerald)
-                                Text("Configured")
-                                    .font(.caption)
-                                    .foregroundStyle(AppTheme.emerald)
-                            }
-                        }
-                    }
                     
-                    HStack {
-                        if showAPIKeyField {
-                            SecureField("Enter \(selectedProvider) API Key", text: $apiKey)
+                    // API Key Input
+                    if showAPIKeyField {
+                        HStack {
+                            SecureField("API Key", text: $apiKey)
                                 .textContentType(.password)
                                 .autocapitalization(.none)
                                 .autocorrectionDisabled()
-                                .textFieldStyle(.roundedBorder)
                                 .onChange(of: apiKey) { _, newValue in
-                                    // Normalize: trim whitespace and newlines
                                     let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                                     if normalized != newValue {
                                         apiKey = normalized
                                     }
-                                    // Reset test state when key changes
                                     testResult = nil
                                 }
                             
-                            Button {
+                            Button("Test") {
                                 testAPIKey()
-                            } label: {
-                                if isTesting {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .tint(AppTheme.purple)
-                                } else {
-                                    Text("Test")
-                                        .fontWeight(.medium)
-                                }
                             }
                             .buttonStyle(.bordered)
-                            .tint(AppTheme.skyBlue)
                             .disabled(apiKey.isEmpty || isTesting)
                             
-                            Button {
+                            Button("Save") {
                                 saveAPIKey()
-                            } label: {
-                                Text("Save")
-                                    .fontWeight(.medium)
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(AppTheme.purple)
                             .disabled(apiKey.isEmpty)
-                        } else {
-                            Button {
-                                showAPIKeyField = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: hasValidAPIKey() ? "pencil" : "plus.circle.fill")
-                                    Text(hasValidAPIKey() ? "Change API Key" : "Add API Key")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(AppTheme.purple)
                         }
-                    }
-                    
-                    // Help links
-                    HStack(spacing: 16) {
-                        if selectedProvider == "OpenAI" {
-                            Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
-                                Text("Get OpenAI Key")
-                                    .font(.caption)
-                            }
-                        } else {
-                            Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
-                                Text("Get Anthropic Key")
-                                    .font(.caption)
-                            }
-                        }
-                    }
-                    
-                    // Test result
-                    if let result = testResult {
-                        HStack {
-                            Image(systemName: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(testSuccess ? AppTheme.emerald : AppTheme.magenta)
-                            Text(result)
+                        
+                        if let result = testResult {
+                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .font(.caption)
-                                .foregroundStyle(testSuccess ? AppTheme.emerald : AppTheme.magenta)
+                                .foregroundStyle(testSuccess ? .green : .red)
                         }
-                        .padding(.top, 4)
+                    } else {
+                        Button {
+                            showAPIKeyField = true
+                        } label: {
+                            Label(hasValidAPIKey() ? "Change API Key" : "Add API Key", 
+                                  systemImage: hasValidAPIKey() ? "pencil" : "key.fill")
+                        }
                     }
-                }
-                .padding(.vertical, 4)
-                
-                // Clear key option
-                if hasValidAPIKey() {
-                    Button(role: .destructive) {
-                        clearAPIKey()
-                    } label: {
-                        Label("Remove API Key", systemImage: "trash")
-                            .font(.subheadline)
+                    
+                    // Help link
+                    Link(destination: URL(string: selectedProvider == "OpenAI" 
+                        ? "https://platform.openai.com/api-keys" 
+                        : "https://console.anthropic.com/settings/keys")!) {
+                        Label("Get \(selectedProvider) API Key", systemImage: "arrow.up.right.square")
+                            .font(.footnote)
                     }
-                }
-            } header: {
-                Label {
-                    Text("Year Wrapped Pro AI")
-                } icon: {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(AppTheme.magenta)
-                }
-            } footer: {
-                Label {
-                    Text("Required for Year Wrap feature. Select as active engine above to also use for session summaries. Data is sent to \(selectedProvider) servers for processing.")
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                    
+                    // Remove key
+                    if hasValidAPIKey() {
+                        Button(role: .destructive) {
+                            clearAPIKey()
+                        } label: {
+                            Label("Remove API Key", systemImage: "trash")
+                        }
+                    }
+                } header: {
+                    Text("Smartest Configuration")
+                } footer: {
+                    Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
                 }
             }
         }
         .navigationTitle("AI & Summaries")
-        .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadEngineStatus()
             loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
-            Task {
-                await loadEngineStatus()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
             Task {
                 await loadEngineStatus()
             }
@@ -2841,13 +2698,12 @@ struct AISettingsView: View {
     }
     
     private func selectEngine(_ tier: EngineTier) {
-        // Check availability
         if tier == .apple && !availableEngines.contains(.apple) {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
             return
         }
         if tier == .external && !hasValidAPIKey() {
-            coordinator.showError("Configure an API key first")
+            coordinator.showError("Add an API key first")
             return
         }
         
@@ -2856,7 +2712,16 @@ struct AISettingsView: View {
             await summCoord.setPreferredEngine(tier)
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-            coordinator.showSuccess("Switched to \(tier.displayName)")
+            coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+        }
+    }
+    
+    private func tierDisplayName(_ tier: EngineTier) -> String {
+        switch tier {
+        case .basic: return "Smart"
+        case .apple: return "Smarter"
+        case .external: return "Smartest"
+        default: return tier.displayName
         }
     }
     
@@ -2931,7 +2796,6 @@ struct AISettingsView: View {
         apiKey = ""
         showAPIKeyField = false
         
-        // If external was active, switch to basic
         if activeEngine == .external {
             selectEngine(.basic)
         }
@@ -2945,19 +2809,22 @@ struct AISettingsView: View {
     }
 }
 
-// MARK: - Engine Option Card
+// MARK: - Summary Quality Card
 
-struct EngineOptionCard: View {
+struct SummaryQualityCard: View {
+    let emoji: String
+    let title: String
+    let subtitle: String
+    let detail: String
     let tier: EngineTier
     let isSelected: Bool
     let isAvailable: Bool
-    let subtitle: String
     let onSelect: () -> Void
     
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                // Radio button indicator with gradient
+                // Selection indicator
                 ZStack {
                     Circle()
                         .strokeBorder(isSelected ? AppTheme.purple : Color.gray.opacity(0.5), lineWidth: 2)
@@ -2965,65 +2832,45 @@ struct EngineOptionCard: View {
                     
                     if isSelected {
                         Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [AppTheme.lightPurple, AppTheme.purple],
-                                    center: .center,
-                                    startRadius: 0,
-                                    endRadius: 12
-                                )
-                            )
-                            .frame(width: 14, height: 14)
+                            .fill(AppTheme.purple)
+                            .frame(width: 12, height: 12)
                     }
                 }
                 
-                // Engine icon with theme color
-                Image(systemName: tier.icon)
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? AppTheme.purple : (isAvailable ? AppTheme.lightPurple : Color.secondary.opacity(0.5)))
-                    .frame(width: 28)
+                // Emoji
+                Text(emoji)
+                    .font(.title2)
                 
-                // Text content
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tier.displayName)
-                        .font(.body)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                        .foregroundStyle(isSelected ? .primary : (isAvailable ? .primary : .secondary))
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
                     
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(isAvailable ? .secondary : Color.orange)
                 }
                 
                 Spacer()
                 
-                // Status indicator with gradient
-                if isSelected {
-                    Text("Active")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.darkPurple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(Capsule())
-                } else if !isAvailable {
+                // Lock icon if unavailable
+                if !isAvailable {
                     Image(systemName: "lock.fill")
-                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .font(.caption)
                 }
             }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
+            .opacity(isAvailable ? 1.0 : 0.6)
         }
         .buttonStyle(.plain)
-        .opacity(isAvailable || isSelected ? 1.0 : 0.5)
     }
 }
 
