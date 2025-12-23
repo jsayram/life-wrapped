@@ -123,7 +123,7 @@ extension UserDefaults {
     var autoChunkDuration: TimeInterval {
         get {
             let value = double(forKey: "autoChunkDuration")
-            return value > 0 ? value : 180  // Default 180s (3 minutes)
+            return value > 0 ? value : 30  // Default 30s for fast processing
         }
         set { set(newValue, forKey: "autoChunkDuration") }
     }

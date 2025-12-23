@@ -145,7 +145,19 @@ public actor LocalEngine: SummarizationEngine {
     private func cleanupMetaCommentary(_ text: String) -> String {
         var cleaned = text
         
-        // Pattern 1: Remove "(Note: ...)" with any content inside
+        // Pattern 0: Remove surrounding quotes if the entire text is wrapped
+        if cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"") {
+            cleaned = String(cleaned.dropFirst().dropLast())
+        }
+        
+        // Pattern 1: Remove "(no changes...)" or "(no filler words...)" explanations
+        let noChangesPattern = #"\(no changes.*?\)"#
+        if let noChangesRegex = try? NSRegularExpression(pattern: noChangesPattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            let range = NSRange(cleaned.startIndex..., in: cleaned)
+            cleaned = noChangesRegex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
+        }
+        
+        // Pattern 2: Remove "(Note: ...)" with any content inside
         // Use non-greedy matching to handle multiple notes
         let notePattern = #"\(Note:.*?\)"#
         if let noteRegex = try? NSRegularExpression(pattern: notePattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
@@ -153,32 +165,39 @@ public actor LocalEngine: SummarizationEngine {
             cleaned = noteRegex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
         }
         
-        // Pattern 2: Remove sentences starting with "Note:" or "Note that"
+        // Pattern 3: Remove sentences starting with "Note:" or "Note that"
         let noteSentencePattern = #"Note(:| that).*?[.!?]"#
         if let noteSentenceRegex = try? NSRegularExpression(pattern: noteSentencePattern, options: [.caseInsensitive]) {
             let range = NSRange(cleaned.startIndex..., in: cleaned)
             cleaned = noteSentenceRegex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
         }
         
-        // Pattern 3: Remove common explanatory phrases
+        // Pattern 4: Remove common explanatory phrases
         let explanatoryPhrases = [
             "The transcript has been cleaned up for clarity",
             "The above response removes filler words",
             "Filler words have been removed",
             "This is a cleaned-up version",
             "Cleaned transcript:",
-            "Summary:"
+            "Summary:",
+            "no changes as there are no",
+            "no filler words",
+            "grammar issues",
+            "unnecessary notes"
         ]
         for phrase in explanatoryPhrases {
             cleaned = cleaned.replacingOccurrences(of: phrase, with: "", options: [.caseInsensitive])
         }
         
-        // Pattern 4: Remove lines that are purely parenthetical notes
+        // Pattern 5: Remove lines that are purely parenthetical notes or explanations
         let lines = cleaned.components(separatedBy: .newlines)
         let filteredLines = lines.filter { line in
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Keep line if it doesn't match note patterns
-            return !trimmed.hasPrefix("(Note") && !trimmed.hasPrefix("Note:")
+            // Keep line if it doesn't match note patterns or explanatory patterns
+            return !trimmed.hasPrefix("(Note") 
+                && !trimmed.hasPrefix("Note:") 
+                && !trimmed.hasPrefix("(no changes")
+                && !trimmed.contains("no filler words")
         }
         cleaned = filteredLines.joined(separator: "\n")
         
@@ -189,11 +208,16 @@ public actor LocalEngine: SummarizationEngine {
         cleaned = cleaned.replacingOccurrences(of: #"\n\n+"#, with: "\n\n", options: .regularExpression)
         cleaned = cleaned.replacingOccurrences(of: #"  +"#, with: " ", options: .regularExpression)
         
+        // Remove any remaining quotes at start/end after cleanup
+        if cleaned.hasPrefix("\"") && cleaned.hasSuffix("\"") {
+            cleaned = String(cleaned.dropFirst().dropLast())
+        }
+        
         // Debug logging if cleanup occurred
         if cleaned != text {
             print("🧹 [LocalEngine] Stripped meta-commentary:")
-            print("   Before: \(text.prefix(100))...")
-            print("   After: \(cleaned.prefix(100))...")
+            print("   Before: \(text.prefix(150))...")
+            print("   After: \(cleaned.prefix(150))...")
         }
         
         return cleaned
@@ -635,19 +659,32 @@ public actor LocalEngine: SummarizationEngine {
     private func buildSimplifiedPrompt(text: String) -> String {
         return """
         <|system|>
-        You clean up voice notes. Output ONLY the cleaned text. Never add explanations.
+        You clean up voice recordings. Output ONLY the cleaned text directly. Never wrap in quotes. Never add explanations.
         <|end|>
         <|user|>
-        Fix grammar and remove filler words from this transcript. Output the cleaned text ONLY.
+        Clean up this voice recording transcript:
+        - Remove filler words (um, uh, like, you know)
+        - Fix obvious grammar issues
+        - Keep the original meaning and tone
+        - Preserve first-person perspective
+        
+        CRITICAL RULES:
+        1. Output the cleaned text directly
+        2. NO quotes around the output
+        3. NO explanations about what you changed or didn't change
+        4. NO meta-commentary like "(no changes...)"
+        5. If the text is already clean, just output it as-is
 
-        WRONG (DO NOT DO THIS):
-        "Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)"
+        WRONG:
+        "I went to the store."
+        "Text here" (no changes as there are no filler words...)
+        I went to the store. (Note: cleaned for clarity)
 
-        CORRECT (DO THIS):
-        "Today I worked on the project."
+        CORRECT:
+        I went to the store.
+        I'm thinking about what to eat for dinner.
 
-        Never write "(Note:" or any explanation. Just output the cleaned spoken words.
-
+        Transcript:
         \(text)
         <|end|>
         <|assistant|>

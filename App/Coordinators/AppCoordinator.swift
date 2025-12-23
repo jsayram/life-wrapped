@@ -230,9 +230,9 @@ public final class AppCoordinator: ObservableObject {
                 print("✅ [AppCoordinator] Loaded chunk duration: \(Int(savedChunkDuration))s")
             } else {
                 // Set and save default
-                audioCapture.autoChunkDuration = 180  // 3 minutes default
-                UserDefaults.standard.set(180.0, forKey: "autoChunkDuration")
-                print("✅ [AppCoordinator] Using default chunk duration: 180s")
+                audioCapture.autoChunkDuration = 30  // 30 seconds default for fast processing
+                UserDefaults.standard.set(30.0, forKey: "autoChunkDuration")
+                print("✅ [AppCoordinator] Using default chunk duration: 30s")
             }
             
             // Initialize managers that need storage
