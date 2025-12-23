@@ -6776,7 +6776,7 @@ struct SessionDetailView: View {
     
     private var aiGenerationOverlay: some View {
         ZStack {
-            // Blurred background
+            // Adaptive blurred background
             Color.black.opacity(0.7)
                 .ignoresSafeArea()
                 .blur(radius: 2)
@@ -6811,12 +6811,12 @@ struct SessionDetailView: View {
                     Text(activeEngineForGeneration == .basic ? "Processing" : "AI Processing")
                         .font(.title2)
                         .fontWeight(.bold)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                     
                     // Progress bar
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.white.opacity(0.2))
+                            .fill(Color.secondary.opacity(0.3))
                             .frame(width: 280, height: 8)
                         
                         RoundedRectangle(cornerRadius: 10)
@@ -6835,13 +6835,13 @@ struct SessionDetailView: View {
                     Text("\(Int(generationProgress * 100))%")
                         .font(.title3)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .monospacedDigit()
                     
                     // Current phase
                     Text(generationPhase)
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .frame(minHeight: 44)
                         .padding(.horizontal, 20)
@@ -6856,7 +6856,7 @@ struct SessionDetailView: View {
                             Text(engineTier == .basic ? "What's happening?" : "Why does this take time?")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                         }
                         
                         // Engine-specific description
@@ -6874,7 +6874,7 @@ struct SessionDetailView: View {
                             }
                         }
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         
                         HStack(spacing: 8) {
@@ -6883,17 +6883,17 @@ struct SessionDetailView: View {
                             Text("Once complete, future views of this session are instant!")
                                 .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundStyle(.white.opacity(0.9))
+                                .foregroundStyle(.primary)
                         }
                     }
                     .padding(16)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.white.opacity(0.1))
+                            .fill(Color.secondary.opacity(0.1))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
                     )
                     .padding(.horizontal, 20)
                 }
