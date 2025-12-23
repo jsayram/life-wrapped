@@ -375,6 +375,7 @@ public func generate(prompt: String, maxTokens: Int32? = nil) async throws -> St
 **Problem:** Model occasionally adds meta-commentary despite prompt instructions.
 
 **Examples of unwanted output:**
+
 - `"Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)"`
 - `"I made progress. (Note: Filler words have been removed.)"`
 - `"Note: The above response removes filler words for clarity."`
@@ -386,15 +387,15 @@ public func generate(prompt: String, maxTokens: Int32? = nil) async throws -> St
 ```swift
 private func cleanupMetaCommentary(_ text: String) -> String {
     var cleaned = text
-    
+
     // Pattern 1: Remove "(Note: ...)" with any content inside
     let notePattern = #"\(Note:.*?\)"#
     cleaned = noteRegex.stringByReplacingMatches(in: cleaned, withTemplate: "")
-    
+
     // Pattern 2: Remove sentences starting with "Note:" or "Note that"
     let noteSentencePattern = #"Note(:| that).*?[.!?]"#
     cleaned = noteSentenceRegex.stringByReplacingMatches(in: cleaned, withTemplate: "")
-    
+
     // Pattern 3: Remove common explanatory phrases
     let phrases = [
         "The transcript has been cleaned up for clarity",
@@ -405,7 +406,7 @@ private func cleanupMetaCommentary(_ text: String) -> String {
     for phrase in phrases {
         cleaned = cleaned.replacingOccurrences(of: phrase, options: .caseInsensitive)
     }
-    
+
     // Pattern 4: Remove lines that are purely parenthetical notes
     let lines = cleaned.components(separatedBy: .newlines)
     let filteredLines = lines.filter { line in
@@ -413,11 +414,11 @@ private func cleanupMetaCommentary(_ text: String) -> String {
         return !trimmed.hasPrefix("(Note") && !trimmed.hasPrefix("Note:")
     }
     cleaned = filteredLines.joined(separator: "\n")
-    
+
     // Collapse excessive whitespace
     cleaned = cleaned.replacingOccurrences(of: #"\n\n+"#, with: "\n\n", options: .regularExpression)
     cleaned = cleaned.replacingOccurrences(of: #"  +"#, with: " ", options: .regularExpression)
-    
+
     return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 ```
@@ -430,12 +431,14 @@ summary = cleanupMetaCommentary(rawSummary)  // Apply cleanup
 ```
 
 **Benefits:**
+
 - ✅ Reliable output quality even when prompt fails
 - ✅ Catches edge cases the model ignores
 - ✅ Negligible performance impact (<1ms)
 - ✅ Extensible (can add more patterns)
 
 **Logging:**
+
 ```
 🧹 [LocalEngine] Stripped meta-commentary:
    Before: Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)
