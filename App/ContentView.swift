@@ -1641,6 +1641,8 @@ struct OverviewTab: View {
         guard let periodType = pendingEditPeriodType else { return "" }
         
         switch periodType {
+        case .hour:
+            return "Editing this Hour summary will trigger updates to the Day, Week, Month, and Year summaries."
         case .day:
             return "Editing this Day summary will trigger updates to the Week and Month summaries."
         case .week:
@@ -1651,6 +1653,8 @@ struct OverviewTab: View {
             return "You are editing the Year summary. This will not cascade to other summaries."
         case .session:
             return ""
+        case .yearWrap:
+            return "You are editing the Year Wrap summary. This will not cascade to other summaries."
         }
     }
     
@@ -1679,7 +1683,7 @@ struct OverviewTab: View {
                 inputHash: nil  // Clear hash since content changed
             )
             
-            guard let dbManager = coordinator.databaseManager else {
+            guard let dbManager = coordinator.getDatabaseManager() else {
                 throw NSError(domain: "OverviewTab", code: -1, userInfo: [NSLocalizedDescriptionKey: "Database not available"])
             }
             
@@ -1688,6 +1692,22 @@ struct OverviewTab: View {
             
             // Cascade updates based on period type
             switch periodSummary.periodType {
+            case .hour:
+                cascadeStatus = "Updating Day summary..."
+                await coordinator.updateDailySummary(date: periodSummary.periodStart, forceRegenerate: true)
+                
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                cascadeStatus = "Updating Week summary..."
+                await coordinator.updateWeeklySummary(date: periodSummary.periodStart, forceRegenerate: true)
+                
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                cascadeStatus = "Updating Month summary..."
+                await coordinator.updateMonthlySummary(date: periodSummary.periodStart, forceRegenerate: true)
+                
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                cascadeStatus = "Updating Year summary..."
+                await coordinator.updateYearlySummary(date: periodSummary.periodStart, forceRegenerate: true)
+                
             case .day:
                 cascadeStatus = "Updating Week summary..."
                 await coordinator.updateWeeklySummary(date: periodSummary.periodStart, forceRegenerate: true)
@@ -1708,7 +1728,7 @@ struct OverviewTab: View {
                 cascadeStatus = "Updating Year summary..."
                 await coordinator.updateYearlySummary(date: periodSummary.periodStart, forceRegenerate: true)
                 
-            case .year, .session:
+            case .year, .session, .yearWrap:
                 break  // No cascade needed
             }
             
@@ -7892,12 +7912,12 @@ struct PeriodSummaryCard: View {
                         Button(action: onEdit) {
                             Image(systemName: "pencil")
                                 .font(.body)
-                                .foregroundStyle(AppTheme.blue)
+                                .foregroundStyle(AppTheme.purple)
                         }
                         .padding(8)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(AppTheme.blue.opacity(0.1))
+                                .fill(AppTheme.purple.opacity(0.1))
                         )
                     }
                     
@@ -7963,7 +7983,7 @@ struct PeriodSummaryCard: View {
                             onSaveEdit?()
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(AppTheme.blue)
+                        .tint(AppTheme.purple)
                     }
                 }
             } else {
@@ -8006,6 +8026,8 @@ struct PeriodSummaryCard: View {
         .cornerRadius(16)
         .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
     }
+}
+
 }
 
 struct GeneratePeriodSummaryCard: View {
