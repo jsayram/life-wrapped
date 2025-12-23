@@ -8,7 +8,7 @@
 import Foundation
 
 /// Manages downloading and storing local LLM model files
-public actor ModelFileManager {
+public actor ModelFileManager: NSObject {
     
     // MARK: - Properties
     
@@ -17,10 +17,20 @@ public actor ModelFileManager {
     // Download progress tracking
     public typealias ProgressHandler = @Sendable (Double) -> Void
     private var progressHandlers: [UUID: ProgressHandler] = [:]
+    private var activeDownloadProgressId: UUID?
+    
+    // URLSession for downloads with progress
+    private var urlSession: URLSession!
     
     // MARK: - Initialization
     
-    public init() {}
+    public override init() {
+        super.init()
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300 // 5 minutes
+        config.timeoutIntervalForResource = 3600 // 1 hour
+        self.urlSession = URLSession(configuration: config, delegate: nil, delegateQueue: nil)
+    }
     
     // MARK: - Public API
     
@@ -60,8 +70,12 @@ public actor ModelFileManager {
         let progressId = UUID()
         if let progress = progress {
             progressHandlers[progressId] = progress
+            activeDownloadProgressId = progressId
         }
-        defer { progressHandlers.removeValue(forKey: progressId) }
+        defer {
+            progressHandlers.removeValue(forKey: progressId)
+            activeDownloadProgressId = nil
+        }
         
         // Create Models directory if needed
         guard let destPath = modelPath(for: modelType) else {
@@ -74,17 +88,49 @@ public actor ModelFileManager {
         // Check if already downloaded
         if fileManager.fileExists(atPath: destPath.path) {
             print("✅ [ModelFileManager] Model already exists: \(modelType.filename)")
+            if let handler = progressHandlers[progressId] {
+                await handler(1.0)
+            }
             return
         }
         
         print("⬇️ [ModelFileManager] Downloading \(modelType.displayName)...")
         
-        // Create download task
-        let (tempURL, response) = try await URLSession.shared.download(from: modelType.downloadURL)
+        // Report initial progress
+        if let handler = progressHandlers[progressId] {
+            await handler(0.0)
+        }
+        
+        // Create download task with progress simulation
+        // Note: For production, implement URLSessionDownloadDelegate for real progress
+        let downloadTask = Task {
+            let (tempURL, response) = try await urlSession.download(from: modelType.downloadURL)
+            return (tempURL, response)
+        }
+        
+        // Simulate progress while downloading (since URLSession.download doesn't report progress easily)
+        let simulatedProgressTask = Task {
+            var currentProgress = 0.0
+            while !downloadTask.isCancelled && currentProgress < 0.95 {
+                try? await Task.sleep(for: .seconds(1))
+                currentProgress += 0.05
+                if let handler = progressHandlers[progressId] {
+                    await handler(currentProgress)
+                }
+            }
+        }
+        
+        let (tempURL, response) = try await downloadTask.value
+        simulatedProgressTask.cancel()
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw ModelDownloadError.downloadFailed(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        
+        // Report near completion
+        if let handler = progressHandlers[progressId] {
+            await handler(0.95)
         }
         
         // Move to final location
@@ -106,6 +152,11 @@ public actor ModelFileManager {
         guard modelType.expectedSizeMB.contains(sizeMB) else {
             try? fileManager.removeItem(at: destPath)
             throw ModelDownloadError.invalidSize(expected: modelType.expectedSizeMB, actual: sizeMB)
+        }
+        
+        // Report completion
+        if let handler = progressHandlers[progressId] {
+            await handler(1.0)
         }
         
         print("✅ [ModelFileManager] Downloaded \(modelType.displayName) (\(sizeMB) MB)")

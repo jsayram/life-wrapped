@@ -2521,6 +2521,7 @@ struct AISettingsView: View {
     @State private var localModelStatus: String = "Checking..."
     @State private var isLocalModelDownloaded: Bool = false
     @State private var showDeleteConfirmation: Bool = false
+    @State private var wiggleLocalAIButton = false
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -2757,6 +2758,7 @@ struct AISettingsView: View {
                                 .font(.caption)
                         }
                         .buttonStyle(.bordered)
+                        .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
                     }
                 } else {
                     HStack {
@@ -2776,6 +2778,7 @@ struct AISettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
+                        .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
                     }
                 }
             } header: {
@@ -2858,16 +2861,34 @@ struct AISettingsView: View {
     }
     
     private func selectEngine(_ tier: EngineTier) {
-        // For Local AI without model, allow selection so user sees download option
-        if tier == .local && !isLocalModelDownloaded {
+        // For Local AI without model, show download section with wiggle animation
+        if tier == .local {
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
             // Set active engine to show the download section
             Task {
                 guard let summCoord = coordinator.summarizationCoordinator else { return }
                 await summCoord.setPreferredEngine(tier)
                 await loadEngineStatus()
             }
+            
+            // If model not downloaded, trigger wiggle animation on button
+            if !isLocalModelDownloaded {
+                withAnimation(.default) {
+                    wiggleLocalAIButton = true
+                }
+                
+                // Reset wiggle after animation
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    wiggleLocalAIButton = false
+                }
+            }
+            
             return
         }
+        
         if tier == .apple && !availableEngines.contains(.apple) {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
             return
