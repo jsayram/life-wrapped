@@ -820,12 +820,21 @@ public final class AppCoordinator: ObservableObject {
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
-        // If force regenerating, clear cached chunk summaries for Local AI
+        // If force regenerating, use smart clearing for Local AI (only clears changed chunks)
         if forceRegenerate {
-            let chunkIds = chunks.map { $0.id }
             let localEngine = await coordinator.getLocalEngine()
-            await localEngine.clearChunkSummaries(for: chunkIds)
-            print("🗑️ [AppCoordinator] Cleared \(chunkIds.count) cached chunk summaries for force regeneration")
+            
+            // Build array of (chunkId, transcriptText) for smart cache clearing
+            var chunkTexts: [(id: UUID, text: String)] = []
+            for chunk in chunks {
+                let segments = try await dbManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                let transcriptText = segments.map { $0.text }.joined(separator: " ")
+                chunkTexts.append((id: chunk.id, text: transcriptText))
+            }
+            
+            // Smart cache clearing: only invalidates chunks whose text hash changed
+            let chunksNeedingReprocessing = await localEngine.clearChangedChunkSummaries(for: chunkTexts)
+            print("🗑️ [AppCoordinator] Smart clear: \(chunksNeedingReprocessing.count) of \(chunks.count) chunks need reprocessing")
         }
         
         // Use the user's active engine (respects their settings choice)

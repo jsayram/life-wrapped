@@ -39,14 +39,15 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
     public var recommendedConfig: (nCTX: Int32, batch: Int32, maxTokens: Int32, temp: Float) {
         switch self {
         case .phi35:
-            return (nCTX: 2048, batch: 128, maxTokens: 256, temp: 0.2)
+            // Increased temperature (0.2 → 0.3) for more natural language generation
+            return (nCTX: 2048, batch: 128, maxTokens: 128, temp: 0.3)
         }
     }
     
     /// Stop tokens for this model family
     public var stopTokens: [String] {
         switch self {
-        case .phi35: return ["<|end|>"]
+        case .phi35: return ["<|end|>", "<|endoftext|>", "<|user|>", "<|system|>"]
         }
     }
 }

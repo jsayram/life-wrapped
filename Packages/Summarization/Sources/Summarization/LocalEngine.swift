@@ -8,6 +8,7 @@
 import Foundation
 import SharedModels
 import LocalLLM
+import CryptoKit
 
 /// Local LLM-based summarization engine using Phi-3.5 via llama.cpp
 /// Processes each chunk through the local model, then aggregates for session summary
@@ -28,8 +29,9 @@ public actor LocalEngine: SummarizationEngine {
     private var totalProcessingTime: TimeInterval = 0
     private var chunksProcessed: Int = 0
     
-    // Track per-chunk AI summaries
+    // Track per-chunk AI summaries with hashing for smart regeneration
     private var chunkSummaries: [UUID: String] = [:]
+    private var chunkHashes: [UUID: String] = [:]  // Hash of transcript text for each chunk
     private var chunkOrder: [UUID] = []  // Maintain insertion order for correct aggregation
     
     // MARK: - Initialization
@@ -74,23 +76,41 @@ public actor LocalEngine: SummarizationEngine {
     ) async throws -> String {
         let startTime = Date()
         
+        // Compute hash of transcript text for smart regeneration
+        let textHash = computeHash(of: transcriptText)
+        
+        // Check if we already have a cached summary for this exact text
+        if let cachedHash = chunkHashes[chunkId],
+           cachedHash == textHash,
+           let cachedSummary = chunkSummaries[chunkId] {
+            print("✅ [LocalEngine] Using cached summary for chunk \(chunkId) (text unchanged)")
+            return cachedSummary
+        }
+        
         // Ensure model is loaded
         if !(await llamaContext.isReady()) {
+            print("📥 [LocalEngine] Model not loaded, loading now...")
             try await loadModel()
         }
         
-        // Build prompt using UniversalPrompt (session level for complete context)
-        let prompt = UniversalPrompt.build(
-            level: .session,
-            input: transcriptText,
-            metadata: [:]
-        )
+        // Use simplified prompt for Local AI
+        let simplePrompt = buildSimplifiedPrompt(text: transcriptText)
         
-        // Generate summary with increased token limit for full session response
-        let summary = try await llamaContext.generate(prompt: prompt, maxTokens: 256)
+        // Generate summary with error handling
+        let summary: String
+        do {
+            // Use shorter max tokens for more concise, focused summaries
+            summary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+            print("✅ [LocalEngine] Chunk \(chunkId) summarized: \(summary.prefix(60))...")
+        } catch {
+            print("⚠️ [LocalEngine] MLX generation failed: \(error)")
+            print("🔄 [LocalEngine] Falling back to extractive summary")
+            summary = extractiveSummary(from: transcriptText)
+        }
         
-        // Cache the chunk summary
+        // Cache the chunk summary with its hash
         chunkSummaries[chunkId] = summary
+        chunkHashes[chunkId] = textHash
         if !chunkOrder.contains(chunkId) {
             chunkOrder.append(chunkId)
         }
@@ -100,7 +120,7 @@ public actor LocalEngine: SummarizationEngine {
         totalProcessingTime += processingTime
         
         #if DEBUG
-        print("🤖 [LocalEngine] Chunk \(chunkId) summarized in \(String(format: "%.2f", processingTime))s")
+        print("🤖 [LocalEngine] Chunk \(chunkId) processed in \(String(format: "%.2f", processingTime))s")
         print("   - Input: \(transcriptText.prefix(50))...")
         print("   - Output: \(summary.prefix(100))...")
         #endif
@@ -113,11 +133,43 @@ public actor LocalEngine: SummarizationEngine {
         return chunkSummaries[chunkId]
     }
     
-    /// Clear cached chunk summaries for a session
+    /// Clear cached chunk summaries for a session (old method - clears all)
     public func clearChunkSummaries(for chunkIds: [UUID]) {
+        print("🗑️ [LocalEngine] Clearing ALL \(chunkIds.count) cached chunk summaries")
         for id in chunkIds {
             chunkSummaries.removeValue(forKey: id)
+            chunkHashes.removeValue(forKey: id)
         }
+    }
+    
+    /// Smart clear: Only clear chunks whose transcript has changed
+    /// Returns the IDs of chunks that need reprocessing
+    public func clearChangedChunkSummaries(for chunks: [(id: UUID, text: String)]) -> [UUID] {
+        var changedChunkIds: [UUID] = []
+        
+        for chunk in chunks {
+            let newHash = computeHash(of: chunk.text)
+            
+            // Check if hash changed or chunk is new
+            if let existingHash = chunkHashes[chunk.id] {
+                if existingHash != newHash {
+                    // Text changed - clear cache
+                    print("🔄 [LocalEngine] Chunk \(chunk.id) text changed, clearing cache")
+                    chunkSummaries.removeValue(forKey: chunk.id)
+                    chunkHashes.removeValue(forKey: chunk.id)
+                    changedChunkIds.append(chunk.id)
+                } else {
+                    print("✅ [LocalEngine] Chunk \(chunk.id) text unchanged, keeping cached summary")
+                }
+            } else {
+                // New chunk - needs processing
+                print("🆕 [LocalEngine] Chunk \(chunk.id) is new, needs processing")
+                changedChunkIds.append(chunk.id)
+            }
+        }
+        
+        print("📊 [LocalEngine] Smart clear: \(changedChunkIds.count) of \(chunks.count) chunks need reprocessing")
+        return changedChunkIds
     }
     
     /// Summarize a full session by aggregating chunk summaries (protocol conformance)
@@ -174,7 +226,20 @@ public actor LocalEngine: SummarizationEngine {
         // If we have cached chunk summaries, aggregate them
         // Otherwise, intelligently chunk and process the full transcript
         let finalSummary: String
-        if aggregatedSummaries.isEmpty {
+        
+        // Check if we should use cached summaries or re-chunk
+        let shouldUseCache = !aggregatedSummaries.isEmpty && (
+            // Either we have all requested chunks cached...
+            (!chunkIds.isEmpty && aggregatedSummaries.count == chunkIds.count) ||
+            // ...or we have all chunks in order cached
+            (chunkIds.isEmpty && aggregatedSummaries.count == chunkOrder.count)
+        )
+        
+        if shouldUseCache {
+            // Combine cached chunk summaries into final summary with deduplication
+            print("✅ [LocalEngine] Using \(aggregatedSummaries.count) cached chunk summaries (all cached, skipping re-chunking)")
+            finalSummary = aggregateSummaries(aggregatedSummaries)
+        } else {
             // No cached summaries - intelligently chunk the transcript and process each
             print("🔄 [LocalEngine] No cached summaries found - intelligently chunking transcript for processing")
             print("📊 [LocalEngine] Total words: \(wordCount), will chunk into ~120-word segments")
@@ -231,7 +296,7 @@ public actor LocalEngine: SummarizationEngine {
                 do {
                     // Use simplified prompt for Local AI (less memory intensive)
                     let simplePrompt = buildSimplifiedPrompt(text: chunkText)
-                    chunkSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 256)
+                    chunkSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
                     print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
                 } catch {
                     print("⚠️ [LocalEngine] MLX generation failed for chunk \(chunkNumber): \(error)")
@@ -247,10 +312,6 @@ public actor LocalEngine: SummarizationEngine {
             // Aggregate all chunk summaries
             print("🔗 [LocalEngine] Aggregating \(chunkSummaries.count) chunk summaries")
             finalSummary = aggregateSummaries(chunkSummaries)
-        } else {
-            // Combine cached chunk summaries into final summary with deduplication
-            print("✅ [LocalEngine] Using \(aggregatedSummaries.count) cached chunk summaries")
-            finalSummary = aggregateSummaries(aggregatedSummaries)
         }
         
         // Extract topics from summary
@@ -491,22 +552,26 @@ public actor LocalEngine: SummarizationEngine {
     
     // MARK: - Model Management
     
+    /// Compute hash of text for smart caching
+    private func computeHash(of text: String) -> String {
+        let data = Data(text.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+    
     /// Build a simplified prompt optimized for local MLX inference
-    /// Uses less verbose instructions to reduce memory pressure
+    /// Uses Phi-3.5 chat template and produces natural, note-style output
     private func buildSimplifiedPrompt(text: String) -> String {
         return """
-        You are a voice journal assistant. Rewrite this spoken transcript into clean, first-person notes.
+        <|system|>
+        You are a note-taking assistant. Clean up spoken transcripts into clear, first-person notes for later review.
+        <|end|>
+        <|user|>
+        Clean up this transcript. Fix grammar, remove filler words and rambling. Keep the natural voice and tone. Write it like personal notes for later recall. No meta-commentary or editing notes.
 
-        Rules:
-        - Write in first person (I, me, my) ONLY
-        - Remove filler words (um, uh, like)
-        - Keep all important details
-        - Return plain text summary (no JSON)
-
-        Transcript:
         \(text)
-
-        Summary:
+        <|end|>
+        <|assistant|>
         """
     }
     

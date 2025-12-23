@@ -112,6 +112,9 @@ public actor LlamaContext {
         }
         
         do {
+            // Get stop sequences before the closure to avoid capturing self
+            let stopSequences = self.modelType?.stopTokens ?? []
+            
             // Generate using MLX with error handling
             let (result, _) = try await container.perform { context in
                 // Prepare input
@@ -132,6 +135,24 @@ public actor LlamaContext {
                     switch item {
                     case .chunk(let text):
                         output += text
+                        
+                        // Check for stop sequences
+                        var shouldStop = false
+                        for stopSeq in stopSequences {
+                            if output.contains(stopSeq) {
+                                // Trim everything after the stop sequence
+                                if let range = output.range(of: stopSeq) {
+                                    output = String(output[..<range.lowerBound])
+                                }
+                                shouldStop = true
+                                break
+                            }
+                        }
+                        
+                        if shouldStop {
+                            break
+                        }
+                        
                         // Safety check: stop if output gets too long
                         if output.count > 4000 {
                             print("⚠️ [LlamaContext] Output exceeding 4000 chars, stopping generation")
@@ -148,7 +169,7 @@ public actor LlamaContext {
             }
         
             print("✅ [LlamaContext] Generated \(result.count) characters")
-            return result.trimmingCharacters(in: .whitespacesAndNewlines)
+            return result.trimmingCharacters(in: Foundation.CharacterSet.whitespacesAndNewlines)
             
         } catch {
             print("❌ [LlamaContext] Generation failed: \(error)")
