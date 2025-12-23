@@ -313,6 +313,9 @@ struct ContentView: View {
                 .interactiveDismissDisabled()
         }
         .toast($coordinator.currentToast)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToSettingsTab"))) { _ in
+            selectedTab = 3
+        }
         .overlay {
             if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
                 LoadingOverlay()
@@ -1531,16 +1534,8 @@ struct OverviewTab: View {
             }
             .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
                 Button("Cancel", role: .cancel) { }
-                if hasExternalAPIConfigured() {
-                    Button("Generate") {
-                        Task {
-                            await wrapUpYear(forceRegenerate: false)
-                        }
-                    }
-                } else {
-                    Button("Open Settings") {
-                        coordinator.selectedTab = 3
-                    }
+                Button(actionButtonTitle()) {
+                    handleYearWrapAction()
                 }
             } message: {
                 Text(yearWrapMessage())
@@ -1559,6 +1554,21 @@ struct OverviewTab: View {
             return "This will use ChatGPT or Claude to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
         } else {
             return "To generate a Year Wrap, you need to configure your ChatGPT (OpenAI) or Claude (Anthropic) API key in Settings.\n\nTap 'Open Settings' to add your API credentials."
+        }
+    }
+    
+    private func actionButtonTitle() -> String {
+        return hasExternalAPIConfigured() ? "Generate" : "Open Settings"
+    }
+    
+    private func handleYearWrapAction() {
+        if hasExternalAPIConfigured() {
+            Task {
+                await wrapUpYear(forceRegenerate: false)
+            }
+        } else {
+            // Post notification to switch to Settings tab
+            NotificationCenter.default.post(name: NSNotification.Name("SwitchToSettingsTab"), object: nil)
         }
     }
     
