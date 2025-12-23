@@ -100,7 +100,11 @@ public actor LocalEngine: SummarizationEngine {
         let summary: String
         do {
             // Use shorter max tokens for more concise, focused summaries
-            summary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+            let rawSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+            
+            // Post-process: aggressively strip any meta-commentary patterns
+            summary = cleanupMetaCommentary(rawSummary)
+            
             print("✅ [LocalEngine] Chunk \(chunkId) summarized: \(summary.prefix(60))...")
         } catch {
             print("⚠️ [LocalEngine] MLX generation failed: \(error)")
@@ -133,7 +137,70 @@ public actor LocalEngine: SummarizationEngine {
         return chunkSummaries[chunkId]
     }
     
+    
+    // MARK: - Meta-Commentary Cleanup
+    
+    /// Aggressively strip meta-commentary patterns from model output
+    /// Model sometimes adds "(Note: ...)" or explanatory paragraphs despite instructions
+    private func cleanupMetaCommentary(_ text: String) -> String {
+        var cleaned = text
+        
+        // Pattern 1: Remove "(Note: ...)" with any content inside
+        // Use non-greedy matching to handle multiple notes
+        let notePattern = #"\(Note:.*?\)"#
+        if let noteRegex = try? NSRegularExpression(pattern: notePattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            let range = NSRange(cleaned.startIndex..., in: cleaned)
+            cleaned = noteRegex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
+        }
+        
+        // Pattern 2: Remove sentences starting with "Note:" or "Note that"
+        let noteSentencePattern = #"Note(:| that).*?[.!?]"#
+        if let noteSentenceRegex = try? NSRegularExpression(pattern: noteSentencePattern, options: [.caseInsensitive]) {
+            let range = NSRange(cleaned.startIndex..., in: cleaned)
+            cleaned = noteSentenceRegex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
+        }
+        
+        // Pattern 3: Remove common explanatory phrases
+        let explanatoryPhrases = [
+            "The transcript has been cleaned up for clarity",
+            "The above response removes filler words",
+            "Filler words have been removed",
+            "This is a cleaned-up version",
+            "Cleaned transcript:",
+            "Summary:"
+        ]
+        for phrase in explanatoryPhrases {
+            cleaned = cleaned.replacingOccurrences(of: phrase, with: "", options: [.caseInsensitive])
+        }
+        
+        // Pattern 4: Remove lines that are purely parenthetical notes
+        let lines = cleaned.components(separatedBy: .newlines)
+        let filteredLines = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Keep line if it doesn't match note patterns
+            return !trimmed.hasPrefix("(Note") && !trimmed.hasPrefix("Note:")
+        }
+        cleaned = filteredLines.joined(separator: "\n")
+        
+        // Final cleanup: trim excessive whitespace
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Collapse multiple spaces/newlines
+        cleaned = cleaned.replacingOccurrences(of: #"\n\n+"#, with: "\n\n", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: #"  +"#, with: " ", options: .regularExpression)
+        
+        // Debug logging if cleanup occurred
+        if cleaned != text {
+            print("🧹 [LocalEngine] Stripped meta-commentary:")
+            print("   Before: \(text.prefix(100))...")
+            print("   After: \(cleaned.prefix(100))...")
+        }
+        
+        return cleaned
+    }
+    
     /// Clear cached chunk summaries for a session (old method - clears all)
+
     public func clearChunkSummaries(for chunkIds: [UUID]) {
         print("🗑️ [LocalEngine] Clearing ALL \(chunkIds.count) cached chunk summaries")
         for id in chunkIds {
@@ -296,7 +363,11 @@ public actor LocalEngine: SummarizationEngine {
                 do {
                     // Use simplified prompt for Local AI (less memory intensive)
                     let simplePrompt = buildSimplifiedPrompt(text: chunkText)
-                    chunkSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+                    let rawSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+                    
+                    // Post-process: aggressively strip any meta-commentary patterns
+                    chunkSummary = cleanupMetaCommentary(rawSummary)
+                    
                     print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
                 } catch {
                     print("⚠️ [LocalEngine] MLX generation failed for chunk \(chunkNumber): \(error)")

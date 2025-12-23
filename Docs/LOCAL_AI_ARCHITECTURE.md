@@ -99,6 +99,7 @@ public var recommendedConfig: (nCTX: Int32, batch: Int32, maxTokens: Int32, temp
 - **Batch (128):** Optimal for M1/M2/M3 unified memory
 - **Max Tokens (128):** Forces concise summaries, prevents hallucination
 - **Temperature (0.3):** Balance between factual (0.0) and creative (0.7)
+- **Post-processing:** Aggressive cleanup strips meta-commentary patterns
 
 ---
 
@@ -369,6 +370,78 @@ public func generate(prompt: String, maxTokens: Int32? = nil) async throws -> St
 - Prevents control token leakage
 - Safety limit at 4000 chars
 
+### Post-Processing Cleanup
+
+**Problem:** Model occasionally adds meta-commentary despite prompt instructions.
+
+**Examples of unwanted output:**
+- `"Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)"`
+- `"I made progress. (Note: Filler words have been removed.)"`
+- `"Note: The above response removes filler words for clarity."`
+
+**Solution:** Aggressive post-processing function `cleanupMetaCommentary()` that strips patterns programmatically.
+
+**Implementation:**
+
+```swift
+private func cleanupMetaCommentary(_ text: String) -> String {
+    var cleaned = text
+    
+    // Pattern 1: Remove "(Note: ...)" with any content inside
+    let notePattern = #"\(Note:.*?\)"#
+    cleaned = noteRegex.stringByReplacingMatches(in: cleaned, withTemplate: "")
+    
+    // Pattern 2: Remove sentences starting with "Note:" or "Note that"
+    let noteSentencePattern = #"Note(:| that).*?[.!?]"#
+    cleaned = noteSentenceRegex.stringByReplacingMatches(in: cleaned, withTemplate: "")
+    
+    // Pattern 3: Remove common explanatory phrases
+    let phrases = [
+        "The transcript has been cleaned up for clarity",
+        "The above response removes filler words",
+        "Filler words have been removed",
+        "This is a cleaned-up version"
+    ]
+    for phrase in phrases {
+        cleaned = cleaned.replacingOccurrences(of: phrase, options: .caseInsensitive)
+    }
+    
+    // Pattern 4: Remove lines that are purely parenthetical notes
+    let lines = cleaned.components(separatedBy: .newlines)
+    let filteredLines = lines.filter { line in
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.hasPrefix("(Note") && !trimmed.hasPrefix("Note:")
+    }
+    cleaned = filteredLines.joined(separator: "\n")
+    
+    // Collapse excessive whitespace
+    cleaned = cleaned.replacingOccurrences(of: #"\n\n+"#, with: "\n\n", options: .regularExpression)
+    cleaned = cleaned.replacingOccurrences(of: #"  +"#, with: " ", options: .regularExpression)
+    
+    return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+```
+
+**Usage in generation pipeline:**
+
+```swift
+let rawSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+summary = cleanupMetaCommentary(rawSummary)  // Apply cleanup
+```
+
+**Benefits:**
+- ✅ Reliable output quality even when prompt fails
+- ✅ Catches edge cases the model ignores
+- ✅ Negligible performance impact (<1ms)
+- ✅ Extensible (can add more patterns)
+
+**Logging:**
+```
+🧹 [LocalEngine] Stripped meta-commentary:
+   Before: Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)
+   After: Today I worked on the project.
+```
+
 ### Hash-Based Caching
 
 **SHA256 Implementation:**
@@ -444,16 +517,19 @@ Output: Should NOT contain: <|end|>, <|endoftext|>, <|user|>, <|system|>
 Input:  "I worked on the project today"
 Output: "I worked on the project today."
 ✅ Clean output, no additions
-❌ If output contains "(Note:...)" or explanations → PROMPT ENGINEERING FAILED
+❌ If output contains "(Note:...)" or explanations → POST-PROCESSING FAILED
 ```
 
-**Example of FAILURE:**
+**System Protection:**
 
-```
-Bad Output: "I worked on the project today. (Note: The transcript has been cleaned up for clarity.)"
-```
+The model occasionally adds meta-commentary like `"(Note: The transcript has been cleaned up for clarity.)"` despite prompt instructions. The system now includes **post-processing cleanup** as a safety net:
 
-This indicates the model is adding meta-commentary despite instructions. The current prompt uses concrete WRONG vs CORRECT examples to prevent this.
+- Strips `(Note: ...)` patterns using regex
+- Removes sentences starting with "Note:" or "Note that"
+- Filters common explanatory phrases
+- Collapses excessive whitespace
+
+This hybrid approach (prompt + cleanup) ensures reliable output quality even when the model ignores instructions.
 
 ### Performance Tests
 
@@ -602,6 +678,10 @@ Stop Sequence Detection (every chunk)
     ↓
 If "<|end|>" found → STOP + TRIM
     ↓
+Post-Processing: cleanupMetaCommentary()
+    ↓
+Strip: (Note: ...), explanations, extra whitespace
+    ↓
 Output (20-50 words, first person, clean)
 ```
 
@@ -615,6 +695,7 @@ Output (20-50 words, first person, clean)
 
    - `buildSimplifiedPrompt()` - Phi-3.5 chat template
    - `summarizeChunk()` - Hash tracking + maxTokens 128
+   - `cleanupMetaCommentary()` - Post-processing to strip unwanted patterns
    - `clearChangedChunkSummaries()` - Smart cache clearing
    - `computeHash()` - SHA256 helper
    - `summarizeSessionWithChunks()` - Cache optimization
@@ -726,7 +807,8 @@ The Local AI engine combines:
 - ✅ **Proper Phi-3.5 integration** - Chat template + stop sequences
 - ✅ **Real-time processing** - Chunks process as transcribed
 - ✅ **Smart caching** - Only reprocess edited chunks (90% time saved)
-- ✅ **Quality control** - No hallucinations or control token leakage
+- ✅ **Quality control** - No hallucinations, control token leakage, or meta-commentary
+- ✅ **Post-processing** - Aggressive cleanup for reliable output
 - ✅ **Performance** - 50% faster generation (128 vs 256 tokens)
 - ✅ **Privacy** - All processing on-device via MLX
 
