@@ -1251,28 +1251,31 @@ struct OverviewTab: View {
     
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    LoadingView(size: .medium)
-                } else if periodSummary == nil && sessionsInPeriod.isEmpty {
-                    ContentUnavailableView(
-                        "No Overview Yet",
-                        systemImage: "doc.text",
-                        description: Text("Record more journal entries to generate summaries.")
-                    )
-                } else {
-                    VStack(spacing: 0) {
-                        // Time Range Picker
-                        Picker("Time Range", selection: $selectedTimeRange) {
-                            ForEach(TimeRange.allCases) { range in
-                                Text(range.rawValue).tag(range)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .tint(AppTheme.purple)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        
+            VStack(spacing: 0) {
+                // Time Range Picker - ALWAYS show so users can switch periods
+                Picker("Time Range", selection: $selectedTimeRange) {
+                    ForEach(TimeRange.allCases) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .tint(AppTheme.purple)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .disabled(isLoading)
+                
+                // Content area
+                Group {
+                    if isLoading {
+                        LoadingView(size: .medium)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if periodSummary == nil && sessionsInPeriod.isEmpty {
+                        ContentUnavailableView(
+                            "No Overview Yet",
+                            systemImage: "doc.text",
+                            description: Text("Record more journal entries to generate summaries.")
+                        )
+                    } else {
                         // Copy All button
                         if !sessionSummaries.isEmpty {
                             HStack {
@@ -1446,9 +1449,9 @@ struct OverviewTab: View {
                             }
                         }
                     }
-                    .background(Color(.systemGroupedBackground))
                 }
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Overview")
             .task {
                 await loadInsights()
@@ -6317,7 +6320,8 @@ struct SessionDetailView: View {
         
         // Only show AI processing overlay for on-device engines (Basic or Apple Intelligence)
         // External API (Smartest) doesn't need this as it's server-based
-        let activeEngine = await coordinator.summCoord.getActiveEngine()
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        let activeEngine = await summCoord.getActiveEngine()
         let shouldShowOverlay = (activeEngine == .basic || activeEngine == .apple)
         showGenerationOverlay = shouldShowOverlay
         generationProgress = 0.0
