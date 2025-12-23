@@ -1,6 +1,6 @@
 # Life Wrapped
 
-> **Privacy-first, on-device audio journaling for iOS, watchOS, and macOS.**
+> **Privacy-focused audio journaling for iOS, watchOS, and macOS.**
 
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
 [![Xcode 26](https://img.shields.io/badge/Xcode-26-blue.svg)](https://developer.apple.com/xcode/)
@@ -11,15 +11,17 @@
 
 ## 🎯 What is Life Wrapped?
 
-Life Wrapped records audio throughout your day, transcribes it **locally on your device**, and helps you discover insights about how you spend your time — all without any data leaving your device.
+Life Wrapped records audio throughout your day, transcribes it **locally on your device**, and helps you discover insights about how you spend your time. AI summaries are powered by your own API keys (OpenAI or Anthropic), with automatic offline fallback to Basic summaries when no connection is available.
 
 ### Key Features
 
 - 🎙️ **Continuous Audio Capture** — Record throughout the day with chunked files
 - 🗣️ **On-Device Transcription** — Apple's Speech framework, no cloud required
+- 🤖 **Smart AI Summaries** — Bring your own OpenAI/Anthropic API keys for best quality
+- 📴 **Offline Fallback** — Basic summaries work without internet
 - 📊 **Rich Insights** — See your day/week/month in words and time
 - ⌚ **Apple Watch Support** — Control and glance from your wrist
-- 🔒 **Privacy-First** — Nothing leaves your device by default
+- 🔒 **Privacy-First** — Transcription on-device; you control AI keys
 - 📱 **Widgets & Siri** — Quick stats and voice control
 
 ---
@@ -115,22 +117,24 @@ life-wrapped/
 
 ### Our Commitments
 
-1. **No Network by Default** — All processing happens on-device
+1. **On-Device Transcription** — All speech-to-text processing happens locally
 2. **No Cloud Speech** — Uses `requiresOnDeviceRecognition = true`
-3. **No Analytics** — No tracking, no telemetry
-4. **Encrypted Storage** — Data protected at rest
-5. **Your Data, Your Control** — Export anytime, delete anytime
+3. **Your API Keys** — AI summaries use your own OpenAI/Anthropic keys (you control)
+4. **Offline Fallback** — Basic summaries work without internet or API keys
+5. **No Analytics** — No tracking, no telemetry
+6. **Encrypted Storage** — Data protected at rest
+7. **Your Data, Your Control** — Export anytime, delete anytime
 
 ### Verification
 
 ```bash
-# Run privacy audit
+# Run privacy audit (checks for unauthorized network calls)
 ./Scripts/verify-privacy.sh
 
-# Manual verification steps:
-# 1. Use Charles Proxy — verify zero HTTP traffic
-# 2. Network Link Conditioner 100% loss — app works normally
-# 3. Instruments Network template — no connections
+# Manual verification:
+# 1. Without API keys configured — app functions normally with Basic summaries
+# 2. Network offline — transcription and Basic summaries still work
+# 3. With API keys — only external AI API calls are made (your keys, your control)
 ```
 
 ---

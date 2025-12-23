@@ -8,7 +8,6 @@ import Charts
 import Transcription
 import Storage
 import Summarization
-import LocalLLM
 import Security
 
 // MARK: - AppTheme
@@ -297,17 +296,6 @@ struct ContentView: View {
             PermissionsView()
                 .interactiveDismissDisabled()
         }
-        .alert("Enhance with Local AI", isPresented: $coordinator.showLocalAIWelcomeTip) {
-            Button("Open Settings") {
-                coordinator.showLocalAIWelcomeTip = false
-                selectedTab = 3 // Switch to Settings tab
-            }
-            Button("Maybe Later", role: .cancel) {
-                coordinator.showLocalAIWelcomeTip = false
-            }
-        } message: {
-            Text("Get AI-powered summaries similar to ChatGPT, but running entirely on your device for maximum privacy. Available in Settings → Local AI.")
-        }
         .toast($coordinator.currentToast)
         .overlay {
             if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
@@ -345,8 +333,6 @@ struct LoadingOverlay: View {
 
 struct HomeTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
-    @State private var localModelAvailable = false
-    @State private var showLocalAIDownload = false
     
     var body: some View {
         NavigationStack {
@@ -372,28 +358,14 @@ struct HomeTab: View {
                     // Recording Button
                     RecordingButton()
                     
-                    // Add Local AI Button (only show if no model available)
-                    if !localModelAvailable {
-                        AddLocalAIButton {
-                            showLocalAIDownload = true
-                        }
-                    }
-                    
                     Spacer()
                 }
                 .padding()
             }
             .refreshable {
                 await refreshStats()
-                await checkLocalModelAvailability()
             }
             .navigationBarHidden(true)
-            .sheet(isPresented: $showLocalAIDownload) {
-                LocalAIDownloadView()
-            }
-            .task {
-                await checkLocalModelAvailability()
-            }
         }
     }
     
@@ -403,406 +375,7 @@ struct HomeTab: View {
         await coordinator.refreshStreak()
         print("✅ [HomeTab] Stats refreshed")
     }
-    
-    private func checkLocalModelAvailability() async {
-        let modelManager = LocalLLM.ModelFileManager.shared
-        let models = await modelManager.availableModels()
-        await MainActor.run {
-            localModelAvailable = !models.isEmpty
-        }
-    }
 }
-
-// MARK: - Add Local AI Button
-
-struct AddLocalAIButton: View {
-    @Environment(\.colorScheme) var colorScheme
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.15), AppTheme.magenta.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 56, height: 56)
-                    
-                    Image(systemName: "brain.head.profile")
-                        .font(.title)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.magenta],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Add Local AI")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    
-                    Text("Enable smart summaries with on-device AI")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(20)
-            .background(Color(.secondarySystemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(AppTheme.cardGradient(for: colorScheme))
-                    .allowsHitTesting(false)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(AppTheme.purple.opacity(0.2), lineWidth: 1)
-                    .allowsHitTesting(false)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Local AI Download View
-
-struct LocalAIDownloadView: View {
-    @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var coordinator: AppCoordinator
-    @State private var availableModels: [LocalLLM.ModelFileManager.ModelSize] = []
-    @State private var isLoading = true
-    
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Local AI Models")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("Download an AI model to enable smart summaries that run entirely on your device. Your data never leaves your phone.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        
-                        HStack(spacing: 8) {
-                            Image(systemName: "lock.shield.fill")
-                                .foregroundStyle(.green)
-                            Text("Privacy-First")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.green)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-                
-                Section("Available Models") {
-                    ForEach(LocalLLM.ModelFileManager.ModelSize.allCases, id: \.rawValue) { modelSize in
-                        ModelDownloadRowView(
-                            modelSize: modelSize,
-                            isDownloaded: availableModels.contains(modelSize)
-                        )
-                    }
-                }
-                
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Requirements")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "wifi")
-                                .font(.caption)
-                            Text("WiFi connection for download")
-                                .font(.caption)
-                        }
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "memorychip")
-                                .font(.caption)
-                            Text("2-3 GB free storage space")
-                                .font(.caption)
-                        }
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock")
-                                .font(.caption)
-                            Text("5-10 minutes download time")
-                                .font(.caption)
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
-                }
-            }
-            .navigationTitle("Add Local AI")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .task {
-                await loadModels()
-            }
-            .refreshable {
-                await loadModels()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
-                Task {
-                    await loadModels()
-                }
-            }
-        }
-    }
-    
-    private func loadModels() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        let manager = LocalLLM.ModelFileManager.shared
-        availableModels = await manager.availableModels()
-    }
-}
-
-// MARK: - Model Download Row View
-
-struct ModelDownloadRowView: View {
-    let modelSize: LocalLLM.ModelFileManager.ModelSize
-    let isDownloaded: Bool
-    @EnvironmentObject var coordinator: AppCoordinator
-    @Environment(\.dismiss) var dismiss
-    @State private var isDownloading = false
-    @State private var downloadProgress: Double = 0.0
-    @State private var downloadTask: Task<Void, Never>?
-    @State private var showDownloadAlert = false
-    @State private var justCompleted = false
-    @State private var isCheckingState = true
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(modelSize.displayName)
-                        .font(.body)
-                        .fontWeight(.semibold)
-                    
-                    Text("\(modelSize.approximateSizeMB) MB")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                if isDownloaded {
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.green)
-                        
-                        Text("Ready")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                    }
-                } else if isDownloading || isCheckingState {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text(isCheckingState ? "Checking..." : "Downloading...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        if !isCheckingState {
-                            Text("Continue using the app")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } else {
-                    Button {
-                        showDownloadAlert = true
-                    } label: {
-                        Label("Download", systemImage: "arrow.down.circle")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.purple)
-                }
-            }
-            
-            // Show when download just completed
-            if justCompleted {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text("Download complete! Local AI is now available.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .onAppear {
-                    Task {
-                        try? await Task.sleep(for: .seconds(3))
-                        withAnimation {
-                            justCompleted = false
-                        }
-                    }
-                }
-            }
-            
-            // Details
-            VStack(alignment: .leading, spacing: 4) {
-                DetailRow(icon: "cpu", text: "On-Device Processing")
-                DetailRow(icon: "memorychip", text: "\(modelSize.contextLength.formatted()) tokens context")
-                
-                if !isDownloaded && !isDownloading {
-                    DetailRow(icon: "wifi", text: "Requires WiFi")
-                        .foregroundStyle(.orange)
-                }
-            }
-        }
-        .padding(.vertical, 8)
-        .alert("Download Model", isPresented: $showDownloadAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Download") {
-                startDownload()
-            }
-        } message: {
-            Text("Download \(modelSize.fullDisplayName)? This will use \(modelSize.approximateSizeMB) MB. Download continues in the background if you navigate away.")
-        }
-        .task {
-            await syncDownloadState()
-        }
-        .onDisappear {
-            // Keep download task running in background when navigating away
-            // Don't cancel - let it continue
-        }
-    }
-    
-    @MainActor
-    private func startDownload() {
-        Task {
-            let manager = LocalLLM.ModelFileManager.shared
-            let alreadyDownloading = await manager.isDownloading(modelSize)
-            
-            guard !alreadyDownloading else {
-                await MainActor.run {
-                    coordinator.showError("\(modelSize.displayName) is already downloading")
-                }
-                return
-            }
-            
-            await MainActor.run {
-                isDownloading = true
-                downloadProgress = 0.0
-                coordinator.showSuccess("Downloading \(modelSize.displayName)... Continue using the app.")
-            }
-            
-            downloadTask = Task {
-                do {
-                    try await manager.downloadModel(modelSize) { @MainActor progress in
-                        self.downloadProgress = progress
-                    }
-                    
-                    await MainActor.run {
-                        withAnimation {
-                            isDownloading = false
-                            justCompleted = true
-                        }
-                        
-                        // Auto-switch to Local AI and refresh engines
-                        if let summCoord = coordinator.summarizationCoordinator {
-                            Task {
-                                _ = await summCoord.getAvailableEngines()
-                                await summCoord.setPreferredEngine(.local)
-                                coordinator.showSuccess("✅ Local AI is now active!")
-                                
-                                // Trigger parent view refresh via notification
-                                NotificationCenter.default.post(name: NSNotification.Name("ModelDownloadCompleted"), object: nil)
-                                
-                                // Dismiss after a short delay
-                                try? await Task.sleep(for: .seconds(2))
-                                dismiss()
-                            }
-                        }
-                    }
-                } catch is CancellationError {
-                    await MainActor.run {
-                        withAnimation {
-                            isDownloading = false
-                            downloadProgress = 0.0
-                        }
-                        coordinator.showError("Download cancelled")
-                    }
-                } catch {
-                    await MainActor.run {
-                        withAnimation {
-                            isDownloading = false
-                            downloadProgress = 0.0
-                        }
-                        coordinator.showError("Download failed: \(error.localizedDescription)")
-                    }
-                }
-            }
-        }
-    }
-    
-    private func syncDownloadState() async {
-        let manager = LocalLLM.ModelFileManager.shared
-        let downloading = await manager.isDownloading(modelSize)
-        let available = await manager.isModelAvailable(modelSize)
-        
-        await MainActor.run {
-            isCheckingState = false
-            
-            if downloading {
-                print("📥 [ModelDownloadRowView] Download in progress: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = true
-                }
-            } else if available && isDownloading {
-                print("✅ [ModelDownloadRowView] Download completed: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = false
-                    justCompleted = true
-                }
-            } else if !downloading && isDownloading {
-                print("⚠️ [ModelDownloadRowView] Download stopped: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = false
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Streak Card
 
 // MARK: - Streak Display (Minimal)
 
@@ -2930,10 +2503,6 @@ struct AISettingsView: View {
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     
-    // Local AI state
-    @State private var localModelAvailable = false
-    @State private var isDownloadingModel = false
-    
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
     @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
@@ -2964,14 +2533,6 @@ struct AISettingsView: View {
     
     private var currentModels: [(String, String)] {
         selectedProvider == "OpenAI" ? openaiModels : anthropicModels
-    }
-    
-    private var effectiveConfig: LocalLLMConfiguration {
-        LocalLLMConfiguration.current()
-    }
-    
-    private var deviceSummary: String {
-        LocalLLMConfiguration.deviceSummary()
     }
     
     var body: some View {
@@ -3053,43 +2614,15 @@ struct AISettingsView: View {
                     subtitle: "Requires iOS 18.1+ & compatible device",
                     onSelect: { selectEngine(.apple) }
                 )
-                
-                // Local AI
-                VStack(alignment: .leading, spacing: 12) {
-                    EngineOptionCard(
-                        tier: .local,
-                        isSelected: activeEngine == .local,
-                        isAvailable: localModelAvailable,
-                        subtitle: localModelAvailable ? "On-device LLM ready" : "Download model to enable",
-                        onSelect: { selectEngine(.local) }
-                    )
-                    
-                    if localModelAvailable {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "wand.and.stars")
-                                    .foregroundStyle(AppTheme.emerald)
-                                Text("Auto-Optimized for Your Device")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(AppTheme.emerald)
-                            }
-                            Text("Automatically uses maximum quality settings for \(deviceSummary). \(effectiveConfig.tokensDescription)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
             } header: {
                 Label {
-                    Text("On-Device Processing")
+                    Text("Privacy-Preserving Engines")
                 } icon: {
                     Image(systemName: "lock.shield.fill")
                         .foregroundStyle(AppTheme.darkPurple)
                 }
             } footer: {
-                Text("All processing happens locally. Your data never leaves your device.")
+                Text("Basic and Apple Intelligence run entirely on-device. External requires internet but offers highest quality.")
             }
             
             // MARK: - Year Wrapped Pro AI Section
@@ -3280,7 +2813,6 @@ struct AISettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadEngineStatus()
-            await checkLocalModelAvailability()
             loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
@@ -3290,7 +2822,6 @@ struct AISettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
             Task {
-                await checkLocalModelAvailability()
                 await loadEngineStatus()
             }
         }
@@ -3307,20 +2838,8 @@ struct AISettingsView: View {
         availableEngines = await summCoord.getAvailableEngines()
     }
     
-    private func checkLocalModelAvailability() async {
-        let modelManager = LocalLLM.ModelFileManager.shared
-        let models = await modelManager.availableModels()
-        await MainActor.run {
-            localModelAvailable = !models.isEmpty
-        }
-    }
-    
     private func selectEngine(_ tier: EngineTier) {
         // Check availability
-        if tier == .local && !localModelAvailable {
-            coordinator.showError("Download a Local AI model first")
-            return
-        }
         if tier == .apple && !availableEngines.contains(.apple) {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
             return
@@ -3586,8 +3105,6 @@ struct OnDeviceEnginesView: View {
             return "Basic engine should always be available. Please restart the app."
         case .apple:
             return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
-        case .local:
-            return "Download the local AI model to enable on-device processing. Go to AI Settings → Local AI Models."
         case .external:
             return "Configure your API key to use external AI services."
         }
@@ -6809,7 +6326,6 @@ struct SessionDetailView: View {
     
     private func engineIcon(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "cpu"
         case "apple": return "apple.intelligence"
         case "basic": return "bolt.fill"
         case "external": return "sparkles"
@@ -6821,7 +6337,6 @@ struct SessionDetailView: View {
     
     private func engineDisplayName(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "Local AI"
         case "apple": return "Apple Intelligence"
         case "basic": return "Basic"
         case "external": return "Year Wrapped Pro AI"
@@ -7076,7 +6591,7 @@ struct SessionDetailView: View {
                 }
                 
                 VStack(spacing: 12) {
-                    Text("On-Device AI Processing")
+                    Text("AI Processing")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundStyle(.white)
@@ -7527,7 +7042,6 @@ struct OverviewSummaryCard: View {
     
     private func engineIcon(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "cpu"
         case "apple": return "apple.intelligence"
         case "basic": return "bolt.fill"
         case "external": return "sparkles"
@@ -7539,7 +7053,6 @@ struct OverviewSummaryCard: View {
     
     private func engineDisplayName(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "Local AI"
         case "apple": return "Apple Intelligence"
         case "basic": return "Basic"
         case "external": return "Year Wrapped Pro AI"
@@ -8301,9 +7814,7 @@ struct IntelligenceEngineView: View {
         case .basic:
             return "Basic engine should always be available. Please restart the app."
         case .apple:
-            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. This feature will be available in a future update."
-        case .local:
-            return "Download the local AI model to enable on-device processing. Go to Settings → Local AI to manage models."
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. Your device or OS version doesn't support it yet."
         case .external:
             return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
         }
@@ -8414,7 +7925,6 @@ struct EngineRow: View {
         switch tier {
         case .basic: return "text.alignleft"
         case .apple: return "apple.logo"
-        case .local: return "cpu"
         case .external: return "cloud"
         }
     }
@@ -8423,7 +7933,6 @@ struct EngineRow: View {
         switch tier {
         case .basic: return .gray
         case .apple: return .blue
-        case .local: return .purple
         case .external: return .orange
         }
     }

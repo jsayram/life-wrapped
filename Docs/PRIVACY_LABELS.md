@@ -1,14 +1,29 @@
 # Privacy Nutrition Labels - App Store
 
-## Data Collection: NONE ✅
+## Data Collection Overview
 
-Life Wrapped does NOT collect any data from users.
+### Transcription: 100% On-Device ✅
 
-## Privacy Practices
+- Audio recordings NEVER leave your device
+- Speech recognition uses Apple's on-device framework
+- All transcriptions stored locally in SQLite
 
-### Data Not Collected
+### AI Summaries: User-Controlled 🔑
 
-We do not collect ANY of the following:
+- **Optional**: Users can provide their own OpenAI/Anthropic API keys
+- **Transparent**: Only external AI API calls use these keys
+- **Your Control**: Keys stored securely in Keychain, managed by you
+- **Offline Mode**: Basic summaries work without internet or API keys
+
+### Network Activity
+
+- **Without API Keys**: Zero network calls, 100% offline
+- **With API Keys**: Only external AI API calls to OpenAI/Anthropic (using YOUR keys)
+- **Your Choice**: You control if/when network access occurs
+
+## Data Not Collected By Developer
+
+We do NOT collect ANY of the following:
 
 **Contact Info**
 
@@ -103,12 +118,16 @@ Life Wrapped is designed with privacy as the core principle:
 - Transcriptions never leave your device
 - All data stored in local SQLite database
 
-### Zero Network Calls
+### AI Summaries (User-Controlled)
 
-- App functions 100% offline
-- No server communication
-- No cloud storage
-- No background data transmission
+- **Transcription**: Always on-device, zero network calls
+- **Basic Summaries**: On-device, zero network calls
+- **Apple Intelligence**: On-device (iOS 18.1+), zero external network calls
+- **External AI**: Optional feature using YOUR API keys
+  - You provide OpenAI or Anthropic keys
+  - Keys stored securely in Keychain
+  - Network calls only to OpenAI/Anthropic APIs (not developer servers)
+  - Automatic fallback to Basic summaries when offline
 
 ### Your Data, Your Control
 
@@ -116,16 +135,15 @@ Life Wrapped is designed with privacy as the core principle:
 - Delete all data with one tap
 - No account required
 - No sign-up process
+- API keys optional and user-managed
 
 ### Verification
 
 Users can verify our privacy claims:
 
-1. Enable Airplane Mode
-2. Use app normally
-3. App works perfectly without network
-
-Network monitoring tools (Charles Proxy, Wireshark) will show ZERO network traffic from Life Wrapped.
+1. Without API keys: Enable Airplane Mode → App works perfectly
+2. With API keys: Network monitoring shows only OpenAI/Anthropic API calls (YOUR keys)
+3. Transcription always works offline
 
 ## Permissions Required
 
@@ -175,4 +193,4 @@ Network monitoring tools (Charles Proxy, Wireshark) will show ZERO network traff
 
 For privacy questions: [Your Support Email]
 
-**Last Updated:** December 13, 2025
+**Last Updated:** December 22, 2025

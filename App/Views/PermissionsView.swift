@@ -5,7 +5,6 @@
 import SwiftUI
 import AVFoundation
 import Speech
-import LocalLLM
 
 /// Permission request view shown on first launch or when permissions are needed
 struct PermissionsView: View {

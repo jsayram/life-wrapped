@@ -8,9 +8,8 @@
 import Foundation
 import SharedModels
 import Storage
-import LocalLLM  // Required for LocalEngine
 
-/// Orchestrates summarization across multiple engines (Basic, Apple, Local, External)
+/// Orchestrates summarization across multiple engines (Basic, Apple, External)
 /// Selects the appropriate engine based on availability and user settings
 public actor SummarizationCoordinator {
     
@@ -22,9 +21,7 @@ public actor SummarizationCoordinator {
     // Available engines
     private var basicEngine: BasicEngine
     private var appleEngine: (any SummarizationEngine)?
-    private var localEngine: (any SummarizationEngine)?
     private var externalEngine: (any SummarizationEngine)?
-    private var localConfiguration: LocalLLMConfiguration = .current()
     
     // Current active engine
     private var activeEngine: any SummarizationEngine
@@ -50,9 +47,6 @@ public actor SummarizationCoordinator {
             self.appleEngine = AppleEngine(storage: storage)
         }
         
-        // Initialize local engine (Phase 2A)
-        self.localEngine = LocalEngine(storage: storage, configuration: .defaults(for: .local), localConfiguration: localConfiguration)
-        
         // Initialize external API engine (Phase 2C)
         self.externalEngine = ExternalAPIEngine(storage: storage)
         
@@ -73,23 +67,16 @@ public actor SummarizationCoordinator {
             preferredTier = tier
             print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
         } else {
-            // No saved preference - set default based on availability
-            let modelManager = ModelFileManager.shared
-            let localModelAvailable = await modelManager.availableModels().isEmpty == false
-            
-            if localModelAvailable {
-                // Local AI is default when model is downloaded and no preference set
-                preferredTier = .local
-                UserDefaults.standard.set(EngineTier.local.rawValue, forKey: Self.preferredEngineKey)
-                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Local AI")
+            // No saved preference - default to External if API key exists, else Basic
+            if let external = externalEngine, await external.isAvailable() {
+                preferredTier = .external
+                UserDefaults.standard.set(EngineTier.external.rawValue, forKey: Self.preferredEngineKey)
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to External AI")
             } else {
-                // Fall back to basic if no local model
                 preferredTier = .basic
                 print("🧠 [SummarizationCoordinator] No preference set - defaulting to Basic")
             }
         }
-        
-        await applyLocalPreset()
         
         await selectBestAvailableEngine()
         print("✅ [SummarizationCoordinator] Active engine: \(activeEngine.tier.displayName)")
@@ -112,10 +99,6 @@ public actor SummarizationCoordinator {
         
         if let apple = appleEngine, await apple.isAvailable() {
             available.append(.apple)
-        }
-        
-        if let local = localEngine, await local.isAvailable() {
-            available.append(.local)
         }
         
         if let external = externalEngine, await external.isAvailable() {
@@ -146,19 +129,6 @@ public actor SummarizationCoordinator {
         print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
         await selectBestAvailableEngine()
     }
-
-    public func setLocalPresetOverride(_ preset: LocalLLMConfiguration.Preset?) async {
-        LocalLLMConfiguration.persistPresetOverride(preset)
-        await applyLocalPreset()
-        await selectBestAvailableEngine()
-        await MainActor.run {
-            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-        }
-    }
-
-    public func getLocalConfiguration() -> LocalLLMConfiguration {
-        localConfiguration
-    }
     
     /// Select the best available engine based on user preference
     private func selectBestAvailableEngine() async {
@@ -174,12 +144,6 @@ public actor SummarizationCoordinator {
                 return
             }
             
-        case .local:
-            if let local = localEngine, await local.isAvailable() {
-                activeEngine = local
-                return
-            }
-            
         case .external:
             if let external = externalEngine, await external.isAvailable() {
                 activeEngine = external
@@ -189,15 +153,6 @@ public actor SummarizationCoordinator {
         
         // Fallback to basic if preferred unavailable
         activeEngine = basicEngine
-    }
-
-    private func applyLocalPreset() async {
-        let profile = LocalLLMConfiguration.DeviceProfile.current
-        localConfiguration = LocalLLMConfiguration.current(profile: profile)
-        if let local = localEngine as? LocalEngine {
-            await local.updateLocalConfiguration(localConfiguration)
-        }
-        print("⚙️ [SummarizationCoordinator] Local preset set to \(localConfiguration.preset.displayName) (\(localConfiguration.tokensDescription))")
     }
     
     // MARK: - Session Summarization
@@ -329,28 +284,7 @@ public actor SummarizationCoordinator {
         )
     }
 
-    // MARK: - Local-Only Period Summaries
-
-    /// Generate a daily summary using only the local engine
-    public func generateLocalDailySummary(for date: Date) async throws -> Summary {
-        try await withLocalEngine {
-            try await generateDailySummary(for: date)
-        }
-    }
-
-    /// Generate a weekly summary using only the local engine
-    public func generateLocalWeeklySummary(for date: Date) async throws -> Summary {
-        try await withLocalEngine {
-            try await generateWeeklySummary(for: date)
-        }
-    }
-
-    /// Generate a monthly summary using only the local engine
-    public func generateLocalMonthlySummary(for date: Date) async throws -> Summary {
-        try await withLocalEngine {
-            try await generateMonthlySummary(for: date)
-        }
-    }
+    // MARK: - Yearly Summarization
     
     /// Generate a yearly summary by aggregating monthly summaries
     /// - Parameter date: A date within the year to summarize
@@ -480,16 +414,6 @@ public actor SummarizationCoordinator {
         // Convert to Summary for database storage
         return try convertToSummary(periodIntelligence: intelligence)
     }
-
-    private func withLocalEngine<T>(_ block: () async throws -> T) async throws -> T {
-        guard let local = localEngine, await local.isAvailable() else {
-            throw SummarizationError.summarizationFailed("Local engine not available")
-        }
-        let previous = activeEngine
-        activeEngine = local
-        defer { activeEngine = previous }
-        return try await block()
-    }
     
     // MARK: - Conversion Helpers
     
@@ -556,13 +480,6 @@ extension SummarizationCoordinator {
     public func registerAppleEngine(_ engine: any SummarizationEngine) async {
         guard engine.tier == .apple else { return }
         self.appleEngine = engine
-        await selectBestAvailableEngine()
-    }
-    
-    /// Register local model engine (when implemented)
-    public func registerLocalEngine(_ engine: any SummarizationEngine) async {
-        guard engine.tier == .local else { return }
-        self.localEngine = engine
         await selectBestAvailableEngine()
     }
     

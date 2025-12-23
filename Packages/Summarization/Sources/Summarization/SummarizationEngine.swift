@@ -14,19 +14,17 @@ import SharedModels
 public enum EngineTier: String, Codable, Sendable, CaseIterable {
     case basic      // Simple extractive + keyword extraction
     case apple      // Apple Intelligence / Foundation Models (iOS 18.1+)
-    case local      // Local LLM (llama.cpp, Phi-3-mini)
     case external   // External API (OpenAI, Anthropic with user keys)
     
     /// Private/on-device tiers only (excludes external)
     public static var privateTiers: [EngineTier] {
-        [.basic, .apple, .local]
+        [.basic, .apple]
     }
     
     public var displayName: String {
         switch self {
         case .basic: return "Basic"
         case .apple: return "Apple Intelligence"
-        case .local: return "Local AI"
         case .external: return "Year Wrapped Pro AI"
         }
     }
@@ -35,8 +33,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .basic: return "Fast, simple summarization"
         case .apple: return "Apple's on-device AI (iOS 18.1+)"
-        case .local: return "Phi-3.5 Mini running locally"
-        case .external: return "OpenAI, Anthropic (Year Wrap only by default)"
+        case .external: return "OpenAI, Anthropic with your API keys"
         }
     }
     
@@ -44,7 +41,6 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .basic: return "bolt.fill"
         case .apple: return "apple.intelligence"
-        case .local: return "cpu.fill"
         case .external: return "sparkles"
         }
     }
@@ -52,20 +48,18 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     public var description: String {
         switch self {
         case .basic:
-            return "Fast on-device extractive summarization using sentence scoring and keyword analysis"
+            return "Fast on-device extractive summarization using sentence scoring and keyword analysis. Works offline."
         case .apple:
-            return "Advanced AI using Apple's on-device Foundation Models (iOS 18.1+, Apple Intelligence enabled)"
-        case .local:
-            return "High-quality AI using local models (Phi-3.5 Mini, ~2.4GB). Processing happens entirely on your device"
+            return "Advanced AI using Apple's on-device Foundation Models (iOS 18.1+, Apple Intelligence enabled). Works offline."
         case .external:
-            return "Premium AI using external services (OpenAI or Anthropic). Required for Year Wrap feature. Select as active to also use for session summaries. Requires API key and internet connection"
+            return "Premium AI using external services (OpenAI or Anthropic). Requires your API key and internet connection. Automatically falls back to Basic when offline."
         }
     }
     
     /// Whether this tier requires internet connectivity
     public var requiresInternet: Bool {
         switch self {
-        case .basic, .apple, .local: return false
+        case .basic, .apple: return false
         case .external: return true
         }
     }
@@ -73,7 +67,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     /// Whether this tier is privacy-preserving (fully on-device)
     public var isPrivacyPreserving: Bool {
         switch self {
-        case .basic, .apple, .local: return true
+        case .basic, .apple: return true
         case .external: return false
         }
     }
@@ -170,15 +164,6 @@ public struct EngineConfiguration: Sendable {
                 temperature: 0.3,
                 maxTokens: 2000
             )
-        case .local:
-            return EngineConfiguration(
-                tier: .local,
-                minimumWords: 1,
-                maxContextLength: 4096,
-                timeoutSeconds: 60.0,
-                temperature: 0.2,  // Low temperature for deterministic summaries
-                maxTokens: 256
-            )
         case .external:
             return EngineConfiguration(
                 tier: .external,
@@ -207,7 +192,6 @@ extension SummarizationEngine {
         switch tier {
         case .basic: return "bolt.fill"
         case .apple: return "apple.intelligence"
-        case .local: return "cpu.fill"
         case .external: return "network"
         }
     }
