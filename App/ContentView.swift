@@ -5364,10 +5364,8 @@ struct SessionDetailView: View {
     @State private var generationPhase: String = ""
     @State private var showGenerationOverlay = false
     @State private var activeEngineForGeneration: EngineTier?
-    
-    // Regeneration tracking for Local AI
-    @State private var regenerationCount: Int = 0
-    @State private var showRegenerateConfirmation: Bool = false
+    @State private var showRegenerateWithNotesAlert: Bool = false
+    @State private var notesWereAppended: Bool = false
     
     var body: some View {
         ScrollView {
@@ -5430,20 +5428,21 @@ struct SessionDetailView: View {
                 aiGenerationOverlay
             }
         }
-        .alert("Append Notes to Summary?", isPresented: $showRegenerateConfirmation) {
-            Button("Cancel", role: .cancel) {
-                // Reset count on cancel
-                regenerationCount = 0
-            }
-            Button("Yes, Append") {
+        .alert("Regenerate Summary with Notes?", isPresented: $showRegenerateWithNotesAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove Notes") {
                 Task {
-                    // Append notes to existing summary
-                    await regenerateSummaryWithNotes()
-                    regenerationCount = 0
+                    notesWereAppended = false
+                    await regenerateSummary()
+                }
+            }
+            Button("Re-append Notes") {
+                Task {
+                    await regenerateSummary(reappendNotes: true)
                 }
             }
         } message: {
-            Text("This will append your notes to the end of the existing summary.")
+            Text("Your notes are currently appended to the summary. Would you like to regenerate and re-append them, or remove them?")
         }
     }
     
@@ -6392,7 +6391,12 @@ struct SessionDetailView: View {
                 // Regenerate button
                 Button {
                     Task {
-                        await handleRegenerateTap()
+                        // If notes were appended, ask user what to do
+                        if notesWereAppended {
+                            showRegenerateWithNotesAlert = true
+                        } else {
+                            await regenerateSummary()
+                        }
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -6621,29 +6625,6 @@ struct SessionDetailView: View {
         }
     }
     
-    private func handleRegenerateTap() async {
-        // Check if using Local AI
-        guard let summCoord = coordinator.summarizationCoordinator else {
-            await regenerateSummary()
-            return
-        }
-        
-        let activeEngine = await summCoord.getActiveEngine()
-        
-        if activeEngine == .local {
-            regenerationCount += 1
-            
-            // Show confirmation dialog on 2nd tap
-            if regenerationCount >= 2 {
-                showRegenerateConfirmation = true
-                return
-            }
-        }
-        
-        // First tap or non-Local AI: regenerate normally
-        await regenerateSummary()
-    }
-    
     private func regenerateSummaryWithNotes() async {
         guard !sessionNotes.isEmpty else { return }
         
@@ -6658,8 +6639,9 @@ struct SessionDetailView: View {
             // Reload summary to show changes
             await loadSessionSummary()
             
-            // Mark that notes were incorporated
+            // Mark that notes were incorporated and appended
             initialSessionNotes = sessionNotes
+            notesWereAppended = true
             
             coordinator.showSuccess("Notes appended to summary")
         } catch {
@@ -6681,7 +6663,7 @@ struct SessionDetailView: View {
         }
     }
     
-    private func regenerateSummary(forceWithNotes: Bool = false) async {
+    private func regenerateSummary(reappendNotes: Bool = false) async {
         isRegeneratingSummary = true
         summaryLoadError = nil
         
@@ -6784,13 +6766,20 @@ struct SessionDetailView: View {
                 }
             }
             
-            // Actual generation
-            let shouldIncludeNotes = forceWithNotes || !sessionNotes.isEmpty
+            // Actual generation (notes are never passed to AI anymore)
             try await coordinator.generateSessionSummary(
                 sessionId: session.sessionId, 
-                forceRegenerate: forceRegenerate || forceWithNotes,
-                includeNotes: shouldIncludeNotes
+                forceRegenerate: true,
+                includeNotes: false
             )
+            
+            // If requested, re-append notes after regeneration
+            if reappendNotes && !sessionNotes.isEmpty {
+                try? await coordinator.appendNotesToSessionSummary(sessionId: session.sessionId, notes: sessionNotes)
+                notesWereAppended = true
+            } else {
+                notesWereAppended = false
+            }
             
             generationProgress = 1.0
             generationPhase = "Complete!"
