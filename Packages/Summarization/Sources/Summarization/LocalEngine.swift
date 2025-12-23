@@ -173,43 +173,69 @@ public actor LocalEngine: SummarizationEngine {
         if aggregatedSummaries.isEmpty {
             // No cached summaries - intelligently chunk the transcript and process each
             print("🔄 [LocalEngine] No cached summaries found - intelligently chunking transcript for processing")
-            print("📊 [LocalEngine] Total words: \(wordCount), will chunk into ~60-word segments")
+            print("📊 [LocalEngine] Total words: \(wordCount), will chunk into ~120-word segments")
             
-            if await llamaContext.isReady() {
-                // Chunk the transcript intelligently (aim for ~60 words per chunk, ~30 seconds at 2 words/sec)
-                let words = transcriptText.split(separator: " ")
-                let chunkSize = 60  // ~30 seconds of speech at 2 words/sec
-                var chunkSummaries: [String] = []
-                
-                // Process in chunks
-                var currentIndex = 0
-                var chunkNumber = 1
-                while currentIndex < words.count {
-                    let endIndex = min(currentIndex + chunkSize, words.count)
-                    let chunkWords = words[currentIndex..<endIndex]
-                    let chunkText = chunkWords.joined(separator: " ")
+            // Ensure model is loaded before processing
+            if !(await llamaContext.isReady()) {
+                print("📥 [LocalEngine] Model not loaded, loading now...")
+                do {
+                    try await llamaContext.loadModel(.phi35)
+                    print("✅ [LocalEngine] Model loaded successfully")
+                } catch {
+                    print("❌ [LocalEngine] Failed to load model: \(error), using extractive fallback")
+                    finalSummary = extractiveSummary(from: transcriptText)
+                    // Continue with the rest of the method...
+                    let topics = extractTopics(from: finalSummary)
+                    let sentiment = analyzeSentiment(from: transcriptText)
+                    let entities = extractEntities(from: transcriptText)
                     
-                    print("🧩 [LocalEngine] Processing chunk \(chunkNumber): words \(currentIndex+1)-\(endIndex) of \(words.count)")
+                    let processingTime = Date().timeIntervalSince(startTime)
+                    summariesGenerated += 1
+                    totalProcessingTime += processingTime
                     
-                    // Generate summary for this chunk
-                    let prompt = LocalLLM.buildChunkPrompt(transcript: chunkText)
-                    let chunkSummary = try await llamaContext.generate(prompt: prompt, maxTokens: 128)
-                    chunkSummaries.append(chunkSummary)
-                    
-                    print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
-                    
-                    currentIndex = endIndex
-                    chunkNumber += 1
+                    return SessionIntelligence(
+                        sessionId: sessionId,
+                        summary: finalSummary,
+                        topics: topics,
+                        entities: entities,
+                        sentiment: sentiment,
+                        duration: duration,
+                        wordCount: wordCount,
+                        languageCodes: languageCodes,
+                        keyMoments: nil
+                    )
                 }
-                
-                // Aggregate all chunk summaries
-                print("🔗 [LocalEngine] Aggregating \(chunkSummaries.count) chunk summaries")
-                finalSummary = aggregateSummaries(chunkSummaries)
-            } else {
-                // Model not loaded, return extractive summary
-                print("⚠️ [LocalEngine] Model not ready, using extractive fallback")
-                finalSummary = extractiveSummary(from: transcriptText)
             }
+            
+            // Chunk the transcript intelligently (aim for ~120 words per chunk, ~60 seconds at 2 words/sec)
+            let words = transcriptText.split(separator: " ")
+            let chunkSize = 120  // ~60 seconds of speech at 2 words/sec
+            var chunkSummaries: [String] = []
+            
+            // Process in chunks
+            var currentIndex = 0
+            var chunkNumber = 1
+            while currentIndex < words.count {
+                let endIndex = min(currentIndex + chunkSize, words.count)
+                let chunkWords = words[currentIndex..<endIndex]
+                let chunkText = chunkWords.joined(separator: " ")
+                
+                print("🧩 [LocalEngine] Processing chunk \(chunkNumber): words \(currentIndex+1)-\(endIndex) of \(words.count)")
+                
+                // Generate summary for this chunk
+                let prompt = LocalLLM.buildChunkPrompt(transcript: chunkText)
+                let chunkSummary = try await llamaContext.generate(prompt: prompt, maxTokens: 128)
+                chunkSummaries.append(chunkSummary)
+                
+                print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
+                
+                currentIndex = endIndex
+                chunkNumber += 1
+            }
+            
+            // Aggregate all chunk summaries
+            print("🔗 [LocalEngine] Aggregating \(chunkSummaries.count) chunk summaries")
+            finalSummary = aggregateSummaries(chunkSummaries)
         } else {
             // Combine cached chunk summaries into final summary with deduplication
             print("✅ [LocalEngine] Using \(aggregatedSummaries.count) cached chunk summaries")

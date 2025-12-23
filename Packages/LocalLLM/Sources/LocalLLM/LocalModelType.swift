@@ -40,7 +40,7 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
     public var recommendedConfig: (nCTX: Int32, batch: Int32, maxTokens: Int32, temp: Float) {
         switch self {
         case .phi35:
-            return (nCTX: 1024, batch: 128, maxTokens: 256, temp: 0.2)
+            return (nCTX: 2048, batch: 128, maxTokens: 256, temp: 0.2)
         }
     }
     

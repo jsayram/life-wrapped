@@ -820,6 +820,14 @@ public final class AppCoordinator: ObservableObject {
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
+        // If force regenerating, clear cached chunk summaries for Local AI
+        if forceRegenerate {
+            let chunkIds = chunks.map { $0.id }
+            let localEngine = await coordinator.getLocalEngine()
+            await localEngine.clearChunkSummaries(for: chunkIds)
+            print("🗑️ [AppCoordinator] Cleared \(chunkIds.count) cached chunk summaries for force regeneration")
+        }
+        
         // Use the user's active engine (respects their settings choice)
         let activeEngine = await coordinator.getActiveEngine()
         print("🧠 [AppCoordinator] Using active summarization engine: \(activeEngine.displayName)")
