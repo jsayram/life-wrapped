@@ -767,8 +767,8 @@ public final class AppCoordinator: ObservableObject {
             print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
             
             // Unload model after session is complete to free memory
-            if let coordinator = self.summarizationCoordinator,
-               let localEngine = await coordinator.getLocalEngine() {
+            if let coordinator = self.summarizationCoordinator {
+                let localEngine = await coordinator.getLocalEngine()
                 print("🧹 [AppCoordinator] Unloading Local AI model after session completion...")
                 await localEngine.unloadModel()
                 print("✅ [AppCoordinator] Model memory freed, reducing thermal and battery impact")
@@ -907,8 +907,8 @@ public final class AppCoordinator: ObservableObject {
         print("🎉 [AppCoordinator] === SESSION SUMMARY COMPLETE ===")
         
         // Unload Local AI model from memory to free resources
-        if let coordinator = self.summarizationCoordinator,
-           let localEngine = await coordinator.getLocalEngine() {
+        if let coordinator = self.summarizationCoordinator {
+            let localEngine = await coordinator.getLocalEngine()
             print("🧹 [AppCoordinator] Unloading Local AI model to free memory...")
             await localEngine.unloadModel()
             print("✅ [AppCoordinator] Model unloaded, memory released")
