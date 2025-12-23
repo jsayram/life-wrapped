@@ -222,6 +222,19 @@ public final class AppCoordinator: ObservableObject {
             self.databaseManager = dbManager
             print("✅ [AppCoordinator] DatabaseManager initialized")
             
+            // Load user settings
+            print("⚙️ [AppCoordinator] Loading user settings...")
+            let savedChunkDuration = UserDefaults.standard.double(forKey: "autoChunkDuration")
+            if savedChunkDuration > 0 {
+                audioCapture.autoChunkDuration = savedChunkDuration
+                print("✅ [AppCoordinator] Loaded chunk duration: \(Int(savedChunkDuration))s")
+            } else {
+                // Set and save default
+                audioCapture.autoChunkDuration = 180  // 3 minutes default
+                UserDefaults.standard.set(180.0, forKey: "autoChunkDuration")
+                print("✅ [AppCoordinator] Using default chunk duration: 180s")
+            }
+            
             // Initialize managers that need storage
             print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)

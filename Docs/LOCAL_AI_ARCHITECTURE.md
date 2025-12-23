@@ -274,30 +274,39 @@ Summary:
 - Hallucinates fake documents
 - Leaks control tokens (`<|endoftext|>`)
 
-**After (CORRECT):**
+**Current Implementation (V1):**
 
 ```swift
 private func buildSimplifiedPrompt(text: String) -> String {
     return """
     <|system|>
-    You are a voice journal assistant. Convert spoken words into clean first-person notes.
+    You clean up voice notes. Output ONLY the cleaned text. Never add explanations.
     <|end|>
     <|user|>
-    Rewrite this transcript in first person. Remove filler words (um, uh, like). Keep it brief and factual.
+    Fix grammar and remove filler words from this transcript. Output the cleaned text ONLY.
 
-    Transcript: \(text)
+    WRONG (DO NOT DO THIS):
+    "Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)"
+
+    CORRECT (DO THIS):
+    "Today I worked on the project."
+
+    Never write "(Note:" or any explanation. Just output the cleaned spoken words.
+
+    \(text)
     <|end|>
     <|assistant|>
     """
 }
 ```
 
-**Improvements:**
+**Key Design Principles:**
 
-- ✅ Proper section boundaries with `<|end|>`
-- ✅ Clear role separation (system → user → assistant)
-- ✅ Simplified instructions ("brief and factual")
-- ✅ No verbose rules or JSON requirements
+- ✅ Proper Phi-3.5 chat template with `<|system|>`, `<|user|>`, `<|assistant|>`, `<|end|>` markers
+- ✅ Concrete WRONG vs CORRECT examples (models learn better from examples)
+- ✅ Direct, short system prompt ("Output ONLY the cleaned text")
+- ✅ Explicit prohibition of meta-commentary ("Never write '(Note:'")
+- ✅ Single clear instruction: output cleaned spoken words only
 
 ### Stop Sequence Handling
 
@@ -428,6 +437,23 @@ Input:  Any transcript
 Output: Should NOT contain: <|end|>, <|endoftext|>, <|user|>, <|system|>
 ❌ If control characters present → STOP SEQUENCE HANDLING FAILED
 ```
+
+**Test 4: No Meta-Commentary Check**
+
+```
+Input:  "I worked on the project today"
+Output: "I worked on the project today."
+✅ Clean output, no additions
+❌ If output contains "(Note:...)" or explanations → PROMPT ENGINEERING FAILED
+```
+
+**Example of FAILURE:**
+
+```
+Bad Output: "I worked on the project today. (Note: The transcript has been cleaned up for clarity.)"
+```
+
+This indicates the model is adding meta-commentary despite instructions. The current prompt uses concrete WRONG vs CORRECT examples to prevent this.
 
 ### Performance Tests
 
@@ -609,15 +635,16 @@ Output (20-50 words, first person, clean)
 
 ### Parameters Reference
 
-| Parameter      | Value       | Rationale                                 |
-| -------------- | ----------- | ----------------------------------------- |
-| Context Window | 2048 tokens | Fits 120-word chunks + prompt             |
-| Batch Size     | 128 tokens  | Optimal for Apple Silicon                 |
-| Max Tokens     | 128         | Concise summaries, prevents hallucination |
-| Temperature    | 0.3         | Factual but natural language              |
-| Stop Sequences | 4 tokens    | Prevent control leakage & hallucination   |
-| Chunk Size     | 120 words   | ~60 sec speech at 2 words/sec             |
-| Hash Algorithm | SHA256      | Fast (<1ms), collision-resistant          |
+| Parameter          | Value                 | Rationale                                                     |
+| ------------------ | --------------------- | ------------------------------------------------------------- |
+| Context Window     | 2048 tokens           | Fits 120-word chunks + prompt                                 |
+| Batch Size         | 128 tokens            | Optimal for Apple Silicon                                     |
+| Max Tokens         | 128                   | Concise summaries, prevents hallucination                     |
+| Temperature        | 0.3                   | Factual but natural language                                  |
+| Stop Sequences     | 4 tokens              | Prevent control leakage & hallucination                       |
+| Chunk Duration     | 30-300s (user choice) | Default 180s, saved to UserDefaults, configurable in Settings |
+| Chunk Size (words) | 120 words             | ~60 sec speech at 2 words/sec                                 |
+| Hash Algorithm     | SHA256                | Fast (<1ms), collision-resistant                              |
 
 ---
 

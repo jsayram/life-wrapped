@@ -564,18 +564,18 @@ public actor LocalEngine: SummarizationEngine {
     private func buildSimplifiedPrompt(text: String) -> String {
         return """
         <|system|>
-        You are a note-taking assistant. Convert messy voice transcripts into clean first-person notes.
+        You clean up voice notes. Output ONLY the cleaned text. Never add explanations.
         <|end|>
         <|user|>
-        Clean up this transcript. Fix grammar and remove filler words. Keep the natural voice. Write as simple first-person notes.
+        Fix grammar and remove filler words from this transcript. Output the cleaned text ONLY.
 
-        DO NOT add:
-        - "(Note: ...)" explanations
-        - Editor's commentary
-        - Score interpretations
-        - Action summaries
+        WRONG (DO NOT DO THIS):
+        "Today I worked on the project. (Note: The transcript has been cleaned up for clarity.)"
 
-        Just rewrite the spoken words clearly.
+        CORRECT (DO THIS):
+        "Today I worked on the project."
+
+        Never write "(Note:" or any explanation. Just output the cleaned spoken words.
 
         \(text)
         <|end|>

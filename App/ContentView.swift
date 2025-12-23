@@ -120,6 +120,14 @@ extension Color {
 // MARK: - UserDefaults Extension for Rollup Settings
 
 extension UserDefaults {
+    var autoChunkDuration: TimeInterval {
+        get {
+            let value = double(forKey: "autoChunkDuration")
+            return value > 0 ? value : 180  // Default 180s (3 minutes)
+        }
+        set { set(newValue, forKey: "autoChunkDuration") }
+    }
+    
     var rollupDateFormat: String {
         get { string(forKey: "rollupDateFormat") ?? "MMM d, yyyy" }
         set { set(newValue, forKey: "rollupDateFormat") }
@@ -2445,6 +2453,7 @@ struct RecordingSettingsView: View {
                     .tint(AppTheme.purple)
                     .onChange(of: chunkDuration) { oldValue, newValue in
                         coordinator.audioCapture.autoChunkDuration = newValue
+                        UserDefaults.standard.autoChunkDuration = newValue
                         coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
                     }
                 }
@@ -2503,7 +2512,10 @@ struct RecordingSettingsView: View {
         .navigationTitle("Recording Chunks")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            chunkDuration = coordinator.audioCapture.autoChunkDuration
+            // Load saved setting or use current value
+            let savedDuration = UserDefaults.standard.autoChunkDuration
+            chunkDuration = savedDuration
+            coordinator.audioCapture.autoChunkDuration = savedDuration
         }
     }
 }
