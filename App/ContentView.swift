@@ -681,12 +681,10 @@ struct RecordingButton: View {
                     print("⏹️ [RecordingButton] Stopping recording...")
                     _ = try await coordinator.stopRecording()
                     print("✅ [RecordingButton] Recording stopped")
-                    coordinator.showSuccess("Recording saved successfully!")
                 } else if case .idle = coordinator.recordingState {
                     print("▶️ [RecordingButton] Starting recording...")
                     try await coordinator.startRecording()
                     print("✅ [RecordingButton] Recording started")
-                    coordinator.showSuccess("Recording started")
                 }
             } catch {
                 print("❌ [RecordingButton] Action failed: \(error.localizedDescription)")
