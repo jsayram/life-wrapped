@@ -256,8 +256,9 @@ public actor SummarizationCoordinator {
         var lastError: Error?
         var engineToTry = activeEngine
         
-        // Define fallback chain: External → Local → Apple → Basic
-        let fallbackChain: [EngineTier] = [.external, .local, .apple, .basic]
+        // Define fallback chain: External → Local → Basic
+        // Apple Intelligence is not in automatic fallback - user must explicitly select it
+        let fallbackChain: [EngineTier] = [.external, .local, .basic]
         var triedEngines: [EngineTier] = []
         
         for tier in fallbackChain {

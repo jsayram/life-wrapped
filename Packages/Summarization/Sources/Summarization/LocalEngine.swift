@@ -392,4 +392,48 @@ public actor LocalEngine: SummarizationEngine {
         "march", "april", "may", "june", "july", "august", "september",
         "october", "november", "december", "ok", "okay"
     ]
+    
+    // MARK: - Model Management
+    
+    /// Check if the local AI model is downloaded
+    public func isModelDownloaded() async -> Bool {
+        return await modelFileManager.isModelDownloaded(.phi35)
+    }
+    
+    /// Download the local AI model with progress tracking
+    /// - Parameter progress: Closure called with download progress (0.0-1.0)
+    public func downloadModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
+        try await modelFileManager.downloadModel(.phi35, progress: progress)
+    }
+    
+    /// Delete the local AI model
+    public func deleteModel() async throws {
+        try await modelFileManager.deleteModel(.phi35)
+        // Unload from memory if loaded
+        await llamaContext.unloadModel()
+    }
+    
+    /// Get the size of the downloaded model in bytes, or nil if not downloaded
+    public func modelSizeBytes() async -> Int64? {
+        return await modelFileManager.modelSize(.phi35)
+    }
+    
+    /// Get formatted model size string: "Downloaded (770 MB)" or "Not Downloaded"
+    public func modelSizeFormatted() async -> String {
+        if let size = await modelFileManager.modelSize(.phi35) {
+            let sizeMB = size / (1024 * 1024)
+            return "Downloaded (\(sizeMB) MB)"
+        }
+        return "Not Downloaded"
+    }
+    
+    /// Get the expected model size for display before download
+    public var expectedModelSizeMB: String {
+        return "~770 MB"
+    }
+    
+    /// Get the model display name
+    public var modelDisplayName: String {
+        return LocalModelType.phi35.displayName
+    }
 }

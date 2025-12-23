@@ -2517,6 +2517,13 @@ struct AISettingsView: View {
     @State private var showingSmartestConfig = false
     @State private var wiggleAPIKeyField = false
     
+    // Local AI model state
+    @State private var localModelStatus: String = "Checking..."
+    @State private var isLocalModelDownloaded: Bool = false
+    @State private var isDownloadingModel: Bool = false
+    @State private var downloadProgress: Double = 0.0
+    @State private var showDeleteConfirmation: Bool = false
+    
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
     @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
@@ -2565,6 +2572,18 @@ struct AISettingsView: View {
                     onSelect: { selectEngine(.basic) }
                 )
                 
+                // Local AI (Phi-3.5)
+                SummaryQualityCard(
+                    emoji: "🤖",
+                    title: "Local AI",
+                    subtitle: coordinator.localModelDisplayName,
+                    detail: localModelStatus,
+                    tier: .local,
+                    isSelected: activeEngine == .local,
+                    isAvailable: isLocalModelDownloaded,
+                    onSelect: { selectEngine(.local) }
+                )
+                
                 // Smarter (Apple Intelligence)
                 SummaryQualityCard(
                     emoji: "🧠",
@@ -2595,7 +2614,7 @@ struct AISettingsView: View {
             }
             
             // MARK: - Smartest Configuration
-            if activeEngine == .external || showingSmartestConfig || showAPIKeyField || hasValidAPIKey() {
+            if activeEngine == .external {
                 Section {
                     // Provider Selection
                     Picker("Provider", selection: $selectedProvider) {
@@ -2703,6 +2722,84 @@ struct AISettingsView: View {
                     }
                 }
             }
+            
+            // MARK: - Local AI Model Management
+            if activeEngine == .local {
+                Section {
+                    if isDownloadingModel {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            
+                            Text("Downloading \(coordinator.localModelDisplayName)...")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Text("You can leave this screen. We'll notify you when the download is complete.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                    } else if isLocalModelDownloaded {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(coordinator.localModelDisplayName)
+                                .font(.subheadline)
+                            Text(localModelStatus)
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(coordinator.localModelDisplayName)
+                                .font(.subheadline)
+                            Text("Not Downloaded • \(coordinator.expectedLocalModelSizeMB)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            downloadLocalModel()
+                        } label: {
+                            Label("Download", systemImage: "arrow.down.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                    }
+                }
+            } header: {
+                Text("Local AI Model")
+            } footer: {
+                if isDownloadingModel {
+                    Text("Download continues in the background. You'll receive a notification when complete.")
+                } else if !isLocalModelDownloaded {
+                    Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
+                } else {
+                    Text("The local AI model enables on-device summarization. It runs entirely on your device for maximum privacy.")
+                }
+            }
+            .alert("Delete Local AI Model?", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteLocalModel()
+                }
+            } message: {
+                Text("This will remove the \\(coordinator.expectedLocalModelSizeMB) model from your device. You can re-download it anytime.")
+            }
+            } // End of if activeEngine == .local
         }
         .navigationTitle("AI & Summaries")
         .task {
@@ -2725,9 +2822,66 @@ struct AISettingsView: View {
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         activeEngine = await summCoord.getActiveEngine()
         availableEngines = await summCoord.getAvailableEngines()
+        
+        // Load local model status
+        isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+        localModelStatus = await coordinator.localModelSizeFormatted()
+    }
+    
+    private func downloadLocalModel() {
+        guard !isDownloadingModel else { return }
+        isDownloadingModel = true
+        downloadProgress = 0.0
+        
+        Task {
+            do {
+                try await coordinator.downloadLocalModel { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress
+                    }
+                }
+                await MainActor.run {
+                    isDownloadingModel = false
+                    isLocalModelDownloaded = true
+                }
+                // Refresh status
+                await loadEngineStatus()
+            } catch {
+                await MainActor.run {
+                    isDownloadingModel = false
+                    coordinator.showError("Download failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    private func deleteLocalModel() {
+        Task {
+            do {
+                try await coordinator.deleteLocalModel()
+                await MainActor.run {
+                    isLocalModelDownloaded = false
+                    localModelStatus = "Not Downloaded"
+                }
+                // Refresh status
+                await loadEngineStatus()
+            } catch {
+                coordinator.showError("Delete failed: \(error.localizedDescription)")
+            }
+        }
     }
     
     private func selectEngine(_ tier: EngineTier) {
+        // For Local AI without model, allow selection so user sees download option
+        if tier == .local && !isLocalModelDownloaded {
+            // Set active engine to show the download section
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(tier)
+                await loadEngineStatus()
+            }
+            return
+        }
         if tier == .apple && !availableEngines.contains(.apple) {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
             return

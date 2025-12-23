@@ -1868,6 +1868,58 @@ public final class AppCoordinator: ObservableObject {
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
+    
+    // MARK: - Local AI Model Management
+    
+    /// Check if the local AI model is downloaded
+    public func isLocalModelDownloaded() async -> Bool {
+        guard let coordinator = summarizationCoordinator else { return false }
+        return await coordinator.getLocalEngine().isModelDownloaded()
+    }
+    
+    /// Download the local AI model with progress tracking
+    /// - Parameter progress: Closure called with download progress (0.0-1.0)
+    public func downloadLocalModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
+        guard let coordinator = summarizationCoordinator else {
+            throw AppCoordinatorError.notInitialized
+        }
+        try await coordinator.getLocalEngine().downloadModel(progress: progress)
+        showSuccess("Local AI model downloaded")
+    }
+    
+    /// Delete the local AI model and switch to Basic tier if needed
+    public func deleteLocalModel() async throws {
+        guard let coordinator = summarizationCoordinator else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Delete the model
+        try await coordinator.getLocalEngine().deleteModel()
+        
+        // If current tier is .local, switch to .basic
+        let currentTier = await coordinator.getActiveEngine()
+        if currentTier == .local {
+            await coordinator.setPreferredEngine(.basic)
+        }
+        
+        showSuccess("Local AI model deleted")
+    }
+    
+    /// Get formatted model size string: "Downloaded (770 MB)" or "Not Downloaded"
+    public func localModelSizeFormatted() async -> String {
+        guard let coordinator = summarizationCoordinator else { return "Not Downloaded" }
+        return await coordinator.getLocalEngine().modelSizeFormatted()
+    }
+    
+    /// Get the expected model size for display before download
+    public var expectedLocalModelSizeMB: String {
+        return "~770 MB"
+    }
+    
+    /// Get the local model display name
+    public var localModelDisplayName: String {
+        return "Phi-3.5 Mini"
+    }
 }
 
 // MARK: - Notifications
@@ -1875,8 +1927,6 @@ public final class AppCoordinator: ObservableObject {
 extension Notification.Name {
     static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
 }
-
-// MARK: - Preview Support
 
 #if DEBUG
 extension AppCoordinator {
