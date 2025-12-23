@@ -6450,11 +6450,26 @@ struct SessionDetailView: View {
             transcriptWasEdited = false
             
             try? await Task.sleep(nanoseconds: 500_000_000) // Show complete state briefly
-            coordinator.showSuccess("Summary generated")
+            
+            // Show success with engine used
+            if let summary = sessionSummary {
+                let engineName = summary.engineTier ?? "AI"
+                coordinator.showSuccess("Summary generated with \(engineName)")
+            } else {
+                coordinator.showSuccess("Summary generated")
+            }
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
             summaryLoadError = error.localizedDescription
-            coordinator.showError("Failed to generate summary")
+            
+            // Better error messaging
+            if error.localizedDescription.contains("internet") || error.localizedDescription.contains("network") {
+                coordinator.showError("Network error. Using offline summary.")
+            } else if error.localizedDescription.contains("API key") {
+                coordinator.showError("API key required for external AI")
+            } else {
+                coordinator.showError("Failed to generate summary")
+            }
         }
     }
 

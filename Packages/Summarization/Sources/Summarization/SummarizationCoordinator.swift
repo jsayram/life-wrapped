@@ -200,16 +200,84 @@ public actor SummarizationCoordinator {
         // Extract language codes
         let languageCodes = Array(Set(segments.map { $0.languageCode }))
         
-        // Generate intelligence using active engine
-        let intelligence = try await activeEngine.summarizeSession(
-            sessionId: sessionId,
-            transcriptText: transcriptText,
-            duration: duration,
-            languageCodes: languageCodes
-        )
+        // Try active engine first, with automatic fallback on failure
+        var lastError: Error?
+        var engineToTry = activeEngine
         
-        // Convert to Summary for database storage
-        return try convertToSummary(intelligence: intelligence)
+        // Define fallback chain: External → Apple → Basic
+        let fallbackChain: [EngineTier] = [.external, .apple, .basic]
+        var triedEngines: [EngineTier] = []
+        
+        for tier in fallbackChain {
+            // Skip if we've already tried this tier
+            if triedEngines.contains(tier) {
+                continue
+            }
+            
+            // Get the engine for this tier
+            if tier == activeEngine.tier {
+                engineToTry = activeEngine
+            } else if tier == .apple, let apple = appleEngine {
+                engineToTry = apple
+            } else if tier == .external, let external = externalEngine {
+                engineToTry = external
+            } else if tier == .basic {
+                engineToTry = basicEngine
+            } else {
+                continue // Skip unavailable engines
+            }
+            
+            // Check if engine is available
+            let isAvailable = await engineToTry.isAvailable()
+            if !isAvailable {
+                print("⚠️ [SummarizationCoordinator] \(tier.displayName) unavailable, trying next engine...")
+                triedEngines.append(tier)
+                continue
+            }
+            
+            triedEngines.append(tier)
+            
+            do {
+                print("🧠 [SummarizationCoordinator] Attempting summarization with \(tier.displayName)...")
+                
+                // Generate intelligence using this engine
+                let intelligence = try await engineToTry.summarizeSession(
+                    sessionId: sessionId,
+                    transcriptText: transcriptText,
+                    duration: duration,
+                    languageCodes: languageCodes
+                )
+                
+                // Success! Convert to Summary and return
+                print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
+                return try convertToSummary(intelligence: intelligence)
+                
+            } catch {
+                print("❌ [SummarizationCoordinator] \(tier.displayName) failed: \(error.localizedDescription)")
+                lastError = error
+                
+                // If this is External API and failed, try fallback immediately
+                if tier == .external {
+                    print("🔄 [SummarizationCoordinator] Network error detected, falling back to on-device engines...")
+                    continue
+                }
+                
+                // For other engines, if there are more to try, continue
+                if triedEngines.count < fallbackChain.count {
+                    continue
+                } else {
+                    // All engines failed
+                    throw error
+                }
+            }
+        }
+        
+        // If we get here, all engines failed
+        if let error = lastError {
+            throw error
+        } else {
+            throw SummarizationError.summarizationFailed("All summarization engines unavailable")
+        }
     }
     
     // MARK: - Period Summarization
