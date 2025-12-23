@@ -491,6 +491,25 @@ public actor LocalEngine: SummarizationEngine {
     
     // MARK: - Model Management
     
+    /// Build a simplified prompt optimized for local MLX inference
+    /// Uses less verbose instructions to reduce memory pressure
+    private func buildSimplifiedPrompt(text: String) -> String {
+        return """
+        You are a voice journal assistant. Rewrite this spoken transcript into clean, first-person notes.
+
+        Rules:
+        - Write in first person (I, me, my) ONLY
+        - Remove filler words (um, uh, like)
+        - Keep all important details
+        - Return plain text summary (no JSON)
+
+        Transcript:
+        \(text)
+
+        Summary:
+        """
+    }
+    
     /// Check if the local AI model is downloaded
     public func isModelDownloaded() async -> Bool {
         return await modelFileManager.isModelDownloaded(.phi35)

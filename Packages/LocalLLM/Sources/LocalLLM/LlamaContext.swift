@@ -102,38 +102,58 @@ public actor LlamaContext {
         let maxTokensToGenerate = maxTokens ?? config.maxTokens
         
         print("🔄 [LlamaContext] Generating with temperature: \(config.temp), maxTokens: \(maxTokensToGenerate)")
+        print("📝 [LlamaContext] Prompt length: \(prompt.count) characters")
         
-        // Generate using MLX
-        let (result, _) = try await container.perform { context in
-            // Prepare input
-            let input = try await context.processor.prepare(input: .init(prompt: prompt))
-            
-            // Set generation parameters
-            let parameters = GenerateParameters(
-                maxTokens: Int(maxTokensToGenerate),
-                temperature: config.temp,
-                topP: 0.95
-            )
-            
-            // Generate text
-            var output = ""
-            let stream = try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
-            
-            for try await item in stream {
-                switch item {
-                case .chunk(let text):
-                    output += text
-                case .info:
-                    break
-                case .toolCall:
-                    break
-                }
-            }
-            
-            return (output, ())
+        // Validate prompt isn't too large
+        guard prompt.count < 8000 else {
+            print("⚠️ [LlamaContext] Prompt too large (\(prompt.count) chars), truncating...")
+            let truncatedPrompt = String(prompt.prefix(7000)) + "\n\nSummary:"
+            return try await generate(prompt: truncatedPrompt, maxTokens: maxTokens)
         }
         
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            // Generate using MLX with error handling
+            let (result, _) = try await container.perform { context in
+                // Prepare input
+                let input = try await context.processor.prepare(input: .init(prompt: prompt))
+                
+                // Set generation parameters with conservative settings
+                let parameters = GenerateParameters(
+                    maxTokens: Int(maxTokensToGenerate),
+                    temperature: config.temp,
+                    topP: 0.95
+                )
+                
+                // Generate text
+                var output = ""
+                let stream = try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
+            
+                for try await item in stream {
+                    switch item {
+                    case .chunk(let text):
+                        output += text
+                        // Safety check: stop if output gets too long
+                        if output.count > 4000 {
+                            print("⚠️ [LlamaContext] Output exceeding 4000 chars, stopping generation")
+                            break
+                        }
+                    case .info:
+                        break
+                    case .toolCall:
+                        break
+                    }
+                }
+            
+                return (output, ())
+            }
+        
+            print("✅ [LlamaContext] Generated \(result.count) characters")
+            return result.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+        } catch {
+            print("❌ [LlamaContext] Generation failed: \(error)")
+            throw LlamaError.generationFailed(underlying: error)
+        }
     }
     
     // MARK: - Helpers
@@ -159,6 +179,7 @@ public enum LlamaError: Error, LocalizedError {
     case decodeFailed
     case documentsDirectoryNotFound
     case notImplemented
+    case generationFailed(underlying: Error)
     
     public var errorDescription: String? {
         switch self {
@@ -177,11 +198,13 @@ public enum LlamaError: Error, LocalizedError {
         case .contextOverflow(let prompt, let ctx):
             return "Prompt (\(prompt) tokens) too long for context (\(ctx) tokens)"
         case .decodeFailed:
-            return "Failed to decode tokens"
+            return "Failed to decode model output"
         case .documentsDirectoryNotFound:
-            return "Documents directory not found"
+            return "Could not access documents directory"
         case .notImplemented:
-            return "llama.cpp integration not yet implemented"
+            return "Feature not yet implemented"
+        case .generationFailed(let error):
+            return "Text generation failed: \(error.localizedDescription)"
         }
     }
 }
