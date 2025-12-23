@@ -113,6 +113,11 @@ public final class AppCoordinator: ObservableObject {
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
     
+    // MARK: - Local AI Model Download State
+    
+    @Published public private(set) var isDownloadingLocalModel: Bool = false
+    private var localModelDownloadTask: Task<Void, Never>?
+    
     // MARK: - Dependencies
     
     private var databaseManager: DatabaseManager?
@@ -1877,12 +1882,38 @@ public final class AppCoordinator: ObservableObject {
         return await coordinator.getLocalEngine().isModelDownloaded()
     }
     
-    /// Download the local AI model with progress tracking
+    /// Download the local AI model in the background
+    /// Download continues even if user navigates away from Settings
+    public func startLocalModelDownload() {
+        guard !isDownloadingLocalModel else { return }
+        guard let coordinator = summarizationCoordinator else { return }
+        
+        isDownloadingLocalModel = true
+        
+        localModelDownloadTask = Task {
+            do {
+                try await coordinator.getLocalEngine().downloadModel(progress: nil)
+                await MainActor.run {
+                    self.isDownloadingLocalModel = false
+                    self.showSuccess("Local AI model downloaded")
+                }
+            } catch {
+                await MainActor.run {
+                    self.isDownloadingLocalModel = false
+                    self.showError("Download failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// Download the local AI model with progress tracking (for setup flow)
     /// - Parameter progress: Closure called with download progress (0.0-1.0)
     public func downloadLocalModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
         guard let coordinator = summarizationCoordinator else {
             throw AppCoordinatorError.notInitialized
         }
+        isDownloadingLocalModel = true
+        defer { isDownloadingLocalModel = false }
         try await coordinator.getLocalEngine().downloadModel(progress: progress)
         showSuccess("Local AI model downloaded")
     }
@@ -1892,6 +1923,11 @@ public final class AppCoordinator: ObservableObject {
         guard let coordinator = summarizationCoordinator else {
             throw AppCoordinatorError.notInitialized
         }
+        
+        // Cancel any ongoing download
+        localModelDownloadTask?.cancel()
+        localModelDownloadTask = nil
+        isDownloadingLocalModel = false
         
         // Delete the model
         try await coordinator.getLocalEngine().deleteModel()

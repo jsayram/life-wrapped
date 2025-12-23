@@ -2520,8 +2520,6 @@ struct AISettingsView: View {
     // Local AI model state
     @State private var localModelStatus: String = "Checking..."
     @State private var isLocalModelDownloaded: Bool = false
-    @State private var isDownloadingModel: Bool = false
-    @State private var downloadProgress: Double = 0.0
     @State private var showDeleteConfirmation: Bool = false
     
     // External API state
@@ -2726,7 +2724,7 @@ struct AISettingsView: View {
             // MARK: - Local AI Model Management
             if activeEngine == .local {
                 Section {
-                    if isDownloadingModel {
+                    if coordinator.isDownloadingLocalModel {
                         VStack(spacing: 12) {
                             ProgressView()
                                 .scaleEffect(1.2)
@@ -2783,7 +2781,7 @@ struct AISettingsView: View {
             } header: {
                 Text("Local AI Model")
             } footer: {
-                if isDownloadingModel {
+                if coordinator.isDownloadingLocalModel {
                     Text("Download continues in the background. You'll receive a notification when complete.")
                 } else if !isLocalModelDownloaded {
                     Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
@@ -2811,6 +2809,15 @@ struct AISettingsView: View {
                 await loadEngineStatus()
             }
         }
+        .onChange(of: coordinator.isDownloadingLocalModel) { wasDownloading, isDownloading in
+            // Refresh model status when download completes
+            if wasDownloading && !isDownloading {
+                Task {
+                    isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+                    localModelStatus = await coordinator.localModelSizeFormatted()
+                }
+            }
+        }
     }
     
     // MARK: - Helper Methods
@@ -2829,30 +2836,9 @@ struct AISettingsView: View {
     }
     
     private func downloadLocalModel() {
-        guard !isDownloadingModel else { return }
-        isDownloadingModel = true
-        downloadProgress = 0.0
-        
-        Task {
-            do {
-                try await coordinator.downloadLocalModel { progress in
-                    Task { @MainActor in
-                        self.downloadProgress = progress
-                    }
-                }
-                await MainActor.run {
-                    isDownloadingModel = false
-                    isLocalModelDownloaded = true
-                }
-                // Refresh status
-                await loadEngineStatus()
-            } catch {
-                await MainActor.run {
-                    isDownloadingModel = false
-                    coordinator.showError("Download failed: \(error.localizedDescription)")
-                }
-            }
-        }
+        // Use coordinator's background download method
+        // Download state persists in coordinator even if view navigates away
+        coordinator.startLocalModelDownload()
     }
     
     private func deleteLocalModel() {
