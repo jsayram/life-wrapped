@@ -804,11 +804,21 @@ public final class AppCoordinator: ObservableObject {
         
         // Optionally append user notes if requested
         if includeNotes {
-            if let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sessionId),
-               let notes = metadata.notes, !notes.isEmpty {
-                print("📝 [AppCoordinator] Appending user notes to transcript for summary generation")
-                fullText += "\n\nAdditional context from user notes:\n\(notes)"
+            print("📝 [AppCoordinator] includeNotes=true, fetching metadata...")
+            if let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sessionId) {
+                print("📝 [AppCoordinator] Metadata fetched: title=\(metadata.title ?? "nil"), notes=\(metadata.notes ?? "nil"), notesLength=\(metadata.notes?.count ?? 0)")
+                if let notes = metadata.notes, !notes.isEmpty {
+                    print("📝 [AppCoordinator] ✅ Appending user notes (\(notes.count) chars) to transcript for summary generation")
+                    print("📝 [AppCoordinator] Notes preview: \(notes.prefix(100))...")
+                    fullText += "\n\nAdditional context from user notes:\n\(notes)"
+                } else {
+                    print("📝 [AppCoordinator] ⚠️ Notes are empty or nil, not appending")
+                }
+            } else {
+                print("❌ [AppCoordinator] Failed to fetch metadata for session")
             }
+        } else {
+            print("📝 [AppCoordinator] includeNotes=false, skipping notes")
         }
         
         let wordCount = fullText.split(separator: " ").count

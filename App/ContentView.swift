@@ -5365,7 +5365,11 @@ struct SessionDetailView: View {
     @State private var showGenerationOverlay = false
     @State private var activeEngineForGeneration: EngineTier?
     
-    var body: some View {
+    // Regeneration tracking for Local AI
+    @State private var regenerationCount: Int = 0
+    @State private var showRegenerateConfirmation: Bool = false
+    
+    var body: some View {    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // Session Title Section (Editable)
@@ -5425,6 +5429,21 @@ struct SessionDetailView: View {
             if showGenerationOverlay {
                 aiGenerationOverlay
             }
+        }
+        .alert("Regenerate Summary?", isPresented: $showRegenerateConfirmation) {
+            Button("Cancel", role: .cancel) {
+                // Reset count on cancel
+                regenerationCount = 0
+            }
+            Button("Yes, Regenerate") {
+                Task {
+                    // Force regenerate with notes
+                    await regenerateSummary(forceWithNotes: true)
+                    regenerationCount = 0
+                }
+            }
+        } message: {
+            Text("This will regenerate the summary with your transcript and any notes you've added.")
         }
     }
     
@@ -6260,7 +6279,7 @@ struct SessionDetailView: View {
     private func sessionSummaryErrorSection(error: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Transcript Sanitized")
+                Text("Recording Summary")
                     .font(.headline)
                 
                 Spacer()
@@ -6337,7 +6356,7 @@ struct SessionDetailView: View {
     private func sessionSummarySection(summary: Summary) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Transcipt Cleaned")
+                Text("Recording Summary")
                     .font(.headline)
                 
                 Spacer()
@@ -6373,7 +6392,7 @@ struct SessionDetailView: View {
                 // Regenerate button
                 Button {
                     Task {
-                        await regenerateSummary()
+                        await handleRegenerateTap()
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -6602,11 +6621,85 @@ struct SessionDetailView: View {
         }
     }
     
+    private func handleRegenerateTap() async {
+        // Check if using Local AI
+        guard let summCoord = coordinator.summarizationCoordinator else {
+            await regenerateSummary()
+            return
+        }
+        
+        let activeEngine = await summCoord.getActiveEngine()
+        
+        if activeEngine == .local {
+            regenerationCount += 1
+            
+            // Show confirmation dialog on 2nd tap
+            if regenerationCount >= 2 {
+                showRegenerateConfirmation = true
+                return
+            }
+        }
+        
+        // First tap or non-Local AI: regenerate normally
+        await regenerateSummary()
+    }
+    
     private func regenerateSummaryWithNotes() async {
         guard !sessionNotes.isEmpty else { return }
         
+        isRegeneratingSummary = true
+        summaryLoadError = nil
+        
+        // Get active engine to customize overlay message
+        guard let summCoord = coordinator.summarizationCoordinator else { 
+            isRegeneratingSummary = false
+            return 
+        }
+        let activeEngine = await summCoord.getActiveEngine()
+        activeEngineForGeneration = activeEngine
+        
+        // Show overlay
+        showGenerationOverlay = true
+        generationProgress = 0.0
+        
+        // Set initial phase based on engine
+        switch activeEngine {
+        case .basic:
+            generationPhase = "Processing transcript with notes..."
+        case .local:
+            generationPhase = "Running local AI model with notes..."
+        case .apple:
+            generationPhase = "Preparing with notes..."
+        case .external:
+            generationPhase = "Connecting to AI service with notes..."
+        }
+        
+        defer { 
+            isRegeneratingSummary = false
+            showGenerationOverlay = false
+        }
+        
         do {
-            isRegeneratingSummary = true
+            // Start progress simulation
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.3
+                    generationPhase = "Including your notes..."
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.6
+                    generationPhase = "Generating enhanced summary..."
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.9
+                    generationPhase = "Finalizing..."
+                }
+            }
             
             // Regenerate summary with includeNotes parameter
             try await coordinator.generateSessionSummary(
@@ -6619,14 +6712,16 @@ struct SessionDetailView: View {
             await loadSessionSummary()
             
             // Update initial notes state so button disappears
-            await MainActor.run {
-                initialSessionNotes = sessionNotes
-            }
+            initialSessionNotes = sessionNotes
             
-            isRegeneratingSummary = false
+            // Reset transcript edited flag
+            transcriptWasEdited = false
+            
+            coordinator.showSuccess("Summary regenerated with notes")
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary with notes: \(error)")
-            isRegeneratingSummary = false
+            summaryLoadError = error.localizedDescription
+            coordinator.showError("Failed to regenerate summary")
         }
     }
     
@@ -6642,7 +6737,7 @@ struct SessionDetailView: View {
         }
     }
     
-    private func regenerateSummary() async {
+    private func regenerateSummary(forceWithNotes: Bool = false) async {
         isRegeneratingSummary = true
         summaryLoadError = nil
         
@@ -6746,7 +6841,12 @@ struct SessionDetailView: View {
             }
             
             // Actual generation
-            try await coordinator.generateSessionSummary(sessionId: session.sessionId, forceRegenerate: forceRegenerate)
+            let shouldIncludeNotes = forceWithNotes || !sessionNotes.isEmpty
+            try await coordinator.generateSessionSummary(
+                sessionId: session.sessionId, 
+                forceRegenerate: forceRegenerate || forceWithNotes,
+                includeNotes: shouldIncludeNotes
+            )
             
             generationProgress = 1.0
             generationPhase = "Complete!"
