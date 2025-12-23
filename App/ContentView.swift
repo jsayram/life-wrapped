@@ -7683,20 +7683,55 @@ struct SessionSummaryCard: View {
     @State private var fetchedSession: RecordingSession?
     @State private var shouldNavigate = false
     
+    /// Whether this card is for a session that can be navigated to
+    private var isNavigable: Bool {
+        summary.sessionId != nil
+    }
+    
     var body: some View {
-        Button {
-            loadSessionAndNavigate()
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                // Summary text (scrollable with max height)
-                ScrollView {
-                    Text(cleanedSummaryText)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        cardContent
+            .background(
+                Group {
+                    if isNavigable {
+                        NavigationLink(destination: destinationView, isActive: $shouldNavigate) {
+                            EmptyView()
+                        }
+                        .hidden()
+                    }
                 }
-                .frame(maxHeight: 450)
+            )
+            .alert("Session Not Found", isPresented: $showSessionNotFoundAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("The recording session for this summary could not be found.")
+            }
+    }
+    
+    @ViewBuilder
+    private var cardContent: some View {
+        if isNavigable {
+            Button {
+                loadSessionAndNavigate()
+            } label: {
+                cardBody
+            }
+            .buttonStyle(.plain)
+        } else {
+            cardBody
+        }
+    }
+    
+    private var cardBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Summary text (scrollable with max height)
+            ScrollView {
+                Text(cleanedSummaryText)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 450)
                 
                 // Footer with time and copy button
                 HStack(spacing: 12) {
@@ -7761,20 +7796,7 @@ struct SessionSummaryCard: View {
                 }
             }
         }
-        .buttonStyle(.plain)
-        .background(
-            NavigationLink(destination: destinationView, isActive: $shouldNavigate) {
-                EmptyView()
-            }
-            .hidden()
-        )
-        .alert("Session Not Found", isPresented: $showSessionNotFoundAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("The recording session for this summary could not be found.")
-        }
-    }
-    
+
     @ViewBuilder
     private var destinationView: some View {
         if let session = fetchedSession {
