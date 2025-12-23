@@ -2867,11 +2867,14 @@ struct AISettingsView: View {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.warning)
             
-            // Set active engine to show the download section
+            // Update activeEngine immediately so section appears right away
+            activeEngine = .local
+            
+            // Persist engine preference in background
             Task {
                 guard let summCoord = coordinator.summarizationCoordinator else { return }
                 await summCoord.setPreferredEngine(tier)
-                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             }
             
             // If model not downloaded, trigger wiggle animation on button
@@ -2899,6 +2902,16 @@ struct AISettingsView: View {
             // Haptic feedback
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.warning)
+            
+            // Update activeEngine immediately so section appears right away
+            activeEngine = .external
+            
+            // Persist engine preference in background
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(tier)
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            }
             
             // Show config and trigger wiggle animation
             showingSmartestConfig = true
