@@ -1312,13 +1312,7 @@ struct OverviewTab: View {
     // Period rollups for Week/Month/Year feed
     @State private var periodRollups: [Summary] = []
     
-    // Period edit states
-    @State private var showEditConfirmation = false
-    @State private var pendingEditPeriodType: PeriodType?
-    @State private var isPerformingCascade = false
-    @State private var cascadeStatus: String = ""
-    @State private var isEditingPeriodSummary = false
-    @State private var editedPeriodSummaryText: String = ""
+
     
     var body: some View {
         NavigationStack {
@@ -1411,22 +1405,6 @@ struct OverviewTab: View {
                                                 Task {
                                                     await regenerateAndReloadPeriodSummary()
                                                 }
-                                            },
-                                            onEdit: {
-                                                // Show confirmation before editing
-                                                pendingEditPeriodType = periodSummary.periodType
-                                                showEditConfirmation = true
-                                            },
-                                            isEditing: isEditingPeriodSummary,
-                                            editedText: $editedPeriodSummaryText,
-                                            onSaveEdit: {
-                                                Task {
-                                                    await savePeriodSummaryEdit()
-                                                }
-                                            },
-                                            onCancelEdit: {
-                                                isEditingPeriodSummary = false
-                                                editedPeriodSummaryText = ""
                                             }
                                         )
                                         .padding(.horizontal, 16)
@@ -1564,42 +1542,6 @@ struct OverviewTab: View {
             } message: {
                 Text(yearWrapMessage())
             }
-            .alert(editConfirmationTitle(), isPresented: $showEditConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Continue") {
-                    // Enter edit mode
-                    isEditingPeriodSummary = true
-                    editedPeriodSummaryText = periodSummary?.text ?? ""
-                }
-            } message: {
-                Text(editConfirmationMessage())
-            }
-            .overlay {
-                if isPerformingCascade {
-                    ZStack {
-                        Color.black.opacity(0.7)
-                            .ignoresSafeArea()
-                        
-                        VStack(spacing: 20) {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(1.5)
-                            
-                            Text(cascadeStatus)
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                        }
-                        .padding(40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(.systemBackground))
-                        )
-                        .shadow(radius: 20)
-                    }
-                }
-            }
         }
     }
     
@@ -1630,119 +1572,6 @@ struct OverviewTab: View {
             // Post notification to switch to Settings tab
             NotificationCenter.default.post(name: NSNotification.Name("SwitchToSettingsTab"), object: nil)
         }
-    }
-    
-    private func editConfirmationTitle() -> String {
-        guard let periodType = pendingEditPeriodType else { return "Edit Summary" }
-        return "Edit \(periodType.displayName) Summary"
-    }
-    
-    private func editConfirmationMessage() -> String {
-        guard let periodType = pendingEditPeriodType else { return "" }
-        
-        switch periodType {
-        case .hour:
-            return "Editing this Hour summary will trigger updates to the Day, Week, Month, and Year summaries."
-        case .day:
-            return "Editing this Day summary will trigger updates to the Week and Month summaries."
-        case .week:
-            return "Editing this Week summary will trigger updates to the Month and Year summaries."
-        case .month:
-            return "Editing this Month summary will trigger an update to the Year summary."
-        case .year:
-            return "You are editing the Year summary. This will not cascade to other summaries."
-        case .session:
-            return ""
-        case .yearWrap:
-            return "You are editing the Year Wrap summary. This will not cascade to other summaries."
-        }
-    }
-    
-    private func savePeriodSummaryEdit() async {
-        guard let periodSummary = periodSummary else { return }
-        
-        isEditingPeriodSummary = false
-        isPerformingCascade = true
-        
-        do {
-            // Update the current period summary
-            cascadeStatus = "Saving \(periodSummary.periodType.displayName) summary..."
-            
-            let updatedSummary = Summary(
-                id: periodSummary.id,
-                periodType: periodSummary.periodType,
-                periodStart: periodSummary.periodStart,
-                periodEnd: periodSummary.periodEnd,
-                text: editedPeriodSummaryText,
-                createdAt: periodSummary.createdAt,
-                sessionId: periodSummary.sessionId,
-                topicsJSON: periodSummary.topicsJSON,
-                entitiesJSON: periodSummary.entitiesJSON,
-                engineTier: periodSummary.engineTier,
-                sourceIds: periodSummary.sourceIds,
-                inputHash: nil  // Clear hash since content changed
-            )
-            
-            guard let dbManager = coordinator.getDatabaseManager() else {
-                throw NSError(domain: "OverviewTab", code: -1, userInfo: [NSLocalizedDescriptionKey: "Database not available"])
-            }
-            
-            try await dbManager.deleteSummary(id: periodSummary.id)
-            try await dbManager.insertSummary(updatedSummary)
-            
-            // Cascade updates based on period type
-            switch periodSummary.periodType {
-            case .hour:
-                cascadeStatus = "Updating Day summary..."
-                await coordinator.updateDailySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                cascadeStatus = "Updating Week summary..."
-                await coordinator.updateWeeklySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                cascadeStatus = "Updating Month summary..."
-                await coordinator.updateMonthlySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                cascadeStatus = "Updating Year summary..."
-                await coordinator.updateYearlySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-            case .day:
-                cascadeStatus = "Updating Week summary..."
-                await coordinator.updateWeeklySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                cascadeStatus = "Updating Month summary..."
-                await coordinator.updateMonthlySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-            case .week:
-                cascadeStatus = "Updating Month summary..."
-                await coordinator.updateMonthlySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                cascadeStatus = "Updating Year summary..."
-                await coordinator.updateYearlySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-            case .month:
-                cascadeStatus = "Updating Year summary..."
-                await coordinator.updateYearlySummary(date: periodSummary.periodStart, forceRegenerate: true)
-                
-            case .year, .session, .yearWrap:
-                break  // No cascade needed
-            }
-            
-            // Reload to reflect changes
-            await loadInsights()
-            
-            coordinator.showSuccess("Summary updated successfully")
-        } catch {
-            print("❌ [OverviewTab] Failed to save period summary edit: \(error)")
-            coordinator.showError("Failed to save changes")
-        }
-        
-        isPerformingCascade = false
-        editedPeriodSummaryText = ""
     }
     
     private func loadInsights() async {
@@ -7903,11 +7732,6 @@ struct PeriodSummaryCard: View {
     let isRegenerating: Bool
     let onCopy: () -> Void
     let onRegenerate: () -> Void
-    let onEdit: (() -> Void)?
-    let isEditing: Bool
-    let editedText: Binding<String>?
-    let onSaveEdit: (() -> Void)?
-    let onCancelEdit: (() -> Void)?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -7927,101 +7751,53 @@ struct PeriodSummaryCard: View {
                 
                 Spacer()
                 
-                // Action buttons - only show when not editing
-                if !isEditing {
-                    HStack(spacing: 8) {
-                        // Edit button
-                        if let onEdit = onEdit {
-                            Button(action: onEdit) {
-                                Image(systemName: "pencil")
-                                    .font(.subheadline)
-                                    .foregroundStyle(AppTheme.purple)
-                            }
-                            .padding(8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(AppTheme.purple.opacity(0.1))
-                            )
-                        }
-                        
-                        // Copy
-                        Button(action: onCopy) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.subheadline)
-                                .foregroundStyle(AppTheme.skyBlue)
-                        }
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(AppTheme.skyBlue.opacity(0.1))
-                        )
-                        
-                        // Regenerate
-                        Button(action: onRegenerate) {
-                            if isRegenerating {
-                                ProgressView()
-                                    .tint(AppTheme.purple)
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                                    .font(.subheadline)
-                                    .foregroundStyle(AppTheme.magenta)
-                            }
-                        }
-                        .disabled(isRegenerating)
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(AppTheme.magenta.opacity(0.1))
-                        )
+                HStack(spacing: 8) {
+                    // Copy
+                    Button(action: onCopy) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.skyBlue)
                     }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.skyBlue.opacity(0.1))
+                    )
+                
+                    // Regenerate
+                    Button(action: onRegenerate) {
+                        if isRegenerating {
+                            ProgressView()
+                                .tint(AppTheme.purple)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.subheadline)
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                    .disabled(isRegenerating)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.magenta.opacity(0.1))
+                    )
                 }
             }
             
             Divider()
             
-            // Content area
-            if isEditing, let editedText = editedText {
-                VStack(spacing: 12) {
-                    TextEditor(text: editedText)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .scrollContentBackground(.hidden)
-                        .padding(12)
-                        .frame(minHeight: 200)
-                        .background(Color(.tertiarySystemBackground))
-                        .cornerRadius(8)
-                    
-                    // Save/Cancel buttons
-                    HStack(spacing: 12) {
-                        Button("Cancel") {
-                            onCancelEdit?()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.secondary)
-                        
-                        Spacer()
-                        
-                        Button("Save Changes") {
-                            onSaveEdit?()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppTheme.purple)
-                    }
-                }
-            } else {
-                ScrollView {
-                    Text(summary.text)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                }
-                .frame(minHeight: 150, maxHeight: 250)
-                .background(Color(.tertiarySystemBackground))
-                .cornerRadius(8)
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
             }
+            .frame(minHeight: 150, maxHeight: 250)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(8)
         }
         .padding(16)
         .background(
