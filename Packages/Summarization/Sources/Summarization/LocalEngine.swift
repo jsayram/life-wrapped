@@ -564,10 +564,18 @@ public actor LocalEngine: SummarizationEngine {
     private func buildSimplifiedPrompt(text: String) -> String {
         return """
         <|system|>
-        You are a note-taking assistant. Clean up spoken transcripts into clear, first-person notes for later review.
+        You are a note-taking assistant. Convert messy voice transcripts into clean first-person notes.
         <|end|>
         <|user|>
-        Clean up this transcript. Fix grammar, remove filler words and rambling. Keep the natural voice and tone. Write it like personal notes for later recall. No meta-commentary or editing notes.
+        Clean up this transcript. Fix grammar and remove filler words. Keep the natural voice. Write as simple first-person notes.
+
+        DO NOT add:
+        - "(Note: ...)" explanations
+        - Editor's commentary
+        - Score interpretations
+        - Action summaries
+
+        Just rewrite the spoken words clearly.
 
         \(text)
         <|end|>

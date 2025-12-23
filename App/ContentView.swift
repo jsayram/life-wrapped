@@ -301,6 +301,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $coordinator.needsPermissions) {
             PermissionsView()
+                .environmentObject(coordinator)
                 .interactiveDismissDisabled()
         }
         .toast($coordinator.currentToast)
@@ -4269,6 +4270,7 @@ struct DataSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showDataManagement) {
             DataManagementView()
+                .environmentObject(coordinator)
         }
         .task {
             await calculateStorage()
