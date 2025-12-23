@@ -266,18 +266,20 @@ struct ContentView: View {
     }
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            HomeTab()
-                .tabItem {
-                    Label("Home", systemImage: "house.fill")
-                }
-                .tag(0)
+        Group {
+            if coordinator.isInitialized {
+                TabView(selection: $selectedTab) {
+                    HomeTab()
+                        .tabItem {
+                            Label("Home", systemImage: "house.fill")
+                        }
+                        .tag(0)
 
-            HistoryTab()
-                .tabItem {
-                    Label("History", systemImage: "list.bullet")
-                }
-                .tag(1)
+                    HistoryTab()
+                        .tabItem {
+                            Label("History", systemImage: "list.bullet")
+                        }
+                        .tag(1)
 
             OverviewTab()
                 .tabItem {
@@ -290,8 +292,13 @@ struct ContentView: View {
                     Label("Settings", systemImage: "gear")
                 }
                 .tag(3)
+                }
+                .tint(AppTheme.purple)
+            } else {
+                // Show loading state while not initialized
+                Color.clear
+            }
         }
-        .tint(AppTheme.purple)
         .sheet(isPresented: $coordinator.needsPermissions) {
             PermissionsView()
                 .interactiveDismissDisabled()

@@ -33,6 +33,12 @@ public actor BasicEngine: SummarizationEngine {
     public init(storage: DatabaseManager, config: EngineConfiguration? = nil) {
         self.storage = storage
         self.config = config ?? .defaults(for: .basic)
+        
+        #if DEBUG
+        // Run timestamp removal test on initialization in Debug builds
+        print("🧪 [BasicEngine] Running timestamp removal test...")
+        _ = testTimestampRemoval()
+        #endif
     }
     
     // MARK: - SummarizationEngine Protocol
@@ -154,27 +160,68 @@ public actor BasicEngine: SummarizationEngine {
         totalProcessingTime = 0
     }
     
+    // MARK: - Testing Helper
+    
+    /// Test the timestamp removal function - returns true if no timestamps remain
+    public nonisolated func testTimestampRemoval() -> Bool {
+        let testCases = [
+            "• Dec 22, 2025 12:00 AM: • Dec 22, 2025 12:00 AM: • Dec 22, 2025 9:08 PM: OK, I'm gonna just start recording this.",
+            "• Dec 22, 2025 8:47 PM: OK, so I'm gonna try to see this.",
+            "Dec 22, 2025 12:00 AM: Text without bullet",
+            "• Dec 1, 2025 12:00 AM: Some text here"
+        ]
+        
+        print("🧪 [BasicEngine] Testing timestamp removal:")
+        var allPassed = true
+        
+        for (index, test) in testCases.enumerated() {
+            let cleaned = removeTimestamps(from: test)
+            let hasTimestamp = cleaned.range(of: #"\d{1,2}:\d{2}\s+[AP]M"#, options: .regularExpression) != nil
+            let hasBullet = cleaned.hasPrefix("•") || cleaned.hasPrefix("●")
+            
+            if hasTimestamp {
+                print("❌ Test \(index + 1) FAILED: Timestamp remains in '\(cleaned)'")
+                allPassed = false
+            } else if hasBullet {
+                print("⚠️  Test \(index + 1) WARNING: Bullet remains in '\(cleaned)'")
+            } else {
+                print("✅ Test \(index + 1) PASSED: '\(cleaned)'")
+            }
+        }
+        
+        return allPassed
+    }
+    
     // MARK: - Private Helper Methods
     
     /// Aggressively remove all timestamp patterns from text
-    private func removeTimestamps(from text: String) -> String {
+    private nonisolated func removeTimestamps(from text: String) -> String {
         var cleaned = text
         
-        // Remove multiple consecutive timestamps (the main problem)
-        // This catches patterns like: "• Dec 22, 2025 12:00 AM: • Dec 22, 2025 12:00 AM:"
-        let multiTimestampPattern = #"([•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#
-        cleaned = cleaned.replacingOccurrences(of: multiTimestampPattern, with: "", options: .regularExpression)
+        // Step 1: Remove ALL timestamp patterns globally (one or more consecutive)
+        // This pattern matches: "• Dec 22, 2025 12:00 AM: " repeated any number of times
+        // Example: "• Dec 22, 2025 12:00 AM: • Dec 22, 2025 12:00 AM: text" -> "text"
+        let anyTimestampPattern = #"(?:[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#
+        cleaned = cleaned.replacingOccurrences(of: anyTimestampPattern, with: "", options: .regularExpression)
         
-        // Remove any remaining single timestamps
-        let singleTimestampPattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
-        while cleaned.range(of: singleTimestampPattern, options: .regularExpression) != nil {
-            cleaned = cleaned.replacingOccurrences(of: singleTimestampPattern, with: "", options: .regularExpression)
-        }
+        // Step 2: Safety pass - remove any remaining individual timestamps
+        let singlePattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
+        cleaned = cleaned.replacingOccurrences(of: singlePattern, with: "", options: .regularExpression)
         
-        // Remove any leading bullets or whitespace
+        // Step 3: Remove leading bullets and whitespace
         cleaned = cleaned.replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
         
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Step 4: Additional cleanup - remove multiple spaces and trim
+        cleaned = cleaned.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        let result = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Verification log - this will help debug if timestamps still appear
+        if text.contains(":") && text.contains("AM") || text.contains("PM") {
+            print("🧹 [BasicEngine] Cleaned timestamp from: '\(text.prefix(100))'")
+            print("🧹 [BasicEngine] Result: '\(result.prefix(100))'")
+        }
+        
+        return result
     }
     
     /// Truncate text to maximum word count
