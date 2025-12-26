@@ -1,4 +1,5 @@
 import SwiftUI
+import Transcription
 
 struct LanguageSettingsView: View {
     @State private var enabledLanguages: Set<String> = []

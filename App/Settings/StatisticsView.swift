@@ -1,5 +1,6 @@
 import SwiftUI
 import SharedModels
+import Transcription
 
 struct StatisticsView: View {
     @EnvironmentObject var coordinator: AppCoordinator

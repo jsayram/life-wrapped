@@ -323,6 +323,7 @@ struct AISettingsView: View {
             // Store proxy for scrolling
             scrollProxy = proxy
         }
+        }
     }
     
     // MARK: - Helper Methods
@@ -487,7 +488,7 @@ struct AISettingsView: View {
             // Now that we have a valid key, switch to Smartest engine
             Task {
                 guard let summCoord = coordinator.summarizationCoordinator else { return }
-                try? await summCoord.switchEngine(to: .external)
+                await summCoord.setPreferredEngine(.external)
                 await loadEngineStatus()
                 NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
                 coordinator.showSuccess("API key saved - Switched to Smartest")
@@ -549,6 +550,4 @@ struct AISettingsView: View {
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
         }
     }
-}
-
 }
