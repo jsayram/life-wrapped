@@ -67,3 +67,4 @@ struct LanguageSettingsView: View {
         UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
         coordinator.showSuccess("Language preferences saved")
     }
+}

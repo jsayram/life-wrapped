@@ -45,7 +45,7 @@ struct SessionRowClean: View {
             HStack(spacing: 12) {
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
-                    Text(formatDuration(session.duration))
+                    Text(formatDuration(session.totalDuration))
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

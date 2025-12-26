@@ -162,7 +162,3435 @@ struct ContentView: View {
 
 // MARK: - Home Tab
 
+struct HomeTab: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // App Title - Centered and smaller
+                    Text("Life Wrapped")
+                        .font(Font.largeTitle.bold())
+                        .fontWeight(.semibold)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.magenta],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
+                    
+                    // Streak Display - Minimal and transparent
+                    StreakDisplay(streak: coordinator.currentStreak)
+                    
+                    // Recording Button
+                    RecordingButton()
+                    
+                    Spacer()
+                }
+                .padding()
+            }
+            .refreshable {
+                await refreshStats()
+            }
+            .navigationBarHidden(true)
+        }
+    }
+    
+    private func refreshStats() async {
+        print("🔄 [HomeTab] Manual refresh triggered")
+        await coordinator.refreshTodayStats()
+        await coordinator.refreshStreak()
+        print("✅ [HomeTab] Stats refreshed")
+    }
+}
+
+// MARK: - History Tab
+
+struct HistoryTab: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var sessions: [RecordingSession] = []
+    @State private var sessionWordCounts: [UUID: Int] = [:]
+    @State private var sessionHasSummary: [UUID: Bool] = [:]
+    @State private var isLoading = true
+    @State private var playbackError: String?
+    @State private var searchText = ""
+    @State private var showFavoritesOnly = false
+    @State private var transcriptMatchingSessionIds: Set<UUID> = []
+    @State private var isSearchingTranscripts = false
+    @State private var searchDebounceTask: Task<Void, Never>?
+    
+    private var filteredSessions: [RecordingSession] {
+        var result = sessions
+        
+        // Filter by favorites if enabled
+        if showFavoritesOnly {
+            result = result.filter { $0.isFavorite }
+        }
+        
+        // Filter by search text
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            
+            result = result.filter { session in
+                // Search in title
+                if let title = session.title, title.lowercased().contains(query) {
+                    return true
+                }
+                // Search in notes
+                if let notes = session.notes, notes.lowercased().contains(query) {
+                    return true
+                }
+                // Search in date
+                let dateString = formatter.string(from: session.startTime).lowercased()
+                if dateString.contains(query) {
+                    return true
+                }
+                // Search in transcripts (from cached results)
+                return transcriptMatchingSessionIds.contains(session.sessionId)
+            }
+        }
+        
+        return result
+    }
+    
+    var body: some View {
+        NavigationStack {
+            contentView
+                .navigationTitle("History")
+                .searchable(text: $searchText, prompt: "Search titles, notes, transcripts...")
+                .onChange(of: searchText) { _, newValue in
+                    // Debounce transcript search
+                    searchDebounceTask?.cancel()
+                    if newValue.count >= 2 {
+                        searchDebounceTask = Task {
+                            try? await Task.sleep(for: .milliseconds(300))
+                            guard !Task.isCancelled else { return }
+                            await searchTranscripts(query: newValue)
+                        }
+                    } else {
+                        transcriptMatchingSessionIds = []
+                    }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 12) {
+                            if isSearchingTranscripts {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            }
+                            
+                            Button {
+                                showFavoritesOnly.toggle()
+                            } label: {
+                                Image(systemName: showFavoritesOnly ? "star.fill" : "star")
+                                    .foregroundStyle(showFavoritesOnly ? .yellow : .secondary)
+                            }
+                        }
+                    }
+                }
+                .task {
+                    await loadSessions()
+                }
+                .refreshable {
+                    await loadSessions()
+                }
+                .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
+                    Button("OK") {
+                        playbackError = nil
+                    }
+                } message: {
+                    if let error = playbackError {
+                        Text(error)
+                    }
+                }
+        }
+    }
+    
+    @ViewBuilder
+    private var contentView: some View {
+        if isLoading {
+            LoadingView(size: .medium)
+        } else if sessions.isEmpty {
+            ContentUnavailableView(
+                "No Recordings Yet",
+                systemImage: "mic.slash",
+                description: Text("Tap the record button on the Home tab to start your first journal entry.")
+            )
+        } else if filteredSessions.isEmpty {
+            ContentUnavailableView(
+                "No Results",
+                systemImage: "magnifyingglass",
+                description: Text("No recordings match '\(searchText)'")
+            )
+        } else {
+            sessionsList
+        }
+    }
+    
+    private var sessionsList: some View {
+        List {
+            // Stats summary at top
+            if !searchText.isEmpty {
+                Section {
+                    Text("\(filteredSessions.count) recording\(filteredSessions.count == 1 ? "" : "s") found")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            ForEach(sortedDates, id: \.self) { date in
+                Section {
+                    ForEach(sessionsForDate(date), id: \.id) { session in
+                        NavigationLink(destination: sessionDetailView(for: session)) {
+                            SessionRowClean(
+                                session: session,
+                                wordCount: sessionWordCounts[session.sessionId],
+                                hasSummary: sessionHasSummary[session.sessionId] ?? false
+                            )
+                        }
+                    }
+                    .onDelete { offsets in
+                        deleteSession(at: offsets, in: date)
+                    }
+                } header: {
+                    HStack {
+                        Text(formatSectionDate(date))
+                        Spacer()
+                        Text("\(sessionsForDate(date).count) recording\(sessionsForDate(date).count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+    
+    private func sessionDetailView(for session: RecordingSession) -> some View {
+        SessionDetailView(session: session)
+    }
+    
+    private func sessionsForDate(_ date: Date) -> [RecordingSession] {
+        filteredSessions.filter { session in
+            Calendar.current.isDate(session.startTime, inSameDayAs: date)
+        }
+    }
+    
+    /// Group sessions by date
+    private var groupedSessions: [Date: [RecordingSession]] {
+        Dictionary(grouping: filteredSessions) { session in
+            Calendar.current.startOfDay(for: session.startTime)
+        }
+    }
+    
+    /// Sorted dates (most recent first)
+    private var sortedDates: [Date] {
+        Array(groupedSessions.keys).sorted(by: >)
+    }
+    
+    private func formatSectionDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "Today"
+        } else if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        } else if calendar.isDate(date, equalTo: Date(), toGranularity: .weekOfYear) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEEE" // Day name like "Monday"
+            return formatter.string(from: date)
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            return formatter.string(from: date)
+        }
+    }
+    
+    private func loadSessions() async {
+        isLoading = true
+        do {
+            sessions = try await coordinator.fetchRecentSessions(limit: 100)
+            print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
+            
+            // Load word counts and summary status in parallel
+            guard let dbManager = coordinator.getDatabaseManager() else { return }
+            await withTaskGroup(of: (UUID, Int, Bool).self) { group in
+                for session in sessions {
+                    group.addTask {
+                        let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
+                        let hasSummary = await ((try? dbManager.fetchSummaryForSession(sessionId: session.sessionId)) != nil)
+                        return (session.sessionId, count, hasSummary)
+                    }
+                }
+                
+                for await (sessionId, wordCount, hasSummary) in group {
+                    sessionWordCounts[sessionId] = wordCount
+                    sessionHasSummary[sessionId] = hasSummary
+                }
+            }
+        } catch {
+            print("❌ [HistoryTab] Failed to load sessions: \(error)")
+        }
+        isLoading = false
+    }
+    
+    private func searchTranscripts(query: String) async {
+        guard query.count >= 2 else {
+            transcriptMatchingSessionIds = []
+            return
+        }
+        
+        isSearchingTranscripts = true
+        do {
+            transcriptMatchingSessionIds = try await coordinator.searchSessionsByTranscript(query: query)
+            print("🔍 [HistoryTab] Found \(transcriptMatchingSessionIds.count) sessions matching '\(query)' in transcripts")
+        } catch {
+            print("❌ [HistoryTab] Transcript search failed: \(error)")
+            transcriptMatchingSessionIds = []
+        }
+        isSearchingTranscripts = false
+    }
+    
+    private func deleteSession(at offsets: IndexSet, in date: Date) {
+        let sessionsForDate = self.sessionsForDate(date)
+        
+        Task {
+            for index in offsets {
+                let session = sessionsForDate[index]
+                // Stop playback if any chunk from this session is playing
+                for chunk in session.chunks {
+                    if coordinator.audioPlayback.currentlyPlayingURL == chunk.fileURL {
+                        coordinator.audioPlayback.stop()
+                        break
+                    }
+                }
+                do {
+                    try await coordinator.deleteSession(session.sessionId)
+                    sessions.removeAll { $0.sessionId == session.sessionId }
+                    sessionWordCounts.removeValue(forKey: session.sessionId)
+                    sessionHasSummary.removeValue(forKey: session.sessionId)
+                } catch {
+                    print("Failed to delete session: \(error)")
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Overview Tab
+
+struct OverviewTab: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @Environment(\.colorScheme) var colorScheme
+    @State private var periodSummary: Summary?
+    @State private var sessionCount: Int = 0
+    @State private var sessionsInPeriod: [RecordingSession] = []
+    @State private var yearWrapSummary: Summary?
+    @State private var isWrappingUpYear = false
+    @State private var isRegeneratingPeriodSummary = false
+    @State private var isLoading = true
+    @State private var selectedTimeRange: TimeRange = .allTime
+    @State private var showYearWrapConfirmation = false
+    
+    // Session summaries for Today/Yesterday feed
+    @State private var sessionSummaries: [Summary] = []
+    // Period rollups for Week/Month/Year feed
+    @State private var periodRollups: [Summary] = []
+    
+
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Time Range Picker - ALWAYS show so users can switch periods
+                Picker("Time Range", selection: $selectedTimeRange) {
+                    ForEach(TimeRange.allCases) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .tint(AppTheme.purple)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .disabled(isLoading)
+                
+                // Content area
+                Group {
+                    if isLoading {
+                        LoadingView(size: .medium)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if periodSummary == nil && sessionsInPeriod.isEmpty {
+                        ContentUnavailableView(
+                            "No Overview Yet",
+                            systemImage: "doc.text",
+                            description: Text("Record more journal entries to generate summaries.")
+                        )
+                    } else {
+                        // Copy All button
+                        if !sessionSummaries.isEmpty {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    copyAllSummaries()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption)
+                                        Text("Copy \(sessionSummaries.count)")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(AppTheme.purple)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(
+                                                RadialGradient(
+                                                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                                    center: .center,
+                                                    startRadius: 0,
+                                                    endRadius: 40
+                                                )
+                                            )
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                ),
+                                                lineWidth: 1.5
+                                            )
+                                    )
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                        }
+                        
+                        // New Feed Layout
+                        ScrollView {
+                            LazyVStack(spacing: 16) {
+                                // Local period summary card for Today/Week/Month
+                                if [.today, .week, .month].contains(selectedTimeRange) {
+                                    if let periodSummary {
+                                        PeriodSummaryCard(
+                                            title: periodSummaryTitle(for: selectedTimeRange),
+                                            subtitle: "Local AI rollup (on-device)",
+                                            summary: periodSummary,
+                                            isRegenerating: isRegeneratingPeriodSummary,
+                                            onCopy: {
+                                                UIPasteboard.general.string = periodSummary.text
+                                                coordinator.showSuccess("Summary copied")
+                                            },
+                                            onRegenerate: {
+                                                Task {
+                                                    await regenerateAndReloadPeriodSummary()
+                                                }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if !sessionsInPeriod.isEmpty {
+                                        GeneratePeriodSummaryCard(
+                                            title: periodSummaryTitle(for: selectedTimeRange),
+                                            isGenerating: isRegeneratingPeriodSummary,
+                                            onGenerate: {
+                                                Task {
+                                                    await regenerateAndReloadPeriodSummary()
+                                                }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    }
+                                }
+                                
+                                // Year Wrapped Summary (only show for Year timerange)
+                                if selectedTimeRange == .allTime {
+                                    if let yearWrap = yearWrapSummary {
+                                        YearWrappedCard(
+                                            summary: yearWrap,
+                                            coordinator: coordinator,
+                                            onRegenerate: {
+                                                showYearWrapConfirmation = true
+                                            },
+                                            isRegenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if !sessionsInPeriod.isEmpty {
+                                        // Show generate button if no Year Wrap exists
+                                        GenerateYearWrapCard(
+                                            onGenerate: {
+                                                showYearWrapConfirmation = true
+                                            },
+                                            isGenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    }
+                                }
+                            }
+                            
+                            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                let timeBuckets = groupSessionsByTimeBucket()
+                                
+                                if timeBuckets.isEmpty {
+                                    // No session summaries found
+                                    ContentUnavailableView(
+                                        "No Summaries Yet",
+                                        systemImage: "doc.text",
+                                        description: Text("Session summaries will appear here once recordings are summarized.")
+                                    )
+                                    .padding(.top, 60)
+                                } else {
+                                    ForEach(timeBuckets) { bucket in
+                                        Section {
+                                            if bucket.isEmpty {
+                                                // Empty bucket - show grayed out message
+                                                Text("No recordings")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.tertiary)
+                                                    .italic()
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.vertical, 8)
+                                            } else {
+                                                // Summaries in this bucket
+                                                ForEach(bucket.summaries) { summary in
+                                                    SessionSummaryCard(summary: summary, coordinator: coordinator)
+                                                        .padding(.horizontal, 16)
+                                                        .padding(.vertical, 6)
+                                                }
+                                            }
+                                        } header: {
+                                            // Time bucket header
+                                            HStack {
+                                                Text(bucket.header)
+                                                    .font(.headline)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
+                                                
+                                                Spacer()
+                                                
+                                                if !bucket.isEmpty {
+                                                    Text("\(bucket.summaries.count)")
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                        .foregroundStyle(.secondary)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 4)
+                                                        .background(
+                                                            Capsule()
+                                                                .fill(Color(.tertiarySystemFill))
+                                                        )
+                                                }
+                                            }
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 12)
+                                            .background(Color(.systemGroupedBackground))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Overview")
+            .task {
+                await loadInsights()
+            }
+            .refreshable {
+                await loadInsights()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .periodSummariesUpdated)) { _ in
+                Task {
+                    await loadInsights()
+                }
+            }
+            .onChange(of: selectedTimeRange) { oldValue, newValue in
+                Task {
+                    await loadInsights()
+                }
+            }
+            .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button(actionButtonTitle()) {
+                    handleYearWrapAction()
+                }
+            } message: {
+                Text(yearWrapMessage())
+            }
+        }
+    }
+    
+    private func hasExternalAPIConfigured() -> Bool {
+        let openaiKey = KeychainHelper.load(key: "openai_api_key")
+        let anthropicKey = KeychainHelper.load(key: "anthropic_api_key")
+        return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
+    }
+    
+    private func yearWrapMessage() -> String {
+        if hasExternalAPIConfigured() {
+            return "This will use ChatGPT or Claude to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
+        } else {
+            return "To generate a Year Wrap, you need to configure your ChatGPT (OpenAI) or Claude (Anthropic) API key in Settings.\n\nTap 'Open Settings' to add your API credentials."
+        }
+    }
+    
+    private func actionButtonTitle() -> String {
+        return hasExternalAPIConfigured() ? "Generate" : "Open Settings"
+    }
+    
+    private func handleYearWrapAction() {
+        if hasExternalAPIConfigured() {
+            Task {
+                await wrapUpYear(forceRegenerate: false)
+            }
+        } else {
+            // Post notification to switch to Settings tab
+            NotificationCenter.default.post(name: NSNotification.Name("SwitchToSettingsTab"), object: nil)
+        }
+    }
+    
+    private func loadInsights() async {
+        isLoading = true
+        do {
+            // Get date range for filtering
+            let dateRange = getDateRange(for: selectedTimeRange)
+            
+            // Load period summary based on selected time range
+            let periodType: PeriodType = {
+                switch selectedTimeRange {
+                case .yesterday: return .day
+                case .today: return .day
+                case .week: return .week
+                case .month: return .month
+                case .allTime: return .year // Show yearly summary for current year
+                }
+            }()
+            
+            // Clear previous data to avoid stale counts when DB is unavailable
+            sessionsInPeriod = []
+            sessionCount = 0
+            sessionSummaries = []
+            periodRollups = []
+            
+            // Load sessions in this period first
+            if let dbManager = coordinator.getDatabaseManager() {
+                if selectedTimeRange == .today || selectedTimeRange == .yesterday {
+                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
+                } else {
+                    // For week/month/all, fetch ALL sessions and filter by date range
+                    let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
+                    sessionsInPeriod = allSessions?.filter { session in
+                        session.startTime >= dateRange.start && session.startTime < dateRange.end
+                    } ?? []
+                }
+                sessionCount = sessionsInPeriod.count
+                
+                // Load summaries based on time range
+                switch selectedTimeRange {
+                case .today, .yesterday:
+                    // Load session summaries for individual sessions
+                    sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
+                    
+                case .week:
+                    // Load weekly rollup summaries (one card per week)
+                    periodRollups = (try? await dbManager.fetchWeeklySummaries(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
+                    
+                case .month:
+                    // Load monthly rollup summaries (one card per month)
+                    periodRollups = (try? await dbManager.fetchMonthlySummaries(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
+                    
+                case .allTime:
+                    // Load yearly rollup summary (single card for whole year)
+                    let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
+                    periodRollups = allYearlySummaries.filter { summary in
+                        summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
+                    }
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
+                }
+            }
+            
+            // Try to fetch existing period summary (don't auto-generate on view load)
+            // For week/month/year, use Date() to get current period, for day use startDate
+            let dateForFetch = (periodType == .day) ? dateRange.start : Date()
+            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+
+            if selectedTimeRange == .allTime {
+                yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            } else {
+                yearWrapSummary = nil
+            }
+            
+            // Debug logging
+            if periodSummary == nil && !sessionsInPeriod.isEmpty {
+                print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
+                print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
+                print("   Sessions in period: \(sessionsInPeriod.count)")
+            } else if periodSummary != nil {
+                print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
+            }
+        } catch {
+            print("❌ [OverviewTab] Failed to load insights: \(error)")
+        }
+        isLoading = false
+    }
+    
+    private func regenerateAndReloadPeriodSummary() async {
+        guard !isRegeneratingPeriodSummary else { return }
+        isRegeneratingPeriodSummary = true
+        defer { isRegeneratingPeriodSummary = false }
+        await regeneratePeriodSummary()
+        await loadInsights()
+    }
+
+    private func regeneratePeriodSummary() async {
+        let (startDate, _) = getDateRange(for: selectedTimeRange)
+        
+        let periodType: PeriodType = {
+            switch selectedTimeRange {
+            case .yesterday: return .day
+            case .today: return .day
+            case .week: return .week
+            case .month: return .month
+            case .allTime: return .year
+            }
+        }()
+        
+        // Use Date() (today) for week/month/year calculations, startDate for day
+        let dateForGeneration = (periodType == .day) ? startDate : Date()
+        
+        print("🔄 [OverviewTab] Regenerating \(periodType.rawValue) summary...")
+        
+        switch periodType {
+        case .day:
+            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: false)
+        case .week:
+            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: false)
+        case .month:
+            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: false)
+        case .year:
+            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: false)
+        default:
+            break
+        }
+        
+        // Fetch again after regeneration
+        try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s
+        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
+        
+        if periodSummary != nil {
+            coordinator.showSuccess("Summary regenerated")
+        } else {
+            coordinator.showError("Failed to regenerate summary")
+        }
+    }
+
+    private func wrapUpYear(forceRegenerate: Bool) async {
+        guard !isWrappingUpYear else { return }
+        isWrappingUpYear = true
+        let dateForGeneration = Date()
+
+        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
+
+        yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        isWrappingUpYear = false
+    }
+    
+    private func formatHour(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+        let calendar = Calendar.current
+        let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return formatter.string(from: date)
+    }
+    
+    private func formatHourShort(_ hour: Int) -> String {
+        if hour == 0 {
+            return "12 AM"
+        } else if hour < 12 {
+            return "\(hour) AM"
+        } else if hour == 12 {
+            return "12 PM"
+        } else {
+            return "\(hour - 12) PM"
+        }
+    }
+    
+    private func formatDayOfWeek(_ dayOfWeek: Int) -> String {
+        let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return days[dayOfWeek]
+    }
+    
+    private func formatDayOfWeekFull(_ dayOfWeek: Int) -> String {
+        let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        return days[dayOfWeek]
+    }
+    
+    private func getDateRange(for timeRange: TimeRange) -> (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        switch timeRange {
+        case .yesterday:
+            let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+            let start = calendar.startOfDay(for: yesterday)
+            // Use end-of-day so hourly buckets cover the full 24 hours
+            let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: start) ?? now
+            return (start, end)
+        case .today:
+            let start = calendar.startOfDay(for: now)
+            return (start, now)
+        case .week:
+            // Current week: Monday to Sunday (or today if mid-week)
+            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            components.weekday = 2 // Monday
+            let startOfWeek = calendar.date(from: components) ?? now
+            return (startOfWeek, now)
+        case .month:
+            let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
+            return (start, now)
+        case .allTime:
+            // Show only current year (e.g., 2025) up to today
+            let currentYear = calendar.component(.year, from: now)
+            let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
+            return (startOfYear, now)
+        }
+    }
+
+    private func periodSummaryTitle(for range: TimeRange) -> String {
+        switch range {
+        case .today: return "Today's Recordings"
+        case .week: return "This Week's Recordings"
+        case .month: return "This Month's Recordings"
+        default: return "Recordings"
+        }
+    }
+    
+    private func filterSession(_ session: (sessionId: UUID, duration: TimeInterval, date: Date)?, in range: (start: Date, end: Date)) -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
+        guard let session = session else { return nil }
+        return session.date >= range.start && session.date <= range.end ? session : nil
+    }
+    
+    private func filterMonth(_ month: (year: Int, month: Int, count: Int, sessionIds: [UUID])?, in range: (start: Date, end: Date)) -> (year: Int, month: Int, count: Int, sessionIds: [UUID])? {
+        guard let month = month else { return nil }
+        let calendar = Calendar.current
+        guard let monthDate = calendar.date(from: DateComponents(year: month.year, month: month.month)) else { return nil }
+        return monthDate >= range.start && monthDate <= range.end ? month : nil
+    }
+    
+    private func filterSessionsByHour(_ sessions: [(hour: Int, count: Int, sessionIds: [UUID])], in range: (start: Date, end: Date)) async -> [(hour: Int, count: Int, sessionIds: [UUID])] {
+        if range.start == Date.distantPast { return sessions }
+        
+        var filtered: [Int: [UUID]] = [:]
+        
+        for hourData in sessions {
+            for sessionId in hourData.sessionIds {
+                if let session = try? await coordinator.fetchSessions(ids: [sessionId]).first,
+                   session.startTime >= range.start && session.startTime <= range.end {
+                    filtered[hourData.hour, default: []].append(sessionId)
+                }
+            }
+        }
+        
+        return filtered.map { (hour: $0.key, count: $0.value.count, sessionIds: $0.value) }
+    }
+    
+    private func filterSessionsByDayOfWeek(_ sessions: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])], in range: (start: Date, end: Date)) async -> [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] {
+        if range.start == Date.distantPast { return sessions }
+        
+        var filtered: [Int: [UUID]] = [:]
+        
+        for dayData in sessions {
+            for sessionId in dayData.sessionIds {
+                if let session = try? await coordinator.fetchSessions(ids: [sessionId]).first,
+                   session.startTime >= range.start && session.startTime <= range.end {
+                    filtered[dayData.dayOfWeek, default: []].append(sessionId)
+                }
+            }
+        }
+        
+        return filtered.map { (dayOfWeek: $0.key, count: $0.value.count, sessionIds: $0.value) }
+    }
+    
+    // MARK: - Time Bucketing for Feed View
+    
+    struct TimeBucket: Identifiable {
+        let id = UUID()
+        let header: String
+        let summaries: [Summary]
+        let isEmpty: Bool
+    }
+    
+    private func groupSessionsByTimeBucket() -> [TimeBucket] {
+        let calendar = Calendar.current
+        let dateRange = getDateRange(for: selectedTimeRange)
+        
+        switch selectedTimeRange {
+        case .today, .yesterday:
+            // Show individual session summaries grouped by hour
+            return groupByHour(dateRange: dateRange, calendar: calendar)
+            
+        case .week:
+            // Show weekly rollup summaries (one card per week)
+            return groupByWeekRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+            
+        case .month:
+            // Show monthly rollup summaries (one card per month)
+            return groupByMonthRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+            
+        case .allTime:
+            // Show yearly rollup summary (single card for whole year)
+            return groupByYearRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+        }
+    }
+    
+    private func groupByHour(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        var summariesByHour: [Int: [Summary]] = [:]
+        
+        // Group existing summaries by hour
+        for summary in sessionSummaries {
+            let hour = calendar.component(.hour, from: summary.periodStart)
+            summariesByHour[hour, default: []].append(summary)
+        }
+        
+        // Create buckets for all hours in range
+        let startHour = calendar.component(.hour, from: dateRange.start)
+        let endHour = calendar.component(.hour, from: dateRange.end)
+        let actualEndHour = dateRange.end > dateRange.start ? endHour : 23
+        
+        for hour in startHour...actualEndHour {
+            let hourString = hour == 0 ? "12 AM" : (hour < 12 ? "\(hour) AM" : (hour == 12 ? "12 PM" : "\(hour - 12) PM"))
+            let nextHour = (hour + 1) % 24
+            let nextHourString = nextHour == 0 ? "12 AM" : (nextHour < 12 ? "\(nextHour) AM" : (nextHour == 12 ? "12 PM" : "\(nextHour - 12) PM"))
+            let header = "\(hourString) - \(nextHourString)"
+            
+            let summaries = summariesByHour[hour] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+        }
+        
+        return buckets.reversed() // Newest first (oldest at bottom)
+    }
+    
+    private func groupByDayRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByDay: [Date: [Summary]] = [:]
+        for summary in rollups {
+            let dayStart = calendar.startOfDay(for: summary.periodStart)
+            summariesByDay[dayStart, default: []].append(summary)
+        }
+        
+        // Create buckets for all days in range
+        var currentDate = calendar.startOfDay(for: dateRange.start)
+        let endDate = calendar.startOfDay(for: dateRange.end)
+        
+        while currentDate <= endDate {
+            let formatter = DateFormatter()
+            if calendar.isDateInToday(currentDate) {
+                formatter.dateFormat = "'Today' - EEEE, MMM d"
+            } else if calendar.isDateInYesterday(currentDate) {
+                formatter.dateFormat = "'Yesterday' - EEEE, MMM d"
+            } else {
+                formatter.dateFormat = "EEEE, MMM d"
+            }
+            let header = formatter.string(from: currentDate)
+            
+            let summaries = summariesByDay[currentDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByWeekRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByWeek: [Date: [Summary]] = [:]
+        for summary in rollups {
+            let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: summary.periodStart)
+            if let weekStartDate = calendar.date(from: weekStart) {
+                summariesByWeek[weekStartDate, default: []].append(summary)
+            }
+        }
+        
+        // Create buckets for all weeks in range
+        var currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
+        let endWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.end)
+        
+        guard var currentWeekDate = calendar.date(from: currentWeekStart),
+              let endWeekDate = calendar.date(from: endWeekStart) else {
+            return buckets
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d"
+        
+        while currentWeekDate <= endWeekDate {
+            let weekEnd = calendar.date(byAdding: .day, value: 6, to: currentWeekDate) ?? currentWeekDate
+            // Format: "Monday, Dec 16 - Sunday, Dec 22"
+            let header = "Monday, \(dateFormatter.string(from: currentWeekDate)) - Sunday, \(dateFormatter.string(from: weekEnd))"
+            
+            let summaries = summariesByWeek[currentWeekDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentWeekDate = calendar.date(byAdding: .weekOfYear, value: 1, to: currentWeekDate) ?? currentWeekDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByMonthRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByMonth: [Date: [Summary]] = [:]
+        for summary in rollups {
+            let monthStart = calendar.dateComponents([.year, .month], from: summary.periodStart)
+            if let monthStartDate = calendar.date(from: monthStart) {
+                summariesByMonth[monthStartDate, default: []].append(summary)
+            }
+        }
+        
+        // Create buckets for all months in range
+        var currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
+        let endMonthStart = calendar.dateComponents([.year, .month], from: dateRange.end)
+        
+        guard var currentMonthDate = calendar.date(from: currentMonthStart),
+              let endMonthDate = calendar.date(from: endMonthStart) else {
+            return buckets
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMMM yyyy"
+        
+        while currentMonthDate <= endMonthDate {
+            let header = dateFormatter.string(from: currentMonthDate)
+            
+            let summaries = summariesByMonth[currentMonthDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentMonthDate = calendar.date(byAdding: .month, value: 1, to: currentMonthDate) ?? currentMonthDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByYearRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByYear: [Int: [Summary]] = [:]
+        for summary in rollups {
+            let year = calendar.component(.year, from: summary.periodStart)
+            summariesByYear[year, default: []].append(summary)
+        }
+        
+        // Create buckets for all years in range
+        let startYear = calendar.component(.year, from: dateRange.start)
+        let endYear = calendar.component(.year, from: dateRange.end)
+        
+        for year in startYear...endYear {
+            let header = "\(year)"
+            let summaries = summariesByYear[year] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    // MARK: - Copy All Functionality
+    
+    private func copyAllSummaries() {
+        let timeBuckets = groupSessionsByTimeBucket()
+        var fullText = ""
+        
+        for bucket in timeBuckets {
+            if !bucket.summaries.isEmpty {
+                // Add bucket header
+                fullText += "\(bucket.header)\n"
+                fullText += String(repeating: "=", count: bucket.header.count) + "\n\n"
+                
+                // Add each summary in the bucket
+                for summary in bucket.summaries {
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+                    let timeString = dateFormatter.string(from: summary.periodStart)
+                    
+                    fullText += "• \(timeString)\n"
+                    fullText += summary.text + "\n\n"
+                }
+                
+                fullText += "\n"
+            }
+        }
+        
+        if !fullText.isEmpty {
+            UIPasteboard.general.string = fullText
+            coordinator.showSuccess("All summaries copied to clipboard")
+        } else {
+            coordinator.showError("No summaries to copy")
+        }
+    }
+    
+    private func formatMonth(year: Int, month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let calendar = Calendar.current
+        let date = calendar.date(from: DateComponents(year: year, month: month)) ?? Date()
+        return formatter.string(from: date)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        } else {
+            return "\(seconds)s"
+        }
+    }
+    
+    // MARK: - Word Cloud Styling Helpers
+    
+    private func fontSizeForRank(_ rank: Int) -> CGFloat {
+        // Top words get larger fonts
+        switch rank {
+        case 0...2: return 22  // Top 3
+        case 3...5: return 20  // 4-6
+        case 6...9: return 18  // 7-10
+        default: return 16     // 11-20
+        }
+    }
+    
+    private func colorForRank(_ rank: Int) -> Color {
+        // Apple Intelligence gradient colors for word frequency
+        switch rank {
+        case 0...2: return AppTheme.darkPurple    // Top 3 - most frequent
+        case 3...5: return AppTheme.purple        // 4-6
+        case 6...9: return AppTheme.magenta       // 7-10
+        case 10...14: return AppTheme.skyBlue     // 11-15
+        default: return AppTheme.lightPurple      // 16-20
+        }
+    }
+    
+    // MARK: - Sentiment Helpers
+    
+    private func sentimentColor(_ score: Double) -> Color {
+        switch score {
+        case ..<(-0.3): return AppTheme.magenta  // Negative
+        case -0.3..<0.3: return AppTheme.skyBlue  // Neutral
+        default: return AppTheme.emerald         // Positive
+        }
+    }
+    
+    private func sentimentLabel(_ score: Double) -> String {
+        switch score {
+        case ..<(-0.5): return "😢"
+        case -0.5..<(-0.2): return "😔"
+        case -0.2..<0.2: return "😐"
+        case 0.2..<0.5: return "🙂"
+        default: return "😊"
+        }
+    }
+    
+    @ViewBuilder
+    private func sentimentStatBox(label: String, count: Int, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text("\(count)")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(color)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            RadialGradient(
+                colors: [color.opacity(0.15), color.opacity(0.05)],
+                center: .center,
+                startRadius: 0,
+                endRadius: 50
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    
+    private func languageColor(index: Int) -> Color {
+        let colors: [Color] = [
+            AppTheme.skyBlue,
+            AppTheme.emerald,
+            AppTheme.magenta,
+            AppTheme.darkPurple,
+            AppTheme.purple,
+            AppTheme.lightPurple,
+            AppTheme.paleBlue
+        ]
+        return colors[index % colors.count]
+    }
+    
+    private var periodTitle: String {
+        switch selectedTimeRange {
+        case .yesterday: return "Yesterday's Summary"
+        case .today: return "Today's Summary"
+        case .week: return "This Week's Summary"
+        case .month: return "This Month's Summary"
+        case .allTime:
+            let calendar = Calendar.current
+            let currentYear = calendar.component(.year, from: Date())
+            return "\(currentYear) Summary"
+        }
+    }
+
+    }
+
+// MARK: - FilteredSessionsView
+
+struct FilteredSessionsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    let title: String
+    let sessionIds: [UUID]
+    
+    @State private var sessions: [RecordingSession] = []
+    @State private var sessionWordCounts: [UUID: Int] = [:]
+    @State private var isLoading = true
+    
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading sessions...")
+            } else if sessions.isEmpty {
+                ContentUnavailableView(
+                    "No Sessions",
+                    systemImage: "waveform",
+                    description: Text("No sessions found for this filter.")
+                )
+            } else {
+                List {
+                    ForEach(sessions, id: \.sessionId) { session in
+                        NavigationLink {
+                            SessionDetailView(session: session)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text(session.startTime.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.headline)
+                                    Spacer()
+                                    if let wordCount = sessionWordCounts[session.sessionId] {
+                                        Text("\(wordCount) words")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                HStack {
+                                    Text("\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("•")
+                                        .foregroundStyle(.secondary)
+                                    Text(formatDuration(session.totalDuration))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .task {
+            await loadSessions()
+        }
+    }
+    
+    private func loadSessions() async {
+        isLoading = true
+        
+        do {
+            // Load sessions for these IDs
+            sessions = try await coordinator.fetchSessions(ids: sessionIds)
+            
+            // Load word counts in parallel
+            guard let dbManager = coordinator.getDatabaseManager() else { return }
+            await withTaskGroup(of: (UUID, Int).self) { group in
+                for session in sessions {
+                    group.addTask {
+                        let count = (try? await dbManager.fetchSessionWordCount(sessionId: session.sessionId)) ?? 0
+                        return (session.sessionId, count)
+                    }
+                }
+                
+                for await (sessionId, wordCount) in group {
+                    sessionWordCounts[sessionId] = wordCount
+                }
+            }
+            
+            // Sort by start time descending
+            sessions.sort { $0.startTime > $1.startTime }
+            
+        } catch {
+            print("❌ [FilteredSessionsView] Failed to load sessions: \(error)")
+        }
+        
+        isLoading = false
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        } else {
+            return "\(seconds)s"
+        }
+    }
+}
+
+struct SummaryRow: View {
+    let summary: Summary
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(summary.periodType.rawValue.capitalized)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.2))
+                    .clipShape(Capsule())
+                
+                Spacer()
+                
+                Text(summary.periodStart, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Text(summary.text)
+                .font(.body)
+                .lineLimit(4)
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Settings Tab
+
+struct SettingsTab: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngineName: String = "Loading..."
+    @State private var debugTapCount: Int = 0
+    @State private var showDebugSection: Bool = false
+    @State private var databasePath: String?
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                // Recording Section
+                Section {
+                    NavigationLink(destination: RecordingSettingsView()) {
+                        Label {
+                            Text("Recording Chunks")
+                        } icon: {
+                            Image(systemName: "mic.fill")
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                }
+                
+                // AI & Summaries Section
+                Section {
+                    NavigationLink(destination: AISettingsView()) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI & Summaries")
+                                Text(activeEngineName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "brain")
+                                .foregroundStyle(AppTheme.purple)
+                        }
+                    }
+                } footer: {
+                    Text("Configure how your recordings are summarized.")
+                }
+                
+                // Statistics Section
+                Section {
+                    NavigationLink(destination: StatisticsView()) {
+                        Label {
+                            Text("Statistics")
+                        } icon: {
+                            Image(systemName: "chart.xyaxis.line")
+                                .foregroundStyle(AppTheme.skyBlue)
+                        }
+                    }
+                } footer: {
+                    Text("View word clouds, charts, and statistical analysis.")
+                }
+                
+                // Data Section
+                Section {
+                    NavigationLink(destination: DataSettingsView()) {
+                        Label {
+                            Text("Data")
+                        } icon: {
+                            Image(systemName: "externaldrive.fill")
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                }
+                
+                // Privacy Section
+                Section {
+                    NavigationLink(destination: PrivacySettingsView()) {
+                        Label {
+                            Text("Privacy")
+                        } icon: {
+                            Image(systemName: "lock.shield.fill")
+                                .foregroundStyle(AppTheme.darkPurple)
+                        }
+                    }
+                }
+                
+                // About Section
+                Section {
+                    HStack {
+                        Label {
+                            Text("Version")
+                        } icon: {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(AppTheme.lightPurple)
+                        }
+                        Spacer()
+                        Text("1.0.0")
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        debugTapCount += 1
+                        if debugTapCount >= 5 {
+                            showDebugSection = true
+                            coordinator.showSuccess("Debug mode enabled")
+                            debugTapCount = 0
+                        }
+                    }
+                    
+                    HStack {
+                        Label {
+                            Text("Transcription: On-Device")
+                        } icon: {
+                            Image(systemName: "checkmark.shield.fill")
+                                .foregroundStyle(AppTheme.emerald)
+                        }
+                        Spacer()
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(AppTheme.emerald)
+                    }
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text("AI summaries use your API keys or on-device fallback.")
+                }
+                
+                // Debug Section (hidden by default)
+                if showDebugSection {
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Database Location")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let path = databasePath {
+                                Text(path)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .textSelection(.enabled)
+                            } else {
+                                Text("Loading...")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        
+                        Button {
+                            Task {
+                                await coordinator.testSessionQueries()
+                            }
+                        } label: {
+                            Label("Test Session Queries", systemImage: "testtube.2")
+                        }
+                        
+                        Button(role: .destructive) {
+                            showDebugSection = false
+                        } label: {
+                            Label("Hide Debug Section", systemImage: "eye.slash")
+                        }
+                    } header: {
+                        Text("Debug")
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .task {
+                await loadActiveEngine()
+                databasePath = await coordinator.getDatabasePath()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+                Task {
+                    await loadActiveEngine()
+                }
+            }
+        }
+    }
+    
+    private func loadActiveEngine() async {
+        guard let summCoord = coordinator.summarizationCoordinator else {
+            activeEngineName = "Not configured"
+            return
+        }
+        
+        let engine = await summCoord.getActiveEngine()
+        activeEngineName = engine.displayName
+    }
+}
+
+// MARK: - Recording Settings View
+
+struct RecordingSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var chunkDuration: Double = 180
+    
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Auto-Chunk Duration")
+                        Spacer()
+                        Text("\(Int(chunkDuration))s")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    
+                    Slider(value: $chunkDuration, in: 30...300, step: 30) {
+                        Text("Chunk Duration")
+                    }
+                    .tint(AppTheme.purple)
+                    .onChange(of: chunkDuration) { oldValue, newValue in
+                        coordinator.audioCapture.autoChunkDuration = newValue
+                        UserDefaults.standard.autoChunkDuration = newValue
+                        coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Chunk Settings")
+            } footer: {
+                Text("Recordings are automatically split into chunks of this duration for efficient processing and transcription.")
+            }
+            
+            Section {
+                HStack {
+                    Label("Format", systemImage: "waveform")
+                    Spacer()
+                    Text("AAC")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Sample Rate", systemImage: "dial.medium")
+                    Spacer()
+                    Text("44.1 kHz")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Channels", systemImage: "speaker.wave.2")
+                    Spacer()
+                    Text("Mono")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Audio Quality")
+            } footer: {
+                Text("Optimized settings for voice recording with smaller file sizes.")
+            }
+            
+            Section {
+                NavigationLink(destination: LanguageSettingsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Languages")
+                            Text("Manage which languages can be detected")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "globe")
+                            .foregroundStyle(AppTheme.emerald)
+                    }
+                }
+            } header: {
+                Text("Detection")
+            }
+        }
+        .navigationTitle("Recording Chunks")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            // Load saved setting or use current value
+            let savedDuration = UserDefaults.standard.autoChunkDuration
+            chunkDuration = savedDuration
+            coordinator.audioCapture.autoChunkDuration = savedDuration
+        }
+    }
+}
+
+// MARK: - AI Settings View
+
+struct AISettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showingSmartestConfig = false
+    @State private var wiggleAPIKeyField = false
+    
+    // Local AI model state
+    @State private var localModelStatus: String = "Checking..."
+    @State private var isLocalModelDownloaded: Bool = false
+    @State private var showDeleteConfirmation: Bool = false
+    @State private var wiggleLocalAIButton = false
+    
+    // Scroll proxy for programmatic scrolling
+    @State private var scrollProxy: ScrollViewProxy?
+    
+    // External API state
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
+    @State private var apiKey: String = ""
+    @State private var showAPIKeyField = false
+    
+    // API Key testing state
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess = false
+    
+    // Available models per provider
+    private let openaiModels = [
+        ("gpt-4.1", "GPT-4.1 (Recommended)"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4o-mini", "GPT-4o Mini"),
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
+    ]
+    
+    private let anthropicModels = [
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
+        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
+    ]
+    
+    private var currentModels: [(String, String)] {
+        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    }
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            List {
+                // MARK: - Summary Quality Picker
+                Section {
+                // Smart (Basic)
+                SummaryQualityCard(
+                    emoji: "⚡️",
+                    title: "Smart",
+                    subtitle: "Quick word-based summaries",
+                    detail: "Always available, works offline",
+                    tier: .basic,
+                    isSelected: activeEngine == .basic,
+                    isAvailable: true,
+                    onSelect: { selectEngine(.basic) }
+                )
+                
+                // Local AI (Phi-3.5)
+                SummaryQualityCard(
+                    emoji: "🤖",
+                    title: "Local AI",
+                    subtitle: coordinator.localModelDisplayName,
+                    detail: localModelStatus,
+                    tier: .local,
+                    isSelected: activeEngine == .local,
+                    isAvailable: isLocalModelDownloaded,
+                    onSelect: { selectEngine(.local) }
+                )
+                
+                // Smarter (Apple Intelligence)
+                SummaryQualityCard(
+                    emoji: "🧠",
+                    title: "Smarter",
+                    subtitle: "Apple Intelligence",
+                    detail: availableEngines.contains(.apple) ? "On-device AI, works offline" : "Requires iOS 18.1+ and compatible device",
+                    tier: .apple,
+                    isSelected: activeEngine == .apple,
+                    isAvailable: availableEngines.contains(.apple),
+                    onSelect: { selectEngine(.apple) }
+                )
+                
+                // Smartest (External API)
+                SummaryQualityCard(
+                    emoji: "✨",
+                    title: "Smartest",
+                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic",
+                    detail: hasValidAPIKey() ? "Best quality, requires internet" : "Tap to configure your API key",
+                    tier: .external,
+                    isSelected: activeEngine == .external,
+                    isAvailable: true,
+                    onSelect: { selectEngine(.external) }
+                )
+            } header: {
+                Text("Summary Quality")
+            } footer: {
+                Text("Choose how you want your audio summaries generated. Smartest requires your own API key.")
+            }
+            
+            // MARK: - Smartest Configuration
+            if activeEngine == .external {
+                Section {
+                    // Provider Selection
+                    Picker("Provider", selection: $selectedProvider) {
+                        Text("OpenAI").tag("OpenAI")
+                        Text("Anthropic").tag("Anthropic")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedProvider) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                        let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
+                        selectedModel = defaultModel
+                        UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
+                        loadAPIKey()
+                    }
+                    
+                    // Model Selection
+                    Picker("Model", selection: $selectedModel) {
+                        ForEach(currentModels, id: \.0) { model in
+                            Text(model.1).tag(model.0)
+                        }
+                    }
+                    .onChange(of: selectedModel) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
+                    }
+                    
+                    // API Key Input
+                    if showAPIKeyField {
+                        VStack(spacing: 8) {
+                            HStack {
+                                SecureField("API Key", text: $apiKey)
+                                    .textContentType(.password)
+                                    .autocapitalization(.none)
+                                    .autocorrectionDisabled()
+                                    .onChange(of: apiKey) { _, newValue in
+                                        let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if normalized != newValue {
+                                            apiKey = normalized
+                                        }
+                                        testResult = nil
+                                    }
+                                
+                                Button("Test") {
+                                    testAPIKey()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(apiKey.isEmpty || isTesting)
+                                
+                                Button("Save") {
+                                    saveAPIKey()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(apiKey.isEmpty)
+                            }
+                            .modifier(WiggleModifier(wiggle: $wiggleAPIKeyField))
+                            
+                            // Instructional text
+                            if !hasValidAPIKey() {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("Save your API key to activate Smartest summaries")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                            
+                            if let result = testResult {
+                                Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(testSuccess ? .green : .red)
+                            }
+                        }
+                    } else {
+                        Button {
+                            showAPIKeyField = true
+                        } label: {
+                            Label(hasValidAPIKey() ? "Change API Key" : "Add API Key", 
+                                  systemImage: hasValidAPIKey() ? "pencil" : "key.fill")
+                        }
+                    }
+                    
+                    // Help link
+                    Link(destination: URL(string: selectedProvider == "OpenAI" 
+                        ? "https://platform.openai.com/api-keys" 
+                        : "https://console.anthropic.com/settings/keys")!) {
+                        Label("Get \(selectedProvider) API Key", systemImage: "arrow.up.right.square")
+                            .font(.footnote)
+                    }
+                    
+                    // Remove key
+                    if hasValidAPIKey() {
+                        Button(role: .destructive) {
+                            clearAPIKey()
+                        } label: {
+                            Label("Remove API Key", systemImage: "trash")
+                        }
+                    }
+                } header: {
+                    Text("Smartest Configuration")
+                } footer: {
+                    if hasValidAPIKey() {
+                        Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
+                    } else {
+                        Text("Add your own OpenAI or Anthropic API key to unlock the Smartest summaries. Keys are stored securely in your device's Keychain.")
+                    }
+                }
+                .id("smartestConfig")
+            }
+            
+            // MARK: - Local AI Model Management
+            if activeEngine == .local {
+                Section {
+                    if coordinator.isDownloadingLocalModel {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            
+                            Text("Downloading \(coordinator.localModelDisplayName)...")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Text("You can leave this screen. We'll notify you when the download is complete.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                    } else if isLocalModelDownloaded {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(coordinator.localModelDisplayName)
+                                .font(.subheadline)
+                            Text(localModelStatus)
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
+                    }
+                } else {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(coordinator.localModelDisplayName)
+                                .font(.subheadline)
+                            Text("Not Downloaded • \(coordinator.expectedLocalModelSizeMB)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            downloadLocalModel()
+                        } label: {
+                            Label("Download", systemImage: "arrow.down.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                        .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
+                    }
+                }
+            } header: {
+                Text("Local AI Model")
+            } footer: {
+                if coordinator.isDownloadingLocalModel {
+                    Text("Download continues in the background. You'll receive a notification when complete.")
+                } else if !isLocalModelDownloaded {
+                    Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
+                } else {
+                    Text("The local AI model enables on-device summarization. It runs entirely on your device for maximum privacy.")
+                }
+            }
+            .alert("Delete Local AI Model?", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteLocalModel()
+                }
+            } message: {
+                Text("This will remove the \\(coordinator.expectedLocalModelSizeMB) model from your device. You can re-download it anytime.")
+            }
+            .id("localAIConfig")
+            } // End of if activeEngine == .local
+        }
+        .navigationTitle("AI & Summaries")
+        .task {
+            await loadEngineStatus()
+            loadAPIKey()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .onChange(of: coordinator.isDownloadingLocalModel) { wasDownloading, isDownloading in
+            // Refresh model status when download completes
+            if wasDownloading && !isDownloading {
+                Task {
+                    isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+                    localModelStatus = await coordinator.localModelSizeFormatted()
+                }
+            }
+        }
+        .onAppear {
+            // Store proxy for scrolling
+            scrollProxy = proxy
+        }
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+        
+        // Load local model status
+        isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+        localModelStatus = await coordinator.localModelSizeFormatted()
+    }
+    
+    private func downloadLocalModel() {
+        // Use coordinator's background download method
+        // Download state persists in coordinator even if view navigates away
+        coordinator.startLocalModelDownload()
+    }
+    
+    private func deleteLocalModel() {
+        Task {
+            do {
+                try await coordinator.deleteLocalModel()
+                await MainActor.run {
+                    isLocalModelDownloaded = false
+                    localModelStatus = "Not Downloaded"
+                }
+                // Refresh status
+                await loadEngineStatus()
+            } catch {
+                coordinator.showError("Delete failed: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        // For Local AI without model, show download section with wiggle animation
+        if tier == .local {
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
+            // Update activeEngine immediately so section appears right away
+            activeEngine = .local
+            
+            // Persist engine preference in background (without triggering refresh)
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(tier)
+            }
+            
+            // Scroll to the section after a brief delay to ensure it's rendered
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("localAIConfig", anchor: .top)
+                }
+            }
+            
+            // If model not downloaded, trigger wiggle animation on button
+            if !isLocalModelDownloaded {
+                withAnimation(.default) {
+                    wiggleLocalAIButton = true
+                }
+                
+                // Reset wiggle after animation
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    wiggleLocalAIButton = false
+                }
+            }
+            
+            return
+        }
+        
+        if tier == .apple && !availableEngines.contains(.apple) {
+            coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
+            return
+        }
+        
+        // If selecting Smartest without API key, show config section with feedback
+        if tier == .external && !hasValidAPIKey() {
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
+            // Update activeEngine immediately so section appears right away
+            activeEngine = .external
+            
+            // Persist engine preference in background (without triggering refresh)
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(tier)
+            }
+            
+            // Show config and trigger wiggle animation
+            showingSmartestConfig = true
+            showAPIKeyField = true
+            
+            // Scroll to the section after a brief delay to ensure it's rendered
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("smartestConfig", anchor: .top)
+                }
+            }
+            
+            // Trigger wiggle animation
+            withAnimation(.default) {
+                wiggleAPIKeyField = true
+            }
+            
+            // Reset wiggle after animation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                wiggleAPIKeyField = false
+            }
+            
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+        }
+    }
+    
+    private func tierDisplayName(_ tier: EngineTier) -> String {
+        switch tier {
+        case .basic: return "Smart"
+        case .apple: return "Smarter"
+        case .external: return "Smartest"
+        default: return tier.displayName
+        }
+    }
+    
+    private func hasValidAPIKey() -> Bool {
+        let key = selectedProvider == "OpenAI" 
+            ? KeychainHelper.load(key: "openai_api_key")
+            : KeychainHelper.load(key: "anthropic_api_key")
+        return key != nil && !key!.isEmpty
+    }
+    
+    private func loadAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        apiKey = KeychainHelper.load(key: keychainKey) ?? ""
+        showAPIKeyField = false
+    }
+    
+    private func saveAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        
+        if KeychainHelper.save(key: keychainKey, value: apiKey) {
+            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+            showAPIKeyField = false
+            showingSmartestConfig = false
+            
+            // Now that we have a valid key, switch to Smartest engine
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(.external)
+                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+                coordinator.showSuccess("API key saved - Switched to Smartest")
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            guard !apiKey.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(apiKey, for: provider)
+            
+            await MainActor.run {
+                testSuccess = result.isValid
+                testResult = result.message
+                isTesting = false
+            }
+        }
+    }
+    
+    private func clearAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        KeychainHelper.delete(key: keychainKey)
+        apiKey = ""
+        showAPIKeyField = false
+        showingSmartestConfig = false
+        
+        if activeEngine == .external {
+            selectEngine(.basic)
+        }
+        
+        coordinator.showSuccess("API key removed")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
+
 // MARK: - Summary Quality Card
+
+struct SummaryQualityCard: View {
+    let emoji: String
+    let title: String
+    let subtitle: String
+    let detail: String
+    let tier: EngineTier
+    let isSelected: Bool
+    let isAvailable: Bool
+    let onSelect: () -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Selection indicator
+                ZStack {
+                    Circle()
+                        .strokeBorder(isSelected ? AppTheme.purple : Color.gray.opacity(0.5), lineWidth: 2)
+                        .frame(width: 24, height: 24)
+                    
+                    if isSelected {
+                        Circle()
+                            .fill(AppTheme.purple)
+                            .frame(width: 12, height: 12)
+                    }
+                }
+                
+                // Emoji
+                Text(emoji)
+                    .font(.title2)
+                
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(isAvailable ? .secondary : Color.orange)
+                }
+                
+                Spacer()
+                
+                // Lock icon if unavailable
+                if !isAvailable {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
+            .opacity(isAvailable ? 1.0 : 0.6)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - On-Device Engines View (Keep for backward compatibility)
+
+struct OnDeviceEnginesView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var showUnavailableAlert = false
+    @State private var selectedUnavailableTier: EngineTier?
+    
+    var body: some View {
+        List {
+            Section {
+                ForEach(EngineTier.privateTiers, id: \.self) { tier in
+                    EngineSelectionRow(
+                        tier: tier,
+                        isActive: tier == activeEngine,
+                        isAvailable: availableEngines.contains(tier)
+                    ) {
+                        selectEngine(tier)
+                    }
+                }
+            } header: {
+                Text("Select Engine")
+            } footer: {
+                Text("Tap an engine to activate it. All on-device engines process data locally for privacy.")
+            }
+        }
+        .navigationTitle("On-Device Engines")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+        .alert("Engine Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let tier = selectedUnavailableTier {
+                Text(unavailableMessage(for: tier))
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func selectEngine(_ tier: EngineTier) {
+        if tier == activeEngine { return }
+        
+        guard availableEngines.contains(tier) else {
+            selectedUnavailableTier = tier
+            showUnavailableAlert = true
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(tier)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to \(tier.displayName)")
+        }
+    }
+    
+    private func unavailableMessage(for tier: EngineTier) -> String {
+        switch tier {
+        case .basic:
+            return "Basic engine should always be available. Please restart the app."
+        case .local:
+            return "Download the local AI model to use on-device intelligence."
+        case .apple:
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
+        case .external:
+            return "Configure your API key to use external AI services."
+        }
+    }
+}
+
+// MARK: - Engine Selection Row
+
+struct EngineSelectionRow: View {
+    let tier: EngineTier
+    let isActive: Bool
+    let isAvailable: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: tier.icon)
+                    .font(.title3)
+                    .foregroundStyle(isAvailable ? .blue : .secondary)
+                    .frame(width: 32)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tier.displayName)
+                        .font(.body)
+                        .foregroundStyle(isAvailable ? .primary : .secondary)
+                    
+                    Text(tier.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else if !isAvailable {
+                    Text("Unavailable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - External API Settings View
+
+struct ExternalAPISettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var activeEngine: EngineTier?
+    @State private var availableEngines: [EngineTier] = []
+    @State private var isLoading = true
+    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
+    @State private var openaiKey: String = ""
+    @State private var anthropicKey: String = ""
+    @State private var isTesting = false
+    @State private var testResult: String?
+    @State private var testSuccess: Bool = false
+    
+    // Available models per provider
+    private let openaiModels = [
+        ("gpt-4.1", "GPT-4.1 (Recommended)"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
+        ("gpt-4o", "GPT-4o"),
+        ("gpt-4o-mini", "GPT-4o Mini"),
+        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
+    ]
+    
+    private let anthropicModels = [
+        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
+        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
+        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
+        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
+    ]
+    
+    private var currentModels: [(String, String)] {
+        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    }
+    
+    private var currentKey: String {
+        selectedProvider == "OpenAI" ? openaiKey : anthropicKey
+    }
+    
+    var body: some View {
+        List {
+            // Status
+            Section {
+                EngineSelectionRow(
+                    tier: .external,
+                    isActive: activeEngine == .external,
+                    isAvailable: availableEngines.contains(.external)
+                ) {
+                    activateExternalEngine()
+                }
+            } header: {
+                Text("Status")
+            } footer: {
+                if availableEngines.contains(.external) {
+                    Text("External API is configured and ready to use.")
+                } else {
+                    Text("Configure an API key below to enable external AI.")
+                }
+            }
+            
+            // Provider Selection
+            Section {
+                Picker("Provider", selection: $selectedProvider) {
+                    Text("OpenAI").tag("OpenAI")
+                    Text("Anthropic").tag("Anthropic")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: selectedProvider) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
+                    // Reset to default model for new provider
+                    let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
+                    selectedModel = defaultModel
+                    UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
+                }
+            } header: {
+                Text("AI Provider")
+            }
+            
+            // Model Selection
+            Section {
+                Picker("Model", selection: $selectedModel) {
+                    ForEach(currentModels, id: \.0) { model in
+                        Text(model.1).tag(model.0)
+                    }
+                }
+                .onChange(of: selectedModel) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
+                    coordinator.showSuccess("Model updated to \(newValue)")
+                }
+            } header: {
+                Text("Model")
+            } footer: {
+                Text("Different models have varying capabilities, speed, and cost.")
+            }
+            
+            // API Key Input
+            Section {
+                if selectedProvider == "OpenAI" {
+                    SecureField("OpenAI API Key", text: $openaiKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+                        .autocorrectionDisabled()
+                        .onChange(of: openaiKey) { _, newValue in
+                            // Normalize: trim whitespace and newlines
+                            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if normalized != newValue {
+                                openaiKey = normalized
+                            }
+                        }
+                    
+                    if !openaiKey.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("API key configured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                        Label("Get OpenAI API Key", systemImage: "arrow.up.right.square")
+                    }
+                } else {
+                    SecureField("Anthropic API Key", text: $anthropicKey)
+                        .textContentType(.password)
+                        .autocapitalization(.none)
+                        .autocorrectionDisabled()
+                        .onChange(of: anthropicKey) { _, newValue in
+                            // Normalize: trim whitespace and newlines
+                            let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if normalized != newValue {
+                                anthropicKey = normalized
+                            }
+                        }
+                    
+                    if !anthropicKey.isEmpty {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("API key configured")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    
+                    Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
+                        Label("Get Anthropic API Key", systemImage: "arrow.up.right.square")
+                    }
+                }
+            } header: {
+                Text("API Key")
+            } footer: {
+                Text("Your API key is stored securely in the device keychain.")
+            }
+            
+            // Test & Save
+            Section {
+                Button {
+                    testAPIKey()
+                } label: {
+                    HStack {
+                        if isTesting {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Testing...")
+                        } else {
+                            Label("Test API Key", systemImage: "checkmark.shield")
+                        }
+                    }
+                }
+                .disabled(currentKey.isEmpty || isTesting)
+                
+                if let result = testResult {
+                    Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(testSuccess ? .green : .red)
+                }
+                
+                Button {
+                    saveAPIKey()
+                } label: {
+                    Label("Save API Key", systemImage: "square.and.arrow.down")
+                }
+                .disabled(currentKey.isEmpty)
+            }
+            
+            // Clear Keys
+            if !openaiKey.isEmpty || !anthropicKey.isEmpty {
+                Section {
+                    Button(role: .destructive) {
+                        clearAPIKeys()
+                    } label: {
+                        Label("Clear All API Keys", systemImage: "trash")
+                    }
+                }
+            }
+            
+            // Warning
+            Section {
+                Label {
+                    Text("Data will be sent to \(selectedProvider) servers for processing.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Privacy Notice")
+            }
+        }
+        .navigationTitle("External API")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await loadEngineStatus()
+            loadSavedKeys()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+            Task {
+                await loadEngineStatus()
+            }
+        }
+    }
+    
+    private func loadEngineStatus() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeEngine = await summCoord.getActiveEngine()
+        availableEngines = await summCoord.getAvailableEngines()
+    }
+    
+    private func loadSavedKeys() {
+        // Load from keychain
+        openaiKey = KeychainHelper.load(key: "openai_api_key") ?? ""
+        anthropicKey = KeychainHelper.load(key: "anthropic_api_key") ?? ""
+        
+        // Load saved model selection
+        if let savedModel = UserDefaults.standard.string(forKey: "externalAPIModel") {
+            selectedModel = savedModel
+        }
+    }
+    
+    private func activateExternalEngine() {
+        guard availableEngines.contains(.external) else {
+            coordinator.showError("Configure an API key first")
+            return
+        }
+        
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            await summCoord.setPreferredEngine(.external)
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            coordinator.showSuccess("Switched to External API")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            let key = currentKey
+            guard !key.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            // Use the ExternalAPIEngine to validate the key with a real API request
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(key, for: provider)
+            
+            await MainActor.run {
+                testSuccess = result.isValid
+                testResult = result.message
+                isTesting = false
+            }
+        }
+    }
+    
+    private func saveAPIKey() {
+        // Save to keychain
+        let key = currentKey
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        
+        if KeychainHelper.save(key: keychainKey, value: key) {
+            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
+            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+            coordinator.showSuccess("API key saved securely")
+            
+            Task {
+                await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func clearAPIKeys() {
+        KeychainHelper.delete(key: "openai_api_key")
+        KeychainHelper.delete(key: "anthropic_api_key")
+        openaiKey = ""
+        anthropicKey = ""
+        coordinator.showSuccess("API keys cleared")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
+
+// MARK: - Statistics Settings View
+
+struct StatisticsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var wordLimit: Double = 20
+    @State private var dateFormat: String = UserDefaults.standard.rollupDateFormat
+    @State private var timeFormat: String = UserDefaults.standard.rollupTimeFormat
+    
+    // Statistics data
+    @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
+    @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
+    @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
+    @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
+    @State private var topWords: [WordFrequency] = []
+    @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
+    @State private var languageDistribution: [(language: String, wordCount: Int)] = []
+    @State private var isLoadingStats = false
+    
+    private let wordLimitKey = "insightsWordLimit"
+    
+    private let dateFormatOptions = [
+        ("MM/dd/yyyy", "12/22/2025"),
+        ("dd/MM/yyyy", "22/12/2025"),
+        ("yyyy-MM-dd", "2025-12-22"),
+        ("MMM d, yyyy", "Dec 22, 2025"),
+        ("MMMM d, yyyy", "December 22, 2025")
+    ]
+    
+    private let timeFormatOptions = [
+        ("HH:mm", "14:30 (24-hour)"),
+        ("hh:mm a", "02:30 PM (12-hour)"),
+        ("h:mm a", "2:30 PM (12-hour)")
+    ]
+    
+    var body: some View {
+        List {
+            // Key Statistics Section
+            if longestSession != nil || mostActiveMonth != nil {
+                Section {
+                    if let longest = longestSession {
+                        NavigationLink {
+                            FilteredSessionsView(
+                                title: "Longest Session",
+                                sessionIds: [longest.sessionId]
+                            )
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "timer")
+                                    .font(.title2)
+                                    .foregroundStyle(AppTheme.purple)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 20
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Longest Session")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack {
+                                        Text(formatDuration(longest.duration))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    
+                    if let mostActive = mostActiveMonth {
+                        NavigationLink {
+                            FilteredSessionsView(
+                                title: formatMonth(year: mostActive.year, month: mostActive.month),
+                                sessionIds: mostActive.sessionIds
+                            )
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "calendar.badge.plus")
+                                    .font(.title2)
+                                    .foregroundStyle(AppTheme.magenta)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 20
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Most Active Month")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack {
+                                        Text(formatMonth(year: mostActive.year, month: mostActive.month))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                } header: {
+                    Text("Key Statistics")
+                }
+            }
+            
+            // Sessions by Hour Section
+            if !sessionsByHour.isEmpty {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(sessionsByHour.sorted(by: { $0.hour < $1.hour }), id: \.hour) { data in
+                                NavigationLink {
+                                    FilteredSessionsView(
+                                        title: formatHour(data.hour),
+                                        sessionIds: data.sessionIds
+                                    )
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Text(formatHourShort(data.hour))
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(AppTheme.skyBlue)
+                                        Text("\(data.count)")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                        Text(data.count == 1 ? "session" : "sessions")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 70)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 35
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                } header: {
+                    Text("Sessions by Time of Day")
+                }
+            }
+            
+            // Sessions by Day of Week Section
+            if !sessionsByDayOfWeek.isEmpty {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(sessionsByDayOfWeek.sorted(by: { $0.dayOfWeek < $1.dayOfWeek }), id: \.dayOfWeek) { data in
+                                NavigationLink {
+                                    FilteredSessionsView(
+                                        title: formatDayOfWeekFull(data.dayOfWeek),
+                                        sessionIds: data.sessionIds
+                                    )
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Text(formatDayOfWeek(data.dayOfWeek))
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(AppTheme.emerald)
+                                        Text("\(data.count)")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                        Text(data.count == 1 ? "session" : "sessions")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 70)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.emerald.opacity(0.15), AppTheme.emerald.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 35
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                } header: {
+                    Text("Sessions by Day of Week")
+                }
+            }
+            
+            // Word Cloud Section
+            if !topWords.isEmpty {
+                Section {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 12) {
+                            ForEach(Array(topWords.enumerated()), id: \.element.id) { index, wordFreq in
+                                VStack(spacing: 6) {
+                                    Text(wordFreq.word.capitalized)
+                                        .font(.system(size: fontSizeForRank(index), weight: .bold))
+                                        .foregroundStyle(colorForRank(index))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
+                                    
+                                    Text("\(wordFreq.count)")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(colorForRank(index).gradient)
+                                        .clipShape(Capsule())
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(colorForRank(index).opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                        .padding(.horizontal, 2)
+                    }
+                    .frame(height: 400)
+                } header: {
+                    Text("Most Used Words")
+                } footer: {
+                    Text("Meaningful words from your transcripts")
+                }
+            }
+            
+            // Emotional Trends Section (Stats only, no chart)
+            if !dailySentiment.isEmpty {
+                Section {
+                    HStack(spacing: 16) {
+                        sentimentStatBox(
+                            label: "Positive",
+                            count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
+                            color: .green
+                        )
+                        sentimentStatBox(
+                            label: "Neutral",
+                            count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
+                            color: .gray
+                        )
+                        sentimentStatBox(
+                            label: "Negative",
+                            count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
+                            color: .red
+                        )
+                    }
+                    .padding(.vertical, 8)
+                } header: {
+                    Text("Emotional Trends")
+                } footer: {
+                    Text("Daily sentiment analysis from your journal entries")
+                }
+            }
+            
+            // Languages Section
+            if !languageDistribution.isEmpty {
+                Section {
+                    let totalWords = languageDistribution.reduce(0) { $0 + $1.wordCount }
+                    
+                    ForEach(languageDistribution.prefix(5), id: \.language) { item in
+                        let percentage = totalWords > 0 ? (Double(item.wordCount) / Double(totalWords)) * 100 : 0
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(LanguageDetector.displayName(for: item.language))
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text("\(Int(percentage))%")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.secondary.opacity(0.2))
+                                    
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(languageColor(index: languageDistribution.firstIndex(where: { $0.language == item.language }) ?? 0))
+                                        .frame(width: geometry.size.width * (percentage / 100))
+                                }
+                            }
+                            .frame(height: 8)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    
+                    if languageDistribution.count > 1 {
+                        Text("You speak \(languageDistribution.count) language\(languageDistribution.count == 1 ? "" : "s") in your recordings")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+                    }
+                } header: {
+                    Text("Languages Spoken")
+                } footer: {
+                    Text("Distribution of languages in your recordings")
+                }
+            }
+            
+            // Settings Sections
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Word Cloud Limit")
+                        Spacer()
+                        Text("\(Int(wordLimit))")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    
+                    Slider(value: $wordLimit, in: 10...200, step: 10) {
+                        Text("Word Limit")
+                    }
+                    .onChange(of: wordLimit) { oldValue, newValue in
+                        UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
+                        coordinator.showSuccess("Word limit updated to \(Int(newValue))")
+                        Task {
+                            await loadStatistics()
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Settings")
+            } footer: {
+                Text("Number of most-used words to display in the Statistics tab.")
+            }
+            
+            Section {
+                Picker("Date Format", selection: $dateFormat) {
+                    ForEach(dateFormatOptions, id: \.0) { format, example in
+                        Text(example).tag(format)
+                    }
+                }
+                .onChange(of: dateFormat) { oldValue, newValue in
+                    UserDefaults.standard.rollupDateFormat = newValue
+                    coordinator.showSuccess("Date format updated")
+                }
+                
+                Picker("Time Format", selection: $timeFormat) {
+                    ForEach(timeFormatOptions, id: \.0) { format, example in
+                        Text(example).tag(format)
+                    }
+                }
+                .onChange(of: timeFormat) { oldValue, newValue in
+                    UserDefaults.standard.rollupTimeFormat = newValue
+                    coordinator.showSuccess("Time format updated")
+                }
+            } header: {
+                Text("Rollup Date & Time Format")
+            } footer: {
+                Text("Date and time format used in period rollups (hour, day, week, month, year).")
+            }
+            
+            Section {
+                NavigationLink(destination: ExcludedWordsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Excluded Words")
+                            Text("Manage stop words for word cloud")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "text.badge.xmark")
+                            .foregroundStyle(.red)
+                    }
+                }
+            } header: {
+                Text("Filters")
+            }
+        }
+        .navigationTitle("Statistics")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if isLoadingStats {
+                LoadingView(size: .medium)
+            }
+        }
+        .task {
+            wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
+            if wordLimit == 0 {
+                wordLimit = 20
+            }
+            await loadStatistics()
+        }
+        .refreshable {
+            await loadStatistics()
+        }
+    }
+    
+    private func loadStatistics() async {
+        isLoadingStats = true
+        do {
+            // Load key statistics
+            longestSession = try await coordinator.fetchLongestSession()
+            mostActiveMonth = try await coordinator.fetchMostActiveMonth()
+            
+            // Load sessions by hour
+            sessionsByHour = try await coordinator.fetchSessionsByHour()
+            
+            // Load sessions by day of week
+            sessionsByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
+            
+            // Load word frequency analysis (all time)
+            let transcriptTexts = try await coordinator.fetchTranscriptText(
+                startDate: Date.distantPast,
+                endDate: Date()
+            )
+            
+            let customExcludedWords: Set<String> = {
+                if let savedWords = UserDefaults.standard.stringArray(forKey: "customExcludedWords") {
+                    return Set(savedWords)
+                }
+                return []
+            }()
+            
+            topWords = WordAnalyzer.analyzeWords(
+                from: transcriptTexts,
+                limit: Int(wordLimit),
+                customExcludedWords: customExcludedWords
+            )
+            
+            // Load daily sentiment data (all time)
+            dailySentiment = try await coordinator.fetchDailySentiment(from: Date.distantPast, to: Date())
+            
+            // Load language distribution
+            languageDistribution = try await coordinator.fetchLanguageDistribution()
+        } catch {
+            print("❌ [StatisticsView] Failed to load statistics: \(error)")
+        }
+        isLoadingStats = false
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func formatMonth(year: Int, month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        if let date = Calendar.current.date(from: DateComponents(year: year, month: month)) {
+            return formatter.string(from: date)
+        }
+        return "\(month)/\(year)"
+    }
+    
+    private func formatHour(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+        let calendar = Calendar.current
+        let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return formatter.string(from: date)
+    }
+    
+    private func formatHourShort(_ hour: Int) -> String {
+        if hour == 0 {
+            return "12 AM"
+        } else if hour < 12 {
+            return "\(hour) AM"
+        } else if hour == 12 {
+            return "12 PM"
+        } else {
+            return "\(hour - 12) PM"
+        }
+    }
+    
+    private func formatDayOfWeek(_ dayOfWeek: Int) -> String {
+        let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return days[dayOfWeek]
+    }
+    
+    private func formatDayOfWeekFull(_ dayOfWeek: Int) -> String {
+        let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        return days[dayOfWeek]
+    }
+    
+    private func fontSizeForRank(_ rank: Int) -> CGFloat {
+        switch rank {
+        case 0...2: return 24
+        case 3...5: return 20
+        case 6...9: return 18
+        default: return 16
+        }
+    }
+    
+    private func colorForRank(_ rank: Int) -> Color {
+        switch rank {
+        case 0: return AppTheme.skyBlue
+        case 1: return AppTheme.purple
+        case 2: return AppTheme.magenta
+        case 3: return AppTheme.emerald
+        case 4: return AppTheme.lightPurple
+        default: return AppTheme.darkPurple
+        }
+    }
+    
+    private func sentimentStatBox(label: String, count: Int, color: Color) -> some View {
+        VStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+            
+            Text("\(count)")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(color)
+            
+            Text("days")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    
+    private func languageColor(index: Int) -> Color {
+        let colors: [Color] = [AppTheme.skyBlue, AppTheme.emerald, AppTheme.purple, AppTheme.magenta, AppTheme.lightPurple]
+        return colors[index % colors.count]
+    }
+}
+
+// MARK: - Data Settings View
+
+struct DataSettingsView: View {
+    @EnvironmentObject var coordinator: AppCoordinator
+    @State private var showDataManagement = false
+    @State private var storageUsed: String = "Calculating..."
+    
+    var body: some View {
+        List {
+            Section {
+                NavigationLink(destination: HistoricalDataView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Historical Data")
+                            Text("View and manage data by year")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.blue)
+                    }
+                }
+            } header: {
+                Text("Browse Data")
+            } footer: {
+                Text("The Overview tab always shows the current year. Use Historical Data to browse previous years.")
+            }
+            
+            Section {
+                Button {
+                    showDataManagement = true
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Export & Backup")
+                            Text("Export your data or create backups")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(.green)
+                    }
+                }
+                .foregroundStyle(.primary)
+            } header: {
+                Text("Data Management")
+            }
+            
+            Section {
+                HStack {
+                    Label("Storage Used", systemImage: "internaldrive")
+                    Spacer()
+                    Text(storageUsed)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Storage")
+            } footer: {
+                Text("Includes recordings, transcripts, and AI models.")
+            }
+        }
+        .navigationTitle("Data")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showDataManagement) {
+            DataManagementView()
+                .environmentObject(coordinator)
+        }
+        .task {
+            await calculateStorage()
+        }
+    }
+    
+    private func calculateStorage() async {
+        // Calculate total storage used by app
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        
+        if let url = documentsURL {
+            let size = directorySize(url: url)
+            let formatter = ByteCountFormatter()
+            formatter.allowedUnits = [.useMB, .useGB]
+            formatter.countStyle = .file
+            storageUsed = formatter.string(fromByteCount: Int64(size))
+        }
+    }
+    
+    private func directorySize(url: URL) -> Int {
+        let fileManager = FileManager.default
+        var totalSize = 0
+        
+        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    totalSize += fileSize
+                }
+            }
+        }
+        
+        return totalSize
+    }
+}
+
+// MARK: - Privacy Settings View
+
+struct PrivacySettingsView: View {
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("Transcription", systemImage: "waveform")
+                        Spacer()
+                        Text("On-Device")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                    }
+                    Text("100% local, uses Apple Speech framework")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 32)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("AI Summaries", systemImage: "sparkles")
+                        Spacer()
+                        Text("User-Controlled")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.blue)
+                    }
+                    Text("Uses your API keys (OpenAI/Anthropic) or on-device fallback")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 32)
+                }
+                
+                HStack {
+                    Label("iCloud Sync", systemImage: "icloud.slash")
+                    Spacer()
+                    Text("Disabled")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Label("Analytics", systemImage: "chart.bar.xaxis")
+                    Spacer()
+                    Text("None")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Privacy Status")
+            } footer: {
+                Text("Transcription always happens on-device. AI summaries use external APIs only if you provide API keys, otherwise on-device processing.")
+            }
+            
+            Section {
+                NavigationLink(destination: PrivacyPolicyView()) {
+                    Label("Privacy Policy", systemImage: "doc.text")
+                }
+            }
+        }
+        .navigationTitle("Privacy")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
 struct ExcludedWordsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -2916,6 +6344,75 @@ struct SessionDetailView: View {
 }
 
 // MARK: - Language Settings View
+
+struct LanguageSettingsView: View {
+    @State private var enabledLanguages: Set<String> = []
+    @State private var allLanguages: [String] = []
+    @EnvironmentObject var coordinator: AppCoordinator
+    
+    private let enabledLanguagesKey = "enabledLanguages"
+    
+    var body: some View {
+        List {
+            Section {
+                Text("Select which languages Life Wrapped should detect in your recordings. All processing happens on-device.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Section("Supported Languages (\(allLanguages.count))") {
+                ForEach(allLanguages, id: \.self) { languageCode in
+                    Toggle(isOn: Binding(
+                        get: { enabledLanguages.contains(languageCode) },
+                        set: { isEnabled in
+                            if isEnabled {
+                                enabledLanguages.insert(languageCode)
+                            } else {
+                                enabledLanguages.remove(languageCode)
+                            }
+                            saveEnabledLanguages()
+                        }
+                    )) {
+                        HStack {
+                            Text(LanguageDetector.flagEmoji(for: languageCode))
+                                .font(.title3)
+                            Text(LanguageDetector.displayName(for: languageCode))
+                            Spacer()
+                            Text(languageCode)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    .tint(AppTheme.purple)
+                }
+            }
+        }
+        .navigationTitle("Languages")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            loadLanguages()
+        }
+    }
+    
+    private func loadLanguages() {
+        allLanguages = LanguageDetector.supportedLanguages()
+        
+        if let savedLanguages = UserDefaults.standard.array(forKey: enabledLanguagesKey) as? [String] {
+            enabledLanguages = Set(savedLanguages)
+        } else {
+            // Default to English and Spanish only
+            let defaultLanguages = ["en", "es"]
+            enabledLanguages = Set(defaultLanguages.filter { allLanguages.contains($0) })
+            saveEnabledLanguages()
+        }
+    }
+    
+    private func saveEnabledLanguages() {
+        UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
+        coordinator.showSuccess("Language preferences saved")
+    }
+}
 
 // MARK: - Overview Summary Card
 

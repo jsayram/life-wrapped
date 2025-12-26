@@ -323,7 +323,6 @@ struct AISettingsView: View {
             // Store proxy for scrolling
             scrollProxy = proxy
         }
-        }
     }
     
     // MARK: - Helper Methods
@@ -488,5 +487,66 @@ struct AISettingsView: View {
             // Now that we have a valid key, switch to Smartest engine
             Task {
                 guard let summCoord = coordinator.summarizationCoordinator else { return }
-                await summCoord.setPreferredEngine(.external)
+                try? await summCoord.switchEngine(to: .external)
                 await loadEngineStatus()
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+                coordinator.showSuccess("API key saved - Switched to Smartest")
+            }
+        } else {
+            coordinator.showError("Failed to save API key")
+        }
+    }
+    
+    private func testAPIKey() {
+        isTesting = true
+        testResult = nil
+        
+        Task {
+            guard !apiKey.isEmpty else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Please enter an API key"
+                    isTesting = false
+                }
+                return
+            }
+            
+            guard let summCoord = coordinator.summarizationCoordinator else {
+                await MainActor.run {
+                    testSuccess = false
+                    testResult = "Summarization not initialized"
+                    isTesting = false
+                }
+                return
+            }
+            
+            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
+            let result = await summCoord.validateExternalAPIKey(apiKey, for: provider)
+            
+            await MainActor.run {
+                testSuccess = result.isValid
+                testResult = result.message
+                isTesting = false
+            }
+        }
+    }
+    
+    private func clearAPIKey() {
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        KeychainHelper.delete(key: keychainKey)
+        apiKey = ""
+        showAPIKeyField = false
+        showingSmartestConfig = false
+        
+        if activeEngine == .external {
+            selectEngine(.basic)
+        }
+        
+        coordinator.showSuccess("API key removed")
+        
+        Task {
+            await loadEngineStatus()
+            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
