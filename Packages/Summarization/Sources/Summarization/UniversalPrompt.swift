@@ -55,18 +55,64 @@ public struct UniversalPrompt {
     // MARK: - System Prompt (same for all levels)
     
     private static let systemInstruction = """
-    You are a private journaling assistant that extracts MEANING and INSIGHTS from spoken thoughts.
-    
-    Your goal is to:
-    - Identify the CORE IDEAS and reasoning behind what's being said
-    - Extract the INTENT and purpose of the discussion
-    - Recognize patterns, problems, and goals being explored
-    - Structure insights as clear, actionable bullet points
-    - Avoid simply repeating or paraphrasing - dig deeper into the "why"
-    
-    You summarize faithfully using only provided content. Never invent facts. If something is unclear, write "unclear".
-    No generic motivational fluff. Be concise and insightful.
+    You are an AI journaling assistant for Life Wrapped, a private voice journaling app.
+
+    CONTEXT:
+    - Users record spoken thoughts throughout their day via audio
+    - Audio is transcribed to text using on-device speech recognition
+    - You analyze transcribed speech to extract meaningful insights
+    - All processing happens on-device for privacy
+
+    YOUR ROLE:
+    - Convert raw, messy spoken transcripts into clean, structured first-person journal notes
+    - Preserve meaning and intent while removing speech artifacts (repetition, false starts, filler)
+    - Capture concrete next steps, decisions, observations, and open questions
+
+    VOICE & PERSPECTIVE (HARD RULES):
+    - Write strictly in first person as if I wrote it: “I”, “me”, “my”
+    - NEVER use: “the user”, “they”, “them”, “their”, “he/she”, “the person”
+    - Do not describe me from the outside. Do not narrate about me. Write as me.
+
+    FIDELITY (HARD RULES):
+    - Use ONLY information present in the transcript
+    - Do NOT invent tasks, facts, timelines, emotions, or motivations
+    - Do NOT add psychological interpretation (“I’m anxious”, “I’m overwhelmed”) unless explicitly stated
+    - If something is unclear, keep it as uncertainty instead of guessing
+    - If I contradict myself or trail off, reflect that as ambiguity (briefly)
+
+    ANTI-FLUFF:
+    - No generic self-help language
+    - No motivational coaching tone
+    - No vague abstractions unless the transcript is already vague
+    - Prefer concrete nouns/verbs: buttons, pages, bugs, decisions, next steps
+
+    COMPLETENESS (AVOID OVER-COMPRESSION):
+    - Do not drop action items or important details
+    - Do not merge distinct tasks into one generic item
+    - Preserve exploratory or tentative ideas (label them clearly as “considering”, “maybe”, “not sure yet”)
+    - Preserve “not working yet / needs fixing” states when mentioned
+
+    WHAT TO PRODUCE (KEY BEHAVIOR):
+    You are not doing a one-line executive summary. You are producing a cleaned-up journal note that is:
+    - faithful to the original transcript
+    - readable
+    - structured
+    - complete
+
+    PROCESS (INTERNAL CHECKLIST):
+    1) Identify all explicit action items (things I need to do)
+    2) Identify issues/bugs/problems mentioned
+    3) Identify decisions made vs. options being considered
+    4) Identify anything explicitly “not done yet / not working yet”
+    5) Rewrite in first person, remove filler/repetition, keep meaning
+    6) Final check: no third-person words, no invented content, no dropped tasks
+
+    OUTPUT FORMAT:
+    - Return VALID JSON matching the provided schema exactly
+    - No extra keys, no commentary, no markdown
+    - Just the JSON object
     """
+
     
     // MARK: - Schemas per Level
     
@@ -87,31 +133,32 @@ public struct UniversalPrompt {
     /// Session schema - one recording session (multiple chunks)
     public static let sessionSchema = """
     {
-      "title": "string - short 3-5 word descriptive title capturing the essence",
-      "key_insights": [
-        "string array - bullet points of KEY INSIGHTS extracted from the content",
-        "each insight should capture the MEANING and REASONING behind what was said",
-        "focus on WHAT the person is trying to accomplish or understand",
-        "identify the CORE PROBLEMS, GOALS, or QUESTIONS being explored",
-        "avoid simply restating what was said - extract the underlying intent"
-      ],
-      "main_themes": [
-        "string array - the overarching themes/topics discussed",
-        "group related ideas together rather than listing disconnected items"
-      ],
-      "action_items": [
-        "string array - concrete next steps or decisions mentioned",
-        "structure as actionable bullets"
-      ],
-      "thought_process": "string - brief 2-3 sentence analysis of the person's reasoning, problem-solving approach, or mental framework",
-      "mood_tone": "string - the overall emotional tone and energy level",
-      "open_questions": [
-        "string array - unresolved questions or areas needing more thought",
-        "things the person is still figuring out"
-      ]
+    "title": "3-5 word descriptive title (no 'user', no third-person)",
+    "summary": "FIRST-PERSON cleaned rewrite of what I said. Remove filler/repetition/false starts, but KEEP all distinct tasks, ideas, and uncertainties. Do not invent anything. Do not use third-person.",
+    "key_points": ["Distinct point 1", "Distinct point 2", "..."]
     }
+
+    IMPORTANT FOR session summaries:
+    - This is ORGANIZED VOICE NOTES (a cleaned rewrite), not analysis
+    - Write in first person only: I / me / my
+    - NEVER say: the user, they, them, their, he, she
+    - Keep the transcript meaning faithful, but make it grammatically correct and clear
+    - Remove speech artifacts (repetition, stutters, “um”, “ok ok”), without removing content
+    - Do NOT over-summarize: do NOT collapse multiple tasks into one vague sentence
+    - Preserve tentative language when present: “I’m considering…”, “Not sure yet…”, “This isn’t working yet…”
+    - Do NOT interpret or add emotions/insights that weren’t said
+    - Organize logically (by topic or sequence) so someone reading understands what happened
+
+    KEY_POINTS RULES:
+    - key_points must include EVERY distinct:
+    - task / next step
+    - bug / issue
+    - decision
+    - idea being considered
+    - “not working yet” item
+    - Keep each bullet specific and separate (no merging)
     """
-    
+
     /// Daily schema - all sessions from one day
     public static let dailySchema = """
     {
@@ -195,7 +242,49 @@ public struct UniversalPrompt {
     
     // MARK: - Prompt Builder
     
-    /// Build a universal prompt for any summarization level
+    /// Build separate system and user messages for better LLM prompting
+    /// - Parameters:
+    ///   - level: The summarization level (chunk, session, day, week, month, year)
+    ///   - input: The input text or JSON to summarize
+    ///   - metadata: Optional metadata (duration, word count, session count, etc.)
+    /// - Returns: Tuple of (systemPrompt, userMessage)
+    public static func buildMessages(
+        level: SummaryLevel,
+        input: String,
+        metadata: [String: Any] = [:]
+    ) -> (system: String, user: String) {
+        let schema = schema(for: level)
+        
+        // Build metadata string if provided
+        var metadataStr = ""
+        if !metadata.isEmpty {
+            let parts = metadata.map { "\($0.key): \($0.value)" }
+            metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
+        }
+        
+        let userMessage = """
+        Task: Summarize at LEVEL = \(level.rawValue).
+        Use ONLY the provided INPUT below.
+        Return VALID JSON matching this schema exactly:
+        
+        \(schema)
+        \(metadataStr)
+        
+        INPUT:
+        \(input)
+        
+        IMPORTANT: 
+        - Output MUST be valid JSON with no extra text before or after
+        - Do NOT wrap in markdown code blocks (no ```json)
+        - Do NOT add explanations or commentary
+        - Start your response with { and end with }
+        - Follow the exact field names in the schema
+        """
+        
+        return (system: systemInstruction, user: userMessage)
+    }
+    
+    /// Build a universal prompt for any summarization level (legacy single-string format)
     /// - Parameters:
     ///   - level: The summarization level (chunk, session, day, week, month, year)
     ///   - input: The input text or JSON to summarize
@@ -206,29 +295,11 @@ public struct UniversalPrompt {
         input: String,
         metadata: [String: Any] = [:]
     ) -> String {
-        let schema = schema(for: level)
-        
-        // Build metadata string if provided
-        var metadataStr = ""
-        if !metadata.isEmpty {
-            let parts = metadata.map { "\($0.key): \($0.value)" }
-            metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
-        }
-        
+        let messages = buildMessages(level: level, input: input, metadata: metadata)
         return """
-        \(systemInstruction)
+        \(messages.system)
         
-        Task: Summarize at LEVEL = \(level.rawValue).
-        Use ONLY the provided INPUT.
-        Return VALID JSON that matches the given schema exactly.
-        Do not include any extra keys or commentary.
-        
-        Schema:
-        \(schema)
-        \(metadataStr)
-        
-        Input:
-        \(input)
+        \(messages.user)
         
         JSON Response:
         """

@@ -49,10 +49,16 @@ public actor InsightsManager {
         // Fetch transcript segments for the bucket period
         let segments = try await storage.getTranscriptSegments(from: bucketStart, to: bucketEnd)
         
-        // Calculate aggregated metrics
-        let wordCount = segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
-        let speakingSeconds = segments.reduce(0.0) { $0 + ($1.endTime - $1.startTime) }
-        let segmentCount = segments.count
+        // Filter out segments with no words (empty transcriptions)
+        let validSegments = segments.filter { segment in
+            let wordCount = segment.text.split(separator: " ").count
+            return wordCount > 0
+        }
+        
+        // Calculate aggregated metrics (only from valid segments)
+        let wordCount = validSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        let speakingSeconds = validSegments.reduce(0.0) { $0 + ($1.endTime - $1.startTime) }
+        let segmentCount = validSegments.count
         
         // Create rollup
         let rollup = InsightsRollup(

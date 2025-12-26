@@ -8,9 +8,9 @@
 import Foundation
 import SharedModels
 import Storage
-import LocalLLM  // Required for LocalEngine
+import LocalLLM
 
-/// Orchestrates summarization across multiple engines (Basic, Apple, Local, External)
+/// Orchestrates summarization across multiple engines (Basic, Local, Apple, External)
 /// Selects the appropriate engine based on availability and user settings
 public actor SummarizationCoordinator {
     
@@ -21,10 +21,9 @@ public actor SummarizationCoordinator {
     
     // Available engines
     private var basicEngine: BasicEngine
+    private var localEngine: LocalEngine
     private var appleEngine: (any SummarizationEngine)?
-    private var localEngine: (any SummarizationEngine)?
     private var externalEngine: (any SummarizationEngine)?
-    private var localConfiguration: LocalLLMConfiguration = .current()
     
     // Current active engine
     private var activeEngine: any SummarizationEngine
@@ -45,13 +44,13 @@ public actor SummarizationCoordinator {
         self.basicEngine = BasicEngine(storage: storage)
         self.activeEngine = basicEngine
         
+        // Initialize local LLM engine (Phi-3.5)
+        self.localEngine = LocalEngine()
+        
         // Initialize Apple Intelligence engine (Phase 2B - iOS 18.1+)
         if #available(iOS 18.1, *) {
             self.appleEngine = AppleEngine(storage: storage)
         }
-        
-        // Initialize local engine (Phase 2A)
-        self.localEngine = LocalEngine(storage: storage, configuration: .defaults(for: .local), localConfiguration: localConfiguration)
         
         // Initialize external API engine (Phase 2C)
         self.externalEngine = ExternalAPIEngine(storage: storage)
@@ -73,23 +72,16 @@ public actor SummarizationCoordinator {
             preferredTier = tier
             print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
         } else {
-            // No saved preference - set default based on availability
-            let modelManager = ModelFileManager.shared
-            let localModelAvailable = await modelManager.availableModels().isEmpty == false
-            
-            if localModelAvailable {
-                // Local AI is default when model is downloaded and no preference set
-                preferredTier = .local
-                UserDefaults.standard.set(EngineTier.local.rawValue, forKey: Self.preferredEngineKey)
-                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Local AI")
+            // No saved preference - default to External if API key exists, else Basic
+            if let external = externalEngine, await external.isAvailable() {
+                preferredTier = .external
+                UserDefaults.standard.set(EngineTier.external.rawValue, forKey: Self.preferredEngineKey)
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to External AI")
             } else {
-                // Fall back to basic if no local model
                 preferredTier = .basic
                 print("🧠 [SummarizationCoordinator] No preference set - defaulting to Basic")
             }
         }
-        
-        await applyLocalPreset()
         
         await selectBestAvailableEngine()
         print("✅ [SummarizationCoordinator] Active engine: \(activeEngine.tier.displayName)")
@@ -110,12 +102,12 @@ public actor SummarizationCoordinator {
             available.append(.basic)
         }
         
-        if let apple = appleEngine, await apple.isAvailable() {
-            available.append(.apple)
+        if await localEngine.isAvailable() {
+            available.append(.local)
         }
         
-        if let local = localEngine, await local.isAvailable() {
-            available.append(.local)
+        if let apple = appleEngine, await apple.isAvailable() {
+            available.append(.apple)
         }
         
         if let external = externalEngine, await external.isAvailable() {
@@ -146,19 +138,6 @@ public actor SummarizationCoordinator {
         print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
         await selectBestAvailableEngine()
     }
-
-    public func setLocalPresetOverride(_ preset: LocalLLMConfiguration.Preset?) async {
-        LocalLLMConfiguration.persistPresetOverride(preset)
-        await applyLocalPreset()
-        await selectBestAvailableEngine()
-        await MainActor.run {
-            NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-        }
-    }
-
-    public func getLocalConfiguration() -> LocalLLMConfiguration {
-        localConfiguration
-    }
     
     /// Select the best available engine based on user preference
     private func selectBestAvailableEngine() async {
@@ -168,15 +147,15 @@ public actor SummarizationCoordinator {
             activeEngine = basicEngine
             return
             
-        case .apple:
-            if let apple = appleEngine, await apple.isAvailable() {
-                activeEngine = apple
+        case .local:
+            if await localEngine.isAvailable() {
+                activeEngine = localEngine
                 return
             }
             
-        case .local:
-            if let local = localEngine, await local.isAvailable() {
-                activeEngine = local
+        case .apple:
+            if let apple = appleEngine, await apple.isAvailable() {
+                activeEngine = apple
                 return
             }
             
@@ -190,14 +169,42 @@ public actor SummarizationCoordinator {
         // Fallback to basic if preferred unavailable
         activeEngine = basicEngine
     }
-
-    private func applyLocalPreset() async {
-        let profile = LocalLLMConfiguration.DeviceProfile.current
-        localConfiguration = LocalLLMConfiguration.current(profile: profile)
-        if let local = localEngine as? LocalEngine {
-            await local.updateLocalConfiguration(localConfiguration)
+    
+    // MARK: - Chunk-Level Summarization (Local AI)
+    
+    /// Summarize a single chunk using the local LLM engine
+    /// Called after transcription completes for each chunk when using Local AI tier
+    /// - Parameters:
+    ///   - chunkId: The UUID of the audio chunk
+    ///   - transcriptText: The transcribed text for this chunk
+    /// - Returns: AI-generated summary of the chunk
+    /// - Throws: Error if summarization fails
+    public func summarizeChunk(
+        chunkId: UUID,
+        transcriptText: String
+    ) async throws -> String {
+        // Only use local engine for chunk summarization
+        let isLocalAvailable = await localEngine.isAvailable()
+        if preferredTier == .local && isLocalAvailable {
+            return try await localEngine.summarizeChunk(
+                chunkId: chunkId,
+                transcriptText: transcriptText
+            )
         }
-        print("⚙️ [SummarizationCoordinator] Local preset set to \(localConfiguration.preset.displayName) (\(localConfiguration.tokensDescription))")
+        
+        // For other tiers, skip per-chunk summarization
+        // (full text will be summarized at session level)
+        return ""
+    }
+    
+    /// Check if the active tier supports per-chunk AI processing
+    public func supportsChunkProcessing() -> Bool {
+        return preferredTier == .local
+    }
+    
+    /// Get the local engine for direct access (for loading model, etc.)
+    public func getLocalEngine() -> LocalEngine {
+        return localEngine
     }
     
     // MARK: - Session Summarization
@@ -245,16 +252,87 @@ public actor SummarizationCoordinator {
         // Extract language codes
         let languageCodes = Array(Set(segments.map { $0.languageCode }))
         
-        // Generate intelligence using active engine
-        let intelligence = try await activeEngine.summarizeSession(
-            sessionId: sessionId,
-            transcriptText: transcriptText,
-            duration: duration,
-            languageCodes: languageCodes
-        )
+        // Try active engine first, with automatic fallback on failure
+        var lastError: Error?
+        var engineToTry = activeEngine
         
-        // Convert to Summary for database storage
-        return try convertToSummary(intelligence: intelligence)
+        // Define fallback chain: External → Local → Basic
+        // Apple Intelligence is not in automatic fallback - user must explicitly select it
+        let fallbackChain: [EngineTier] = [.external, .local, .basic]
+        var triedEngines: [EngineTier] = []
+        
+        for tier in fallbackChain {
+            // Skip if we've already tried this tier
+            if triedEngines.contains(tier) {
+                continue
+            }
+            
+            // Get the engine for this tier
+            if tier == activeEngine.tier {
+                engineToTry = activeEngine
+            } else if tier == .local {
+                engineToTry = localEngine
+            } else if tier == .apple, let apple = appleEngine {
+                engineToTry = apple
+            } else if tier == .external, let external = externalEngine {
+                engineToTry = external
+            } else if tier == .basic {
+                engineToTry = basicEngine
+            } else {
+                continue // Skip unavailable engines
+            }
+            
+            // Check if engine is available
+            let isAvailable = await engineToTry.isAvailable()
+            if !isAvailable {
+                print("⚠️ [SummarizationCoordinator] \(tier.displayName) unavailable, trying next engine...")
+                triedEngines.append(tier)
+                continue
+            }
+            
+            triedEngines.append(tier)
+            
+            do {
+                print("🧠 [SummarizationCoordinator] Attempting summarization with \(tier.displayName)...")
+                
+                // Generate intelligence using this engine
+                let intelligence = try await engineToTry.summarizeSession(
+                    sessionId: sessionId,
+                    transcriptText: transcriptText,
+                    duration: duration,
+                    languageCodes: languageCodes
+                )
+                
+                // Success! Convert to Summary and return
+                print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
+                return try convertToSummary(intelligence: intelligence)
+                
+            } catch {
+                print("❌ [SummarizationCoordinator] \(tier.displayName) failed: \(error.localizedDescription)")
+                lastError = error
+                
+                // If this is External API and failed, try fallback immediately
+                if tier == .external {
+                    print("🔄 [SummarizationCoordinator] Network error detected, falling back to on-device engines...")
+                    continue
+                }
+                
+                // For other engines, if there are more to try, continue
+                if triedEngines.count < fallbackChain.count {
+                    continue
+                } else {
+                    // All engines failed
+                    throw error
+                }
+            }
+        }
+        
+        // If we get here, all engines failed
+        if let error = lastError {
+            throw error
+        } else {
+            throw SummarizationError.summarizationFailed("All summarization engines unavailable")
+        }
     }
     
     // MARK: - Period Summarization
@@ -328,6 +406,8 @@ public actor SummarizationCoordinator {
             endDate: endOfMonth
         )
     }
+
+    // MARK: - Yearly Summarization
     
     /// Generate a yearly summary by aggregating monthly summaries
     /// - Parameter date: A date within the year to summarize
@@ -523,13 +603,6 @@ extension SummarizationCoordinator {
     public func registerAppleEngine(_ engine: any SummarizationEngine) async {
         guard engine.tier == .apple else { return }
         self.appleEngine = engine
-        await selectBestAvailableEngine()
-    }
-    
-    /// Register local model engine (when implemented)
-    public func registerLocalEngine(_ engine: any SummarizationEngine) async {
-        guard engine.tier == .local else { return }
-        self.localEngine = engine
         await selectBestAvailableEngine()
     }
     

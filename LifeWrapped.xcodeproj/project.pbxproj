@@ -68,7 +68,6 @@
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
 		4C9255CE1AB102B4DF974A24 /* Storage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Storage; path = Packages/Storage; sourceTree = SOURCE_ROOT; };
-		57B2D17C3177F2F8337B0C9B /* LocalLLM */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LocalLLM; path = Packages/LocalLLM; sourceTree = SOURCE_ROOT; };
 		5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		77C5EF04CEB54A1460DC0F2A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8066CFE3A2B06F1666440F97 /* SharedModels */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SharedModels; path = Packages/SharedModels; sourceTree = SOURCE_ROOT; };
@@ -178,7 +177,6 @@
 			children = (
 				A21F94DB4A9093E1953F782B /* AudioCapture */,
 				4BFA9A8C0292221E0BD75A6D /* InsightsRollup */,
-				57B2D17C3177F2F8337B0C9B /* LocalLLM */,
 				8066CFE3A2B06F1666440F97 /* SharedModels */,
 				4C9255CE1AB102B4DF974A24 /* Storage */,
 				0FD9013A86B8D02440ABE02C /* Summarization */,
@@ -308,7 +306,6 @@
 			packageReferences = (
 				4D754DE42878205E72A9AC79 /* XCLocalSwiftPackageReference "Packages/AudioCapture" */,
 				E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */,
-				F4D99A4CB3B7303D1762CBF7 /* XCLocalSwiftPackageReference "Packages/LocalLLM" */,
 				02D8BAF21912F2D47D5AACC7 /* XCLocalSwiftPackageReference "Packages/SharedModels" */,
 				49D1508E1F7F1B06FAD33759 /* XCLocalSwiftPackageReference "Packages/Storage" */,
 				DD0FAD72A9ACE6E6B8E0E128 /* XCLocalSwiftPackageReference "Packages/Summarization" */,
@@ -636,10 +633,6 @@
 		E2904717F6A8C8E9C45F9730 /* XCLocalSwiftPackageReference "Packages/InsightsRollup" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/InsightsRollup;
-		};
-		F4D99A4CB3B7303D1762CBF7 /* XCLocalSwiftPackageReference "Packages/LocalLLM" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/LocalLLM;
 		};
 /* End XCLocalSwiftPackageReference section */
 

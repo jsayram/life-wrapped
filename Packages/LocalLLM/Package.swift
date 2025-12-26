@@ -15,16 +15,20 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(path: "../SharedModels"),
-        // Patched SwiftLlama using llama.cpp b7486 XCFramework for Llama 3.2 tokenizer compatibility
-        .package(path: "../SwiftLlamaPatched"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.29.1"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.0")
     ],
     targets: [
         .target(
             name: "LocalLLM",
             dependencies: [
-                "SharedModels",
-                .product(name: "SwiftLlama", package: "SwiftLlamaPatched"),
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXNN", package: "mlx-swift"),
+                .product(name: "MLXRandom", package: "mlx-swift"),
+                .product(name: "MLXLLM", package: "mlx-swift-lm"),
+                .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+                .product(name: "Hub", package: "swift-transformers")
             ],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")

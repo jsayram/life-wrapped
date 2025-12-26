@@ -8,7 +8,6 @@ import Charts
 import Transcription
 import Storage
 import Summarization
-import LocalLLM
 import Security
 
 // MARK: - AppTheme
@@ -115,6 +114,28 @@ extension Color {
             blue: Double(b) / 255,
             opacity: Double(a) / 255
         )
+    }
+}
+
+// MARK: - UserDefaults Extension for Rollup Settings
+
+extension UserDefaults {
+    var autoChunkDuration: TimeInterval {
+        get {
+            let value = double(forKey: "autoChunkDuration")
+            return value > 0 ? value : 30  // Default 30s for fast processing
+        }
+        set { set(newValue, forKey: "autoChunkDuration") }
+    }
+    
+    var rollupDateFormat: String {
+        get { string(forKey: "rollupDateFormat") ?? "MMM d, yyyy" }
+        set { set(newValue, forKey: "rollupDateFormat") }
+    }
+    
+    var rollupTimeFormat: String {
+        get { string(forKey: "rollupTimeFormat") ?? "h:mm a" }
+        set { set(newValue, forKey: "rollupTimeFormat") }
     }
 }
 
@@ -253,22 +274,24 @@ struct ContentView: View {
     }
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            HomeTab()
-                .tabItem {
-                    Label("Home", systemImage: "house.fill")
-                }
-                .tag(0)
+        Group {
+            if coordinator.isInitialized {
+                TabView(selection: $selectedTab) {
+                    HomeTab()
+                        .tabItem {
+                            Label("Home", systemImage: "house.fill")
+                        }
+                        .tag(0)
 
-            HistoryTab()
-                .tabItem {
-                    Label("History", systemImage: "list.bullet")
-                }
-                .tag(1)
+                    HistoryTab()
+                        .tabItem {
+                            Label("History", systemImage: "list.bullet")
+                        }
+                        .tag(1)
 
-            InsightsTab()
+            OverviewTab()
                 .tabItem {
-                    Label("Insights", systemImage: "chart.bar.fill")
+                    Label("Overview", systemImage: "doc.text.fill")
                 }
                 .tag(2)
 
@@ -277,24 +300,22 @@ struct ContentView: View {
                     Label("Settings", systemImage: "gear")
                 }
                 .tag(3)
+                }
+                .tint(AppTheme.purple)
+            } else {
+                // Show loading state while not initialized
+                Color.clear
+            }
         }
-        .tint(AppTheme.purple)
         .sheet(isPresented: $coordinator.needsPermissions) {
             PermissionsView()
+                .environmentObject(coordinator)
                 .interactiveDismissDisabled()
         }
-        .alert("Enhance with Local AI", isPresented: $coordinator.showLocalAIWelcomeTip) {
-            Button("Open Settings") {
-                coordinator.showLocalAIWelcomeTip = false
-                selectedTab = 3 // Switch to Settings tab
-            }
-            Button("Maybe Later", role: .cancel) {
-                coordinator.showLocalAIWelcomeTip = false
-            }
-        } message: {
-            Text("Get AI-powered summaries similar to ChatGPT, but running entirely on your device for maximum privacy. Available in Settings → Local AI.")
-        }
         .toast($coordinator.currentToast)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToSettingsTab"))) { _ in
+            selectedTab = 3
+        }
         .overlay {
             if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
                 LoadingOverlay()
@@ -331,8 +352,6 @@ struct LoadingOverlay: View {
 
 struct HomeTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
-    @State private var localModelAvailable = false
-    @State private var showLocalAIDownload = false
     
     var body: some View {
         NavigationStack {
@@ -358,28 +377,14 @@ struct HomeTab: View {
                     // Recording Button
                     RecordingButton()
                     
-                    // Add Local AI Button (only show if no model available)
-                    if !localModelAvailable {
-                        AddLocalAIButton {
-                            showLocalAIDownload = true
-                        }
-                    }
-                    
                     Spacer()
                 }
                 .padding()
             }
             .refreshable {
                 await refreshStats()
-                await checkLocalModelAvailability()
             }
             .navigationBarHidden(true)
-            .sheet(isPresented: $showLocalAIDownload) {
-                LocalAIDownloadView()
-            }
-            .task {
-                await checkLocalModelAvailability()
-            }
         }
     }
     
@@ -389,406 +394,7 @@ struct HomeTab: View {
         await coordinator.refreshStreak()
         print("✅ [HomeTab] Stats refreshed")
     }
-    
-    private func checkLocalModelAvailability() async {
-        let modelManager = LocalLLM.ModelFileManager.shared
-        let models = await modelManager.availableModels()
-        await MainActor.run {
-            localModelAvailable = !models.isEmpty
-        }
-    }
 }
-
-// MARK: - Add Local AI Button
-
-struct AddLocalAIButton: View {
-    @Environment(\.colorScheme) var colorScheme
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.15), AppTheme.magenta.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 56, height: 56)
-                    
-                    Image(systemName: "brain.head.profile")
-                        .font(.title)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.magenta],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Add Local AI")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                    
-                    Text("Enable smart summaries with on-device AI")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(20)
-            .background(Color(.secondarySystemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(AppTheme.cardGradient(for: colorScheme))
-                    .allowsHitTesting(false)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(AppTheme.purple.opacity(0.2), lineWidth: 1)
-                    .allowsHitTesting(false)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Local AI Download View
-
-struct LocalAIDownloadView: View {
-    @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var coordinator: AppCoordinator
-    @State private var availableModels: [LocalLLM.ModelFileManager.ModelSize] = []
-    @State private var isLoading = true
-    
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Local AI Models")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        
-                        Text("Download an AI model to enable smart summaries that run entirely on your device. Your data never leaves your phone.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        
-                        HStack(spacing: 8) {
-                            Image(systemName: "lock.shield.fill")
-                                .foregroundStyle(.green)
-                            Text("Privacy-First")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.green)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-                
-                Section("Available Models") {
-                    ForEach(LocalLLM.ModelFileManager.ModelSize.allCases, id: \.rawValue) { modelSize in
-                        ModelDownloadRowView(
-                            modelSize: modelSize,
-                            isDownloaded: availableModels.contains(modelSize)
-                        )
-                    }
-                }
-                
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Requirements")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "wifi")
-                                .font(.caption)
-                            Text("WiFi connection for download")
-                                .font(.caption)
-                        }
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "memorychip")
-                                .font(.caption)
-                            Text("2-3 GB free storage space")
-                                .font(.caption)
-                        }
-                        
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock")
-                                .font(.caption)
-                            Text("5-10 minutes download time")
-                                .font(.caption)
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
-                }
-            }
-            .navigationTitle("Add Local AI")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .task {
-                await loadModels()
-            }
-            .refreshable {
-                await loadModels()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
-                Task {
-                    await loadModels()
-                }
-            }
-        }
-    }
-    
-    private func loadModels() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        let manager = LocalLLM.ModelFileManager.shared
-        availableModels = await manager.availableModels()
-    }
-}
-
-// MARK: - Model Download Row View
-
-struct ModelDownloadRowView: View {
-    let modelSize: LocalLLM.ModelFileManager.ModelSize
-    let isDownloaded: Bool
-    @EnvironmentObject var coordinator: AppCoordinator
-    @Environment(\.dismiss) var dismiss
-    @State private var isDownloading = false
-    @State private var downloadProgress: Double = 0.0
-    @State private var downloadTask: Task<Void, Never>?
-    @State private var showDownloadAlert = false
-    @State private var justCompleted = false
-    @State private var isCheckingState = true
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(modelSize.displayName)
-                        .font(.body)
-                        .fontWeight(.semibold)
-                    
-                    Text("\(modelSize.approximateSizeMB) MB")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                if isDownloaded {
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.green)
-                        
-                        Text("Ready")
-                            .font(.caption)
-                            .foregroundStyle(.green)
-                    }
-                } else if isDownloading || isCheckingState {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text(isCheckingState ? "Checking..." : "Downloading...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        if !isCheckingState {
-                            Text("Continue using the app")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } else {
-                    Button {
-                        showDownloadAlert = true
-                    } label: {
-                        Label("Download", systemImage: "arrow.down.circle")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.purple)
-                }
-            }
-            
-            // Show when download just completed
-            if justCompleted {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text("Download complete! Local AI is now available.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .onAppear {
-                    Task {
-                        try? await Task.sleep(for: .seconds(3))
-                        withAnimation {
-                            justCompleted = false
-                        }
-                    }
-                }
-            }
-            
-            // Details
-            VStack(alignment: .leading, spacing: 4) {
-                DetailRow(icon: "cpu", text: "On-Device Processing")
-                DetailRow(icon: "memorychip", text: "\(modelSize.contextLength.formatted()) tokens context")
-                
-                if !isDownloaded && !isDownloading {
-                    DetailRow(icon: "wifi", text: "Requires WiFi")
-                        .foregroundStyle(.orange)
-                }
-            }
-        }
-        .padding(.vertical, 8)
-        .alert("Download Model", isPresented: $showDownloadAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Download") {
-                startDownload()
-            }
-        } message: {
-            Text("Download \(modelSize.fullDisplayName)? This will use \(modelSize.approximateSizeMB) MB. Download continues in the background if you navigate away.")
-        }
-        .task {
-            await syncDownloadState()
-        }
-        .onDisappear {
-            // Keep download task running in background when navigating away
-            // Don't cancel - let it continue
-        }
-    }
-    
-    @MainActor
-    private func startDownload() {
-        Task {
-            let manager = LocalLLM.ModelFileManager.shared
-            let alreadyDownloading = await manager.isDownloading(modelSize)
-            
-            guard !alreadyDownloading else {
-                await MainActor.run {
-                    coordinator.showError("\(modelSize.displayName) is already downloading")
-                }
-                return
-            }
-            
-            await MainActor.run {
-                isDownloading = true
-                downloadProgress = 0.0
-                coordinator.showSuccess("Downloading \(modelSize.displayName)... Continue using the app.")
-            }
-            
-            downloadTask = Task {
-                do {
-                    try await manager.downloadModel(modelSize) { @MainActor progress in
-                        self.downloadProgress = progress
-                    }
-                    
-                    await MainActor.run {
-                        withAnimation {
-                            isDownloading = false
-                            justCompleted = true
-                        }
-                        
-                        // Auto-switch to Local AI and refresh engines
-                        if let summCoord = coordinator.summarizationCoordinator {
-                            Task {
-                                _ = await summCoord.getAvailableEngines()
-                                await summCoord.setPreferredEngine(.local)
-                                coordinator.showSuccess("✅ Local AI is now active!")
-                                
-                                // Trigger parent view refresh via notification
-                                NotificationCenter.default.post(name: NSNotification.Name("ModelDownloadCompleted"), object: nil)
-                                
-                                // Dismiss after a short delay
-                                try? await Task.sleep(for: .seconds(2))
-                                dismiss()
-                            }
-                        }
-                    }
-                } catch is CancellationError {
-                    await MainActor.run {
-                        withAnimation {
-                            isDownloading = false
-                            downloadProgress = 0.0
-                        }
-                        coordinator.showError("Download cancelled")
-                    }
-                } catch {
-                    await MainActor.run {
-                        withAnimation {
-                            isDownloading = false
-                            downloadProgress = 0.0
-                        }
-                        coordinator.showError("Download failed: \(error.localizedDescription)")
-                    }
-                }
-            }
-        }
-    }
-    
-    private func syncDownloadState() async {
-        let manager = LocalLLM.ModelFileManager.shared
-        let downloading = await manager.isDownloading(modelSize)
-        let available = await manager.isModelAvailable(modelSize)
-        
-        await MainActor.run {
-            isCheckingState = false
-            
-            if downloading {
-                print("📥 [ModelDownloadRowView] Download in progress: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = true
-                }
-            } else if available && isDownloading {
-                print("✅ [ModelDownloadRowView] Download completed: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = false
-                    justCompleted = true
-                }
-            } else if !downloading && isDownloading {
-                print("⚠️ [ModelDownloadRowView] Download stopped: \(modelSize.displayName)")
-                withAnimation {
-                    isDownloading = false
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Streak Card
 
 // MARK: - Streak Display (Minimal)
 
@@ -847,6 +453,75 @@ struct StreakCard: View {
     }
 }
 
+// MARK: - Siri Wave Animation
+
+struct SiriWave: Shape {
+    var frequency: CGFloat = 1.5
+    var density: CGFloat = 1.0
+    var phase: CGFloat
+    var normedAmplitude: CGFloat
+    
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(normedAmplitude, phase) }
+        set {
+            normedAmplitude = newValue.first
+            phase = newValue.second
+        }
+    }
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let maxAmplitude = rect.height / 2.0
+        let mid = rect.width / 2
+        
+        for x in stride(from: 0, to: rect.width + density, by: density) {
+            // Parabolic scaling
+            let scaling = -pow(1 / mid * (x - mid), 2) + 1
+            let y = scaling * maxAmplitude * normedAmplitude * sin(CGFloat(2 * Double.pi) * frequency * (x / rect.width) + phase) + rect.height / 2
+            if x == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+        
+        return path
+    }
+}
+
+struct SiriWaveView: View {
+    var amplitude: CGFloat
+    var phase: CGFloat
+    
+    var body: some View {
+        ZStack {
+            ForEach(0..<5, id: \.self) { index in
+                singleWave(index: index)
+            }
+        }
+    }
+    
+    func singleWave(index: Int) -> some View {
+        let progress = 1.0 - CGFloat(index) / 5.0
+        let normedAmplitude = (1.5 * progress - 0.8) * amplitude
+        let alphaComponent = min(1.0, (progress / 3.0 * 2.0) + (1.0 / 3.0))
+        
+        return SiriWave(phase: phase, normedAmplitude: normedAmplitude)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        Color(hex: "#A855F7").opacity(Double(alphaComponent)),
+                        Color(hex: "#3B82F6").opacity(Double(alphaComponent)),
+                        Color(hex: "#06B6D4").opacity(Double(alphaComponent))
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                lineWidth: 1.5 / CGFloat(index + 1)
+            )
+    }
+}
+
 // MARK: - Recording Button
 
 struct RecordingButton: View {
@@ -854,24 +529,17 @@ struct RecordingButton: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var recordingDuration: TimeInterval = 0
-    @State private var smoothedMagnitudes: [Float] = Array(repeating: 0, count: 80)
+    @State private var waveAmplitude: CGFloat = 0.5
+    @State private var wavePhase: CGFloat = 0.0
     
     // Timer that fires every 0.1 seconds to update the recording duration
     private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
-    // Gradient for the waveform (Apple Intelligence colors)
-    private let waveformGradient = Gradient(colors: [
-        Color(hex: "#FF9500"), // Orange
-        Color(hex: "#FF2D55"), // Pink  
-        Color(hex: "#A855F7"), // Purple
-        Color(hex: "#3B82F6"), // Blue
-        Color(hex: "#06B6D4"), // Cyan
-        Color(hex: "#10B981"), // Green
-        Color(hex: "#FBBF24")  // Yellow
-    ])
-    
     var body: some View {
         VStack(spacing: 20) {
+            Spacer()
+            Spacer()
+            
             Button(action: handleRecordingAction) {
                 waveformView
                     .contentShape(Circle())
@@ -885,9 +553,17 @@ struct RecordingButton: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            
+            Spacer()
+            Spacer()
+            Spacer()
         }
         .onReceive(timer) { _ in
-            updateRecordingState()
+            if case .recording(let startTime) = coordinator.recordingState {
+                recordingDuration = Date().timeIntervalSince(startTime)
+            } else {
+                recordingDuration = 0
+            }
         }
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {
@@ -908,102 +584,94 @@ struct RecordingButton: View {
     
     private var waveformView: some View {
         ZStack {
-            // Outer ring to indicate it's a button
-            Circle()
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 4
-                )
-                .frame(width: 360, height: 360)
-            
-            // Background circle
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color(.systemBackground).opacity(0.8),
-                            Color(.secondarySystemBackground).opacity(0.9)
-                        ],
-                        center: .center,
-                        startRadius: 50,
-                        endRadius: 180
+            if coordinator.recordingState.isRecording {
+                // Background gradient pulse
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(hex: "#A855F7").opacity(0.3),
+                                Color(hex: "#3B82F6").opacity(0.2),
+                                Color.clear
+                            ],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 90
+                        )
                     )
-                )
-                .frame(width: 350, height: 350)
-            
-            // Waveform
-            TimelineView(.animation(minimumInterval: 1/60)) { context in
-                Canvas { canvasContext, size in
-                    drawFFTWaveform(
-                        context: canvasContext,
-                        size: size,
-                        magnitudes: smoothedMagnitudes
-                    )
+                    .frame(width: 180, height: 180)
+                    .scaleEffect(waveAmplitude * 0.3 + 0.9)
+                    .animation(.easeInOut(duration: 0.15), value: waveAmplitude)
+                
+                // Floating orbs
+                ForEach(0..<6, id: \.self) { index in
+                    Circle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: CGFloat.random(in: 15...30), height: CGFloat.random(in: 15...30))
+                        .blur(radius: 8)
+                        .offset(
+                            x: cos(wavePhase * 0.5 + CGFloat(index) * .pi / 3) * 50,
+                            y: sin(wavePhase * 0.5 + CGFloat(index) * .pi / 3) * 50
+                        )
                 }
-                .frame(width: 340, height: 160)
+                
+                // Siri-style wave animation clipped to circle
+                SiriWaveView(amplitude: waveAmplitude, phase: wavePhase)
+                    .frame(width: 180, height: 180)
+                    .clipShape(Circle())
+                
+                // Thin circle outline
+                Circle()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color(hex: "#A855F7").opacity(0.4),
+                                Color(hex: "#3B82F6").opacity(0.4),
+                                Color(hex: "#06B6D4").opacity(0.4)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+                    .frame(width: 180, height: 180)
+                    .onAppear {
+                        startWaveAnimation()
+                    }
+            } else {
+                // Static circle when idle
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [
+                                Color(hex: "#A855F7"),
+                                Color(hex: "#3B82F6")
+                            ],
+                            center: .center,
+                            startRadius: 30,
+                            endRadius: 75
+                        )
+                    )
+                    .frame(width: 150, height: 150)
+                    .opacity(0.7)
             }
         }
-        .frame(width: 360, height: 360)
-        .shadow(color: AppTheme.purple.opacity(0.15), radius: 20, x: 0, y: 10)
+        .frame(width: 180, height: 180)
+        .shadow(color: Color(hex: "#A855F7").opacity(0.5), radius: 30, x: 0, y: 0)
+        .shadow(color: Color(hex: "#3B82F6").opacity(0.3), radius: 50, x: 0, y: 0)
     }
     
-    // MARK: - Drawing Methods
-    
-    private func drawFFTWaveform(context: GraphicsContext, size: CGSize, magnitudes: [Float]) {
-        let barCount = magnitudes.count // 80 bars
-        let barWidth: CGFloat = 3
-        let spacing: CGFloat = 1
-        let totalWidth = CGFloat(barCount) * (barWidth + spacing) - spacing
-        let startX = (size.width - totalWidth) / 2
-        let maxHeight = size.height - 20
-        
-        // Draw each frequency bar
-        for (index, magnitude) in magnitudes.enumerated() {
-            let x = startX + CGFloat(index) * (barWidth + spacing)
-            
-            // Calculate bar height based on FFT magnitude
-            let minHeight: CGFloat = 4
-            let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(magnitude)
-            
-            // Center vertically
-            let y = (size.height - barHeight) / 2
-            
-            // Create rounded rectangle for bar
-            let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-            let barPath = Path(roundedRect: barRect, cornerRadii: RectangleCornerRadii(
-                topLeading: barWidth / 2,
-                bottomLeading: barWidth / 2,
-                bottomTrailing: barWidth / 2,
-                topTrailing: barWidth / 2
-            ))
-            
-            // Calculate gradient position based on bar index
-            let gradientProgress = CGFloat(index) / CGFloat(barCount - 1)
-            
-            // Fill with gradient
-            context.fill(barPath, with: .linearGradient(
-                waveformGradient,
-                startPoint: CGPoint(x: 0, y: 0),
-                endPoint: CGPoint(x: size.width, y: 0)
-            ))
-        }
-    }
-    
-    private func updateRecordingState() {
-        if case .recording(let startTime) = coordinator.recordingState {
-            recordingDuration = Date().timeIntervalSince(startTime)
-        } else {
-            recordingDuration = 0
+    private func startWaveAnimation() {
+        withAnimation(Animation.linear(duration: 0.15).repeatForever(autoreverses: false)) {
+            wavePhase -= 1.5
         }
         
-        // Apply exponential moving average smoothing to FFT magnitudes
-        let rawMagnitudes = coordinator.audioCapture.fftMagnitudes
-        for i in 0..<min(smoothedMagnitudes.count, rawMagnitudes.count) {
-            smoothedMagnitudes[i] = smoothedMagnitudes[i] * 0.8 + rawMagnitudes[i] * 0.2
+        // Random amplitude changes
+        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
+            guard coordinator.recordingState.isRecording else { return }
+            withAnimation(.linear(duration: 0.15)) {
+                waveAmplitude = CGFloat.random(in: 0.3...0.9)
+            }
         }
     }
     
@@ -1013,7 +681,7 @@ struct RecordingButton: View {
         switch coordinator.recordingState {
         case .idle: return "Tap to start recording"
         case .recording: 
-            return "Recording... \(formatDuration(recordingDuration))"
+            return "Tap to stop Recording... \(formatDuration(recordingDuration))"
         case .processing: return "Processing..."
         case .completed: return "Saved!"
         case .failed(let message): return message
@@ -1047,8 +715,14 @@ struct RecordingButton: View {
     private func handleRecordingAction() {
         print("🔘 [RecordingButton] Button tapped, current state: \(coordinator.recordingState)")
         
-        // Haptic feedback on tap
-        coordinator.triggerHaptic(.medium)
+        // Trigger haptic immediately on button press (before async work)
+        if coordinator.recordingState.isRecording {
+            print("📳 [RecordingButton] Triggering STOP haptic (.medium)")
+            coordinator.triggerHaptic(.medium)
+        } else if case .idle = coordinator.recordingState {
+            print("📳 [RecordingButton] Triggering START haptic (.heavy)")
+            coordinator.triggerHaptic(.heavy)
+        }
         
         Task {
             do {
@@ -1056,12 +730,10 @@ struct RecordingButton: View {
                     print("⏹️ [RecordingButton] Stopping recording...")
                     _ = try await coordinator.stopRecording()
                     print("✅ [RecordingButton] Recording stopped")
-                    coordinator.showSuccess("Recording saved successfully!")
                 } else if case .idle = coordinator.recordingState {
                     print("▶️ [RecordingButton] Starting recording...")
                     try await coordinator.startRecording()
                     print("✅ [RecordingButton] Recording started")
-                    coordinator.showInfo("Recording started")
                 }
             } catch {
                 print("❌ [RecordingButton] Action failed: \(error.localizedDescription)")
@@ -1416,12 +1088,12 @@ struct SessionRowClean: View {
                     }
                     
                     // Show processing if wordCount is nil (still being transcribed)
-                    if wordCount == 0 {
+                    if wordCount == nil {
                         StatusPill(text: "Processing", color: .orange, icon: "gearshape.fill")
                     }
-                    // Show empty if processing done but no words found
-                    else if let count = wordCount, count == nil {
-                        StatusPill(text: "Empty", color: .red, icon: "xmark.octagon.fill")
+                    // Show "No Words" badge if transcription complete but 0 words
+                    else if let count = wordCount, count == 0 {
+                        StatusPill(text: "No Words To Transcribe", color: .gray, icon: "mic.slash.fill")
                     }
                 }
             }
@@ -1552,7 +1224,7 @@ struct RecordingRow: View {
     }
 }
 
-// MARK: - Insights Tab
+// MARK: - Overview Tab
 
 enum TimeRange: String, CaseIterable, Identifiable {
     case yesterday = "Yesterday"
@@ -1622,546 +1294,240 @@ class WordAnalyzer {
     }
 }
 
-struct InsightsTab: View {
+struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.colorScheme) var colorScheme
     @State private var periodSummary: Summary?
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
-    @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
-    @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
-    @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
-    @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
-    @State private var topWords: [WordFrequency] = []
-    @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
-    @State private var languageDistribution: [(language: String, wordCount: Int)] = []
     @State private var yearWrapSummary: Summary?
     @State private var isWrappingUpYear = false
+    @State private var isRegeneratingPeriodSummary = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
-    @State private var wordLimit: Int = 20
     @State private var showYearWrapConfirmation = false
     
-    private let wordLimitKey = "insightsWordLimit"
+    // Session summaries for Today/Yesterday feed
+    @State private var sessionSummaries: [Summary] = []
+    // Period rollups for Week/Month/Year feed
+    @State private var periodRollups: [Summary] = []
+    
+
     
     var body: some View {
         NavigationStack {
-            Group {
-                if isLoading {
-                    LoadingView(size: .medium)
-                } else if periodSummary == nil && sessionsByHour.isEmpty {
-                    ContentUnavailableView(
-                        "No Insights Yet",
-                        systemImage: "chart.bar",
-                        description: Text("Record more journal entries to unlock insights.")
-                    )
-                } else {
-                    List {
-                        // Period Summary section (at the top)
-                        // For Year tab: prioritize yearWrapSummary (Pro AI) over periodSummary (rollup)
-                        if let summary = (selectedTimeRange == .allTime ? (yearWrapSummary ?? periodSummary) : periodSummary) {
-                            Section {
-                                InsightsSummaryCard(
-                                    summary: summary,
-                                    periodTitle: selectedTimeRange == .allTime && yearWrapSummary != nil ? "✨ Year Wrap (Pro AI)" : periodTitle,
-                                    sessionCount: sessionCount,
-                                    sessionsInPeriod: sessionsInPeriod,
-                                    coordinator: coordinator,
-                                    onRegenerate: selectedTimeRange == .yesterday ? nil : {
-                                        await regeneratePeriodSummary()
-                                    },
-                                    wrapAction: selectedTimeRange == .allTime ? {
-                                        showYearWrapConfirmation = true
-                                    } : nil,
-                                    wrapIsLoading: isWrappingUpYear
-                                )
-                            }
-                        }
-                        
-                        // Key Statistics section
-                        Section("Key Statistics") {
-                            // Longest session
-                            if let longest = longestSession {
-                                NavigationLink {
-                                    FilteredSessionsView(
-                                        title: "Longest Session",
-                                        sessionIds: [longest.sessionId]
-                                    )
+            VStack(spacing: 0) {
+                // Time Range Picker - ALWAYS show so users can switch periods
+                Picker("Time Range", selection: $selectedTimeRange) {
+                    ForEach(TimeRange.allCases) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .tint(AppTheme.purple)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .disabled(isLoading)
+                
+                // Content area
+                Group {
+                    if isLoading {
+                        LoadingView(size: .medium)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if periodSummary == nil && sessionsInPeriod.isEmpty {
+                        ContentUnavailableView(
+                            "No Overview Yet",
+                            systemImage: "doc.text",
+                            description: Text("Record more journal entries to generate summaries.")
+                        )
+                    } else {
+                        // Copy All button
+                        if !sessionSummaries.isEmpty {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    copyAllSummaries()
                                 } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "timer")
-                                            .font(.title2)
-                                            .foregroundStyle(AppTheme.purple)
-                                            .frame(width: 40, height: 40)
-                                            .background(
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption)
+                                        Text("Copy \(sessionSummaries.count)")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(AppTheme.purple)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(
                                                 RadialGradient(
                                                     colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
                                                     center: .center,
                                                     startRadius: 0,
-                                                    endRadius: 20
+                                                    endRadius: 40
                                                 )
                                             )
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Longest Session")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            HStack {
-                                                Text(formatDuration(longest.duration))
-                                                    .font(.title3)
-                                                    .fontWeight(.semibold)
-                                                Spacer()
-                                                Text(longest.date.formatted(date: .abbreviated, time: .omitted))
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(
+                                                LinearGradient(
+                                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                ),
+                                                lineWidth: 1.5
+                                            )
+                                    )
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                        }
+                        
+                        // New Feed Layout
+                        ScrollView {
+                            LazyVStack(spacing: 16) {
+                                // Local period summary card for Today/Week/Month
+                                if [.today, .week, .month].contains(selectedTimeRange) {
+                                    if let periodSummary {
+                                        PeriodSummaryCard(
+                                            title: periodSummaryTitle(for: selectedTimeRange),
+                                            subtitle: "Local AI rollup (on-device)",
+                                            summary: periodSummary,
+                                            isRegenerating: isRegeneratingPeriodSummary,
+                                            onCopy: {
+                                                UIPasteboard.general.string = periodSummary.text
+                                                coordinator.showSuccess("Summary copied")
+                                            },
+                                            onRegenerate: {
+                                                Task {
+                                                    await regenerateAndReloadPeriodSummary()
+                                                }
                                             }
-                                        }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if !sessionsInPeriod.isEmpty {
+                                        GeneratePeriodSummaryCard(
+                                            title: periodSummaryTitle(for: selectedTimeRange),
+                                            isGenerating: isRegeneratingPeriodSummary,
+                                            onGenerate: {
+                                                Task {
+                                                    await regenerateAndReloadPeriodSummary()
+                                                }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
                                     }
-                                    .padding(.vertical, 4)
+                                }
+                                
+                                // Year Wrapped Summary (only show for Year timerange)
+                                if selectedTimeRange == .allTime {
+                                    if let yearWrap = yearWrapSummary {
+                                        YearWrappedCard(
+                                            summary: yearWrap,
+                                            coordinator: coordinator,
+                                            onRegenerate: {
+                                                showYearWrapConfirmation = true
+                                            },
+                                            isRegenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if !sessionsInPeriod.isEmpty {
+                                        // Show generate button if no Year Wrap exists
+                                        GenerateYearWrapCard(
+                                            onGenerate: {
+                                                showYearWrapConfirmation = true
+                                            },
+                                            isGenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    }
                                 }
                             }
                             
-                            // Most active month
-                            if let mostActive = mostActiveMonth {
-                                NavigationLink {
-                                    FilteredSessionsView(
-                                        title: formatMonth(year: mostActive.year, month: mostActive.month),
-                                        sessionIds: mostActive.sessionIds
+                            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                                let timeBuckets = groupSessionsByTimeBucket()
+                                
+                                if timeBuckets.isEmpty {
+                                    // No session summaries found
+                                    ContentUnavailableView(
+                                        "No Summaries Yet",
+                                        systemImage: "doc.text",
+                                        description: Text("Session summaries will appear here once recordings are summarized.")
                                     )
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "calendar.badge.plus")
-                                            .font(.title2)
-                                            .foregroundStyle(AppTheme.magenta)
-                                            .frame(width: 40, height: 40)
-                                            .background(
-                                                RadialGradient(
-                                                    colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
-                                                    center: .center,
-                                                    startRadius: 0,
-                                                    endRadius: 20
-                                                )
-                                            )
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Most Active Month")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                            HStack {
-                                                Text(formatMonth(year: mostActive.year, month: mostActive.month))
-                                                    .font(.title3)
-                                                    .fontWeight(.semibold)
-                                                Spacer()
-                                                Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                    .padding(.top, 60)
+                                } else {
+                                    ForEach(timeBuckets) { bucket in
+                                        Section {
+                                            if bucket.isEmpty {
+                                                // Empty bucket - show grayed out message
+                                                Text("No recordings")
                                                     .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                    }
-                                    .padding(.vertical, 4)
-                                }
-                            }
-                        }
-                        
-                        // Sessions by Hour section with chart
-                        if !sessionsByHour.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Sessions by Time of Day")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Bar chart
-                                    Chart(sessionsByHour, id: \.hour) { data in
-                                        BarMark(
-                                            x: .value("Hour", data.hour),
-                                            y: .value("Sessions", data.count),
-                                            width: .fixed(20)
-                                        )
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [AppTheme.skyBlue, AppTheme.darkPurple],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                    }
-                                    .chartXAxis {
-                                        AxisMarks(values: [0, 6, 12, 18, 23]) { value in
-                                            if let hour = value.as(Int.self) {
-                                                AxisValueLabel {
-                                                    Text(formatHourShort(hour))
-                                                        .font(.caption2)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .chartYAxis {
-                                        AxisMarks { value in
-                                            AxisGridLine()
-                                            AxisValueLabel()
-                                        }
-                                    }
-                                    .frame(minHeight: 200, maxHeight: 200)
-                                    
-                                    Divider()
-                                        .padding(.vertical, 4)
-                                    
-                                    Text("Tap an hour to view sessions")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Scrollable list of all hours
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 12) {
-                                            ForEach(sessionsByHour.sorted(by: { $0.hour < $1.hour }), id: \.hour) { data in
-                                                NavigationLink {
-                                                    FilteredSessionsView(
-                                                        title: formatHour(data.hour),
-                                                        sessionIds: data.sessionIds
-                                                    )
-                                                } label: {
-                                                    VStack(spacing: 4) {
-                                                        Text(formatHourShort(data.hour))
-                                                            .font(.caption)
-                                                            .fontWeight(.semibold)
-                                                            .foregroundStyle(AppTheme.skyBlue)
-                                                        Text("\(data.count)")
-                                                            .font(.title3)
-                                                            .fontWeight(.bold)
-                                                        Text(data.count == 1 ? "session" : "sessions")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                    .frame(width: 70)
+                                                    .foregroundStyle(.tertiary)
+                                                    .italic()
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .padding(.horizontal, 16)
                                                     .padding(.vertical, 8)
-                                                    .background(
-                                                        RadialGradient(
-                                                            colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
-                                                            center: .center,
-                                                            startRadius: 0,
-                                                            endRadius: 35
-                                                        )
-                                                    )
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                        .padding(.horizontal, 4)
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Sessions by Day of Week section with chart
-                        if !sessionsByDayOfWeek.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Sessions by Day of Week")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Bar chart
-                                    Chart(sessionsByDayOfWeek, id: \.dayOfWeek) { data in
-                                        BarMark(
-                                            x: .value("Day", formatDayOfWeek(data.dayOfWeek)),
-                                            y: .value("Sessions", data.count),
-                                            width: .fixed(40)
-                                        )
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [AppTheme.emerald, AppTheme.skyBlue],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                    }
-                                    .chartXAxis {
-                                        AxisMarks { value in
-                                            AxisValueLabel {
-                                                if let day = value.as(String.self) {
-                                                    Text(day)
-                                                        .font(.caption2)
+                                            } else {
+                                                // Summaries in this bucket
+                                                ForEach(bucket.summaries) { summary in
+                                                    SessionSummaryCard(summary: summary, coordinator: coordinator)
+                                                        .padding(.horizontal, 16)
+                                                        .padding(.vertical, 6)
                                                 }
                                             }
-                                        }
-                                    }
-                                    .chartYAxis {
-                                        AxisMarks { value in
-                                            AxisGridLine()
-                                            AxisValueLabel()
-                                        }
-                                    }
-                                    .frame(minHeight: 180, maxHeight: 180)
-                                    
-                                    Divider()
-                                        .padding(.vertical, 4)
-                                    
-                                    Text("Tap a day to view sessions")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 4)
-                                    
-                                    // Scrollable list of all days
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 12) {
-                                            ForEach(sessionsByDayOfWeek.sorted(by: { $0.dayOfWeek < $1.dayOfWeek }), id: \.dayOfWeek) { data in
-                                                NavigationLink {
-                                                    FilteredSessionsView(
-                                                        title: formatDayOfWeekFull(data.dayOfWeek),
-                                                        sessionIds: data.sessionIds
-                                                    )
-                                                } label: {
-                                                    VStack(spacing: 4) {
-                                                        Text(formatDayOfWeek(data.dayOfWeek))
-                                                            .font(.caption)
-                                                            .fontWeight(.semibold)
-                                                            .foregroundStyle(AppTheme.emerald)
-                                                        Text("\(data.count)")
-                                                            .font(.title3)
-                                                            .fontWeight(.bold)
-                                                        Text(data.count == 1 ? "session" : "sessions")
-                                                            .font(.caption2)
-                                                            .foregroundStyle(.secondary)
-                                                    }
-                                                    .frame(width: 70)
-                                                    .padding(.vertical, 8)
-                                                    .background(
-                                                        RadialGradient(
-                                                            colors: [AppTheme.emerald.opacity(0.15), AppTheme.emerald.opacity(0.05)],
-                                                            center: .center,
-                                                            startRadius: 0,
-                                                            endRadius: 35
-                                                        )
-                                                    )
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                }
-                                                .buttonStyle(.plain)
-                                            }
-                                        }
-                                        .padding(.horizontal, 4)
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Most Used Words section
-                        if !topWords.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Text("Most Used Words")
-                                            .font(.headline)
-                                        Spacer()
-                                        Text("Top \(topWords.count)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.bottom, 4)
-                                    
-                                    Text("Meaningful words from your transcripts")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 8)
-                                    
-                                    // Scrollable word cloud grid with fixed height
-                                    ScrollView(.vertical, showsIndicators: true) {
-                                        LazyVGrid(columns: [
-                                            GridItem(.flexible()),
-                                            GridItem(.flexible())
-                                        ], spacing: 12) {
-                                            ForEach(Array(topWords.enumerated()), id: \.element.id) { index, wordFreq in
-                                                VStack(spacing: 6) {
-                                                    // Word
-                                                    Text(wordFreq.word.capitalized)
-                                                        .font(.system(size: fontSizeForRank(index), weight: .bold))
-                                                        .foregroundStyle(colorForRank(index))
-                                                        .lineLimit(1)
-                                                        .minimumScaleFactor(0.7)
-                                                    
-                                                    // Count badge
-                                                    Text("\(wordFreq.count)")
-                                                        .font(.caption)
-                                                        .fontWeight(.semibold)
-                                                        .foregroundStyle(.white)
-                                                        .padding(.horizontal, 10)
-                                                        .padding(.vertical, 4)
-                                                        .background(colorForRank(index).gradient)
-                                                        .clipShape(Capsule())
-                                                }
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 12)
-                                                .background(colorForRank(index).opacity(0.08))
-                                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                            }
-                                        }
-                                        .padding(.horizontal, 2)
-                                    }
-                                    .frame(height: 400) // Fixed height for scrolling
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Emotional Trends section
-                        if !dailySentiment.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Emotional Trends")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    Text("Daily sentiment analysis from your journal entries")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 8)
-                                    
-                                    // Line chart showing sentiment over time
-                                    Chart(dailySentiment, id: \.date) { data in
-                                        LineMark(
-                                            x: .value("Date", data.date),
-                                            y: .value("Sentiment", data.sentiment)
-                                        )
-                                        .foregroundStyle(sentimentColor(data.sentiment).gradient)
-                                        .interpolationMethod(.catmullRom)
-                                        
-                                        PointMark(
-                                            x: .value("Date", data.date),
-                                            y: .value("Sentiment", data.sentiment)
-                                        )
-                                        .foregroundStyle(sentimentColor(data.sentiment))
-                                    }
-                                    .chartYScale(domain: -1...1)
-                                    .chartYAxis {
-                                        AxisMarks(values: [-1, -0.5, 0, 0.5, 1]) { value in
-                                            AxisGridLine()
-                                            AxisValueLabel {
-                                                if let score = value.as(Double.self) {
-                                                    Text(sentimentLabel(score))
-                                                        .font(.caption2)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .chartXAxis {
-                                        AxisMarks { value in
-                                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                                        }
-                                    }
-                                    .frame(minHeight: 200, maxHeight: 200)
-                                    
-                                    // Summary stats
-                                    HStack(spacing: 16) {
-                                        sentimentStatBox(
-                                            label: "Positive",
-                                            count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
-                                            color: .green
-                                        )
-                                        sentimentStatBox(
-                                            label: "Neutral",
-                                            count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
-                                            color: .gray
-                                        )
-                                        sentimentStatBox(
-                                            label: "Negative",
-                                            count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
-                                            color: .red
-                                        )
-                                    }
-                                    .padding(.top, 8)
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        
-                        // Languages Spoken section
-                        if !languageDistribution.isEmpty {
-                            Section {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("Languages Spoken")
-                                        .font(.headline)
-                                        .padding(.bottom, 4)
-                                    
-                                    Text("Distribution of languages in your recordings")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.bottom, 8)
-                                    
-                                    let totalWords = languageDistribution.reduce(0) { $0 + $1.wordCount }
-                                    
-                                    ForEach(languageDistribution.prefix(5), id: \.language) { item in
-                                        let percentage = totalWords > 0 ? (Double(item.wordCount) / Double(totalWords)) * 100 : 0
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
+                                        } header: {
+                                            // Time bucket header
                                             HStack {
-                                                Text(LanguageDetector.displayName(for: item.language))
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
+                                                Text(bucket.header)
+                                                    .font(.headline)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
+                                                
                                                 Spacer()
-                                                Text("\(Int(percentage))%")
-                                                    .font(.subheadline)
-                                                    .foregroundStyle(.secondary)
-                                                    .monospacedDigit()
-                                            }
-                                            
-                                            GeometryReader { geometry in
-                                                ZStack(alignment: .leading) {
-                                                    RoundedRectangle(cornerRadius: 4)
-                                                        .fill(Color.secondary.opacity(0.2))
-                                                    
-                                                    RoundedRectangle(cornerRadius: 4)
-                                                        .fill(languageColor(index: languageDistribution.firstIndex(where: { $0.language == item.language }) ?? 0))
-                                                        .frame(width: geometry.size.width * (percentage / 100))
+                                                
+                                                if !bucket.isEmpty {
+                                                    Text("\(bucket.summaries.count)")
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                        .foregroundStyle(.secondary)
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 4)
+                                                        .background(
+                                                            Capsule()
+                                                                .fill(Color(.tertiarySystemFill))
+                                                        )
                                                 }
                                             }
-                                            .frame(height: 8)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 12)
+                                            .background(Color(.systemGroupedBackground))
                                         }
-                                        .padding(.vertical, 4)
-                                    }
-                                    
-                                    if languageDistribution.count > 1 {
-                                        Text("You speak \(languageDistribution.count) language\(languageDistribution.count == 1 ? "" : "s") in your recordings")
-                                            .font(.callout)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.top, 8)
                                     }
                                 }
-                                .padding(.vertical, 8)
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Insights")
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Time Range", selection: $selectedTimeRange) {
-                        ForEach(TimeRange.allCases) { range in
-                            Text(range.rawValue).tag(range)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .tint(AppTheme.purple)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 8)
-                }
-            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Overview")
             .task {
-                // Load word limit from UserDefaults
-                wordLimit = UserDefaults.standard.integer(forKey: wordLimitKey)
-                if wordLimit == 0 {
-                    wordLimit = 20 // Default if not set
-                }
                 await loadInsights()
             }
             .refreshable {
                 await loadInsights()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .periodSummariesUpdated)) { _ in
+                Task {
+                    await loadInsights()
+                }
             }
             .onChange(of: selectedTimeRange) { oldValue, newValue in
                 Task {
@@ -2170,14 +1536,41 @@ struct InsightsTab: View {
             }
             .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
                 Button("Cancel", role: .cancel) { }
-                Button("✨ Generate with Pro AI") {
-                    Task {
-                        await wrapUpYear(forceRegenerate: false)
-                    }
+                Button(actionButtonTitle()) {
+                    handleYearWrapAction()
                 }
             } message: {
-                Text("✨ Clicking 'Generate with Pro AI' will use your configured Year Wrapped Pro AI service (OpenAI or Anthropic) to create a comprehensive, beautifully crafted year-in-review summary.\n\n⏱️ This process may take 30-60 seconds as it analyzes your entire year of recordings.\n\n🔑 Requires valid Pro AI credentials configured in Settings.\n\n🔄 Use the orange refresh button to roll up the monthly summaries (no Pro AI needed).")
+                Text(yearWrapMessage())
             }
+        }
+    }
+    
+    private func hasExternalAPIConfigured() -> Bool {
+        let openaiKey = KeychainHelper.load(key: "openai_api_key")
+        let anthropicKey = KeychainHelper.load(key: "anthropic_api_key")
+        return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
+    }
+    
+    private func yearWrapMessage() -> String {
+        if hasExternalAPIConfigured() {
+            return "This will use ChatGPT or Claude to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
+        } else {
+            return "To generate a Year Wrap, you need to configure your ChatGPT (OpenAI) or Claude (Anthropic) API key in Settings.\n\nTap 'Open Settings' to add your API credentials."
+        }
+    }
+    
+    private func actionButtonTitle() -> String {
+        return hasExternalAPIConfigured() ? "Generate" : "Open Settings"
+    }
+    
+    private func handleYearWrapAction() {
+        if hasExternalAPIConfigured() {
+            Task {
+                await wrapUpYear(forceRegenerate: false)
+            }
+        } else {
+            // Post notification to switch to Settings tab
+            NotificationCenter.default.post(name: NSNotification.Name("SwitchToSettingsTab"), object: nil)
         }
     }
     
@@ -2186,48 +1579,6 @@ struct InsightsTab: View {
         do {
             // Get date range for filtering
             let dateRange = getDateRange(for: selectedTimeRange)
-            
-            // Load key statistics (filtered)
-            let allLongest = try await coordinator.fetchLongestSession()
-            longestSession = filterSession(allLongest, in: dateRange)
-            
-            let allMostActive = try await coordinator.fetchMostActiveMonth()
-            mostActiveMonth = filterMonth(allMostActive, in: dateRange)
-            
-            // Load sessions by hour (filtered)
-            let allByHour = try await coordinator.fetchSessionsByHour()
-            sessionsByHour = await filterSessionsByHour(allByHour, in: dateRange)
-            
-            // Load sessions by day of week (filtered)
-            let allByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
-            sessionsByDayOfWeek = await filterSessionsByDayOfWeek(allByDayOfWeek, in: dateRange)
-            
-            // Load word frequency analysis
-            let transcriptTexts = try await coordinator.fetchTranscriptText(
-                startDate: dateRange.start,
-                endDate: dateRange.end
-            )
-            
-            // Load custom excluded words from UserDefaults
-            let customExcludedWords: Set<String> = {
-                if let savedWords = UserDefaults.standard.stringArray(forKey: "customExcludedWords") {
-                    return Set(savedWords)
-                }
-                return []
-            }()
-            
-            topWords = WordAnalyzer.analyzeWords(
-                from: transcriptTexts,
-                limit: wordLimit,
-                customExcludedWords: customExcludedWords
-            )
-            
-            // Load daily sentiment data
-            let (startDate, endDate) = getDateRange(for: selectedTimeRange)
-            dailySentiment = try await coordinator.fetchDailySentiment(from: startDate, to: endDate)
-            
-            // Load language distribution
-            languageDistribution = try await coordinator.fetchLanguageDistribution()
             
             // Load period summary based on selected time range
             let periodType: PeriodType = {
@@ -2240,23 +1591,64 @@ struct InsightsTab: View {
                 }
             }()
             
+            // Clear previous data to avoid stale counts when DB is unavailable
+            sessionsInPeriod = []
+            sessionCount = 0
+            sessionSummaries = []
+            periodRollups = []
+            
             // Load sessions in this period first
             if let dbManager = coordinator.getDatabaseManager() {
                 if selectedTimeRange == .today || selectedTimeRange == .yesterday {
-                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: startDate)) ?? []
+                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
                 } else {
                     // For week/month/all, fetch ALL sessions and filter by date range
                     let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
                     sessionsInPeriod = allSessions?.filter { session in
-                        session.startTime >= startDate && session.startTime < endDate
+                        session.startTime >= dateRange.start && session.startTime < dateRange.end
                     } ?? []
                 }
                 sessionCount = sessionsInPeriod.count
+                
+                // Load summaries based on time range
+                switch selectedTimeRange {
+                case .today, .yesterday:
+                    // Load session summaries for individual sessions
+                    sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
+                    
+                case .week:
+                    // Load weekly rollup summaries (one card per week)
+                    periodRollups = (try? await dbManager.fetchWeeklySummaries(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
+                    
+                case .month:
+                    // Load monthly rollup summaries (one card per month)
+                    periodRollups = (try? await dbManager.fetchMonthlySummaries(
+                        from: dateRange.start,
+                        to: dateRange.end
+                    )) ?? []
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
+                    
+                case .allTime:
+                    // Load yearly rollup summary (single card for whole year)
+                    let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
+                    periodRollups = allYearlySummaries.filter { summary in
+                        summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
+                    }
+                    print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
+                }
             }
             
             // Try to fetch existing period summary (don't auto-generate on view load)
             // For week/month/year, use Date() to get current period, for day use startDate
-            let dateForFetch = (periodType == .day) ? startDate : Date()
+            let dateForFetch = (periodType == .day) ? dateRange.start : Date()
             periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
 
             if selectedTimeRange == .allTime {
@@ -2267,18 +1659,26 @@ struct InsightsTab: View {
             
             // Debug logging
             if periodSummary == nil && !sessionsInPeriod.isEmpty {
-                print("ℹ️ [InsightsTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
+                print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
                 print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
                 print("   Sessions in period: \(sessionsInPeriod.count)")
             } else if periodSummary != nil {
-                print("✅ [InsightsTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
+                print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
             }
         } catch {
-            print("❌ [InsightsTab] Failed to load insights: \(error)")
+            print("❌ [OverviewTab] Failed to load insights: \(error)")
         }
         isLoading = false
     }
     
+    private func regenerateAndReloadPeriodSummary() async {
+        guard !isRegeneratingPeriodSummary else { return }
+        isRegeneratingPeriodSummary = true
+        defer { isRegeneratingPeriodSummary = false }
+        await regeneratePeriodSummary()
+        await loadInsights()
+    }
+
     private func regeneratePeriodSummary() async {
         let (startDate, _) = getDateRange(for: selectedTimeRange)
         
@@ -2295,7 +1695,7 @@ struct InsightsTab: View {
         // Use Date() (today) for week/month/year calculations, startDate for day
         let dateForGeneration = (periodType == .day) ? startDate : Date()
         
-        print("🔄 [InsightsTab] Regenerating \(periodType.rawValue) summary...")
+        print("🔄 [OverviewTab] Regenerating \(periodType.rawValue) summary...")
         
         switch periodType {
         case .day:
@@ -2370,14 +1770,18 @@ struct InsightsTab: View {
         case .yesterday:
             let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
             let start = calendar.startOfDay(for: yesterday)
-            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? now
+            // Use end-of-day so hourly buckets cover the full 24 hours
+            let end = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: start) ?? now
             return (start, end)
         case .today:
             let start = calendar.startOfDay(for: now)
             return (start, now)
         case .week:
-            let start = calendar.date(byAdding: .day, value: -7, to: now) ?? now
-            return (start, now)
+            // Current week: Monday to Sunday (or today if mid-week)
+            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            components.weekday = 2 // Monday
+            let startOfWeek = calendar.date(from: components) ?? now
+            return (startOfWeek, now)
         case .month:
             let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
             return (start, now)
@@ -2386,6 +1790,15 @@ struct InsightsTab: View {
             let currentYear = calendar.component(.year, from: now)
             let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
             return (startOfYear, now)
+        }
+    }
+
+    private func periodSummaryTitle(for range: TimeRange) -> String {
+        switch range {
+        case .today: return "Today's Recordings"
+        case .week: return "This Week's Recordings"
+        case .month: return "This Month's Recordings"
+        default: return "Recordings"
         }
     }
     
@@ -2433,6 +1846,227 @@ struct InsightsTab: View {
         }
         
         return filtered.map { (dayOfWeek: $0.key, count: $0.value.count, sessionIds: $0.value) }
+    }
+    
+    // MARK: - Time Bucketing for Feed View
+    
+    struct TimeBucket: Identifiable {
+        let id = UUID()
+        let header: String
+        let summaries: [Summary]
+        let isEmpty: Bool
+    }
+    
+    private func groupSessionsByTimeBucket() -> [TimeBucket] {
+        let calendar = Calendar.current
+        let dateRange = getDateRange(for: selectedTimeRange)
+        
+        switch selectedTimeRange {
+        case .today, .yesterday:
+            // Show individual session summaries grouped by hour
+            return groupByHour(dateRange: dateRange, calendar: calendar)
+            
+        case .week:
+            // Show weekly rollup summaries (one card per week)
+            return groupByWeekRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+            
+        case .month:
+            // Show monthly rollup summaries (one card per month)
+            return groupByMonthRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+            
+        case .allTime:
+            // Show yearly rollup summary (single card for whole year)
+            return groupByYearRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+        }
+    }
+    
+    private func groupByHour(dateRange: (start: Date, end: Date), calendar: Calendar) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        var summariesByHour: [Int: [Summary]] = [:]
+        
+        // Group existing summaries by hour
+        for summary in sessionSummaries {
+            let hour = calendar.component(.hour, from: summary.periodStart)
+            summariesByHour[hour, default: []].append(summary)
+        }
+        
+        // Create buckets for all hours in range
+        let startHour = calendar.component(.hour, from: dateRange.start)
+        let endHour = calendar.component(.hour, from: dateRange.end)
+        let actualEndHour = dateRange.end > dateRange.start ? endHour : 23
+        
+        for hour in startHour...actualEndHour {
+            let hourString = hour == 0 ? "12 AM" : (hour < 12 ? "\(hour) AM" : (hour == 12 ? "12 PM" : "\(hour - 12) PM"))
+            let nextHour = (hour + 1) % 24
+            let nextHourString = nextHour == 0 ? "12 AM" : (nextHour < 12 ? "\(nextHour) AM" : (nextHour == 12 ? "12 PM" : "\(nextHour - 12) PM"))
+            let header = "\(hourString) - \(nextHourString)"
+            
+            let summaries = summariesByHour[hour] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+        }
+        
+        return buckets.reversed() // Newest first (oldest at bottom)
+    }
+    
+    private func groupByDayRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByDay: [Date: [Summary]] = [:]
+        for summary in rollups {
+            let dayStart = calendar.startOfDay(for: summary.periodStart)
+            summariesByDay[dayStart, default: []].append(summary)
+        }
+        
+        // Create buckets for all days in range
+        var currentDate = calendar.startOfDay(for: dateRange.start)
+        let endDate = calendar.startOfDay(for: dateRange.end)
+        
+        while currentDate <= endDate {
+            let formatter = DateFormatter()
+            if calendar.isDateInToday(currentDate) {
+                formatter.dateFormat = "'Today' - EEEE, MMM d"
+            } else if calendar.isDateInYesterday(currentDate) {
+                formatter.dateFormat = "'Yesterday' - EEEE, MMM d"
+            } else {
+                formatter.dateFormat = "EEEE, MMM d"
+            }
+            let header = formatter.string(from: currentDate)
+            
+            let summaries = summariesByDay[currentDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByWeekRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByWeek: [Date: [Summary]] = [:]
+        for summary in rollups {
+            let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: summary.periodStart)
+            if let weekStartDate = calendar.date(from: weekStart) {
+                summariesByWeek[weekStartDate, default: []].append(summary)
+            }
+        }
+        
+        // Create buckets for all weeks in range
+        var currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
+        let endWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.end)
+        
+        guard var currentWeekDate = calendar.date(from: currentWeekStart),
+              let endWeekDate = calendar.date(from: endWeekStart) else {
+            return buckets
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d"
+        
+        while currentWeekDate <= endWeekDate {
+            let weekEnd = calendar.date(byAdding: .day, value: 6, to: currentWeekDate) ?? currentWeekDate
+            // Format: "Monday, Dec 16 - Sunday, Dec 22"
+            let header = "Monday, \(dateFormatter.string(from: currentWeekDate)) - Sunday, \(dateFormatter.string(from: weekEnd))"
+            
+            let summaries = summariesByWeek[currentWeekDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentWeekDate = calendar.date(byAdding: .weekOfYear, value: 1, to: currentWeekDate) ?? currentWeekDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByMonthRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByMonth: [Date: [Summary]] = [:]
+        for summary in rollups {
+            let monthStart = calendar.dateComponents([.year, .month], from: summary.periodStart)
+            if let monthStartDate = calendar.date(from: monthStart) {
+                summariesByMonth[monthStartDate, default: []].append(summary)
+            }
+        }
+        
+        // Create buckets for all months in range
+        var currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
+        let endMonthStart = calendar.dateComponents([.year, .month], from: dateRange.end)
+        
+        guard var currentMonthDate = calendar.date(from: currentMonthStart),
+              let endMonthDate = calendar.date(from: endMonthStart) else {
+            return buckets
+        }
+        
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMMM yyyy"
+        
+        while currentMonthDate <= endMonthDate {
+            let header = dateFormatter.string(from: currentMonthDate)
+            
+            let summaries = summariesByMonth[currentMonthDate] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+            
+            currentMonthDate = calendar.date(byAdding: .month, value: 1, to: currentMonthDate) ?? currentMonthDate
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    private func groupByYearRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
+        var buckets: [TimeBucket] = []
+        
+        var summariesByYear: [Int: [Summary]] = [:]
+        for summary in rollups {
+            let year = calendar.component(.year, from: summary.periodStart)
+            summariesByYear[year, default: []].append(summary)
+        }
+        
+        // Create buckets for all years in range
+        let startYear = calendar.component(.year, from: dateRange.start)
+        let endYear = calendar.component(.year, from: dateRange.end)
+        
+        for year in startYear...endYear {
+            let header = "\(year)"
+            let summaries = summariesByYear[year] ?? []
+            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
+        }
+        
+        return buckets.reversed() // Most recent first
+    }
+    
+    // MARK: - Copy All Functionality
+    
+    private func copyAllSummaries() {
+        let timeBuckets = groupSessionsByTimeBucket()
+        var fullText = ""
+        
+        for bucket in timeBuckets {
+            if !bucket.summaries.isEmpty {
+                // Add bucket header
+                fullText += "\(bucket.header)\n"
+                fullText += String(repeating: "=", count: bucket.header.count) + "\n\n"
+                
+                // Add each summary in the bucket
+                for summary in bucket.summaries {
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+                    let timeString = dateFormatter.string(from: summary.periodStart)
+                    
+                    fullText += "• \(timeString)\n"
+                    fullText += summary.text + "\n\n"
+                }
+                
+                fullText += "\n"
+            }
+        }
+        
+        if !fullText.isEmpty {
+            UIPasteboard.general.string = fullText
+            coordinator.showSuccess("All summaries copied to clipboard")
+        } else {
+            coordinator.showError("No summaries to copy")
+        }
     }
     
     private func formatMonth(year: Int, month: Int) -> String {
@@ -2545,7 +2179,8 @@ struct InsightsTab: View {
             return "\(currentYear) Summary"
         }
     }
-}
+
+    }
 
 // MARK: - FilteredSessionsView
 
@@ -2703,7 +2338,7 @@ struct SettingsTab: View {
                 Section {
                     NavigationLink(destination: RecordingSettingsView()) {
                         Label {
-                            Text("Recording")
+                            Text("Recording Chunks")
                         } icon: {
                             Image(systemName: "mic.fill")
                                 .foregroundStyle(AppTheme.magenta)
@@ -2730,30 +2365,18 @@ struct SettingsTab: View {
                     Text("Configure how your recordings are summarized.")
                 }
                 
-                // Insights Section
+                // Statistics Section
                 Section {
-                    NavigationLink(destination: InsightsSettingsView()) {
+                    NavigationLink(destination: StatisticsView()) {
                         Label {
-                            Text("Insights")
+                            Text("Statistics")
                         } icon: {
-                            Image(systemName: "chart.bar.fill")
+                            Image(systemName: "chart.xyaxis.line")
                                 .foregroundStyle(AppTheme.skyBlue)
                         }
                     }
-                }
-                
-                // Languages Section
-                Section {
-                    NavigationLink(destination: LanguageSettingsView()) {
-                        Label {
-                            Text("Languages")
-                        } icon: {
-                            Image(systemName: "globe")
-                                .foregroundStyle(AppTheme.emerald)
-                        }
-                    }
                 } footer: {
-                    Text("Manage which languages Life Wrapped can detect.")
+                    Text("View word clouds, charts, and statistical analysis.")
                 }
                 
                 // Data Section
@@ -2805,7 +2428,7 @@ struct SettingsTab: View {
                     
                     HStack {
                         Label {
-                            Text("On-Device Processing")
+                            Text("Transcription: On-Device")
                         } icon: {
                             Image(systemName: "checkmark.shield.fill")
                                 .foregroundStyle(AppTheme.emerald)
@@ -2816,6 +2439,8 @@ struct SettingsTab: View {
                     }
                 } header: {
                     Text("About")
+                } footer: {
+                    Text("AI summaries use your API keys or on-device fallback.")
                 }
                 
                 // Debug Section (hidden by default)
@@ -2904,6 +2529,7 @@ struct RecordingSettingsView: View {
                     .tint(AppTheme.purple)
                     .onChange(of: chunkDuration) { oldValue, newValue in
                         coordinator.audioCapture.autoChunkDuration = newValue
+                        UserDefaults.standard.autoChunkDuration = newValue
                         coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
                     }
                 }
@@ -2940,11 +2566,32 @@ struct RecordingSettingsView: View {
             } footer: {
                 Text("Optimized settings for voice recording with smaller file sizes.")
             }
+            
+            Section {
+                NavigationLink(destination: LanguageSettingsView()) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Languages")
+                            Text("Manage which languages can be detected")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "globe")
+                            .foregroundStyle(AppTheme.emerald)
+                    }
+                }
+            } header: {
+                Text("Detection")
+            }
         }
-        .navigationTitle("Recording")
+        .navigationTitle("Recording Chunks")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            chunkDuration = coordinator.audioCapture.autoChunkDuration
+            // Load saved setting or use current value
+            let savedDuration = UserDefaults.standard.autoChunkDuration
+            chunkDuration = savedDuration
+            coordinator.audioCapture.autoChunkDuration = savedDuration
         }
     }
 }
@@ -2956,10 +2603,17 @@ struct AISettingsView: View {
     @State private var activeEngine: EngineTier?
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
+    @State private var showingSmartestConfig = false
+    @State private var wiggleAPIKeyField = false
     
-    // Local AI state
-    @State private var localModelAvailable = false
-    @State private var isDownloadingModel = false
+    // Local AI model state
+    @State private var localModelStatus: String = "Checking..."
+    @State private var isLocalModelDownloaded: Bool = false
+    @State private var showDeleteConfirmation: Bool = false
+    @State private var wiggleLocalAIButton = false
+    
+    // Scroll proxy for programmatic scrolling
+    @State private var scrollProxy: ScrollViewProxy?
     
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -2993,174 +2647,82 @@ struct AISettingsView: View {
         selectedProvider == "OpenAI" ? openaiModels : anthropicModels
     }
     
-    private var effectiveConfig: LocalLLMConfiguration {
-        LocalLLMConfiguration.current()
-    }
-    
-    private var deviceSummary: String {
-        LocalLLMConfiguration.deviceSummary()
-    }
-    
     var body: some View {
-        List {
-            // MARK: - How It Works Section
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label {
-                        Text("Session Summaries")
-                            .font(.headline)
-                    } icon: {
-                        Image(systemName: "doc.text")
-                            .foregroundStyle(AppTheme.purple)
-                    }
-                    HStack {
-                        Text("Uses your ACTIVE engine →")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let activeEngine {
-                            Text(activeEngine.displayName)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundStyle(AppTheme.emerald)
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    Label {
-                        Text("Period Rollups (Day/Week/Month/Year)")
-                            .font(.headline)
-                    } icon: {
-                        Image(systemName: "calendar")
-                            .foregroundStyle(AppTheme.skyBlue)
-                    }
-                    Text("Combines session summaries (no additional AI processing)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    Divider()
-                    
-                    Label {
-                        Text("✨ Year Wrap (Special)")
-                            .font(.headline)
-                    } icon: {
-                        Image(systemName: "sparkles")
-                            .foregroundStyle(AppTheme.magenta)
-                    }
-                    Text("Always uses Year Wrapped Pro AI (OpenAI or Anthropic) for a beautifully crafted year-in-review. Requires valid Pro AI credentials below.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Label {
-                    Text("How AI Works in Life Wrapped")
-                } icon: {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(AppTheme.lightPurple)
-                }
-            }
-            
-            // MARK: - On-Device Engines Section
-            Section {
-                // Basic Engine
-                EngineOptionCard(
+        ScrollViewReader { proxy in
+            List {
+                // MARK: - Summary Quality Picker
+                Section {
+                // Smart (Basic)
+                SummaryQualityCard(
+                    emoji: "⚡️",
+                    title: "Smart",
+                    subtitle: "Quick word-based summaries",
+                    detail: "Always available, works offline",
                     tier: .basic,
                     isSelected: activeEngine == .basic,
                     isAvailable: true,
-                    subtitle: "Simple word-based summaries",
                     onSelect: { selectEngine(.basic) }
                 )
                 
-                // Apple Intelligence
-                EngineOptionCard(
+                // Local AI (Phi-3.5)
+                SummaryQualityCard(
+                    emoji: "🤖",
+                    title: "Local AI",
+                    subtitle: coordinator.localModelDisplayName,
+                    detail: localModelStatus,
+                    tier: .local,
+                    isSelected: activeEngine == .local,
+                    isAvailable: isLocalModelDownloaded,
+                    onSelect: { selectEngine(.local) }
+                )
+                
+                // Smarter (Apple Intelligence)
+                SummaryQualityCard(
+                    emoji: "🧠",
+                    title: "Smarter",
+                    subtitle: "Apple Intelligence",
+                    detail: availableEngines.contains(.apple) ? "On-device AI, works offline" : "Requires iOS 18.1+ and compatible device",
                     tier: .apple,
                     isSelected: activeEngine == .apple,
                     isAvailable: availableEngines.contains(.apple),
-                    subtitle: "Requires iOS 18.1+ & compatible device",
                     onSelect: { selectEngine(.apple) }
                 )
                 
-                // Local AI
-                VStack(alignment: .leading, spacing: 12) {
-                    EngineOptionCard(
-                        tier: .local,
-                        isSelected: activeEngine == .local,
-                        isAvailable: localModelAvailable,
-                        subtitle: localModelAvailable ? "On-device LLM ready" : "Download model to enable",
-                        onSelect: { selectEngine(.local) }
-                    )
-                    
-                    if localModelAvailable {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "wand.and.stars")
-                                    .foregroundStyle(AppTheme.emerald)
-                                Text("Auto-Optimized for Your Device")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(AppTheme.emerald)
-                            }
-                            Text("Automatically uses maximum quality settings for \(deviceSummary). \(effectiveConfig.tokensDescription)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            } header: {
-                Label {
-                    Text("On-Device Processing")
-                } icon: {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(AppTheme.darkPurple)
-                }
-            } footer: {
-                Text("All processing happens locally. Your data never leaves your device.")
-            }
-            
-            // MARK: - Year Wrapped Pro AI Section
-            Section {
-                // Pro AI Engine Toggle
-                EngineOptionCard(
+                // Smartest (External API)
+                SummaryQualityCard(
+                    emoji: "✨",
+                    title: "Smartest",
+                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic",
+                    detail: hasValidAPIKey() ? "Best quality, requires internet" : "Tap to configure your API key",
                     tier: .external,
                     isSelected: activeEngine == .external,
-                    isAvailable: hasValidAPIKey(),
-                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "Configure API key below",
+                    isAvailable: true,
                     onSelect: { selectEngine(.external) }
                 )
-                
-                // Provider Selection
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Provider")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
+            } header: {
+                Text("Summary Quality")
+            } footer: {
+                Text("Choose how you want your audio summaries generated. Smartest requires your own API key.")
+            }
+            
+            // MARK: - Smartest Configuration
+            if activeEngine == .external {
+                Section {
+                    // Provider Selection
                     Picker("Provider", selection: $selectedProvider) {
                         Text("OpenAI").tag("OpenAI")
                         Text("Anthropic").tag("Anthropic")
                     }
                     .pickerStyle(.segmented)
-                    .tint(AppTheme.purple)
                     .onChange(of: selectedProvider) { _, newValue in
                         UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
-                        // Reset to default model for new provider
                         let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
                         selectedModel = defaultModel
                         UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
-                        // Load the appropriate key
                         loadAPIKey()
                     }
-                }
-                .padding(.vertical, 4)
-                .opacity(activeEngine == .external ? 1.0 : 0.6)
-                
-                // Model Selection
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Model")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     
+                    // Model Selection
                     Picker("Model", selection: $selectedModel) {
                         ForEach(currentModels, id: \.0) { model in
                             Text(model.1).tag(model.0)
@@ -3169,145 +2731,175 @@ struct AISettingsView: View {
                     .onChange(of: selectedModel) { _, newValue in
                         UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
                     }
-                }
-                .padding(.vertical, 4)
-                .opacity(activeEngine == .external ? 1.0 : 0.6)
-                
-                // API Key Input
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("API Key")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        
-                        Spacer()
-                        
-                        if hasValidAPIKey() {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(AppTheme.emerald)
-                                Text("Configured")
-                                    .font(.caption)
-                                    .foregroundStyle(AppTheme.emerald)
-                            }
-                        }
-                    }
                     
-                    HStack {
-                        if showAPIKeyField {
-                            SecureField("Enter \(selectedProvider) API Key", text: $apiKey)
-                                .textContentType(.password)
-                                .autocapitalization(.none)
-                                .autocorrectionDisabled()
-                                .textFieldStyle(.roundedBorder)
-                                .onChange(of: apiKey) { _, newValue in
-                                    // Normalize: trim whitespace and newlines
-                                    let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if normalized != newValue {
-                                        apiKey = normalized
+                    // API Key Input
+                    if showAPIKeyField {
+                        VStack(spacing: 8) {
+                            HStack {
+                                SecureField("API Key", text: $apiKey)
+                                    .textContentType(.password)
+                                    .autocapitalization(.none)
+                                    .autocorrectionDisabled()
+                                    .onChange(of: apiKey) { _, newValue in
+                                        let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if normalized != newValue {
+                                            apiKey = normalized
+                                        }
+                                        testResult = nil
                                     }
-                                    // Reset test state when key changes
-                                    testResult = nil
+                                
+                                Button("Test") {
+                                    testAPIKey()
                                 }
+                                .buttonStyle(.bordered)
+                                .disabled(apiKey.isEmpty || isTesting)
+                                
+                                Button("Save") {
+                                    saveAPIKey()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(apiKey.isEmpty)
+                            }
+                            .modifier(WiggleModifier(wiggle: $wiggleAPIKeyField))
                             
-                            Button {
-                                testAPIKey()
-                            } label: {
-                                if isTesting {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .tint(AppTheme.purple)
-                                } else {
-                                    Text("Test")
-                                        .fontWeight(.medium)
+                            // Instructional text
+                            if !hasValidAPIKey() {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("Save your API key to activate Smartest summaries")
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
                                 }
                             }
-                            .buttonStyle(.bordered)
-                            .tint(AppTheme.skyBlue)
-                            .disabled(apiKey.isEmpty || isTesting)
                             
-                            Button {
-                                saveAPIKey()
-                            } label: {
-                                Text("Save")
-                                    .fontWeight(.medium)
+                            if let result = testResult {
+                                Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(testSuccess ? .green : .red)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(AppTheme.purple)
-                            .disabled(apiKey.isEmpty)
-                        } else {
-                            Button {
-                                showAPIKeyField = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: hasValidAPIKey() ? "pencil" : "plus.circle.fill")
-                                    Text(hasValidAPIKey() ? "Change API Key" : "Add API Key")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(AppTheme.purple)
+                        }
+                    } else {
+                        Button {
+                            showAPIKeyField = true
+                        } label: {
+                            Label(hasValidAPIKey() ? "Change API Key" : "Add API Key", 
+                                  systemImage: hasValidAPIKey() ? "pencil" : "key.fill")
                         }
                     }
                     
-                    // Help links
-                    HStack(spacing: 16) {
-                        if selectedProvider == "OpenAI" {
-                            Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
-                                Text("Get OpenAI Key")
-                                    .font(.caption)
-                            }
-                        } else {
-                            Link(destination: URL(string: "https://console.anthropic.com/settings/keys")!) {
-                                Text("Get Anthropic Key")
-                                    .font(.caption)
-                            }
-                        }
+                    // Help link
+                    Link(destination: URL(string: selectedProvider == "OpenAI" 
+                        ? "https://platform.openai.com/api-keys" 
+                        : "https://console.anthropic.com/settings/keys")!) {
+                        Label("Get \(selectedProvider) API Key", systemImage: "arrow.up.right.square")
+                            .font(.footnote)
                     }
                     
-                    // Test result
-                    if let result = testResult {
-                        HStack {
-                            Image(systemName: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(testSuccess ? AppTheme.emerald : AppTheme.magenta)
-                            Text(result)
-                                .font(.caption)
-                                .foregroundStyle(testSuccess ? AppTheme.emerald : AppTheme.magenta)
+                    // Remove key
+                    if hasValidAPIKey() {
+                        Button(role: .destructive) {
+                            clearAPIKey()
+                        } label: {
+                            Label("Remove API Key", systemImage: "trash")
                         }
-                        .padding(.top, 4)
+                    }
+                } header: {
+                    Text("Smartest Configuration")
+                } footer: {
+                    if hasValidAPIKey() {
+                        Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
+                    } else {
+                        Text("Add your own OpenAI or Anthropic API key to unlock the Smartest summaries. Keys are stored securely in your device's Keychain.")
                     }
                 }
-                .padding(.vertical, 4)
-                
-                // Clear key option
-                if hasValidAPIKey() {
-                    Button(role: .destructive) {
-                        clearAPIKey()
-                    } label: {
-                        Label("Remove API Key", systemImage: "trash")
-                            .font(.subheadline)
+                .id("smartestConfig")
+            }
+            
+            // MARK: - Local AI Model Management
+            if activeEngine == .local {
+                Section {
+                    if coordinator.isDownloadingLocalModel {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            
+                            Text("Downloading \(coordinator.localModelDisplayName)...")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Text("You can leave this screen. We'll notify you when the download is complete.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                    } else if isLocalModelDownloaded {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(coordinator.localModelDisplayName)
+                                .font(.subheadline)
+                            Text(localModelStatus)
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
+                    }
+                } else {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(coordinator.localModelDisplayName)
+                                .font(.subheadline)
+                            Text("Not Downloaded • \(coordinator.expectedLocalModelSizeMB)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            downloadLocalModel()
+                        } label: {
+                            Label("Download", systemImage: "arrow.down.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                        .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
                     }
                 }
             } header: {
-                Label {
-                    Text("Year Wrapped Pro AI")
-                } icon: {
-                    Image(systemName: "sparkles")
-                        .foregroundStyle(AppTheme.magenta)
-                }
+                Text("Local AI Model")
             } footer: {
-                Label {
-                    Text("Required for Year Wrap feature. Select as active engine above to also use for session summaries. Data is sent to \(selectedProvider) servers for processing.")
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                if coordinator.isDownloadingLocalModel {
+                    Text("Download continues in the background. You'll receive a notification when complete.")
+                } else if !isLocalModelDownloaded {
+                    Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
+                } else {
+                    Text("The local AI model enables on-device summarization. It runs entirely on your device for maximum privacy.")
                 }
             }
+            .alert("Delete Local AI Model?", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteLocalModel()
+                }
+            } message: {
+                Text("This will remove the \\(coordinator.expectedLocalModelSizeMB) model from your device. You can re-download it anytime.")
+            }
+            .id("localAIConfig")
+            } // End of if activeEngine == .local
         }
         .navigationTitle("AI & Summaries")
-        .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadEngineStatus()
-            await checkLocalModelAvailability()
             loadAPIKey()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
@@ -3315,11 +2907,19 @@ struct AISettingsView: View {
                 await loadEngineStatus()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ModelDownloadCompleted"))) { _ in
-            Task {
-                await checkLocalModelAvailability()
-                await loadEngineStatus()
+        .onChange(of: coordinator.isDownloadingLocalModel) { wasDownloading, isDownloading in
+            // Refresh model status when download completes
+            if wasDownloading && !isDownloading {
+                Task {
+                    isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+                    localModelStatus = await coordinator.localModelSizeFormatted()
+                }
             }
+        }
+        .onAppear {
+            // Store proxy for scrolling
+            scrollProxy = proxy
+        }
         }
     }
     
@@ -3332,28 +2932,113 @@ struct AISettingsView: View {
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         activeEngine = await summCoord.getActiveEngine()
         availableEngines = await summCoord.getAvailableEngines()
+        
+        // Load local model status
+        isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+        localModelStatus = await coordinator.localModelSizeFormatted()
     }
     
-    private func checkLocalModelAvailability() async {
-        let modelManager = LocalLLM.ModelFileManager.shared
-        let models = await modelManager.availableModels()
-        await MainActor.run {
-            localModelAvailable = !models.isEmpty
+    private func downloadLocalModel() {
+        // Use coordinator's background download method
+        // Download state persists in coordinator even if view navigates away
+        coordinator.startLocalModelDownload()
+    }
+    
+    private func deleteLocalModel() {
+        Task {
+            do {
+                try await coordinator.deleteLocalModel()
+                await MainActor.run {
+                    isLocalModelDownloaded = false
+                    localModelStatus = "Not Downloaded"
+                }
+                // Refresh status
+                await loadEngineStatus()
+            } catch {
+                coordinator.showError("Delete failed: \(error.localizedDescription)")
+            }
         }
     }
     
     private func selectEngine(_ tier: EngineTier) {
-        // Check availability
-        if tier == .local && !localModelAvailable {
-            coordinator.showError("Download a Local AI model first")
+        // For Local AI without model, show download section with wiggle animation
+        if tier == .local {
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
+            // Update activeEngine immediately so section appears right away
+            activeEngine = .local
+            
+            // Persist engine preference in background (without triggering refresh)
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(tier)
+            }
+            
+            // Scroll to the section after a brief delay to ensure it's rendered
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("localAIConfig", anchor: .top)
+                }
+            }
+            
+            // If model not downloaded, trigger wiggle animation on button
+            if !isLocalModelDownloaded {
+                withAnimation(.default) {
+                    wiggleLocalAIButton = true
+                }
+                
+                // Reset wiggle after animation
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    wiggleLocalAIButton = false
+                }
+            }
+            
             return
         }
+        
         if tier == .apple && !availableEngines.contains(.apple) {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
             return
         }
+        
+        // If selecting Smartest without API key, show config section with feedback
         if tier == .external && !hasValidAPIKey() {
-            coordinator.showError("Configure an API key first")
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
+            // Update activeEngine immediately so section appears right away
+            activeEngine = .external
+            
+            // Persist engine preference in background (without triggering refresh)
+            Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(tier)
+            }
+            
+            // Show config and trigger wiggle animation
+            showingSmartestConfig = true
+            showAPIKeyField = true
+            
+            // Scroll to the section after a brief delay to ensure it's rendered
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("smartestConfig", anchor: .top)
+                }
+            }
+            
+            // Trigger wiggle animation
+            withAnimation(.default) {
+                wiggleAPIKeyField = true
+            }
+            
+            // Reset wiggle after animation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                wiggleAPIKeyField = false
+            }
+            
             return
         }
         
@@ -3362,7 +3047,16 @@ struct AISettingsView: View {
             await summCoord.setPreferredEngine(tier)
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-            coordinator.showSuccess("Switched to \(tier.displayName)")
+            coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+        }
+    }
+    
+    private func tierDisplayName(_ tier: EngineTier) -> String {
+        switch tier {
+        case .basic: return "Smart"
+        case .apple: return "Smarter"
+        case .external: return "Smartest"
+        default: return tier.displayName
         }
     }
     
@@ -3386,11 +3080,15 @@ struct AISettingsView: View {
             UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
             UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
             showAPIKeyField = false
-            coordinator.showSuccess("API key saved")
+            showingSmartestConfig = false
             
+            // Now that we have a valid key, switch to Smartest engine
             Task {
+                guard let summCoord = coordinator.summarizationCoordinator else { return }
+                await summCoord.setPreferredEngine(.external)
                 await loadEngineStatus()
                 NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+                coordinator.showSuccess("API key saved - Switched to Smartest")
             }
         } else {
             coordinator.showError("Failed to save API key")
@@ -3436,8 +3134,8 @@ struct AISettingsView: View {
         KeychainHelper.delete(key: keychainKey)
         apiKey = ""
         showAPIKeyField = false
+        showingSmartestConfig = false
         
-        // If external was active, switch to basic
         if activeEngine == .external {
             selectEngine(.basic)
         }
@@ -3451,19 +3149,22 @@ struct AISettingsView: View {
     }
 }
 
-// MARK: - Engine Option Card
+// MARK: - Summary Quality Card
 
-struct EngineOptionCard: View {
+struct SummaryQualityCard: View {
+    let emoji: String
+    let title: String
+    let subtitle: String
+    let detail: String
     let tier: EngineTier
     let isSelected: Bool
     let isAvailable: Bool
-    let subtitle: String
     let onSelect: () -> Void
     
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
-                // Radio button indicator with gradient
+                // Selection indicator
                 ZStack {
                     Circle()
                         .strokeBorder(isSelected ? AppTheme.purple : Color.gray.opacity(0.5), lineWidth: 2)
@@ -3471,65 +3172,45 @@ struct EngineOptionCard: View {
                     
                     if isSelected {
                         Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [AppTheme.lightPurple, AppTheme.purple],
-                                    center: .center,
-                                    startRadius: 0,
-                                    endRadius: 12
-                                )
-                            )
-                            .frame(width: 14, height: 14)
+                            .fill(AppTheme.purple)
+                            .frame(width: 12, height: 12)
                     }
                 }
                 
-                // Engine icon with theme color
-                Image(systemName: tier.icon)
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? AppTheme.purple : (isAvailable ? AppTheme.lightPurple : Color.secondary.opacity(0.5)))
-                    .frame(width: 28)
+                // Emoji
+                Text(emoji)
+                    .font(.title2)
                 
-                // Text content
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tier.displayName)
-                        .font(.body)
-                        .fontWeight(isSelected ? .semibold : .regular)
-                        .foregroundStyle(isSelected ? .primary : (isAvailable ? .primary : .secondary))
+                // Content
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
                     
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(isAvailable ? .secondary : Color.orange)
                 }
                 
                 Spacer()
                 
-                // Status indicator with gradient
-                if isSelected {
-                    Text("Active")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.darkPurple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(Capsule())
-                } else if !isAvailable {
+                // Lock icon if unavailable
+                if !isAvailable {
                     Image(systemName: "lock.fill")
-                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .font(.caption)
                 }
             }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(12)
+            .opacity(isAvailable ? 1.0 : 0.6)
         }
         .buttonStyle(.plain)
-        .opacity(isAvailable || isSelected ? 1.0 : 0.5)
     }
 }
 
@@ -3611,10 +3292,10 @@ struct OnDeviceEnginesView: View {
         switch tier {
         case .basic:
             return "Basic engine should always be available. Please restart the app."
+        case .local:
+            return "Download the local AI model to use on-device intelligence."
         case .apple:
             return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
-        case .local:
-            return "Download the local AI model to enable on-device processing. Go to AI Settings → Local AI Models."
         case .external:
             return "Configure your API key to use external AI services."
         }
@@ -4043,16 +3724,341 @@ enum KeychainHelper {
     }
 }
 
-// MARK: - Insights Settings View
+// MARK: - Statistics Settings View
 
-struct InsightsSettingsView: View {
+struct StatisticsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var wordLimit: Double = 20
+    @State private var dateFormat: String = UserDefaults.standard.rollupDateFormat
+    @State private var timeFormat: String = UserDefaults.standard.rollupTimeFormat
+    
+    // Statistics data
+    @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
+    @State private var sessionsByDayOfWeek: [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] = []
+    @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
+    @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
+    @State private var topWords: [WordFrequency] = []
+    @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
+    @State private var languageDistribution: [(language: String, wordCount: Int)] = []
+    @State private var isLoadingStats = false
     
     private let wordLimitKey = "insightsWordLimit"
     
+    private let dateFormatOptions = [
+        ("MM/dd/yyyy", "12/22/2025"),
+        ("dd/MM/yyyy", "22/12/2025"),
+        ("yyyy-MM-dd", "2025-12-22"),
+        ("MMM d, yyyy", "Dec 22, 2025"),
+        ("MMMM d, yyyy", "December 22, 2025")
+    ]
+    
+    private let timeFormatOptions = [
+        ("HH:mm", "14:30 (24-hour)"),
+        ("hh:mm a", "02:30 PM (12-hour)"),
+        ("h:mm a", "2:30 PM (12-hour)")
+    ]
+    
     var body: some View {
         List {
+            // Key Statistics Section
+            if longestSession != nil || mostActiveMonth != nil {
+                Section {
+                    if let longest = longestSession {
+                        NavigationLink {
+                            FilteredSessionsView(
+                                title: "Longest Session",
+                                sessionIds: [longest.sessionId]
+                            )
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "timer")
+                                    .font(.title2)
+                                    .foregroundStyle(AppTheme.purple)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 20
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Longest Session")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack {
+                                        Text(formatDuration(longest.duration))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text(longest.date.formatted(date: .abbreviated, time: .omitted))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    
+                    if let mostActive = mostActiveMonth {
+                        NavigationLink {
+                            FilteredSessionsView(
+                                title: formatMonth(year: mostActive.year, month: mostActive.month),
+                                sessionIds: mostActive.sessionIds
+                            )
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "calendar.badge.plus")
+                                    .font(.title2)
+                                    .foregroundStyle(AppTheme.magenta)
+                                    .frame(width: 40, height: 40)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 20
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Most Active Month")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack {
+                                        Text(formatMonth(year: mostActive.year, month: mostActive.month))
+                                            .font(.title3)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                } header: {
+                    Text("Key Statistics")
+                }
+            }
+            
+            // Sessions by Hour Section
+            if !sessionsByHour.isEmpty {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(sessionsByHour.sorted(by: { $0.hour < $1.hour }), id: \.hour) { data in
+                                NavigationLink {
+                                    FilteredSessionsView(
+                                        title: formatHour(data.hour),
+                                        sessionIds: data.sessionIds
+                                    )
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Text(formatHourShort(data.hour))
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(AppTheme.skyBlue)
+                                        Text("\(data.count)")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                        Text(data.count == 1 ? "session" : "sessions")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 70)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 35
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                } header: {
+                    Text("Sessions by Time of Day")
+                }
+            }
+            
+            // Sessions by Day of Week Section
+            if !sessionsByDayOfWeek.isEmpty {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(sessionsByDayOfWeek.sorted(by: { $0.dayOfWeek < $1.dayOfWeek }), id: \.dayOfWeek) { data in
+                                NavigationLink {
+                                    FilteredSessionsView(
+                                        title: formatDayOfWeekFull(data.dayOfWeek),
+                                        sessionIds: data.sessionIds
+                                    )
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Text(formatDayOfWeek(data.dayOfWeek))
+                                            .font(.caption)
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(AppTheme.emerald)
+                                        Text("\(data.count)")
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                        Text(data.count == 1 ? "session" : "sessions")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 70)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RadialGradient(
+                                            colors: [AppTheme.emerald.opacity(0.15), AppTheme.emerald.opacity(0.05)],
+                                            center: .center,
+                                            startRadius: 0,
+                                            endRadius: 35
+                                        )
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                } header: {
+                    Text("Sessions by Day of Week")
+                }
+            }
+            
+            // Word Cloud Section
+            if !topWords.isEmpty {
+                Section {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 12) {
+                            ForEach(Array(topWords.enumerated()), id: \.element.id) { index, wordFreq in
+                                VStack(spacing: 6) {
+                                    Text(wordFreq.word.capitalized)
+                                        .font(.system(size: fontSizeForRank(index), weight: .bold))
+                                        .foregroundStyle(colorForRank(index))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.7)
+                                    
+                                    Text("\(wordFreq.count)")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(colorForRank(index).gradient)
+                                        .clipShape(Capsule())
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(colorForRank(index).opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        }
+                        .padding(.horizontal, 2)
+                    }
+                    .frame(height: 400)
+                } header: {
+                    Text("Most Used Words")
+                } footer: {
+                    Text("Meaningful words from your transcripts")
+                }
+            }
+            
+            // Emotional Trends Section (Stats only, no chart)
+            if !dailySentiment.isEmpty {
+                Section {
+                    HStack(spacing: 16) {
+                        sentimentStatBox(
+                            label: "Positive",
+                            count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
+                            color: .green
+                        )
+                        sentimentStatBox(
+                            label: "Neutral",
+                            count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
+                            color: .gray
+                        )
+                        sentimentStatBox(
+                            label: "Negative",
+                            count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
+                            color: .red
+                        )
+                    }
+                    .padding(.vertical, 8)
+                } header: {
+                    Text("Emotional Trends")
+                } footer: {
+                    Text("Daily sentiment analysis from your journal entries")
+                }
+            }
+            
+            // Languages Section
+            if !languageDistribution.isEmpty {
+                Section {
+                    let totalWords = languageDistribution.reduce(0) { $0 + $1.wordCount }
+                    
+                    ForEach(languageDistribution.prefix(5), id: \.language) { item in
+                        let percentage = totalWords > 0 ? (Double(item.wordCount) / Double(totalWords)) * 100 : 0
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(LanguageDetector.displayName(for: item.language))
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text("\(Int(percentage))%")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            
+                            GeometryReader { geometry in
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.secondary.opacity(0.2))
+                                    
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(languageColor(index: languageDistribution.firstIndex(where: { $0.language == item.language }) ?? 0))
+                                        .frame(width: geometry.size.width * (percentage / 100))
+                                }
+                            }
+                            .frame(height: 8)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    
+                    if languageDistribution.count > 1 {
+                        Text("You speak \(languageDistribution.count) language\(languageDistribution.count == 1 ? "" : "s") in your recordings")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+                    }
+                } header: {
+                    Text("Languages Spoken")
+                } footer: {
+                    Text("Distribution of languages in your recordings")
+                }
+            }
+            
+            // Settings Sections
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -4069,13 +4075,42 @@ struct InsightsSettingsView: View {
                     .onChange(of: wordLimit) { oldValue, newValue in
                         UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
                         coordinator.showSuccess("Word limit updated to \(Int(newValue))")
+                        Task {
+                            await loadStatistics()
+                        }
                     }
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Word Cloud")
+                Text("Settings")
             } footer: {
-                Text("Number of most-used words to display in the Insights tab.")
+                Text("Number of most-used words to display in the Statistics tab.")
+            }
+            
+            Section {
+                Picker("Date Format", selection: $dateFormat) {
+                    ForEach(dateFormatOptions, id: \.0) { format, example in
+                        Text(example).tag(format)
+                    }
+                }
+                .onChange(of: dateFormat) { oldValue, newValue in
+                    UserDefaults.standard.rollupDateFormat = newValue
+                    coordinator.showSuccess("Date format updated")
+                }
+                
+                Picker("Time Format", selection: $timeFormat) {
+                    ForEach(timeFormatOptions, id: \.0) { format, example in
+                        Text(example).tag(format)
+                    }
+                }
+                .onChange(of: timeFormat) { oldValue, newValue in
+                    UserDefaults.standard.rollupTimeFormat = newValue
+                    coordinator.showSuccess("Time format updated")
+                }
+            } header: {
+                Text("Rollup Date & Time Format")
+            } footer: {
+                Text("Date and time format used in period rollups (hour, day, week, month, year).")
             }
             
             Section {
@@ -4096,14 +4131,163 @@ struct InsightsSettingsView: View {
                 Text("Filters")
             }
         }
-        .navigationTitle("Insights")
+        .navigationTitle("Statistics")
         .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if isLoadingStats {
+                LoadingView(size: .medium)
+            }
+        }
         .task {
             wordLimit = Double(UserDefaults.standard.integer(forKey: wordLimitKey))
             if wordLimit == 0 {
                 wordLimit = 20
             }
+            await loadStatistics()
         }
+        .refreshable {
+            await loadStatistics()
+        }
+    }
+    
+    private func loadStatistics() async {
+        isLoadingStats = true
+        do {
+            // Load key statistics
+            longestSession = try await coordinator.fetchLongestSession()
+            mostActiveMonth = try await coordinator.fetchMostActiveMonth()
+            
+            // Load sessions by hour
+            sessionsByHour = try await coordinator.fetchSessionsByHour()
+            
+            // Load sessions by day of week
+            sessionsByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
+            
+            // Load word frequency analysis (all time)
+            let transcriptTexts = try await coordinator.fetchTranscriptText(
+                startDate: Date.distantPast,
+                endDate: Date()
+            )
+            
+            let customExcludedWords: Set<String> = {
+                if let savedWords = UserDefaults.standard.stringArray(forKey: "customExcludedWords") {
+                    return Set(savedWords)
+                }
+                return []
+            }()
+            
+            topWords = WordAnalyzer.analyzeWords(
+                from: transcriptTexts,
+                limit: Int(wordLimit),
+                customExcludedWords: customExcludedWords
+            )
+            
+            // Load daily sentiment data (all time)
+            dailySentiment = try await coordinator.fetchDailySentiment(from: Date.distantPast, to: Date())
+            
+            // Load language distribution
+            languageDistribution = try await coordinator.fetchLanguageDistribution()
+        } catch {
+            print("❌ [StatisticsView] Failed to load statistics: \(error)")
+        }
+        isLoadingStats = false
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func formatMonth(year: Int, month: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        if let date = Calendar.current.date(from: DateComponents(year: year, month: month)) {
+            return formatter.string(from: date)
+        }
+        return "\(month)/\(year)"
+    }
+    
+    private func formatHour(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+        let calendar = Calendar.current
+        let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return formatter.string(from: date)
+    }
+    
+    private func formatHourShort(_ hour: Int) -> String {
+        if hour == 0 {
+            return "12 AM"
+        } else if hour < 12 {
+            return "\(hour) AM"
+        } else if hour == 12 {
+            return "12 PM"
+        } else {
+            return "\(hour - 12) PM"
+        }
+    }
+    
+    private func formatDayOfWeek(_ dayOfWeek: Int) -> String {
+        let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return days[dayOfWeek]
+    }
+    
+    private func formatDayOfWeekFull(_ dayOfWeek: Int) -> String {
+        let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        return days[dayOfWeek]
+    }
+    
+    private func fontSizeForRank(_ rank: Int) -> CGFloat {
+        switch rank {
+        case 0...2: return 24
+        case 3...5: return 20
+        case 6...9: return 18
+        default: return 16
+        }
+    }
+    
+    private func colorForRank(_ rank: Int) -> Color {
+        switch rank {
+        case 0: return AppTheme.skyBlue
+        case 1: return AppTheme.purple
+        case 2: return AppTheme.magenta
+        case 3: return AppTheme.emerald
+        case 4: return AppTheme.lightPurple
+        default: return AppTheme.darkPurple
+        }
+    }
+    
+    private func sentimentStatBox(label: String, count: Int, color: Color) -> some View {
+        VStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+            
+            Text("\(count)")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundStyle(color)
+            
+            Text("days")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    
+    private func languageColor(index: Int) -> Color {
+        let colors: [Color] = [AppTheme.skyBlue, AppTheme.emerald, AppTheme.purple, AppTheme.magenta, AppTheme.lightPurple]
+        return colors[index % colors.count]
     }
 }
 
@@ -4133,7 +4317,7 @@ struct DataSettingsView: View {
             } header: {
                 Text("Browse Data")
             } footer: {
-                Text("The Insights tab always shows the current year. Use Historical Data to browse previous years.")
+                Text("The Overview tab always shows the current year. Use Historical Data to browse previous years.")
             }
             
             Section {
@@ -4174,6 +4358,7 @@ struct DataSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showDataManagement) {
             DataManagementView()
+                .environmentObject(coordinator)
         }
         .task {
             await calculateStorage()
@@ -4215,11 +4400,34 @@ struct PrivacySettingsView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Label("On-Device Processing", systemImage: "checkmark.shield.fill")
-                    Spacer()
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("Transcription", systemImage: "waveform")
+                        Spacer()
+                        Text("On-Device")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+                    }
+                    Text("100% local, uses Apple Speech framework")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 32)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Label("AI Summaries", systemImage: "sparkles")
+                        Spacer()
+                        Text("User-Controlled")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.blue)
+                    }
+                    Text("Uses your API keys (OpenAI/Anthropic) or on-device fallback")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 32)
                 }
                 
                 HStack {
@@ -4238,7 +4446,7 @@ struct PrivacySettingsView: View {
             } header: {
                 Text("Privacy Status")
             } footer: {
-                Text("Life Wrapped processes all data locally. No data is sent to external servers unless you configure External API.")
+                Text("Transcription always happens on-device. AI summaries use external APIs only if you provide API keys, otherwise on-device processing.")
             }
             
             Section {
@@ -4544,27 +4752,33 @@ struct PrivacyPolicyView: View {
                 
                 VStack(alignment: .leading, spacing: 12) {
                     PrivacyPoint(
-                        icon: "lock.shield.fill",
-                        title: "100% On-Device",
-                        description: "All audio processing and transcription happens on your device."
+                        icon: "waveform",
+                        title: "Transcription: 100% On-Device",
+                        description: "All audio recording and speech-to-text happens locally using Apple's Speech framework. Zero network calls."
                     )
                     
                     PrivacyPoint(
-                        icon: "wifi.slash",
-                        title: "Zero Network Calls",
-                        description: "Life Wrapped never sends your data to any server."
+                        icon: "sparkles",
+                        title: "AI Summaries: User-Controlled",
+                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, on-device processing with Apple Intelligence or Basic summaries."
+                    )
+                    
+                    PrivacyPoint(
+                        icon: "network",
+                        title: "Network Calls: Transparent",
+                        description: "With API keys: Connects to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) using YOUR keys. Without keys: 100% offline."
                     )
                     
                     PrivacyPoint(
                         icon: "eye.slash.fill",
                         title: "No Tracking",
-                        description: "We don't collect analytics, telemetry, or usage data."
+                        description: "We don't collect analytics, telemetry, or usage data. Your API keys are stored securely in Keychain."
                     )
                     
                     PrivacyPoint(
                         icon: "square.and.arrow.up",
                         title: "Your Data, Your Control",
-                        description: "Export or delete your data anytime."
+                        description: "Export or delete your data anytime. Audio files and transcripts never leave your device."
                     )
                 }
             }
@@ -5164,6 +5378,7 @@ struct SessionDetailView: View {
     // Session metadata
     @State private var sessionTitle: String = ""
     @State private var sessionNotes: String = ""
+    @State private var initialSessionNotes: String = ""  // Track initial notes to detect changes
     @State private var isFavorite: Bool = false
     @State private var isEditingTitle: Bool = false
     @State private var isEditingNotes: Bool = false
@@ -5175,6 +5390,14 @@ struct SessionDetailView: View {
     @State private var editedChunkIds: Set<UUID> = []  // Track which chunks were edited
     @State private var isRegeneratingSummary: Bool = false
     @FocusState private var isTextFieldFocused: Bool
+    
+    // AI Generation progress
+    @State private var generationProgress: Double = 0.0
+    @State private var generationPhase: String = ""
+    @State private var showGenerationOverlay = false
+    @State private var activeEngineForGeneration: EngineTier?
+    @State private var showRegenerateWithNotesAlert: Bool = false
+    @State private var notesWereAppended: Bool = false
     
     var body: some View {
         ScrollView {
@@ -5191,6 +5414,9 @@ struct SessionDetailView: View {
                 // Playback Controls
                 playbackControlsSection
                 
+                // Personal Notes Section (moved here from bottom)
+                personalNotesSection
+                
                 // Transcription Section
                 transcriptionSection
                 
@@ -5202,9 +5428,6 @@ struct SessionDetailView: View {
                 } else if isTranscriptionComplete {
                     sessionSummaryPlaceholderSection
                 }
-                
-                // Personal Notes Section
-                personalNotesSection
             }
             .padding()
         }
@@ -5231,6 +5454,27 @@ struct SessionDetailView: View {
             if isPlayingThisSession {
                 coordinator.audioPlayback.stop()
             }
+        }
+        .overlay {
+            if showGenerationOverlay {
+                aiGenerationOverlay
+            }
+        }
+        .alert("Regenerate Summary with Notes?", isPresented: $showRegenerateWithNotesAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove Notes") {
+                Task {
+                    notesWereAppended = false
+                    await regenerateSummary()
+                }
+            }
+            Button("Re-append Notes") {
+                Task {
+                    await regenerateSummary(reappendNotes: true)
+                }
+            }
+        } message: {
+            Text("Your notes are currently appended to the summary. Would you like to regenerate and re-append them, or remove them?")
         }
     }
     
@@ -5336,7 +5580,6 @@ struct SessionDetailView: View {
     
     private var playbackControlsSection: some View {
         VStack(spacing: 16) {
-            waveformView
             scrubberSlider
             timeDisplayRow
             playPauseButton
@@ -5352,97 +5595,86 @@ struct SessionDetailView: View {
     }
     
     private var waveformView: some View {
-        TimelineView(.animation(minimumInterval: 1/30)) { context in
-            Canvas { canvasContext, size in
-                let barCount = 80
-                let barWidth: CGFloat = 3
-                let spacing: CGFloat = 1
-                let totalWidth = CGFloat(barCount) * (barWidth + spacing) - spacing
-                let startX = (size.width - totalWidth) / 2
-                let maxHeight = size.height - 20
+        Canvas { canvasContext, size in
+            let centerY = size.height / 2
+            let barCount = 80
+            let barWidth = size.width / CGFloat(barCount)
+            let maxBarHeight = size.height * 0.8
+            
+            // Calculate amplitude for each bar based on transcript segments
+            let totalDuration = session.totalDuration
+            
+            for i in 0..<barCount {
+                let barStartTime = (Double(i) / Double(barCount)) * totalDuration
+                let barEndTime = (Double(i + 1) / Double(barCount)) * totalDuration
                 
-                // Get animated waveform pattern
-                let magnitudes: [Float]
-                if isPlayingThisSession && coordinator.audioPlayback.isPlaying {
-                    // Animated pattern based on time for visual effect (only when actively playing)
-                    let time = Date().timeIntervalSince1970
-                    magnitudes = (0..<barCount).map { index in
-                        let seed = Double(index) * 0.12345 + time * 2.0
-                        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
-                        return Float(0.3 + abs(height) * 0.5)
+                // Check if any transcript segments overlap with this bar's time range
+                var hasContent = false
+                for segment in transcriptSegments {
+                    let segmentStart = segment.startTime
+                    let segmentEnd = segment.startTime + (segment.duration ?? 1.0)
+                    
+                    if (segmentStart <= barEndTime && segmentEnd >= barStartTime) {
+                        hasContent = true
+                        break
                     }
+                }
+                
+                // Calculate bar height (tall where speech exists, short elsewhere)
+                let barHeight: CGFloat
+                if hasContent {
+                    // Add variation for visual interest
+                    let variation = sin(Double(i) * 0.5) * 0.3 + 0.7
+                    barHeight = maxBarHeight * CGFloat(variation)
                 } else {
-                    // Static visualization when paused or not playing
-                    magnitudes = (0..<barCount).map { index in
-                        let seed = Double(index) * 0.12345
-                        let height = sin(seed) * sin(seed * 2.3) * sin(seed * 1.7)
-                        return Float(0.2 + abs(height) * 0.3)
-                    }
+                    barHeight = 4.0 // Minimal height for silence
                 }
                 
-                // Rainbow gradient colors (Apple Intelligence)
-                let waveformGradient = Gradient(colors: [
-                    Color(hex: "#FF9500"), // Orange
-                    Color(hex: "#FF2D55"), // Pink  
-                    Color(hex: "#A855F7"), // Purple
-                    Color(hex: "#3B82F6"), // Blue
-                    Color(hex: "#06B6D4"), // Cyan
-                    Color(hex: "#10B981"), // Green
-                    Color(hex: "#FBBF24")  // Yellow
-                ])
+                let x = CGFloat(i) * barWidth
+                let y = centerY - barHeight / 2
                 
-                // Draw each frequency bar
-                for (index, magnitude) in magnitudes.prefix(barCount).enumerated() {
-                    let x = startX + CGFloat(index) * (barWidth + spacing)
-                    
-                    // Calculate bar height based on magnitude
-                    let minHeight: CGFloat = 4
-                    let barHeight = minHeight + (maxHeight - minHeight) * CGFloat(magnitude)
-                    
-                    // Center vertically
-                    let y = (size.height - barHeight) / 2
-                    
-                    // Create rounded rectangle for bar
-                    let barRect = CGRect(x: x, y: y, width: barWidth, height: barHeight)
-                    let barPath = Path(roundedRect: barRect, cornerRadii: RectangleCornerRadii(
-                        topLeading: barWidth / 2,
-                        bottomLeading: barWidth / 2,
-                        bottomTrailing: barWidth / 2,
-                        topTrailing: barWidth / 2
-                    ))
-                    
-                    // Calculate gradient position based on bar index
-                    let gradientProgress = CGFloat(index) / CGFloat(barCount - 1)
-                    
-                    // Fill with gradient
-                    canvasContext.fill(barPath, with: .linearGradient(
-                        waveformGradient,
-                        startPoint: CGPoint(x: 0, y: 0),
-                        endPoint: CGPoint(x: size.width, y: 0)
-                    ))
+                let barRect = CGRect(x: x, y: y, width: max(barWidth - 1, 1), height: barHeight)
+                let barPath = Path(roundedRect: barRect, cornerRadius: barWidth / 2)
+                
+                // Color based on playback state
+                let color: Color
+                if isPlayingThisSession && coordinator.audioPlayback.isPlaying {
+                    let progress = totalDuration > 0 ? totalElapsedTime / totalDuration : 0
+                    let barProgress = Double(i) / Double(barCount)
+                    color = barProgress <= progress ? AppTheme.magenta : AppTheme.purple.opacity(0.5)
+                } else {
+                    color = AppTheme.purple.opacity(0.4)
                 }
                 
-                // Draw playhead indicator if playing
-                if isPlayingThisSession {
-                    let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
-                    let playheadX = size.width * progress
-                    
-                    let playheadPath = Path { path in
-                        path.move(to: CGPoint(x: playheadX, y: 0))
-                        path.addLine(to: CGPoint(x: playheadX, y: size.height))
-                    }
-                    
-                    canvasContext.stroke(playheadPath, with: .color(AppTheme.magenta), lineWidth: 3)
-                }
+                canvasContext.fill(barPath, with: .color(color))
             }
-            .frame(height: 100)
+            
+            // Draw playhead indicator if playing
+            if isPlayingThisSession {
+                let progress = session.totalDuration > 0 ? totalElapsedTime / session.totalDuration : 0
+                let playheadX = size.width * progress
+                
+                let playheadPath = Path { path in
+                    path.move(to: CGPoint(x: playheadX, y: 0))
+                    path.addLine(to: CGPoint(x: playheadX, y: size.height))
+                }
+                
+                canvasContext.stroke(playheadPath, with: .color(AppTheme.magenta), lineWidth: 3)
+            }
         }
+        .frame(height: 100)
     }
     
     private var scrubberSlider: some View {
-        Slider(
+        // Force slider to update by using forceUpdateTrigger
+        let _ = forceUpdateTrigger
+        
+        return Slider(
             value: Binding(
-                get: { isPlayingThisSession ? totalElapsedTime : scrubbedTime },
+                get: { 
+                    let value = isPlayingThisSession ? totalElapsedTime : scrubbedTime
+                    return value
+                },
                 set: { newValue in
                     if isPlayingThisSession {
                         seekToTotalTime(newValue)
@@ -5484,38 +5716,52 @@ struct SessionDetailView: View {
     
     private var playPauseButton: some View {
         Button { playSession() } label: {
-            HStack(spacing: 12) {
-                let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
-                Image(systemName: isCurrentlyPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(AppTheme.purple)
+            let isCurrentlyPlaying = isPlayingThisSession && coordinator.audioPlayback.isPlaying
+            
+            HStack(spacing: 16) {
+                // Icon in a circular background
+                ZStack {
+                    Circle()
+                        .fill(AppTheme.purple.opacity(0.15))
+                        .frame(width: 56, height: 56)
+                    
+                    Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(AppTheme.purple)
+                }
                 
-                VStack(alignment: .leading, spacing: 2) {
+                // Text label
+                VStack(alignment: .leading, spacing: 4) {
                     if isCurrentlyPlaying {
                         Text("Pause")
                             .font(.headline)
+                            .foregroundStyle(.primary)
                     } else if isPlayingThisSession {
                         Text("Resume")
                             .font(.headline)
+                            .foregroundStyle(.primary)
                     } else {
                         Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
                             .font(.headline)
+                            .foregroundStyle(.primary)
                     }
+                    
+                    Text(formatTime(session.totalDuration))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
             }
-            .frame(maxWidth: .infinity)
             .padding()
             .background(
-                RadialGradient(
-                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: 150
-                )
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.tertiarySystemBackground))
             )
-            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(AppTheme.purple.opacity(0.2), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -5525,7 +5771,7 @@ struct SessionDetailView: View {
     private var transcriptionSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header - just the title
-            Text("Transcription")
+            Text("Recording Transcript")
                 .font(.headline)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -5551,14 +5797,14 @@ struct SessionDetailView: View {
                                 .fontWeight(.medium)
                         }
                         .font(.subheadline)
-                        .foregroundStyle(AppTheme.purple)
+                        .foregroundStyle(AppTheme.skyBlue)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(
                                     RadialGradient(
-                                        colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
+                                        colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
                                         center: .center,
                                         startRadius: 0,
                                         endRadius: 50
@@ -5569,7 +5815,7 @@ struct SessionDetailView: View {
                             RoundedRectangle(cornerRadius: 10)
                                 .stroke(
                                     LinearGradient(
-                                        colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.skyBlue.opacity(0.3)],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     ),
@@ -5716,45 +5962,72 @@ struct SessionDetailView: View {
     }
     
     private var regenerateSummaryPrompt: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(AppTheme.magenta)
-                Text("Transcript was edited")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-            }
-            
-            Text("The summary may be outdated. Would you like to regenerate it?")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            
-            Button {
-                Task {
-                    await regenerateSummary()
-                    transcriptWasEdited = false
-                }
-            } label: {
+        HStack {
+            Spacer()
+            VStack(spacing: 16) {
                 HStack {
-                    Image(systemName: "sparkles")
-                    Text("Regenerate Summary")
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(AppTheme.magenta)
+                    Text("Transcript was edited")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                 }
-                .font(.subheadline)
-                .fontWeight(.medium)
+                
+                Text("The summary may be outdated. Would you like to regenerate it?")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                HStack(spacing: 12) {
+                    // Dismiss button
+                    Button {
+                        transcriptWasEdited = false
+                    } label: {
+                        Text("Not Now")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.secondary)
+                    
+                    // Regenerate button with loading state
+                    Button {
+                        Task {
+                            await regenerateSummary()
+                            transcriptWasEdited = false
+                        }
+                    } label: {
+                        HStack {
+                            if isRegeneratingSummary {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text(isRegeneratingSummary ? "Regenerating..." : "Regenerate Summary")
+                        }
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.magenta)
+                    .disabled(isRegeneratingSummary)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AppTheme.magenta)
-        }
-        .padding()
-        .background(
-            RadialGradient(
-                colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
-                center: .center,
-                startRadius: 0,
-                endRadius: 100
+            .padding()
+            .background(
+                RadialGradient(
+                    colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: 100
+                )
             )
-        )
-        .cornerRadius(12)
+            .cornerRadius(12)
+            .frame(maxWidth: 400)
+            Spacer()
+        }
     }
     
     private func saveTranscriptEdit(segmentId: UUID, newText: String) {
@@ -5786,6 +6059,10 @@ struct SessionDetailView: View {
             Task { @MainActor in
                 self.forceUpdateTrigger.toggle()
             }
+        }
+        // Add timer to common run loop mode to ensure it fires during UI interactions
+        if let timer = playbackUpdateTimer {
+            RunLoop.main.add(timer, forMode: .common)
         }
     }
     
@@ -5935,7 +6212,7 @@ struct SessionDetailView: View {
                     } label: {
                         Image(systemName: "pencil.circle")
                             .font(.title2)
-                            .foregroundStyle(AppTheme.purple)
+                            .foregroundStyle(AppTheme.skyBlue)
                     }
                 }
             }
@@ -5950,7 +6227,7 @@ struct SessionDetailView: View {
     private var sessionSummaryPlaceholderSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("AI Summary")
+                Text("Recording Chunks")
                     .font(.headline)
                 
                 Spacer()
@@ -6004,10 +6281,21 @@ struct SessionDetailView: View {
                 .disabled(isRegeneratingSummary)
             }
             
-            Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .italic()
+            if isRegeneratingSummary {
+                HStack {
+                    ProgressView()
+                        .tint(AppTheme.purple)
+                    Text("Generating AI summary...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 8)
+            } else {
+                Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            }
         }
         .padding()
         .background(Color(.secondarySystemBackground))
@@ -6022,7 +6310,7 @@ struct SessionDetailView: View {
     private func sessionSummaryErrorSection(error: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("AI Summary")
+                Text("Recording Summary")
                     .font(.headline)
                 
                 Spacer()
@@ -6099,7 +6387,7 @@ struct SessionDetailView: View {
     private func sessionSummarySection(summary: Summary) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("AI Summary")
+                Text("Recording Summary")
                     .font(.headline)
                 
                 Spacer()
@@ -6135,7 +6423,12 @@ struct SessionDetailView: View {
                 // Regenerate button
                 Button {
                     Task {
-                        await regenerateSummary()
+                        // If notes were appended, ask user what to do
+                        if notesWereAppended {
+                            showRegenerateWithNotesAlert = true
+                        } else {
+                            await regenerateSummary()
+                        }
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -6203,12 +6496,12 @@ struct SessionDetailView: View {
         .cornerRadius(12)
     }
     
-    // MARK: - Personal Notes Section
+    // MARK: - Additional Notes Section
     
     private var personalNotesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Personal Notes")
+                Text("Additional Notes")
                     .font(.headline)
                 
                 Spacer()
@@ -6225,17 +6518,17 @@ struct SessionDetailView: View {
                     } label: {
                         Image(systemName: "pencil.circle")
                             .font(.body)
-                            .foregroundStyle(AppTheme.purple)
+                            .foregroundStyle(AppTheme.skyBlue)
                             .padding(10)
                             .background(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(AppTheme.purple.opacity(0.1))
+                                    .fill(AppTheme.skyBlue.opacity(0.1))
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
                                     .stroke(
                                         LinearGradient(
-                                            colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
+                                            colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.skyBlue.opacity(0.3)],
                                             startPoint: .leading,
                                             endPoint: .trailing
                                         ),
@@ -6255,7 +6548,7 @@ struct SessionDetailView: View {
                     .background(Color(.tertiarySystemBackground))
                     .cornerRadius(8)
             } else if sessionNotes.isEmpty {
-                Text("Tap the pencil to add personal notes...")
+                Text("Tap the pencil to add additional notes...")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .italic()
@@ -6263,6 +6556,36 @@ struct SessionDetailView: View {
                 Text(sessionNotes)
                     .font(.body)
                     .foregroundStyle(.primary)
+            }
+            
+            // Subtle button to append notes to summary
+            if shouldShowRegenerateWithNotesButton {
+                Button {
+                    Task {
+                        await regenerateSummaryWithNotes()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle")
+                            .font(.caption)
+                        Text("Append to Summary")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(AppTheme.purple)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.purple.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(AppTheme.purple.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
         }
         .padding()
@@ -6275,11 +6598,17 @@ struct SessionDetailView: View {
         .cornerRadius(12)
     }
     
+    /// Show regenerate button only if: notes exist, summary exists, and notes changed after summary
+    private var shouldShowRegenerateWithNotesButton: Bool {
+        !sessionNotes.isEmpty &&
+        sessionSummary != nil &&
+        sessionNotes != initialSessionNotes
+    }
+    
     // MARK: - Helper Methods
     
     private func engineIcon(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "cpu"
         case "apple": return "apple.intelligence"
         case "basic": return "bolt.fill"
         case "external": return "sparkles"
@@ -6291,7 +6620,6 @@ struct SessionDetailView: View {
     
     private func engineDisplayName(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "Local AI"
         case "apple": return "Apple Intelligence"
         case "basic": return "Basic"
         case "external": return "Year Wrapped Pro AI"
@@ -6303,20 +6631,55 @@ struct SessionDetailView: View {
     
     private func loadSessionMetadata() async {
         do {
-            if let metadata = try await coordinator.fetchSessionMetadata(sessionId: session.sessionId) {
-                sessionTitle = metadata.title ?? ""
-                sessionNotes = metadata.notes ?? ""
-                isFavorite = metadata.isFavorite
-            } else {
-                sessionTitle = session.title ?? ""
-                sessionNotes = session.notes ?? ""
-                isFavorite = session.isFavorite
+            // Load metadata and track initial notes value
+            let metadata = try await coordinator.fetchSessionMetadata(sessionId: session.sessionId)
+            await MainActor.run {
+                sessionTitle = metadata?.title ?? ""
+                sessionNotes = metadata?.notes ?? ""
+                initialSessionNotes = metadata?.notes ?? ""  // Track initial state
+                isFavorite = metadata?.isFavorite ?? false
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load metadata: \(error)")
-            sessionTitle = session.title ?? ""
-            sessionNotes = session.notes ?? ""
-            isFavorite = session.isFavorite
+        }
+    }
+    
+    private func saveNotes() {
+        Task {
+            do {
+                try await coordinator.updateSessionNotes(
+                    sessionId: session.sessionId,
+                    notes: sessionNotes.isEmpty ? nil : sessionNotes
+                )
+            } catch {
+                print("❌ [SessionDetailView] Failed to save notes: \(error)")
+            }
+        }
+    }
+    
+    private func regenerateSummaryWithNotes() async {
+        guard !sessionNotes.isEmpty else { return }
+        
+        print("📝 [SessionDetailView] Appending notes to existing summary...")
+        
+        do {
+            // Call coordinator to append notes
+            try await coordinator.appendNotesToSessionSummary(sessionId: session.sessionId, notes: sessionNotes)
+            
+            print("✅ [SessionDetailView] Successfully appended notes to summary")
+            
+            // Reload summary to show changes
+            await loadSessionSummary()
+            
+            // Mark that notes were incorporated and appended
+            initialSessionNotes = sessionNotes
+            notesWereAppended = true
+            
+            coordinator.showSuccess("Notes appended to summary")
+        } catch {
+            print("❌ [SessionDetailView] Failed to append notes to summary: \(error)")
+            summaryLoadError = error.localizedDescription
+            coordinator.showError("Failed to append notes")
         }
     }
     
@@ -6332,34 +6695,153 @@ struct SessionDetailView: View {
         }
     }
     
-    private func saveNotes() {
-        Task {
-            do {
-                let notesToSave = sessionNotes.isEmpty ? nil : sessionNotes
-                try await coordinator.updateSessionNotes(sessionId: session.sessionId, notes: notesToSave)
-                coordinator.showSuccess("Notes saved")
-            } catch {
-                print("❌ [SessionDetailView] Failed to save notes: \(error)")
-            }
-        }
-    }
-    
-    private func regenerateSummary() async {
+    private func regenerateSummary(reappendNotes: Bool = false) async {
         isRegeneratingSummary = true
         summaryLoadError = nil
-        defer { isRegeneratingSummary = false }
+        
+        // Get active engine to customize overlay message
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        let activeEngine = await summCoord.getActiveEngine()
+        activeEngineForGeneration = activeEngine
+        
+        // Show overlay for all engines with different messages
+        showGenerationOverlay = true
+        generationProgress = 0.0
+        
+        // Set initial phase based on engine
+        switch activeEngine {
+        case .basic:
+            generationPhase = "Processing transcript..."
+        case .local:
+            generationPhase = "Running local AI model..."
+        case .apple:
+            generationPhase = "Preparing..."
+        case .external:
+            generationPhase = "Connecting to AI service..."
+        }
+        
+        defer { 
+            isRegeneratingSummary = false
+            showGenerationOverlay = false
+        }
         
         do {
-            try await coordinator.generateSessionSummary(sessionId: session.sessionId)
+            // Force regeneration if transcript was edited, otherwise check cache
+            let forceRegenerate = transcriptWasEdited
+            
+            // Start progress simulation with engine-specific phases
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.1
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Extracting key information..."
+                    case .local:
+                        generationPhase = "Loading local AI model..."
+                    case .apple:
+                        generationPhase = "Loading on-device AI model..."
+                    case .external:
+                        generationPhase = "Uploading transcript securely..."
+                    }
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.3
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Analyzing content..."
+                    case .local:
+                        generationPhase = "Running inference..."
+                    case .apple:
+                        generationPhase = "Analyzing transcript..."
+                    case .external:
+                        generationPhase = "AI analyzing your transcript..."
+                    }
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.5
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Identifying main topics..."
+                    case .local:
+                        generationPhase = "Processing with Phi-3.5..."
+                    case .apple:
+                        generationPhase = "Processing key points..."
+                    case .external:
+                        generationPhase = "Generating intelligent insights..."
+                    }
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.7
+                    switch activeEngine {
+                    case .basic:
+                        generationPhase = "Creating summary..."
+                    case .local:
+                        generationPhase = "Generating local summary..."
+                    case .apple:
+                        generationPhase = "Generating summary..."
+                    case .external:
+                        generationPhase = "Crafting comprehensive summary..."
+                    }
+                }
+                
+                try? await Task.sleep(nanoseconds: 2_500_000_000) // 2.5s
+                if !Task.isCancelled && showGenerationOverlay {
+                    generationProgress = 0.9
+                    generationPhase = "Finalizing..."
+                }
+            }
+            
+            // Actual generation (notes are never passed to AI anymore)
+            try await coordinator.generateSessionSummary(
+                sessionId: session.sessionId, 
+                forceRegenerate: true,
+                includeNotes: false
+            )
+            
+            // If requested, re-append notes after regeneration
+            if reappendNotes && !sessionNotes.isEmpty {
+                try? await coordinator.appendNotesToSessionSummary(sessionId: session.sessionId, notes: sessionNotes)
+                notesWereAppended = true
+            } else {
+                notesWereAppended = false
+            }
+            
+            generationProgress = 1.0
+            generationPhase = "Complete!"
+            
             await loadSessionSummary()
             // Reset edit tracking after summary is regenerated
             editedChunkIds.removeAll()
             transcriptWasEdited = false
-            coordinator.showSuccess("Summary regenerated")
+            
+            try? await Task.sleep(nanoseconds: 500_000_000) // Show complete state briefly
+            
+            // Show success with engine used
+            if let summary = sessionSummary {
+                let engineName = summary.engineTier ?? "AI"
+                coordinator.showSuccess("Summary generated with \(engineName)")
+            } else {
+                coordinator.showSuccess("Summary generated")
+            }
         } catch {
             print("❌ [SessionDetailView] Failed to regenerate summary: \(error)")
             summaryLoadError = error.localizedDescription
-            coordinator.showError("Failed to regenerate summary")
+            
+            // Better error messaging
+            if error.localizedDescription.contains("internet") || error.localizedDescription.contains("network") {
+                coordinator.showError("Network error. Using offline summary.")
+            } else if error.localizedDescription.contains("API key") {
+                coordinator.showError("API key required for external AI")
+            } else {
+                coordinator.showError("Failed to generate summary")
+            }
         }
     }
 
@@ -6460,6 +6942,153 @@ struct SessionDetailView: View {
         }
     }
     
+    // MARK: - AI Generation Overlay
+    
+    private var aiGenerationOverlay: some View {
+        ZStack {
+            // Adaptive blurred background
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .blur(radius: 2)
+            
+            VStack(spacing: 24) {
+                // CPU icon with animation
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.purple.opacity(0.3), AppTheme.magenta.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                        .scaleEffect(1.0 + generationProgress * 0.2)
+                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: generationProgress)
+                    
+                    Image(systemName: "cpu")
+                        .font(.system(size: 50))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.magenta],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                
+                VStack(spacing: 12) {
+                    Text(activeEngineForGeneration == .basic ? "Processing" : "AI Processing")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.primary)
+                    
+                    // Progress bar
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.secondary.opacity(0.3))
+                            .frame(width: 280, height: 8)
+                        
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.purple, AppTheme.magenta],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: 280 * generationProgress, height: 8)
+                            .animation(.linear(duration: 0.3), value: generationProgress)
+                    }
+                    
+                    // Percentage
+                    Text("\(Int(generationProgress * 100))%")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.primary)
+                        .monospacedDigit()
+                    
+                    // Current phase
+                    Text(generationPhase)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 20)
+                }
+                
+                // Info box with engine-specific message
+                if let engineTier = activeEngineForGeneration {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundStyle(AppTheme.skyBlue)
+                            Text(engineTier == .basic ? "What's happening?" : "Why does this take time?")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.primary)
+                        }
+                        
+                        // Engine-specific description
+                        Group {
+                            switch engineTier {
+                            case .basic:
+                                Text("Life Wrapped is creating a basic summary by extracting key information from your transcript. This is a simple, fast process that works offline.")
+                            case .local:
+                                Text("Life Wrapped is using Phi-3.5, a powerful local AI model running directly on your device. This provides high-quality summaries while keeping all your data private.")
+                            case .apple:
+                                Text("Life Wrapped performs a comprehensive analysis directly on your iPhone using Apple Intelligence. No data leaves your device — it's completely private.")
+                            case .external:
+                                let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+                                Text("Life Wrapped uses \(provider)'s advanced AI to perform intelligent processing and generate the best possible summary of your transcript. This provides the most comprehensive and insightful analysis.")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Once complete, future views of this session are instant!")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.secondary.opacity(0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 20)
+                }
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.systemBackground).opacity(0.95))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(
+                        LinearGradient(
+                            colors: [AppTheme.purple.opacity(0.5), AppTheme.magenta.opacity(0.5)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 2
+                    )
+            )
+            .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+            .padding(.horizontal, 40)
+        }
+    }
+    
     private func loadSessionSummary() async {
         summaryLoadError = nil
         do {
@@ -6542,6 +7171,9 @@ struct SessionDetailView: View {
     }
     
     private func playSession() {
+        // Trigger haptic feedback
+        coordinator.triggerHaptic(.medium)
+        
         if isPlayingThisSession {
             // Pause if playing
             if coordinator.audioPlayback.isPlaying {
@@ -6666,9 +7298,9 @@ struct LanguageSettingsView: View {
     }
 }
 
-// MARK: - Insights Summary Card
+// MARK: - Overview Summary Card
 
-struct InsightsSummaryCard: View {
+struct OverviewSummaryCard: View {
     let summary: Summary
     let periodTitle: String
     let sessionCount: Int
@@ -6678,18 +7310,7 @@ struct InsightsSummaryCard: View {
     let wrapAction: (() -> Void)?
     let wrapIsLoading: Bool
     
-    @State private var showingSessions = false
-    @State private var visibleSessionCount = 3
     @State private var isRegenerating = false
-    @State private var selectedSession: RecordingSession?
-    
-    private var visibleSessions: [RecordingSession] {
-        Array(sessionsInPeriod.prefix(visibleSessionCount))
-    }
-    
-    private var hasMoreSessions: Bool {
-        visibleSessionCount < sessionsInPeriod.count
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -6707,13 +7328,6 @@ struct InsightsSummaryCard: View {
             // Engine tier badge
             if let engineTier = summary.engineTier {
                 engineBadge(tier: engineTier)
-            }
-            
-            Divider()
-            
-            // Sessions list - individually tappable
-            if !sessionsInPeriod.isEmpty {
-                sessionsSection
             }
         }
         .padding(.vertical, 8)
@@ -6826,102 +7440,10 @@ struct InsightsSummaryCard: View {
         .foregroundStyle(.secondary)
     }
     
-    // MARK: - Sessions Section
-    
-    private var sessionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Toggle button
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showingSessions.toggle()
-                    if !showingSessions {
-                        visibleSessionCount = 3 // Reset when closing
-                    }
-                }
-            } label: {
-                HStack {
-                    Text(showingSessions ? "Hide sessions" : "Show individual sessions (\(sessionsInPeriod.count))")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    Spacer()
-                    Image(systemName: showingSessions ? "chevron.up" : "chevron.down")
-                        .font(.caption)
-                }
-                .foregroundStyle(.blue)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            
-            if showingSessions {
-                // Session rows - each individually tappable with Button
-                VStack(spacing: 8) {
-                    ForEach(visibleSessions, id: \.sessionId) { session in
-                        Button {
-                            selectedSession = session
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(session.startTime, style: .time)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.primary)
-                                    Text("\(Int(session.totalDuration / 60)) min • \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s")")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 16)
-                            .background(Color(.secondarySystemBackground))
-                            .cornerRadius(10)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                
-                // Load more button
-                if hasMoreSessions {
-                    Button {
-                        withAnimation {
-                            visibleSessionCount += 5
-                        }
-                    } label: {
-                        HStack {
-                            Text("Show more (\(sessionsInPeriod.count - visibleSessionCount) remaining)")
-                                .font(.caption)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(.blue)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.05))
-                        .cornerRadius(8)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .sheet(item: $selectedSession) { session in
-            NavigationStack {
-                SessionDetailView(session: session)
-            }
-        }
-    }
-    
     // MARK: - Helpers
     
     private func engineIcon(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "cpu"
         case "apple": return "apple.intelligence"
         case "basic": return "bolt.fill"
         case "external": return "sparkles"
@@ -6933,7 +7455,6 @@ struct InsightsSummaryCard: View {
     
     private func engineDisplayName(for tier: String) -> String {
         switch tier.lowercased() {
-        case "local": return "Local AI"
         case "apple": return "Apple Intelligence"
         case "basic": return "Basic"
         case "external": return "Year Wrapped Pro AI"
@@ -6977,6 +7498,608 @@ struct InsightSessionRow: View {
                 .allowsHitTesting(false)
         )
         .cornerRadius(8)
+    }
+}
+
+// MARK: - Session Summary Card (Feed View)
+
+struct SessionSummaryCard: View {
+    let summary: Summary
+    let coordinator: AppCoordinator
+    @Environment(\.colorScheme) var colorScheme
+    @State private var isLoadingSession = false
+    @State private var showSessionNotFoundAlert = false
+    @State private var fetchedSession: RecordingSession?
+    @State private var shouldNavigate = false
+    
+    /// Whether this card is for a session that can be navigated to
+    private var isNavigable: Bool {
+        summary.sessionId != nil
+    }
+    
+    var body: some View {
+        cardContent
+            .background(
+                Group {
+                    if isNavigable {
+                        NavigationLink(destination: destinationView, isActive: $shouldNavigate) {
+                            EmptyView()
+                        }
+                        .hidden()
+                    }
+                }
+            )
+            .alert("Session Not Found", isPresented: $showSessionNotFoundAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("The recording session for this summary could not be found.")
+            }
+    }
+    
+    @ViewBuilder
+    private var cardContent: some View {
+        if isNavigable {
+            Button {
+                loadSessionAndNavigate()
+            } label: {
+                cardBody
+            }
+            .buttonStyle(.plain)
+        } else {
+            cardBody
+        }
+    }
+    
+    private var cardBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Summary text (scrollable with max height)
+            ScrollView {
+                Text(cleanedSummaryText)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 450)
+                
+                // Footer with time and copy button
+                HStack(spacing: 12) {
+                    // Time display (relative + absolute)
+                    // Only show relative time for individual sessions, not rollups
+                    VStack(alignment: .leading, spacing: 2) {
+                        if summary.sessionId != nil {
+                            Text(relativeTimeString)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Text(absoluteTimeString)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Copy button
+                    Button {
+                        UIPasteboard.general.string = summary.text
+                        coordinator.showSuccess("Summary copied")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.body)
+                            .foregroundStyle(AppTheme.skyBlue)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(AppTheme.skyBlue.opacity(0.1))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        ),
+                                        lineWidth: 1.5
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(AppTheme.cardGradient(for: colorScheme))
+                    .allowsHitTesting(false)
+            )
+            .cornerRadius(12)
+            .overlay {
+                if isLoadingSession {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.3))
+                    ProgressView()
+                        .tint(.white)
+                }
+            }
+        }
+
+    @ViewBuilder
+    private var destinationView: some View {
+        if let session = fetchedSession {
+            SessionDetailView(session: session)
+        } else {
+            EmptyView()
+        }
+    }
+    
+    private var relativeTimeString: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: summary.periodStart, relativeTo: Date())
+    }
+    
+    private var absoluteTimeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+        return formatter.string(from: summary.periodStart)
+    }
+    
+    // Clean up any stray timestamps from the summary text
+    private var cleanedSummaryText: String {
+        var text = summary.text
+        
+        // Remove multiple consecutive timestamps (the main problem)
+        let multiTimestampPattern = #"([•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#
+        text = text.replacingOccurrences(of: multiTimestampPattern, with: "", options: .regularExpression)
+        
+        // Remove any remaining single timestamps
+        let singleTimestampPattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
+        while text.range(of: singleTimestampPattern, options: .regularExpression) != nil {
+            text = text.replacingOccurrences(of: singleTimestampPattern, with: "", options: .regularExpression)
+        }
+        
+        // Remove any leading bullets or whitespace
+        text = text.replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
+        
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func loadSessionAndNavigate() {
+        guard let sessionId = summary.sessionId else {
+            showSessionNotFoundAlert = true
+            return
+        }
+        
+        isLoadingSession = true
+        
+        Task {
+            do {
+                if let dbManager = await coordinator.getDatabaseManager() {
+                    // Fetch chunks for this session
+                    let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
+                    
+                    guard !chunks.isEmpty else {
+                        await MainActor.run {
+                            showSessionNotFoundAlert = true
+                            isLoadingSession = false
+                        }
+                        return
+                    }
+                    
+                    // Fetch metadata
+                    let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sessionId)
+                    
+                    // Build RecordingSession
+                    let session = RecordingSession(
+                        sessionId: sessionId,
+                        chunks: chunks,
+                        title: metadata?.title,
+                        notes: metadata?.notes,
+                        isFavorite: metadata?.isFavorite ?? false
+                    )
+                    
+                    await MainActor.run {
+                        fetchedSession = session
+                        shouldNavigate = true
+                        isLoadingSession = false
+                    }
+                } else {
+                    await MainActor.run {
+                        showSessionNotFoundAlert = true
+                        isLoadingSession = false
+                    }
+                }
+            } catch {
+                print("❌ [SessionSummaryCard] Failed to load session: \(error)")
+                await MainActor.run {
+                    showSessionNotFoundAlert = true
+                    isLoadingSession = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Local Period Summary Card
+
+struct PeriodSummaryCard: View {
+    let title: String
+    let subtitle: String
+    let summary: Summary
+    let isRegenerating: Bool
+    let onCopy: () -> Void
+    let onRegenerate: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header Row
+            HStack(alignment: .top) {
+                Text("✨")
+                    .font(.title2)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 8) {
+                    // Copy
+                    Button(action: onCopy) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.skyBlue)
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.skyBlue.opacity(0.1))
+                    )
+                
+                    // Regenerate
+                    Button(action: onRegenerate) {
+                        if isRegenerating {
+                            ProgressView()
+                                .tint(AppTheme.purple)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.subheadline)
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                    .disabled(isRegenerating)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.magenta.opacity(0.1))
+                    )
+                }
+            }
+            
+            Divider()
+            
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(minHeight: 150, maxHeight: 250)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(8)
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppTheme.darkPurple.opacity(0.15),
+                    AppTheme.magenta.opacity(0.1),
+                    AppTheme.purple.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    LinearGradient(
+                        colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
+        )
+        .cornerRadius(16)
+        .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
+    }
+}
+
+struct GeneratePeriodSummaryCard: View {
+    let title: String
+    let isGenerating: Bool
+    let onGenerate: () -> Void
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        Button(action: onGenerate) {
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 48))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                VStack(spacing: 8) {
+                    Text(title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Text("Generate an on-device summary for this period")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                if isGenerating {
+                    ProgressView()
+                        .tint(AppTheme.purple)
+                        .scaleEffect(1.1)
+                        .padding(.top, 6)
+                } else {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                        Text("Generate with Local AI")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.purple, AppTheme.magenta],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(10)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(AppTheme.cardGradient(for: colorScheme))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(
+                        LinearGradient(
+                            colors: [AppTheme.magenta.opacity(0.35), AppTheme.purple.opacity(0.25)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Year Wrapped Card
+
+struct YearWrappedCard: View {
+    let summary: Summary
+    let coordinator: AppCoordinator
+    let onRegenerate: () -> Void
+    let isRegenerating: Bool
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("✨")
+                            .font(.title2)
+                        Text("Year Wrapped")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                    }
+                    Text("AI-powered yearly summary")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    // Copy button
+                    Button {
+                        UIPasteboard.general.string = summary.text
+                        coordinator.showSuccess("Year Wrapped summary copied")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.body)
+                            .foregroundStyle(AppTheme.skyBlue)
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.skyBlue.opacity(0.1))
+                    )
+                    
+                    // Regenerate button
+                    Button {
+                        onRegenerate()
+                    } label: {
+                        if isRegenerating {
+                            ProgressView()
+                                .tint(AppTheme.purple)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.body)
+                                .foregroundStyle(AppTheme.magenta)
+                        }
+                    }
+                    .disabled(isRegenerating)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(AppTheme.magenta.opacity(0.1))
+                    )
+                }
+            }
+            
+            Divider()
+            
+            // Summary text - scrollable
+            ScrollView {
+                Text(summary.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .frame(height: 300)
+            .background(Color(.tertiarySystemBackground))
+            .cornerRadius(8)
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [
+                    AppTheme.darkPurple.opacity(0.15),
+                    AppTheme.magenta.opacity(0.1),
+                    AppTheme.purple.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
+                    LinearGradient(
+                        colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 2
+                )
+        )
+        .cornerRadius(16)
+        .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
+    }
+}
+
+// MARK: - Generate Year Wrap Card
+
+struct GenerateYearWrapCard: View {
+    let onGenerate: () -> Void
+    let isGenerating: Bool
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        Button {
+            onGenerate()
+        } label: {
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 48))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                VStack(spacing: 8) {
+                    Text("Generate Year Wrapped")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                    
+                    Text("Create an AI-powered summary of your entire year")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                
+                if isGenerating {
+                    ProgressView()
+                        .tint(AppTheme.purple)
+                        .scaleEffect(1.2)
+                        .padding(.top, 8)
+                } else {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                        Text("Generate with AI")
+                            .fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .cornerRadius(12)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(24)
+            .background(
+                LinearGradient(
+                    colors: [
+                        AppTheme.darkPurple.opacity(0.1),
+                        AppTheme.magenta.opacity(0.05),
+                        AppTheme.purple.opacity(0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        style: StrokeStyle(lineWidth: 2, dash: [8, 4])
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
+        .disabled(isGenerating)
     }
 }
 
@@ -7136,10 +8259,10 @@ struct IntelligenceEngineView: View {
         switch tier {
         case .basic:
             return "Basic engine should always be available. Please restart the app."
-        case .apple:
-            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. This feature will be available in a future update."
         case .local:
-            return "Download the local AI model to enable on-device processing. Go to Settings → Local AI to manage models."
+            return "Local AI model needs to be downloaded. Go to Settings to download Phi-3.5."
+        case .apple:
+            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. Your device or OS version doesn't support it yet."
         case .external:
             return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
         }
@@ -7249,8 +8372,8 @@ struct EngineRow: View {
     private var iconName: String {
         switch tier {
         case .basic: return "text.alignleft"
-        case .apple: return "apple.logo"
         case .local: return "cpu"
+        case .apple: return "apple.logo"
         case .external: return "cloud"
         }
     }
@@ -7258,8 +8381,8 @@ struct EngineRow: View {
     private var iconColor: Color {
         switch tier {
         case .basic: return .gray
-        case .apple: return .blue
         case .local: return .purple
+        case .apple: return .blue
         case .external: return .orange
         }
     }
@@ -8370,3 +9493,17 @@ struct ContentView_Previews: PreviewProvider {
     }
 }
 
+// MARK: - Wiggle Animation Modifier
+
+struct WiggleModifier: ViewModifier {
+    @Binding var wiggle: Bool
+    
+    func body(content: Content) -> some View {
+        content
+            .offset(x: wiggle ? -8 : 0)
+            .animation(
+                wiggle ? Animation.default.repeatCount(3, autoreverses: true).speed(6) : .default,
+                value: wiggle
+            )
+    }
+}

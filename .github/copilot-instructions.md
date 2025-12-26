@@ -23,12 +23,12 @@
 
 ## Architecture Overview
 
-**Privacy-First Audio Journaling App** — All processing happens on-device using Swift 6 with strict concurrency.
+**Privacy-First Audio Journaling App** — Transcription happens on-device using Swift 6 with strict concurrency; AI summaries via external API or offline fallback.
 
 ### Core Data Flow
 
 ```
-Recording → Auto-Chunking → Storage (SQLite) → Parallel Transcription → Session Summary → Insights
+Recording → Auto-Chunking → Storage (SQLite) → Parallel Transcription → Session Summary (External AI / Apple Intelligence / Basic) → Insights
 ```
 
 **Key Architectural Pattern**: Session-based chunking
@@ -43,7 +43,7 @@ Recording → Auto-Chunking → Storage (SQLite) → Parallel Transcription → 
 - **Storage**: SQLite via raw `sqlite3` API (no dependencies), uses `actor` for thread safety
 - **AudioCapture**: AVAudioEngine recording + playback, `@MainActor` isolated
 - **Transcription**: Apple Speech framework with abandoned utterance detection
-- **Summarization**: On-device LLM adapter (placeholder for Core ML integration)
+- **Summarization**: External API adapter (OpenAI/Anthropic) with fallback to Apple Intelligence and Basic engine
 - **InsightsRollup**: Time-based aggregations (hour/day/week/month buckets)
 - **WidgetCore**: Shared widget data models
 

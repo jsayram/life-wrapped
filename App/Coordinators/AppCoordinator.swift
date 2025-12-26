@@ -7,6 +7,7 @@ import SwiftUI
 import UIKit
 import AVFoundation
 import Speech
+import CryptoKit
 import SharedModels
 import Summarization
 import Storage
@@ -111,7 +112,11 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var initializationError: Error?
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
-    @Published public var showLocalAIWelcomeTip: Bool = false
+    
+    // MARK: - Local AI Model Download State
+    
+    @Published public private(set) var isDownloadingLocalModel: Bool = false
+    private var localModelDownloadTask: Task<Void, Never>?
     
     // MARK: - Dependencies
     
@@ -217,6 +222,19 @@ public final class AppCoordinator: ObservableObject {
             self.databaseManager = dbManager
             print("✅ [AppCoordinator] DatabaseManager initialized")
             
+            // Load user settings
+            print("⚙️ [AppCoordinator] Loading user settings...")
+            let savedChunkDuration = UserDefaults.standard.double(forKey: "autoChunkDuration")
+            if savedChunkDuration > 0 {
+                audioCapture.autoChunkDuration = savedChunkDuration
+                print("✅ [AppCoordinator] Loaded chunk duration: \(Int(savedChunkDuration))s")
+            } else {
+                // Set and save default
+                audioCapture.autoChunkDuration = 30  // 30 seconds default for fast processing
+                UserDefaults.standard.set(30.0, forKey: "autoChunkDuration")
+                print("✅ [AppCoordinator] Using default chunk duration: 30s")
+            }
+            
             // Initialize managers that need storage
             print("🎤 [AppCoordinator] Initializing TranscriptionManager...")
             self.transcriptionManager = TranscriptionManager(storage: dbManager)
@@ -247,13 +265,6 @@ public final class AppCoordinator: ObservableObject {
             isInitialized = true
             initializationError = nil
             print("🎉 [AppCoordinator] Initialization complete!")
-            
-            // Show Local AI welcome tip once after first setup
-            let hasShownWelcomeTip = UserDefaults.standard.bool(forKey: "hasShownLocalAIWelcomeTip")
-            if !hasShownWelcomeTip {
-                showLocalAIWelcomeTip = true
-                UserDefaults.standard.set(true, forKey: "hasShownLocalAIWelcomeTip")
-            }
             
         } catch {
             print("❌ [AppCoordinator] Initialization failed: \(error.localizedDescription)")
@@ -329,10 +340,23 @@ public final class AppCoordinator: ObservableObject {
     /// Called when user completes permission flow
     public func permissionsGranted() async {
         print("✅ [AppCoordinator] Permissions granted, initializing...")
-        // Immediately close the permissions sheet (already on MainActor)
-        needsPermissions = false
-        // Then initialize
-        await initialize()
+        
+        do {
+            // Initialize first (with error handling)
+            await initialize()
+            
+            // Only close permissions sheet after successful initialization
+            if isInitialized {
+                needsPermissions = false
+                print("✅ [AppCoordinator] Successfully initialized, closing permissions sheet")
+            } else {
+                print("⚠️ [AppCoordinator] Initialization did not complete, keeping permissions sheet open")
+            }
+        } catch {
+            print("❌ [AppCoordinator] Failed during permissionsGranted: \(error)")
+            // Keep permissions sheet open if initialization fails
+            initializationError = error
+        }
     }
     
     // MARK: - User Feedback
@@ -347,6 +371,7 @@ public final class AppCoordinator: ObservableObject {
     /// Provide haptic feedback
     public func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
         let generator = UIImpactFeedbackGenerator(style: style)
+        generator.prepare()
         generator.impactOccurred()
     }
     
@@ -644,6 +669,23 @@ public final class AppCoordinator: ObservableObject {
                     }
                     print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) segments saved")
                     
+                    // If using Local AI tier, run chunk through LLM for processing
+                    if let coordinator = self.summarizationCoordinator,
+                       await coordinator.supportsChunkProcessing() {
+                        let chunkText = segments.map { $0.text }.joined(separator: " ")
+                        if !chunkText.isEmpty {
+                            do {
+                                let chunkSummary = try await coordinator.summarizeChunk(
+                                    chunkId: chunkId,
+                                    transcriptText: chunkText
+                                )
+                                print("🤖 [AppCoordinator] Chunk \(chunk.chunkIndex) AI summary: \(chunkSummary.prefix(50))...")
+                            } catch {
+                                print("⚠️ [AppCoordinator] Chunk AI processing failed: \(error)")
+                            }
+                        }
+                    }
+                    
                     // Update status tracking
                     await MainActor.run {
                         self.transcribingChunkIds.remove(chunkId)
@@ -724,6 +766,14 @@ public final class AppCoordinator: ObservableObject {
             try await generateSessionSummary(sessionId: sessionId)
             print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
             
+            // Unload model after session is complete to free memory
+            if let coordinator = self.summarizationCoordinator {
+                let localEngine = await coordinator.getLocalEngine()
+                print("🧹 [AppCoordinator] Unloading Local AI model after session completion...")
+                await localEngine.unloadModel()
+                print("✅ [AppCoordinator] Model memory freed, reducing thermal and battery impact")
+            }
+            
         } catch {
             print("❌ [AppCoordinator] ⚠️ Failed to check/generate session summary: \(error)")
             print("❌ [AppCoordinator] Error details: \(error.localizedDescription)")
@@ -731,9 +781,11 @@ public final class AppCoordinator: ObservableObject {
     }
     
     /// Generate a summary for an entire session
-    public func generateSessionSummary(sessionId: UUID) async throws {
+    public func generateSessionSummary(sessionId: UUID, forceRegenerate: Bool = false, includeNotes: Bool = false) async throws {
         print("🚀 [AppCoordinator] === GENERATING SESSION SUMMARY ===")
         print("📌 [AppCoordinator] Session ID: \(sessionId)")
+        print("🔄 [AppCoordinator] Force regenerate: \(forceRegenerate)")
+        print("📝 [AppCoordinator] Include notes: \(includeNotes)")
         
         guard let dbManager = databaseManager,
               let coordinator = summarizationCoordinator else {
@@ -748,7 +800,27 @@ public final class AppCoordinator: ObservableObject {
         let allSegments = try await fetchSessionTranscript(sessionId: sessionId)
         
         // Combine all text
-        let fullText = allSegments.map { $0.text }.joined(separator: " ")
+        var fullText = allSegments.map { $0.text }.joined(separator: " ")
+        
+        // Optionally append user notes if requested
+        if includeNotes {
+            print("📝 [AppCoordinator] includeNotes=true, fetching metadata...")
+            if let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sessionId) {
+                print("📝 [AppCoordinator] Metadata fetched: title=\(metadata.title ?? "nil"), notes=\(metadata.notes ?? "nil"), notesLength=\(metadata.notes?.count ?? 0)")
+                if let notes = metadata.notes, !notes.isEmpty {
+                    print("📝 [AppCoordinator] ✅ Appending user notes (\(notes.count) chars) to transcript for summary generation")
+                    print("📝 [AppCoordinator] Notes preview: \(notes.prefix(100))...")
+                    fullText += "\n\nAdditional context from user notes:\n\(notes)"
+                } else {
+                    print("📝 [AppCoordinator] ⚠️ Notes are empty or nil, not appending")
+                }
+            } else {
+                print("❌ [AppCoordinator] Failed to fetch metadata for session")
+            }
+        } else {
+            print("📝 [AppCoordinator] includeNotes=false, skipping notes")
+        }
+        
         let wordCount = fullText.split(separator: " ").count
         
         print("📊 [AppCoordinator] Session transcript: \(allSegments.count) segments, \(wordCount) words")
@@ -757,6 +829,27 @@ public final class AppCoordinator: ObservableObject {
         guard wordCount > 0 else {
             print("❌ [AppCoordinator] No transcript text found - cannot generate summary")
             throw AppCoordinatorError.transcriptionFailed(NSError(domain: "AppCoordinator", code: -1, userInfo: [NSLocalizedDescriptionKey: "No transcript text"]))
+        }
+        
+        // Calculate hash of transcript content for cache checking
+        let inputHash = calculateHash(for: fullText)
+        
+        // Check if we can skip regeneration (cache hit)
+        if !forceRegenerate {
+            if let existingSummary = try? await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+                if let existingHash = existingSummary.inputHash, existingHash == inputHash {
+                    print("✅ [AppCoordinator] Summary cache HIT - transcript unchanged, skipping regeneration")
+                    print("🔑 [AppCoordinator] Hash match: \(inputHash.prefix(8))...")
+                    return
+                } else {
+                    print("🔄 [AppCoordinator] Summary cache MISS - transcript changed, regenerating")
+                    if let existingHash = existingSummary.inputHash {
+                        print("🔑 [AppCoordinator] Old hash: \(existingHash.prefix(8))..., New hash: \(inputHash.prefix(8))...")
+                    }
+                }
+            }
+        } else {
+            print("🔄 [AppCoordinator] Forced regeneration - skipping cache check")
         }
         
         // Get session time range
@@ -769,6 +862,23 @@ public final class AppCoordinator: ObservableObject {
         let periodStart = firstChunk.startTime
         let periodEnd = lastChunk.endTime
         
+        // If force regenerating, use smart clearing for Local AI (only clears changed chunks)
+        if forceRegenerate {
+            let localEngine = await coordinator.getLocalEngine()
+            
+            // Build array of (chunkId, transcriptText) for smart cache clearing
+            var chunkTexts: [(id: UUID, text: String)] = []
+            for chunk in chunks {
+                let segments = try await dbManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                let transcriptText = segments.map { $0.text }.joined(separator: " ")
+                chunkTexts.append((id: chunk.id, text: transcriptText))
+            }
+            
+            // Smart cache clearing: only invalidates chunks whose text hash changed
+            let chunksNeedingReprocessing = await localEngine.clearChangedChunkSummaries(for: chunkTexts)
+            print("🗑️ [AppCoordinator] Smart clear: \(chunksNeedingReprocessing.count) of \(chunks.count) chunks need reprocessing")
+        }
+        
         // Use the user's active engine (respects their settings choice)
         let activeEngine = await coordinator.getActiveEngine()
         print("🧠 [AppCoordinator] Using active summarization engine: \(activeEngine.displayName)")
@@ -780,7 +890,7 @@ public final class AppCoordinator: ObservableObject {
         print("✅ [AppCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
         print("📝 [AppCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
         
-        // Update time range
+        // Update time range and include inputHash for caching
         generatedSummary = Summary(
             id: generatedSummary.id,
             periodType: .session,
@@ -791,7 +901,9 @@ public final class AppCoordinator: ObservableObject {
             sessionId: sessionId,
             topicsJSON: generatedSummary.topicsJSON,
             entitiesJSON: generatedSummary.entitiesJSON,
-            engineTier: generatedSummary.engineTier
+            engineTier: generatedSummary.engineTier,
+            sourceIds: generatedSummary.sourceIds,
+            inputHash: inputHash  // Store hash for future cache checks
         )
         
         // Delete old session summary if it exists (to prevent duplicates in rollups)
@@ -810,7 +922,18 @@ public final class AppCoordinator: ObservableObject {
         // Update period summaries (daily, weekly, monthly)
         print("📅 [AppCoordinator] Updating period summaries...")
         await updatePeriodSummaries(sessionId: sessionId, sessionDate: periodStart)
+        await MainActor.run {
+            NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
+        }
         print("🎉 [AppCoordinator] === SESSION SUMMARY COMPLETE ===")
+        
+        // Unload Local AI model from memory to free resources
+        if let coordinator = self.summarizationCoordinator {
+            let localEngine = await coordinator.getLocalEngine()
+            print("🧹 [AppCoordinator] Unloading Local AI model to free memory...")
+            await localEngine.unloadModel()
+            print("✅ [AppCoordinator] Model unloaded, memory released")
+        }
     }
     
     private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
@@ -1078,6 +1201,43 @@ public final class AppCoordinator: ObservableObject {
         return try await dbManager.fetchSummaryForSession(sessionId: sessionId)
     }
     
+    /// Append user notes to existing session summary without AI regeneration
+    public func appendNotesToSessionSummary(sessionId: UUID, notes: String) async throws {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Get existing summary
+        guard let existingSummary = try await dbManager.fetchSummaryForSession(sessionId: sessionId) else {
+            throw AppCoordinatorError.transcriptionFailed(NSError(domain: "AppCoordinator", code: -1, userInfo: [NSLocalizedDescriptionKey: "No summary found for session"]))
+        }
+        
+        // Append notes to summary text
+        let updatedText = existingSummary.text + "\n\nAdditional Notes:\n" + notes
+        
+        // Create updated summary with new text
+        let updatedSummary = Summary(
+            id: existingSummary.id,
+            periodType: existingSummary.periodType,
+            periodStart: existingSummary.periodStart,
+            periodEnd: existingSummary.periodEnd,
+            text: updatedText,
+            createdAt: existingSummary.createdAt,
+            sessionId: existingSummary.sessionId,
+            topicsJSON: existingSummary.topicsJSON,
+            entitiesJSON: existingSummary.entitiesJSON,
+            engineTier: existingSummary.engineTier,
+            sourceIds: existingSummary.sourceIds,
+            inputHash: existingSummary.inputHash
+        )
+        
+        // Delete old and insert updated
+        try await dbManager.deleteSummary(id: existingSummary.id)
+        try await dbManager.insertSummary(updatedSummary)
+        
+        print("✅ [AppCoordinator] Appended notes to session summary")
+    }
+    
     /// Fetch recent summaries
     public func fetchRecentSummaries(limit: Int = 10) async throws -> [Summary] {
         guard let dbManager = databaseManager else {
@@ -1327,7 +1487,7 @@ public final class AppCoordinator: ObservableObject {
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(sessionTexts.count) session summaries")
 
             if let existing = try? await dbManager.fetchPeriodSummary(type: .day, date: startOfDay) {
-                print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                print("📂 [AppCoordinator] Found existing daily summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
                 if existing.inputHash == inputHash, !forceRegenerate {
                     print("💾 [AppCoordinator] ✅ CACHE HIT - Daily rollup unchanged, skipping regeneration")
                     return
@@ -1337,28 +1497,43 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing daily summary found, will generate new rollup")
             }
 
-            let lines = sessionSummaries.map { summary in
-                let timeLabel = rollupTimeFormatter.string(from: summary.periodStart)
-                return "- [\(timeLabel)] \(summary.text)"
+            // Generate rollup summary from session summaries (oldest to newest)
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
+            print("📝 [AppCoordinator] Generating rollup from \(sessionSummaries.count) session summaries (oldest to newest)")
+            
+            // Build lines, appending user notes if they exist for each session
+            var lines: [String] = []
+            for summary in sessionSummaries {
+                var lineText = "• \(summary.text)"
+                
+                // Append user notes if they exist for this session
+                if let sid = summary.sessionId,
+                   let metadata = try? await dbManager.fetchSessionMetadata(sessionId: sid),
+                   let notes = metadata.notes, !notes.isEmpty {
+                    lineText += "\n  (Notes: \(notes))"
+                }
+                
+                lines.append(lineText)
             }
-            let rollupText = buildRollupText(
-                header: "Day rollup (\(sessionSummaries.count) sessions)",
-                lines: lines
-            )
+            
+            let summaryText = lines.joined(separator: "\n")
+            let topicsJSON: String? = nil
+            let entitiesJSON: String? = nil
+            let engineTier = "rollup"
 
             try await dbManager.upsertPeriodSummary(
                 type: .day,
-                text: rollupText,
+                text: summaryText,
                 start: startOfDay,
                 end: endOfDay,
-                topicsJSON: nil,
-                entitiesJSON: nil,
-                engineTier: "rollup",
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier,
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Daily rollup saved to database (engine: rollup, \(rollupText.count) chars)")
+            print("✅ [AppCoordinator] Daily summary saved (engine: \(engineTier), \(summaryText.count) chars)")
         } catch {
             print("❌ [AppCoordinator] Failed to update daily summary: \(error)")
         }
@@ -1404,7 +1579,7 @@ public final class AppCoordinator: ObservableObject {
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
 
             if let existing = try? await dbManager.fetchPeriodSummary(type: .week, date: startOfWeek) {
-                print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                print("📂 [AppCoordinator] Found existing weekly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
                 if existing.inputHash == inputHash, !forceRegenerate {
                     print("💾 [AppCoordinator] ✅ CACHE HIT - Weekly rollup unchanged, skipping regeneration")
                     return
@@ -1414,28 +1589,31 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing weekly summary found, will generate new rollup")
             }
 
+            // Generate rollup summary from daily summaries (oldest to newest)
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
+            print("📝 [AppCoordinator] Generating rollup from \(dailySummaries.count) daily summaries (oldest to newest)")
             let lines = dailySummaries.map { summary in
-                let dateLabel = rollupDateFormatter.string(from: summary.periodStart)
-                return "- \(dateLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Week rollup (\(dailySummaries.count) days)",
-                lines: lines
-            )
+            let summaryText = lines.joined(separator: "\n")
+            let topicsJSON: String? = nil
+            let entitiesJSON: String? = nil
+            let engineTier = "rollup"
 
             try await dbManager.upsertPeriodSummary(
                 type: .week,
-                text: rollupText,
+                text: summaryText,
                 start: startOfWeek,
                 end: endOfWeek,
-                topicsJSON: nil,
-                entitiesJSON: nil,
-                engineTier: "rollup",
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier,
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Weekly rollup updated (engine: rollup)")
+            print("✅ [AppCoordinator] Weekly summary saved (engine: \(engineTier))")
         } catch {
             print("❌ [AppCoordinator] Failed to update weekly summary: \(error)")
         }
@@ -1486,7 +1664,7 @@ public final class AppCoordinator: ObservableObject {
             print("🔐 [AppCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) rollups")
 
             if let existing = try? await dbManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
-                print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+                print("📂 [AppCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
                 if existing.inputHash == inputHash, !forceRegenerate {
                     print("💾 [AppCoordinator] ✅ CACHE HIT - Monthly rollup unchanged, skipping regeneration")
                     return
@@ -1496,28 +1674,31 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing monthly summary found, will generate new rollup")
             }
 
+            // Generate rollup summary from weekly summaries (oldest to newest)
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
+            print("📝 [AppCoordinator] Generating rollup from \(weeklySummaries.count) weekly summaries (oldest to newest)")
             let lines = weeklySummaries.map { summary in
-                let rangeLabel = rollupMonthRangeFormatter.string(from: summary.periodStart)
-                return "- \(rangeLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Month rollup (\(weeklySummaries.count) entries)",
-                lines: lines
-            )
+            let summaryText = lines.joined(separator: "\n")
+            let topicsJSON: String? = nil
+            let entitiesJSON: String? = nil
+            let engineTier = "rollup"
 
             try await dbManager.upsertPeriodSummary(
                 type: .month,
-                text: rollupText,
+                text: summaryText,
                 start: startOfMonth,
                 end: endOfMonth,
-                topicsJSON: nil,
-                entitiesJSON: nil,
-                engineTier: "rollup",
+                topicsJSON: topicsJSON,
+                entitiesJSON: entitiesJSON,
+                engineTier: engineTier,
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [AppCoordinator] Monthly rollup updated (engine: rollup)")
+            print("✅ [AppCoordinator] Monthly summary saved (engine: \(engineTier))")
         } catch {
             print("❌ [AppCoordinator] Failed to update monthly summary: \(error)")
         }
@@ -1582,14 +1763,12 @@ public final class AppCoordinator: ObservableObject {
                 print("📝 [AppCoordinator] No existing yearly summary found, will generate new rollup")
             }
 
+            // Store clean text without timestamps - metadata is in periodStart/periodEnd
             let lines = monthlySummaries.map { summary in
-                let monthLabel = rollupYearMonthFormatter.string(from: summary.periodStart)
-                return "- \(monthLabel): \(summary.text)"
+                // Clean text only - no timestamps to prevent accumulation in nested rollups
+                return "• \(summary.text)"
             }
-            let rollupText = buildRollupText(
-                header: "Year rollup (\(monthlySummaries.count) entries)",
-                lines: lines
-            )
+            let rollupText = lines.joined(separator: "\n")
 
             try await dbManager.upsertPeriodSummary(
                 type: .year,
@@ -1726,6 +1905,16 @@ public final class AppCoordinator: ObservableObject {
         return formatter
     }()
     
+    /// Format date and time for rollup bulletins using user-configured formats
+    private func formatRollupDateTime(_ date: Date) -> String {
+        let dateFormat = UserDefaults.standard.rollupDateFormat
+        let timeFormat = UserDefaults.standard.rollupTimeFormat
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "\(dateFormat) \(timeFormat)"
+        return formatter.string(from: date)
+    }
+    
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
         guard let dbManager = databaseManager else {
@@ -1791,9 +1980,112 @@ public final class AppCoordinator: ObservableObject {
             print("❌ [SessionTest] Error: \(error)")
         }
     }
+    
+    // MARK: - Hash Utilities
+    
+    /// Calculate SHA256 hash of input text for cache validation
+    private func calculateHash(for text: String) -> String {
+        guard let data = text.data(using: .utf8) else { return "" }
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+    
+    // MARK: - Local AI Model Management
+    
+    /// Check if the local AI model is downloaded
+    public func isLocalModelDownloaded() async -> Bool {
+        guard let coordinator = summarizationCoordinator else { return false }
+        return await coordinator.getLocalEngine().isModelDownloaded()
+    }
+    
+    /// Download the local AI model in the background
+    /// Download continues even if user navigates away from Settings
+    public func startLocalModelDownload() {
+        guard !isDownloadingLocalModel else { return }
+        guard let coordinator = summarizationCoordinator else { return }
+        
+        isDownloadingLocalModel = true
+        
+        localModelDownloadTask = Task {
+            do {
+                try await coordinator.getLocalEngine().downloadModel(progress: nil)
+                
+                // After successful download, switch to Local AI
+                await coordinator.setPreferredEngine(.local)
+                
+                await MainActor.run {
+                    self.isDownloadingLocalModel = false
+                    self.showSuccess("Local AI model downloaded and activated")
+                }
+                
+                // Notify that engine changed
+                NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+            } catch {
+                await MainActor.run {
+                    self.isDownloadingLocalModel = false
+                    self.showError("Download failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    /// Download the local AI model with progress tracking (for setup flow)
+    /// - Parameter progress: Closure called with download progress (0.0-1.0)
+    public func downloadLocalModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
+        guard let coordinator = summarizationCoordinator else {
+            throw AppCoordinatorError.notInitialized
+        }
+        isDownloadingLocalModel = true
+        defer { isDownloadingLocalModel = false }
+        try await coordinator.getLocalEngine().downloadModel(progress: progress)
+        showSuccess("Local AI model downloaded")
+    }
+    
+    /// Delete the local AI model and switch to Basic tier if needed
+    public func deleteLocalModel() async throws {
+        guard let coordinator = summarizationCoordinator else {
+            throw AppCoordinatorError.notInitialized
+        }
+        
+        // Cancel any ongoing download
+        localModelDownloadTask?.cancel()
+        localModelDownloadTask = nil
+        isDownloadingLocalModel = false
+        
+        // Delete the model
+        try await coordinator.getLocalEngine().deleteModel()
+        
+        // If current tier is .local, switch to .basic
+        let currentTier = await coordinator.getActiveEngine()
+        if currentTier == .local {
+            await coordinator.setPreferredEngine(.basic)
+        }
+        
+        showSuccess("Local AI model deleted")
+    }
+    
+    /// Get formatted model size string: "Downloaded (2282 MB)" or "Not Downloaded"
+    public func localModelSizeFormatted() async -> String {
+        guard let coordinator = summarizationCoordinator else { return "Not Downloaded" }
+        return await coordinator.getLocalEngine().modelSizeFormatted()
+    }
+    
+    /// Get the expected model size for display before download
+    public var expectedLocalModelSizeMB: String {
+        return "~2.3 GB"
+    }
+    
+    /// Get the local model display name
+    public var localModelDisplayName: String {
+        return "Phi-3.5 Mini"
+    }
 }
 
-// MARK: - Preview Support
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
+}
 
 #if DEBUG
 extension AppCoordinator {

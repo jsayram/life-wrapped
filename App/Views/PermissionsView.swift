@@ -5,7 +5,6 @@
 import SwiftUI
 import AVFoundation
 import Speech
-import LocalLLM
 
 /// Permission request view shown on first launch or when permissions are needed
 struct PermissionsView: View {
@@ -16,9 +15,38 @@ struct PermissionsView: View {
     @State private var speechStatus: PermissionStatus = .notDetermined
     @State private var isRequestingPermissions = false
     
+    // Model download state
+    @State private var setupStep: SetupStep = .permissions
+    @State private var downloadProgress: Double = 0.0
+    @State private var isDownloading = false
+    @State private var downloadError: String? = nil
+    
+    enum SetupStep {
+        case permissions
+        case modelDownload
+    }
+    
     var body: some View {
         NavigationView {
-            ScrollView {
+            Group {
+                switch setupStep {
+                case .permissions:
+                    permissionsContent
+                case .modelDownload:
+                    modelDownloadContent
+                }
+            }
+            .navigationBarHidden(true)
+        }
+        .task {
+            await checkPermissions()
+        }
+    }
+    
+    // MARK: - Permissions Content
+    
+    private var permissionsContent: some View {
+        ScrollView {
                 VStack(spacing: 32) {
                     // Header
                     VStack(spacing: 16) {
@@ -60,7 +88,7 @@ struct PermissionsView: View {
                                 Text("Your Privacy Matters")
                                     .font(.subheadline.bold())
                                 
-                                Text("All processing happens on your device. Nothing is sent to the cloud.")
+                                Text("Transcription happens entirely on your device. Nothing is sent to the cloud.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -69,53 +97,53 @@ struct PermissionsView: View {
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(12)
                         
-                        // Local AI Recommendation
+                        // AI Summary Information
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 12) {
-                                Image(systemName: "cpu.fill")
+                                Image(systemName: "sparkles")
                                     .font(.title2)
                                     .foregroundStyle(.purple.gradient)
                                 
-                                Text("Enhance with Local AI")
+                                Text("AI-Powered Summaries")
                                     .font(.headline)
                                 
                                 Spacer()
                             }
                             
-                            Text("Get AI-powered summaries similar to ChatGPT and Apple Intelligence, but running entirely on your device for maximum privacy.")
+                            Text("Get intelligent summaries of your recordings and yearly insights using advanced AI.")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             
-                            // Comparison badges
+                            // Feature badges
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: "apple.logo")
-                                        .foregroundColor(.secondary)
-                                    Text("Apple Intelligence quality")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                
-                                HStack(spacing: 8) {
-                                    Image(systemName: "lock.fill")
+                                    Image(systemName: "waveform")
                                         .foregroundColor(.green)
-                                    Text("100% private, on-device")
+                                    Text("Transcription: 100% on-device")
                                         .font(.caption)
                                         .foregroundColor(.green)
                                 }
                                 
                                 HStack(spacing: 8) {
-                                    Image(systemName: "wifi.slash")
+                                    Image(systemName: "wifi")
                                         .foregroundColor(.blue)
-                                    Text("Works offline")
+                                    Text("AI summaries: requires internet")
                                         .font(.caption)
                                         .foregroundColor(.blue)
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    Image(systemName: "key.fill")
+                                        .foregroundColor(.secondary)
+                                    Text("Optional: bring your own API key")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                             .padding(.top, 4)
                             
-                            Text("~2.4GB download • Optional • Available in Settings after setup")
+                            Text("Configure AI settings after setup • OpenAI or Anthropic supported")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)
@@ -136,9 +164,9 @@ struct PermissionsView: View {
                     VStack(spacing: 12) {
                         if allPermissionsGranted {
                             Button {
-                                finishSetup()
+                                proceedToModelDownload()
                             } label: {
-                                Text("Get Started")
+                                Text("Continue")
                                     .font(.headline)
                                     .foregroundColor(.white)
                                     .frame(maxWidth: .infinity)
@@ -179,10 +207,117 @@ struct PermissionsView: View {
                     .padding(.bottom, 32)
                 }
             }
-            .navigationBarHidden(true)
-        }
-        .task {
-            await checkPermissions()
+    }
+    
+    // MARK: - Model Download Content
+    
+    private var modelDownloadContent: some View {
+        VStack(spacing: 32) {
+            Spacer()
+            
+            // Header
+            VStack(spacing: 16) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.purple.gradient)
+                
+                Text("Download Local AI")
+                    .font(.title.bold())
+                
+                Text("Phi-3.5 Mini • \(coordinator.expectedLocalModelSizeMB)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Description
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "bolt.fill")
+                        .foregroundColor(.purple)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("On-Device AI Processing")
+                            .font(.subheadline.bold())
+                        
+                        Text("This model powers real-time chunk summarization as you record. It runs entirely on your device for maximum privacy.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lock.shield.fill")
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("100% Private")
+                            .font(.subheadline.bold())
+                        
+                        Text("Your transcripts and summaries never leave your device. No cloud processing required.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding()
+            .background(Color.purple.opacity(0.08))
+            .cornerRadius(12)
+            .padding(.horizontal)
+            
+            Spacer()
+            
+            // Progress or Download Button
+            VStack(spacing: 16) {
+                if isDownloading {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                        
+                        Text("Downloading \(coordinator.localModelDisplayName)...")
+                            .font(.headline)
+                        
+                        Text("This may take a few minutes depending on your connection.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal)
+                } else if let error = downloadError {
+                    VStack(spacing: 8) {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                        
+                        Button {
+                            startModelDownload()
+                        } label: {
+                            Text("Retry Download")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.purple)
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(.horizontal)
+                } else {
+                    Button {
+                        startModelDownload()
+                    } label: {
+                        Text("Download Model")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.purple)
+                            .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.bottom, 32)
         }
     }
     
@@ -196,7 +331,50 @@ struct PermissionsView: View {
         microphoneStatus == .denied || speechStatus == .denied
     }
     
-    // MARK: - Methods
+    // MARK: - Setup Flow Methods
+    
+    private func proceedToModelDownload() {
+        withAnimation {
+            setupStep = .modelDownload
+        }
+        // Auto-start download
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay for transition
+            await MainActor.run {
+                startModelDownload()
+            }
+        }
+    }
+    
+    private func startModelDownload() {
+        guard !isDownloading else { return }
+        
+        isDownloading = true
+        downloadError = nil
+        downloadProgress = 0.0
+        
+        Task {
+            do {
+                try await coordinator.downloadLocalModel { progress in
+                    Task { @MainActor in
+                        self.downloadProgress = progress
+                    }
+                }
+                
+                await MainActor.run {
+                    isDownloading = false
+                    finishSetup()
+                }
+            } catch {
+                await MainActor.run {
+                    isDownloading = false
+                    downloadError = "Download failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    // MARK: - Permission Methods
     
     private func checkPermissions() async {
         // Check microphone permission

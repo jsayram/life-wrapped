@@ -1365,7 +1365,7 @@ public actor DatabaseManager {
     
     /// Update session title
     public func updateSessionTitle(sessionId: UUID, title: String?) throws {
-        guard let db = db else { throw StorageError.notOpen }
+        guard db != nil else { throw StorageError.notOpen }
         
         // First check if metadata exists
         if let existing = try fetchSessionMetadata(sessionId: sessionId) {
@@ -1382,7 +1382,7 @@ public actor DatabaseManager {
     
     /// Update session notes
     public func updateSessionNotes(sessionId: UUID, notes: String?) throws {
-        guard let db = db else { throw StorageError.notOpen }
+        guard db != nil else { throw StorageError.notOpen }
         
         if let existing = try fetchSessionMetadata(sessionId: sessionId) {
             var updated = existing
@@ -1397,7 +1397,7 @@ public actor DatabaseManager {
     
     /// Toggle session favorite status
     public func toggleSessionFavorite(sessionId: UUID) throws -> Bool {
-        guard let db = db else { throw StorageError.notOpen }
+        guard db != nil else { throw StorageError.notOpen }
         
         if let existing = try fetchSessionMetadata(sessionId: sessionId) {
             var updated = existing
@@ -1617,6 +1617,37 @@ public actor DatabaseManager {
         }
         
         return nil
+    }
+    
+    /// Fetch session summaries within a date range
+    public func fetchSessionSummariesInDateRange(from startDate: Date, to endDate: Date) throws -> [Summary] {
+        guard let db = db else { throw StorageError.notOpen }
+        
+        let sql = """
+            SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+            FROM summaries
+            WHERE period_type = 'session'
+            AND period_start >= ?
+            AND period_start <= ?
+            ORDER BY period_start DESC
+            """
+        
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw StorageError.prepareFailed(lastError())
+        }
+        
+        sqlite3_bind_double(stmt, 1, startDate.timeIntervalSince1970)
+        sqlite3_bind_double(stmt, 2, endDate.timeIntervalSince1970)
+        
+        var summaries: [Summary] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            summaries.append(try parseSummary(from: stmt))
+        }
+        
+        return summaries
     }
     
     /// Fetch period summary for a specific date and type
