@@ -149,10 +149,13 @@ struct RecordingButton: View {
         }
         
         // Random amplitude changes
-        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { _ in
-            guard coordinator.recordingState.isRecording else { return }
-            withAnimation(.linear(duration: 0.15)) {
-                waveAmplitude = CGFloat.random(in: 0.3...0.9)
+        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak coordinator] _ in
+            Task { @MainActor in
+                guard let coordinator = coordinator else { return }
+                guard coordinator.recordingState.isRecording else { return }
+                withAnimation(.linear(duration: 0.15)) {
+                    self.waveAmplitude = CGFloat.random(in: 0.3...0.9)
+                }
             }
         }
     }

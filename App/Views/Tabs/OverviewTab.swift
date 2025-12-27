@@ -282,98 +282,96 @@ struct OverviewTab: View {
     
     private func loadInsights() async {
         isLoading = true
-        do {
-            // Get date range for filtering
-            let dateRange = getDateRange(for: selectedTimeRange)
-            
-            // Load period summary based on selected time range
-            let periodType: PeriodType = {
-                switch selectedTimeRange {
-                case .yesterday: return .day
-                case .today: return .day
-                case .week: return .week
-                case .month: return .month
-                case .allTime: return .year // Show yearly summary for current year
-                }
-            }()
-            
-            // Clear previous data to avoid stale counts when DB is unavailable
-            sessionsInPeriod = []
-            sessionCount = 0
-            sessionSummaries = []
-            periodRollups = []
-            
-            // Load sessions in this period first
-            if let dbManager = coordinator.getDatabaseManager() {
-                if selectedTimeRange == .today || selectedTimeRange == .yesterday {
-                    sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
-                } else {
-                    // For week/month/all, fetch ALL sessions and filter by date range
-                    let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
-                    sessionsInPeriod = allSessions?.filter { session in
-                        session.startTime >= dateRange.start && session.startTime < dateRange.end
-                    } ?? []
-                }
-                sessionCount = sessionsInPeriod.count
-                
-                // Load summaries based on time range
-                switch selectedTimeRange {
-                case .today, .yesterday:
-                    // Load session summaries for individual sessions
-                    sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
-                        from: dateRange.start,
-                        to: dateRange.end
-                    )) ?? []
-                    print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
-                    
-                case .week:
-                    // Load weekly rollup summaries (one card per week)
-                    periodRollups = (try? await dbManager.fetchWeeklySummaries(
-                        from: dateRange.start,
-                        to: dateRange.end
-                    )) ?? []
-                    print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
-                    
-                case .month:
-                    // Load monthly rollup summaries (one card per month)
-                    periodRollups = (try? await dbManager.fetchMonthlySummaries(
-                        from: dateRange.start,
-                        to: dateRange.end
-                    )) ?? []
-                    print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
-                    
-                case .allTime:
-                    // Load yearly rollup summary (single card for whole year)
-                    let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
-                    periodRollups = allYearlySummaries.filter { summary in
-                        summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
-                    }
-                    print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
-                }
+        
+        // Get date range for filtering
+        let dateRange = getDateRange(for: selectedTimeRange)
+        
+        // Load period summary based on selected time range
+        let periodType: PeriodType = {
+            switch selectedTimeRange {
+            case .yesterday: return .day
+            case .today: return .day
+            case .week: return .week
+            case .month: return .month
+            case .allTime: return .year // Show yearly summary for current year
             }
-            
-            // Try to fetch existing period summary (don't auto-generate on view load)
-            // For week/month/year, use Date() to get current period, for day use startDate
-            let dateForFetch = (periodType == .day) ? dateRange.start : Date()
-            periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
-
-            if selectedTimeRange == .allTime {
-                yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+        }()
+        
+        // Clear previous data to avoid stale counts when DB is unavailable
+        sessionsInPeriod = []
+        sessionCount = 0
+        sessionSummaries = []
+        periodRollups = []
+        
+        // Load sessions in this period first
+        if let dbManager = coordinator.getDatabaseManager() {
+            if selectedTimeRange == .today || selectedTimeRange == .yesterday {
+                sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
             } else {
-                yearWrapSummary = nil
+                // For week/month/all, fetch ALL sessions and filter by date range
+                let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
+                sessionsInPeriod = allSessions?.filter { session in
+                    session.startTime >= dateRange.start && session.startTime < dateRange.end
+                } ?? []
             }
+            sessionCount = sessionsInPeriod.count
             
-            // Debug logging
-            if periodSummary == nil && !sessionsInPeriod.isEmpty {
-                print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
-                print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
-                print("   Sessions in period: \(sessionsInPeriod.count)")
-            } else if periodSummary != nil {
-                print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
+            // Load summaries based on time range
+            switch selectedTimeRange {
+            case .today, .yesterday:
+                // Load session summaries for individual sessions
+                sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                    from: dateRange.start,
+                    to: dateRange.end
+                )) ?? []
+                print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
+                
+            case .week:
+                // Load weekly rollup summaries (one card per week)
+                periodRollups = (try? await dbManager.fetchWeeklySummaries(
+                    from: dateRange.start,
+                    to: dateRange.end
+                )) ?? []
+                print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
+                
+            case .month:
+                // Load monthly rollup summaries (one card per month)
+                periodRollups = (try? await dbManager.fetchMonthlySummaries(
+                    from: dateRange.start,
+                    to: dateRange.end
+                )) ?? []
+                print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
+                
+            case .allTime:
+                // Load yearly rollup summary (single card for whole year)
+                let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
+                periodRollups = allYearlySummaries.filter { summary in
+                    summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
+                }
+                print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
             }
-        } catch {
-            print("❌ [OverviewTab] Failed to load insights: \(error)")
         }
+        
+        // Try to fetch existing period summary (don't auto-generate on view load)
+        // For week/month/year, use Date() to get current period, for day use startDate
+        let dateForFetch = (periodType == .day) ? dateRange.start : Date()
+        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+
+        if selectedTimeRange == .allTime {
+            yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+        } else {
+            yearWrapSummary = nil
+        }
+        
+        // Debug logging
+        if periodSummary == nil && !sessionsInPeriod.isEmpty {
+            print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
+            print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
+            print("   Sessions in period: \(sessionsInPeriod.count)")
+        } else if periodSummary != nil {
+            print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
+        }
+        
         isLoading = false
     }
     
@@ -659,7 +657,7 @@ struct OverviewTab: View {
         }
         
         // Create buckets for all weeks in range
-        var currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
+        let currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
         let endWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.end)
         
         guard var currentWeekDate = calendar.date(from: currentWeekStart),
@@ -696,7 +694,7 @@ struct OverviewTab: View {
         }
         
         // Create buckets for all months in range
-        var currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
+        let currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
         let endMonthStart = calendar.dateComponents([.year, .month], from: dateRange.end)
         
         guard var currentMonthDate = calendar.date(from: currentMonthStart),

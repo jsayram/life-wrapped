@@ -391,21 +391,15 @@ public final class AppCoordinator: ObservableObject {
     public func permissionsGranted() async {
         print("✅ [AppCoordinator] Permissions granted, initializing...")
         
-        do {
-            // Initialize first (with error handling)
-            await initialize()
-            
-            // Only close permissions sheet after successful initialization
-            if isInitialized {
-                needsPermissions = false
-                print("✅ [AppCoordinator] Successfully initialized, closing permissions sheet")
-            } else {
-                print("⚠️ [AppCoordinator] Initialization did not complete, keeping permissions sheet open")
-            }
-        } catch {
-            print("❌ [AppCoordinator] Failed during permissionsGranted: \(error)")
-            // Keep permissions sheet open if initialization fails
-            initializationError = error
+        // Initialize first (with error handling)
+        await initialize()
+        
+        // Only close permissions sheet after successful initialization
+        if isInitialized {
+            needsPermissions = false
+            print("✅ [AppCoordinator] Successfully initialized, closing permissions sheet")
+        } else {
+            print("⚠️ [AppCoordinator] Initialization did not complete, keeping permissions sheet open")
         }
     }
     

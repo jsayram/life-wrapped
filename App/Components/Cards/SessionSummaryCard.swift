@@ -19,16 +19,9 @@ struct SessionSummaryCard: View {
     
     var body: some View {
         cardContent
-            .background(
-                Group {
-                    if isNavigable {
-                        NavigationLink(destination: destinationView, isActive: $shouldNavigate) {
-                            EmptyView()
-                        }
-                        .hidden()
-                    }
-                }
-            )
+            .navigationDestination(isPresented: $shouldNavigate) {
+                destinationView
+            }
             .alert("Session Not Found", isPresented: $showSessionNotFoundAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -177,7 +170,7 @@ struct SessionSummaryCard: View {
         
         Task {
             do {
-                if let dbManager = await coordinator.getDatabaseManager() {
+                if let dbManager = coordinator.getDatabaseManager() {
                     // Fetch chunks for this session
                     let chunks = try await dbManager.fetchChunksBySession(sessionId: sessionId)
                     

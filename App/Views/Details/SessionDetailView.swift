@@ -262,7 +262,7 @@ struct SessionDetailView: View {
                 var hasContent = false
                 for segment in transcriptSegments {
                     let segmentStart = segment.startTime
-                    let segmentEnd = segment.startTime + (segment.duration ?? 1.0)
+                    let segmentEnd = segment.startTime + segment.duration
                     
                     if (segmentStart <= barEndTime && segmentEnd >= barStartTime) {
                         hasContent = true
@@ -1377,7 +1377,7 @@ struct SessionDetailView: View {
         
         do {
             // Force regeneration if transcript was edited, otherwise check cache
-            let forceRegenerate = transcriptWasEdited
+            _ = transcriptWasEdited
             
             // Start progress simulation with engine-specific phases
             Task {
@@ -1553,7 +1553,7 @@ struct SessionDetailView: View {
     
     // Seek to a specific time in the total session
     private func seekToTotalTime(_ targetTime: TimeInterval) {
-        var remainingTime = targetTime
+        let remainingTime = targetTime
         
         // Find which chunk contains this time
         for (index, chunk) in session.chunks.enumerated() {
