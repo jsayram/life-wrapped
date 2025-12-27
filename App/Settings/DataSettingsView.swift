@@ -8,26 +8,6 @@ struct DataSettingsView: View {
     var body: some View {
         List {
             Section {
-                NavigationLink(destination: HistoricalDataView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Historical Data")
-                            Text("View and manage data by year")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .foregroundStyle(.blue)
-                    }
-                }
-            } header: {
-                Text("Browse Data")
-            } footer: {
-                Text("The Overview tab always shows the current year. Use Historical Data to browse previous years.")
-            }
-            
-            Section {
                 Button {
                     showDataManagement = true
                 } label: {

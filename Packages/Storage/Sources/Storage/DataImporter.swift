@@ -10,8 +10,16 @@ import SharedModels
 public actor DataImporter {
     private let databaseManager: DatabaseManager
     
+    // Progress callback (called on main actor for UI updates)
+    public var onProgress: (@MainActor @Sendable (Int, Int) -> Void)?
+    
     public init(databaseManager: DatabaseManager) {
         self.databaseManager = databaseManager
+    }
+    
+    // Setter for progress callback (actor-isolated)
+    public func setProgressCallback(_ callback: @escaping @MainActor @Sendable (Int, Int) -> Void) {
+        self.onProgress = callback
     }
     
     // MARK: - JSON Import
@@ -27,14 +35,31 @@ public actor DataImporter {
         
         let export = try decoder.decode(JSONExport.self, from: data)
         
+        // Calculate total items for progress tracking
+        let totalItems = export.audioChunks.count + (export.transcriptSegments?.count ?? 0) + export.summaries.count
+        var currentIndex = 0
+        
         var importedChunks = 0
         var importedSegments = 0
         var importedSummaries = 0
-        var errors: [String] = []
+        var skippedItems: [(id: String, reason: String)] = []
+        var errors: [(id: String, error: String)] = []
         
         // Import audio chunks
         for jsonChunk in export.audioChunks {
+            currentIndex += 1
+            await reportProgress(currentIndex, totalItems)
+            
             do {
+                // Check for duplicate
+                if let existing = try await databaseManager.fetchAudioChunk(id: jsonChunk.id) {
+                    let formatter = DateFormatter()
+                    formatter.dateStyle = .short
+                    let dateStr = formatter.string(from: existing.createdAt)
+                    skippedItems.append((jsonChunk.id.uuidString, "Already exists (created \(dateStr))"))
+                    continue
+                }
+                
                 let chunk = AudioChunk(
                     id: jsonChunk.id,
                     fileURL: jsonChunk.fileURL,
@@ -49,14 +74,23 @@ public actor DataImporter {
                 try await databaseManager.insertAudioChunk(chunk)
                 importedChunks += 1
             } catch {
-                errors.append("Failed to import chunk \(jsonChunk.id): \(error)")
+                errors.append((jsonChunk.id.uuidString, "Insert failed: \(error.localizedDescription)"))
             }
         }
         
         // Import transcript segments if available
         if let segments = export.transcriptSegments {
             for jsonSegment in segments {
+                currentIndex += 1
+                await reportProgress(currentIndex, totalItems)
+                
                 do {
+                    // Check for duplicate
+                    if try await databaseManager.fetchTranscriptSegment(id: jsonSegment.id) != nil {
+                        skippedItems.append((jsonSegment.id.uuidString, "Already exists"))
+                        continue
+                    }
+                    
                     let segment = TranscriptSegment(
                         id: jsonSegment.id,
                         audioChunkID: jsonSegment.audioChunkID,
@@ -71,14 +105,23 @@ public actor DataImporter {
                     try await databaseManager.insertTranscriptSegment(segment)
                     importedSegments += 1
                 } catch {
-                    errors.append("Failed to import segment \(jsonSegment.id): \(error)")
+                    errors.append((jsonSegment.id.uuidString, "Insert failed: \(error.localizedDescription)"))
                 }
             }
         }
         
         // Import summaries
         for jsonSummary in export.summaries {
+            currentIndex += 1
+            await reportProgress(currentIndex, totalItems)
+            
             do {
+                // Check for duplicate
+                if try await databaseManager.fetchSummary(id: jsonSummary.id) != nil {
+                    skippedItems.append((jsonSummary.id.uuidString, "Already exists"))
+                    continue
+                }
+                
                 let summary = Summary(
                     id: jsonSummary.id,
                     periodType: PeriodType(rawValue: jsonSummary.periodType) ?? .session,
@@ -91,7 +134,7 @@ public actor DataImporter {
                 try await databaseManager.insertSummary(summary)
                 importedSummaries += 1
             } catch {
-                errors.append("Failed to import summary \(jsonSummary.id): \(error)")
+                errors.append((jsonSummary.id.uuidString, "Insert failed: \(error.localizedDescription)"))
             }
         }
         
@@ -99,8 +142,14 @@ public actor DataImporter {
             importedChunks: importedChunks,
             importedSegments: importedSegments,
             importedSummaries: importedSummaries,
+            skippedItems: skippedItems,
             errors: errors
         )
+    }
+    
+    private func reportProgress(_ current: Int, _ total: Int) async {
+        guard let onProgress = onProgress else { return }
+        await onProgress(current, total)
     }
 }
 
@@ -110,7 +159,8 @@ public struct ImportResult: Sendable {
     public let importedChunks: Int
     public let importedSegments: Int
     public let importedSummaries: Int
-    public let errors: [String]
+    public let skippedItems: [(id: String, reason: String)]
+    public let errors: [(id: String, error: String)]
     
     public var isSuccessful: Bool {
         return errors.isEmpty
@@ -134,11 +184,15 @@ public struct ImportResult: Sendable {
         
         let imported = parts.isEmpty ? "No data imported" : "Imported: " + parts.joined(separator: ", ")
         
+        var status = imported
+        if !skippedItems.isEmpty {
+            status += ". \(skippedItems.count) duplicates skipped"
+        }
         if !errors.isEmpty {
-            return "\(imported). \(errors.count) errors occurred."
+            status += ". \(errors.count) errors occurred"
         }
         
-        return imported
+        return status
     }
 }
 

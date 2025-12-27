@@ -148,6 +148,45 @@ public final class DataCoordinator {
     
     // MARK: - Session Analytics
     
+    /// Fetch sessions grouped by year with aggregated statistics
+    public func fetchYearlyData() async throws -> [(year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval)] {
+        let yearData = try await databaseManager.fetchSessionsByYear()
+        
+        return try await withThrowingTaskGroup(of: (year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval).self) { group in
+            for yearInfo in yearData {
+                group.addTask {
+                    // Calculate word count for all sessions in this year
+                    var totalWords = 0
+                    var totalDuration: TimeInterval = 0
+                    
+                    for sessionId in yearInfo.sessionIds {
+                        // Fetch word count from database (uses cached word_count column)
+                        let wordCount = try await self.databaseManager.fetchSessionWordCount(sessionId: sessionId)
+                        totalWords += wordCount
+                        
+                        // Fetch all chunks for this session to calculate duration
+                        let chunks = try await self.databaseManager.fetchChunksBySession(sessionId: sessionId)
+                        totalDuration += chunks.reduce(0.0) { $0 + $1.duration }
+                    }
+                    
+                    return (
+                        year: yearInfo.year,
+                        sessionCount: yearInfo.count,
+                        wordCount: totalWords,
+                        duration: totalDuration
+                    )
+                }
+            }
+            
+            var results: [(year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval)] = []
+            for try await result in group {
+                results.append(result)
+            }
+            
+            return results.sorted { $0.year > $1.year } // Most recent year first
+        }
+    }
+    
     /// Fetch sessions grouped by hour of day
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         return try await databaseManager.fetchSessionsByHour()

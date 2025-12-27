@@ -448,6 +448,11 @@ public final class AppCoordinator: ObservableObject {
         return localModelCoordinator
     }
     
+    /// Get data coordinator for data operations
+    public func getDataCoordinator() -> DataCoordinator? {
+        return dataCoordinator
+    }
+    
     /// Get database file path for debugging
     public func getDatabasePath() async -> String? {
         guard let dbManager = databaseManager else { return nil }
