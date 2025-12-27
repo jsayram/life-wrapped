@@ -124,6 +124,8 @@ public final class AppCoordinator: ObservableObject {
     public let audioCapture: AudioCaptureManager
     public let audioPlayback: AudioPlaybackManager
     private var transcriptionManager: TranscriptionManager?
+    private var transcriptionCoordinator: TranscriptionCoordinator?
+    private var dataCoordinator: DataCoordinator?
     public private(set) var summarizationCoordinator: SummarizationCoordinator?
     private var insightsManager: InsightsManager?
     private let widgetDataManager: WidgetDataManager
@@ -132,12 +134,6 @@ public final class AppCoordinator: ObservableObject {
     
     private var recordingStartTime: Date?
     private var lastCompletedChunk: AudioChunk?
-    
-    // MARK: - Transcription Queue
-    
-    private var pendingTranscriptionIds: [UUID] = []  // Chunk IDs awaiting transcription
-    private var activeTranscriptionCount: Int = 0
-    private let maxConcurrentTranscriptions: Int = 3
     
     // MARK: - Transcription Status Tracking
     
@@ -182,16 +178,9 @@ public final class AppCoordinator: ObservableObject {
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
             
-            // Add to transcription queue for parallel processing (using ID only)
-            print("📝 [AppCoordinator] Adding chunk \(chunk.chunkIndex) to transcription queue")
-            await MainActor.run {
-                pendingTranscriptionIds.append(chunk.id)
-            }
-            
-            // Start batch transcription if not already running
-            Task {
-                await processTranscriptionQueue()
-            }
+            // Delegate to transcription coordinator for parallel processing
+            print("📝 [AppCoordinator] Delegating chunk \(chunk.chunkIndex) to TranscriptionCoordinator")
+            transcriptionCoordinator?.enqueueChunk(chunk.id)
         } catch {
             print("❌ [AppCoordinator] Failed to process chunk: \(error)")
         }
@@ -246,6 +235,32 @@ public final class AppCoordinator: ObservableObject {
             print("📊 [AppCoordinator] Initializing InsightsManager...")
             self.insightsManager = InsightsManager(storage: dbManager)
             print("✅ [AppCoordinator] All managers initialized")
+            
+            // Initialize DataCoordinator
+            print("📊 [AppCoordinator] Initializing DataCoordinator...")
+            self.dataCoordinator = DataCoordinator(databaseManager: dbManager, insightsManager: InsightsManager(storage: dbManager))
+            print("✅ [AppCoordinator] DataCoordinator initialized")
+            
+            // Initialize TranscriptionCoordinator
+            print("🎯 [AppCoordinator] Initializing TranscriptionCoordinator...")
+            guard let transcription = self.transcriptionManager else {
+                print("❌ [AppCoordinator] TranscriptionManager not available for coordinator")
+                throw AppCoordinatorError.notInitialized
+            }
+            let transcriptCoord = TranscriptionCoordinator(
+                databaseManager: dbManager,
+                transcriptionManager: transcription
+            )
+            transcriptCoord.onStatusUpdate = { [weak self] transcribingIds, transcribedIds, failedIds in
+                self?.transcribingChunkIds = transcribingIds
+                self?.transcribedChunkIds = transcribedIds
+                self?.failedChunkIds = failedIds
+            }
+            transcriptCoord.onSessionComplete = { [weak self] sessionId in
+                await self?.handleSessionTranscriptionComplete(sessionId: sessionId)
+            }
+            self.transcriptionCoordinator = transcriptCoord
+            print("✅ [AppCoordinator] TranscriptionCoordinator initialized")
             
             // Load current streak
             print("🔥 [AppCoordinator] Loading current streak...")
@@ -611,120 +626,16 @@ public final class AppCoordinator: ObservableObject {
     /// Retry transcription for a failed chunk
     public func retryTranscription(chunkId: UUID) async {
         print("🔄 [AppCoordinator] Retrying transcription for chunk: \(chunkId)")
-        
-        // Remove from failed set
-        _ = await MainActor.run {
-            failedChunkIds.remove(chunkId)
-        }
-        
-        // Add back to pending queue
-        await MainActor.run {
-            if !pendingTranscriptionIds.contains(chunkId) {
-                pendingTranscriptionIds.append(chunkId)
-            }
-        }
-        
-        // Trigger queue processing
-        await processTranscriptionQueue()
-        
-        print("✅ [AppCoordinator] Chunk \(chunkId) added to transcription queue for retry")
+        transcriptionCoordinator?.retryTranscription(chunkId: chunkId, failedChunkIds: &failedChunkIds)
+        print("✅ [AppCoordinator] Chunk \(chunkId) delegated to TranscriptionCoordinator for retry")
     }
     
     // MARK: - Private Recording Helpers
     
-    /// Process transcription queue with concurrency limit
-    private func processTranscriptionQueue() async {
-        guard let dbManager = databaseManager else { return }
-        
-        // Process chunks while we have pending transcriptions and capacity
-        while !pendingTranscriptionIds.isEmpty && activeTranscriptionCount < maxConcurrentTranscriptions {
-            guard let chunkId = pendingTranscriptionIds.first else { break }
-            await MainActor.run {
-                _ = pendingTranscriptionIds.removeFirst()
-            }
-            
-            // Fetch chunk from database
-            guard let chunk = try? await dbManager.fetchAudioChunk(id: chunkId) else {
-                print("❌ [AppCoordinator] Could not fetch chunk \(chunkId) from database")
-                continue
-            }
-            
-            activeTranscriptionCount += 1
-            await MainActor.run {
-                _ = transcribingChunkIds.insert(chunkId)
-            }
-            print("🔄 [AppCoordinator] Starting transcription \(activeTranscriptionCount)/\(maxConcurrentTranscriptions) for chunk \(chunk.chunkIndex)")
-            
-            // Start transcription in parallel
-            Task {
-                do {
-                    print("🎯 [AppCoordinator] Transcribing chunk \(chunk.chunkIndex)...")
-                    let segments = try await self.transcribeAudio(chunk: chunk)
-                    print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) transcription complete: \(segments.count) segments")
-                    
-                    // Save transcript segments
-                    print("💾 [AppCoordinator] Saving \(segments.count) segments for chunk \(chunk.chunkIndex)...")
-                    for segment in segments {
-                        try await dbManager.insertTranscriptSegment(segment)
-                    }
-                    print("✅ [AppCoordinator] Chunk \(chunk.chunkIndex) segments saved")
-                    
-                    // If using Local AI tier, run chunk through LLM for processing
-                    if let coordinator = self.summarizationCoordinator,
-                       await coordinator.supportsChunkProcessing() {
-                        let chunkText = segments.map { $0.text }.joined(separator: " ")
-                        if !chunkText.isEmpty {
-                            do {
-                                let chunkSummary = try await coordinator.summarizeChunk(
-                                    chunkId: chunkId,
-                                    transcriptText: chunkText
-                                )
-                                print("🤖 [AppCoordinator] Chunk \(chunk.chunkIndex) AI summary: \(chunkSummary.prefix(50))...")
-                            } catch {
-                                print("⚠️ [AppCoordinator] Chunk AI processing failed: \(error)")
-                            }
-                        }
-                    }
-                    
-                    // Update status tracking
-                    await MainActor.run {
-                        self.transcribingChunkIds.remove(chunkId)
-                        self.transcribedChunkIds.insert(chunkId)
-                    }
-                    
-                    // Update rollups incrementally
-                    print("📊 [AppCoordinator] Updating rollups after chunk \(chunk.chunkIndex)...")
-                    await self.updateRollupsAndStats()
-                    
-                } catch {
-                    print("❌ [AppCoordinator] Failed to transcribe chunk \(chunk.chunkIndex): \(error)")
-                    await MainActor.run {
-                        self.transcribingChunkIds.remove(chunkId)
-                        self.failedChunkIds.insert(chunkId)
-                    }
-                }
-                
-                // Decrement counter and process next in queue
-                await MainActor.run {
-                    self.activeTranscriptionCount -= 1
-                    print("⬇️ [AppCoordinator] Transcription completed, active count now: \(self.activeTranscriptionCount)")
-                }
-                
-                // Check if session is complete and generate summary
-                Task {
-                    await self.checkAndGenerateSessionSummary(for: chunk.sessionId)
-                }
-                
-                // Continue processing queue
-                await self.processTranscriptionQueue()
-            }
-        }
-        
-        if pendingTranscriptionIds.isEmpty && activeTranscriptionCount == 0 {
-            print("✅ [AppCoordinator] All transcriptions complete")
-        } else if !pendingTranscriptionIds.isEmpty {
-            print("⏳ [AppCoordinator] \(pendingTranscriptionIds.count) chunks queued, \(activeTranscriptionCount) active transcriptions")
-        }
+    /// Handle completion of session transcription (called by TranscriptionCoordinator)
+    private func handleSessionTranscriptionComplete(sessionId: UUID) async {
+        print("🔔 [AppCoordinator] Session \(sessionId) transcription complete callback received")
+        await checkAndGenerateSessionSummary(for: sessionId)
     }
     
     /// Check if all chunks in a session are transcribed and generate session summary
@@ -936,59 +847,8 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
-    private func transcribeAudio(chunk: AudioChunk) async throws -> [TranscriptSegment] {
-        guard let transcriber = transcriptionManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        do {
-            // Step 1: Transcribe audio
-            let segments = try await transcriber.transcribe(chunk: chunk)
-            
-            // Step 2: Analyze sentiment and detect language for each segment (real-time)
-            let sentimentAnalyzer = SentimentAnalyzer()
-            let languageDetector = LanguageDetector()
-            var enrichedSegments: [TranscriptSegment] = []
-            
-            for segment in segments {
-                let sentimentScore = await sentimentAnalyzer.analyze(segment: segment)
-                let detectedLanguage = await languageDetector.detectLanguage(in: segment.text)
-                
-                // Create enriched segment with sentiment and language data
-                let enrichedSegment = TranscriptSegment(
-                    id: segment.id,
-                    audioChunkID: segment.audioChunkID,
-                    startTime: segment.startTime,
-                    endTime: segment.endTime,
-                    text: segment.text,
-                    confidence: segment.confidence,
-                    languageCode: detectedLanguage ?? segment.languageCode,
-                    createdAt: segment.createdAt,
-                    speakerLabel: segment.speakerLabel,
-                    entitiesJSON: segment.entitiesJSON,
-                    wordCount: segment.wordCount,
-                    sentimentScore: sentimentScore
-                )
-                enrichedSegments.append(enrichedSegment)
-                
-                // Log analysis results for monitoring
-                if let score = sentimentScore {
-                    let category = SentimentAnalyzer.categorizeShort(score)
-                    print("📊 [AppCoordinator] Segment sentiment: \(category) (\(String(format: "%.2f", score)))")
-                }
-                if let language = detectedLanguage {
-                    print("🌐 [AppCoordinator] Detected language: \(language)")
-                }
-            }
-            
-            return enrichedSegments
-        } catch {
-            throw AppCoordinatorError.transcriptionFailed(error)
-        }
-    }
-    
     // Note: Summary generation is now handled per-session in checkAndGenerateSessionSummary()
-    // This old per-chunk method is no longer needed
+    // Transcription is delegated to TranscriptionCoordinator
     
     private func updateRollupsAndStats() async {
         guard let insights = insightsManager else { return }
@@ -1011,19 +871,8 @@ public final class AppCoordinator: ObservableObject {
     
     /// Refresh the current streak count
     public func refreshStreak() async {
-        guard let dbManager = databaseManager else { return }
-        
         do {
-            // Fetch daily rollups for streak calculation
-            let rollups = try await dbManager.fetchRollups(bucketType: .day, limit: 365)
-            
-            // Extract dates with activity
-            let activityDates = rollups
-                .filter { $0.segmentCount > 0 }
-                .map { $0.bucketStart }
-            
-            let streakInfo = StreakCalculator.calculateStreak(from: activityDates)
-            currentStreak = streakInfo.currentStreak
+            currentStreak = try await dataCoordinator?.calculateStreak() ?? 0
         } catch {
             print("Failed to refresh streak: \(error)")
             currentStreak = 0
@@ -1032,31 +881,11 @@ public final class AppCoordinator: ObservableObject {
     
     /// Refresh today's stats
     public func refreshTodayStats() async {
-        guard let dbManager = databaseManager else {
-            print("⚠️ [AppCoordinator] refreshTodayStats: No database manager")
-            return
-        }
-        
-        let today = Calendar.current.startOfDay(for: Date())
-        print("📊 [AppCoordinator] refreshTodayStats called for date: \(today)")
+        print("📊 [AppCoordinator] refreshTodayStats called")
         
         do {
-            // Fetch today's rollup specifically by date (not just most recent)
-            let todayRollup = try await dbManager.fetchRollup(bucketType: .day, bucketStart: today)
-            
-            if let rollup = todayRollup {
-                todayStats = DayStats(
-                    date: today,
-                    segmentCount: rollup.segmentCount,
-                    wordCount: rollup.wordCount,
-                    totalDuration: rollup.speakingSeconds
-                )
-                print("✅ [AppCoordinator] Today stats loaded: \(rollup.segmentCount) entries, \(rollup.wordCount) words, \(Int(rollup.speakingSeconds))s")
-            } else {
-                // No rollup for today yet - show zeros
-                todayStats = DayStats.empty
-                print("ℹ️ [AppCoordinator] No rollup found for today - showing zeros")
-            }
+            todayStats = try await dataCoordinator?.fetchTodayStats() ?? DayStats.empty
+            print("✅ [AppCoordinator] Today stats loaded: \(todayStats.segmentCount) entries, \(todayStats.wordCount) words")
         } catch {
             print("❌ [AppCoordinator] Failed to refresh today stats: \(error)")
             todayStats = DayStats.empty
@@ -1249,146 +1078,101 @@ public final class AppCoordinator: ObservableObject {
     
     /// Fetch sessions grouped by hour of day
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchSessionsByHour()
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchSessionsByHour()
     }
     
     /// Fetch the longest recording session
     public func fetchLongestSession() async throws -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchLongestSession()
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchLongestSession()
     }
     
     /// Fetch the most active month
     public func fetchMostActiveMonth() async throws -> (year: Int, month: Int, count: Int, sessionIds: [UUID])? {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchMostActiveMonth()
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchMostActiveMonth()
     }
     
     /// Fetch sessions grouped by day of week
     public func fetchSessionsByDayOfWeek() async throws -> [(dayOfWeek: Int, count: Int, sessionIds: [UUID])] {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchSessionsByDayOfWeek()
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchSessionsByDayOfWeek()
     }
     
     /// Fetch all transcript text within a date range
     public func fetchTranscriptText(startDate: Date, endDate: Date) async throws -> [String] {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchTranscriptText(startDate: startDate, endDate: endDate)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchTranscriptText(startDate: startDate, endDate: endDate)
     }
     
     /// Fetch daily sentiment averages for a date range
     public func fetchDailySentiment(from startDate: Date, to endDate: Date) async throws -> [(date: Date, sentiment: Double)] {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchDailySentiment(from: startDate, to: endDate)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchDailySentiment(from: startDate, to: endDate)
     }
     
     /// Fetch sentiment for a specific session
     public func fetchSessionSentiment(sessionId: UUID) async throws -> Double? {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchSessionSentiment(sessionId: sessionId)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchSessionSentiment(sessionId: sessionId)
     }
     
     /// Fetch language distribution (language code and word count)
     public func fetchLanguageDistribution() async throws -> [(language: String, wordCount: Int)] {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchLanguageDistribution()
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchLanguageDistribution()
     }
     
     /// Fetch dominant language for a specific session
     public func fetchSessionLanguage(sessionId: UUID) async throws -> String? {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchSessionLanguage(sessionId: sessionId)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchSessionLanguage(sessionId: sessionId)
     }
     
     // MARK: - Session Metadata
     
     /// Update session title
     public func updateSessionTitle(sessionId: UUID, title: String?) async throws {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        try await dbManager.updateSessionTitle(sessionId: sessionId, title: title)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        try await data.updateSessionTitle(sessionId: sessionId, title: title)
         print("📝 [AppCoordinator] Updated session title: \(title ?? "nil")")
     }
     
     /// Update session notes
     public func updateSessionNotes(sessionId: UUID, notes: String?) async throws {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        try await dbManager.updateSessionNotes(sessionId: sessionId, notes: notes)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        try await data.updateSessionNotes(sessionId: sessionId, notes: notes)
         print("📝 [AppCoordinator] Updated session notes")
     }
     
     /// Toggle session favorite status
     public func toggleSessionFavorite(sessionId: UUID) async throws -> Bool {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        let isFavorite = try await dbManager.toggleSessionFavorite(sessionId: sessionId)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        let isFavorite = try await data.toggleSessionFavorite(sessionId: sessionId)
         print("⭐ [AppCoordinator] Session favorite: \(isFavorite)")
         return isFavorite
     }
     
     /// Fetch session metadata
     public func fetchSessionMetadata(sessionId: UUID) async throws -> DatabaseManager.SessionMetadata? {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.fetchSessionMetadata(sessionId: sessionId)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchSessionMetadata(sessionId: sessionId)
     }
     
     // MARK: - Transcript Editing
     
     /// Update transcript segment text (for user edits)
     public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        try await dbManager.updateTranscriptSegmentText(id: segmentId, newText: newText)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        try await data.updateTranscriptText(segmentId: segmentId, newText: newText)
         print("✏️ [AppCoordinator] Updated transcript segment: \(segmentId)")
     }
     
     /// Search for sessions by transcript text
     public func searchSessionsByTranscript(query: String) async throws -> Set<UUID> {
-        guard let dbManager = databaseManager else {
-            throw AppCoordinatorError.notInitialized
-        }
-        
-        return try await dbManager.searchSessionsByTranscript(query: query)
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.searchSessionsByTranscript(query: query)
     }
 
     /// Fetch period summary for a specific date and type
