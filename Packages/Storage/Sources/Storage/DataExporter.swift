@@ -307,19 +307,16 @@ public actor DataExporter {
     }
     
     private func getDatabaseSize() async throws -> Int64 {
-        // Get database file size from container
-        let chunks = try await databaseManager.fetchAllAudioChunks()
-        if let firstChunk = chunks.first {
-            // Navigate up from audio file to database directory
-            let dbDirectory = firstChunk.fileURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Database")
-            let dbPath = dbDirectory.appendingPathComponent("lifewrapped.db").path
-            if FileManager.default.fileExists(atPath: dbPath) {
-                let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
-                if let size = attrs[FileAttributeKey.size] as? Int64 {
-                    return size
-                }
+        // Get database path from DatabaseManager
+        let dbPath = await databaseManager.getDatabasePath()
+        
+        if FileManager.default.fileExists(atPath: dbPath) {
+            let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
+            if let size = attrs[FileAttributeKey.size] as? Int64 {
+                return size
             }
         }
+        
         return 0
     }
 }
