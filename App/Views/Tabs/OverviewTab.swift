@@ -18,6 +18,10 @@ struct OverviewTab: View {
     // Period rollups for Week/Month/Year feed
     @State private var periodRollups: [Summary] = []
     
+    // Navigation state for session detail
+    @State private var selectedSession: RecordingSession?
+    @State private var showSessionDetail = false
+    
 
     
     var body: some View {
@@ -183,9 +187,12 @@ struct OverviewTab: View {
                                             } else {
                                                 // Summaries in this bucket
                                                 ForEach(bucket.summaries) { summary in
-                                                    SessionSummaryCard(summary: summary, coordinator: coordinator)
-                                                        .padding(.horizontal, 16)
-                                                        .padding(.vertical, 6)
+                                                    SessionSummaryCard(summary: summary, coordinator: coordinator) { session in
+                                                        selectedSession = session
+                                                        showSessionDetail = true
+                                                    }
+                                                    .padding(.horizontal, 16)
+                                                    .padding(.vertical, 6)
                                                 }
                                             }
                                         } header: {
@@ -224,6 +231,11 @@ struct OverviewTab: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Overview")
+            .navigationDestination(isPresented: $showSessionDetail) {
+                if let session = selectedSession {
+                    SessionDetailView(session: session)
+                }
+            }
             .task {
                 await loadInsights()
             }
