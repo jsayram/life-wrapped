@@ -235,4 +235,31 @@ public final class DataCoordinator {
     public func searchSessionsByTranscript(query: String) async throws -> Set<UUID> {
         return try await databaseManager.searchSessionsByTranscript(query: query)
     }
+    
+    // MARK: - Delete Statistics
+    
+    /// Get statistics about data to be deleted (for confirmation dialog)
+    public func getDeleteStats() async -> (chunks: Int, transcripts: Int, summaries: Int, modelSize: String) {
+        do {
+            let chunks = try await databaseManager.fetchAllAudioChunks()
+            let summaries = try await databaseManager.fetchAllSummaries()
+            
+            // Calculate total transcript segments across all chunks
+            var transcriptCount = 0
+            for chunk in chunks {
+                let segments = try await databaseManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                transcriptCount += segments.count
+            }
+            
+            return (
+                chunks: chunks.count,
+                transcripts: transcriptCount,
+                summaries: summaries.count,
+                modelSize: "Not available"
+            )
+        } catch {
+            print("❌ [DataCoordinator] Failed to get delete stats: \(error)")
+            return (chunks: 0, transcripts: 0, summaries: 0, modelSize: "Unknown")
+        }
+    }
 }

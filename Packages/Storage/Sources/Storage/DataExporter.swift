@@ -125,7 +125,7 @@ public actor DataExporter {
     // MARK: - Storage Info
     
     /// Get storage usage statistics
-    public func getStorageInfo() async throws -> StorageInfo {
+    public func getStorageInfo(localModelSize: Int64? = nil) async throws -> StorageInfo {
         let chunks = try await databaseManager.fetchAllAudioChunks()
         let summaries = try await databaseManager.fetchAllSummaries()
         
@@ -141,7 +141,8 @@ public actor DataExporter {
             audioChunkCount: chunks.count,
             summaryCount: summaries.count,
             totalAudioSize: totalAudioSize,
-            databaseSize: try await getDatabaseSize()
+            databaseSize: try await getDatabaseSize(),
+            localModelSize: localModelSize
         )
     }
     
@@ -246,9 +247,10 @@ public struct StorageInfo: Sendable {
     public let summaryCount: Int
     public let totalAudioSize: Int64
     public let databaseSize: Int64
+    public let localModelSize: Int64?
     
     public var totalSize: Int64 {
-        totalAudioSize + databaseSize
+        totalAudioSize + databaseSize + (localModelSize ?? 0)
     }
     
     public var formattedTotalSize: String {
@@ -261,5 +263,12 @@ public struct StorageInfo: Sendable {
     
     public var formattedDatabaseSize: String {
         ByteCountFormatter.string(fromByteCount: databaseSize, countStyle: .file)
+    }
+    
+    public var formattedLocalModelSize: String {
+        guard let localModelSize = localModelSize else {
+            return "Not Downloaded"
+        }
+        return ByteCountFormatter.string(fromByteCount: localModelSize, countStyle: .file)
     }
 }

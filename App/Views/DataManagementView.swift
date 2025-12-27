@@ -49,6 +49,12 @@ struct DataManagementView: View {
                         )
                         
                         StorageUsageRow(
+                            title: "Local AI Model",
+                            value: info.formattedLocalModelSize,
+                            detail: nil
+                        )
+                        
+                        StorageUsageRow(
                             title: "Total",
                             value: info.formattedTotalSize,
                             detail: nil,
@@ -172,7 +178,9 @@ struct DataManagementView: View {
         do {
             if let dbManager = coordinator.getDatabaseManager() {
                 let exporter = DataExporter(databaseManager: dbManager)
-                let info = try await exporter.getStorageInfo()
+                // Get local model size from coordinator
+                let modelSize = await coordinator.getLocalModelCoordinator()?.modelSizeBytes()
+                let info = try await exporter.getStorageInfo(localModelSize: modelSize)
                 await MainActor.run {
                     storageInfo = info
                 }
