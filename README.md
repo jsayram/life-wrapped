@@ -11,18 +11,47 @@
 
 ## 🎯 What is Life Wrapped?
 
-Life Wrapped records audio throughout your day, transcribes it **locally on your device**, and helps you discover insights about how you spend your time. AI summaries are powered by your own API keys (OpenAI or Anthropic), with automatic offline fallback to Basic summaries when no connection is available.
+Life Wrapped records audio throughout your day, transcribes it **locally on your device**, and helps you discover insights about how you spend your time.
 
 ### Key Features
 
-- 🎙️ **Continuous Audio Capture** — Record throughout the day with chunked files
-- 🗣️ **On-Device Transcription** — Apple's Speech framework, no cloud required
-- 🤖 **Smart AI Summaries** — Bring your own OpenAI/Anthropic API keys for best quality
-- 📴 **Offline Fallback** — Basic summaries work without internet
-- 📊 **Rich Insights** — See your day/week/month in words and time
+- 🎙️ **Auto-Chunking Recording** — Automatically splits recordings into 30-300s chunks for efficient processing
+- 🗣️ **On-Device Transcription** — Apple's Speech framework with abandoned utterance detection, no cloud required
+- 🤖 **Multi-Tier AI Summaries** — Intelligent fallback system with 4 engines:
+  - **External API** (Best Quality) — GPT-4, Claude Sonnet 3.5 with your API keys
+  - **Local AI** (Privacy-First) — Phi-3.5 Mini on-device via MLX, ~2.1GB model
+  - **Apple Intelligence** (iOS 18.1+) — Foundation Models when available
+  - **Basic** (Always Available) — Fast extractive summarization with NLP
+- 🔄 **Smart Fallback** — Automatically downgrades: External → Local → Apple → Basic
+- 📴 **Fully Offline Capable** — All features work without internet (Basic + Local AI)
+- 📊 **Rich Insights** — Session summaries, topics, entities, sentiment, key moments
 - ⌚ **Apple Watch Support** — Control and glance from your wrist
-- 🔒 **Privacy-First** — Transcription on-device; you control AI keys
+- 🔒 **Privacy-First** — Transcription always on-device; you control AI provider
 - 📱 **Widgets & Siri** — Quick stats and voice control
+
+### How It Works
+
+```
+Record Audio → Auto-Chunk (30-300s) → Transcribe (On-Device) → AI Summary
+    ↓              ↓                       ↓                      ↓
+Session ID    Chunk 0,1,2...        Apple Speech API      External/Local/Basic
+    ↓              ↓                       ↓                      ↓
+Database      Parallel Processing    Word-perfect text    Structured insights
+```
+
+**Audio Processing:**
+
+- Recording automatically splits into configurable chunks (default 180s)
+- Each chunk processes independently with parallel transcription (max 3 concurrent)
+- Abandoned utterance detection captures pauses of any length
+- Real-time UI updates show transcription progress per chunk
+
+**AI Summarization (4-Tier System):**
+
+1. **External API** (Cloud) — OpenAI GPT-4.1, Anthropic Claude 3.5 Sonnet
+2. **Local AI** (On-Device) — Phi-3.5 Mini 4-bit quantized (~2.1GB via MLX)
+3. **Apple Intelligence** (On-Device) — Foundation Models (iOS 18.1+, A17 Pro/M1+)
+4. **Basic** (On-Device) — TF-IDF + semantic embeddings + NLP (always works)
 
 ---
 
@@ -91,23 +120,55 @@ code --install-extension vknabel.vscode-apple-swift-format
 ```
 life-wrapped/
 ├── App/                 # iOS SwiftUI app
+│   ├── LifeWrappedApp.swift         # App entry point
+│   ├── ContentView.swift            # Main tab container
+│   ├── Coordinators/                # Business logic coordinators
+│   │   ├── AppCoordinator.swift           # Central app coordinator
+│   │   ├── RecordingCoordinator.swift     # Recording lifecycle
+│   │   ├── TranscriptionCoordinator.swift # Transcription orchestration
+│   │   ├── SummaryCoordinator.swift       # AI summary generation
+│   │   ├── DataCoordinator.swift          # Data management operations
+│   │   ├── WidgetCoordinator.swift        # Widget data updates
+│   │   ├── PermissionsCoordinator.swift   # System permissions
+│   │   └── LocalModelCoordinator.swift    # Local LLM management
+│   ├── Views/                       # SwiftUI views
+│   │   ├── Tabs/                    # Main tab views
+│   │   ├── Overview/                # Overview & summaries
+│   │   ├── Details/                 # Session detail views
+│   │   ├── Insights/                # Analytics & charts
+│   │   ├── AI/                      # AI settings & management
+│   │   ├── Components/              # Reusable UI components
+│   │   └── Utility/                 # Helper views
+│   ├── Constants/                   # App-wide constants
+│   ├── Helpers/                     # Utility functions
+│   ├── Models/                      # View models
+│   └── Resources/                   # Assets & entitlements
 ├── Extensions/
-│   ├── Widgets/         # WidgetKit extension
-│   └── AppIntents/      # Siri Shortcuts
+│   └── Widgets/         # WidgetKit extension
 ├── WatchApp/            # watchOS app
-├── MacApp/              # macOS app (Phase 2)
 ├── Packages/            # Local Swift Packages
 │   ├── SharedModels/    # Data models & protocols
-│   ├── Storage/         # SQLite persistence
-│   ├── AudioCapture/    # Recording pipeline
-│   ├── Transcription/   # Speech recognition
-│   ├── Insights/        # Stats & charts
-│   ├── Backup/          # Export/import
-│   ├── Summarization/   # LLM adapter
-│   └── Sync/            # CloudKit (Phase 2)
-├── Config/              # Build configurations
-├── Scripts/             # Build/test scripts
+│   ├── Storage/         # SQLite persistence with repository pattern
+│   │   ├── DatabaseManager.swift          # Facade coordinating repositories
+│   │   ├── DatabaseConnection.swift       # SQLite connection management
+│   │   ├── SchemaManager.swift            # Schema versioning & migrations
+│   │   └── Repositories/
+│   │       ├── AudioChunkRepository.swift      # Audio chunk CRUD
+│   │       ├── SessionRepository.swift         # Recording session operations
+│   │       ├── TranscriptRepository.swift      # Transcript segment storage
+│   │       ├── SummaryRepository.swift         # AI summary management
+│   │       ├── InsightsRepository.swift        # Stats & rollup queries
+│   │       └── ControlEventRepository.swift    # App control events
+│   ├── AudioCapture/    # AVAudioEngine recording & playback
+│   ├── Transcription/   # Apple Speech framework integration
+│   ├── InsightsRollup/  # Time-based aggregations & statistics
+│   ├── Summarization/   # External AI API adapter (OpenAI/Anthropic)
+│   ├── LocalLLM/        # On-device MLX-based language models
+│   └── WidgetCore/      # Shared widget data models
+├── Config/              # Build configurations (.xcconfig)
+├── Scripts/             # Build/test automation scripts
 ├── Docs/                # Documentation
+└── Tests/               # Test suites
 └── Tests/               # Test suites
 ```
 
@@ -117,13 +178,47 @@ life-wrapped/
 
 ### Our Commitments
 
-1. **On-Device Transcription** — All speech-to-text processing happens locally
-2. **No Cloud Speech** — Uses `requiresOnDeviceRecognition = true`
-3. **Your API Keys** — AI summaries use your own OpenAI/Anthropic keys (you control)
-4. **Offline Fallback** — Basic summaries work without internet or API keys
-5. **No Analytics** — No tracking, no telemetry
-6. **Encrypted Storage** — Data protected at rest
-7. **Your Data, Your Control** — Export anytime, delete anytime
+1. **On-Device Transcription** — All speech-to-text processing happens locally using `requiresOnDeviceRecognition = true`
+2. **No Cloud Speech** — Apple Speech Recognition with strict on-device enforcement
+3. **Privacy-First AI Options** — Multiple on-device engines available:
+   - **Basic Engine** — NaturalLanguage framework, no data leaves device
+   - **Local AI** — Phi-3.5 Mini runs entirely on your device via MLX (~2.1GB)
+   - **Apple Intelligence** — On-device Foundation Models (iOS 18.1+, when available)
+4. **Optional External AI** — Use your own API keys (OpenAI/Anthropic) only if you choose
+5. **Smart Fallback Chain** — Automatic downgrade: External → Local → Apple → Basic
+6. **No Analytics** — No tracking, no telemetry, no third-party SDKs
+7. **Encrypted Storage** — SQLite with file protection, App Group sandboxing
+8. **Your Data, Your Control** — Export anytime, delete anytime
+
+### AI Engine Details
+
+**External API (Optional):**
+
+- Providers: OpenAI (GPT-4.1, GPT-4o-mini) or Anthropic (Claude 3.5 Sonnet/Haiku)
+- Requires: Your API key stored securely in Keychain
+- Privacy: Sends transcript text to provider's servers (your keys, your control)
+- Quality: Highest quality summaries with structured insights
+
+**Local AI (On-Device):**
+
+- Model: Phi-3.5 Mini 4-bit quantized (Microsoft)
+- Size: ~2.1 GB download via HuggingFace
+- Framework: MLX (Apple's ML framework for Apple Silicon)
+- Privacy: 100% on-device, no internet required
+- Performance: Smart caching, chunk-by-chunk processing
+
+**Apple Intelligence (On-Device, iOS 18.1+):**
+
+- Availability: A17 Pro+ / M1+ with Apple Intelligence enabled
+- Privacy: On-device Foundation Models
+- Status: Placeholder for future integration
+
+**Basic Engine (Always Available):**
+
+- Framework: Apple's NaturalLanguage with TF-IDF + embeddings
+- Features: Extractive summarization, keyword extraction, sentiment analysis
+- Privacy: 100% on-device, instant processing
+- Use Case: Fallback when other engines unavailable
 
 ### Verification
 
@@ -132,9 +227,9 @@ life-wrapped/
 ./Scripts/verify-privacy.sh
 
 # Manual verification:
-# 1. Without API keys configured — app functions normally with Basic summaries
-# 2. Network offline — transcription and Basic summaries still work
-# 3. With API keys — only external AI API calls are made (your keys, your control)
+# 1. Without API keys — app uses Local AI or Basic engine (fully offline)
+# 2. Network offline — Local AI and Basic engines work perfectly
+# 3. With API keys — only external AI API calls are made (optional, you control)
 ```
 
 ---
@@ -177,24 +272,26 @@ xcodebuild test \
 
 ## 🗺️ Roadmap
 
-### V1 (Current)
+### V1 (Current) ✅
 
 - [x] Project setup & architecture
-- [ ] SQLite storage with migrations
-- [ ] Audio capture pipeline
-- [ ] On-device transcription
-- [ ] Insights & stats
-- [ ] iOS widgets
-- [ ] Siri Shortcuts
-- [ ] Apple Watch app
+- [x] SQLite storage with repository pattern
+- [x] Auto-chunking audio capture pipeline
+- [x] On-device transcription (Apple Speech)
+- [x] Multi-tier AI summarization (4 engines)
+- [x] Local LLM (Phi-3.5 Mini via MLX)
+- [x] Insights & time-based rollups
+- [x] iOS widgets
+- [x] Apple Watch app (in progress)
 
-### V2
+### V2 (Future)
 
-- [ ] On-device summarization (Core ML / local LLM)
-- [ ] macOS companion app
 - [ ] CloudKit sync (opt-in)
+- [ ] Siri Shortcuts integration
+- [ ] macOS companion app
 - [ ] Speaker diarization
-- [ ] Entity extraction
+- [ ] Advanced entity extraction
+- [ ] Export/backup system
 
 ---
 
