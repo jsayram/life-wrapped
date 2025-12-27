@@ -9,7 +9,6 @@ struct DataManagementView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     
-    @State private var storageInfo: StorageInfo?
     @State private var isExporting = false
     @State private var isImporting = false
     @State private var exportFormat: ExportFormat = .json
@@ -40,44 +39,6 @@ struct DataManagementView: View {
     var body: some View {
         NavigationView {
             List {
-                // Storage Usage Section
-                Section {
-                    if let info = storageInfo {
-                        StorageUsageRow(
-                            title: "Audio Recordings",
-                            value: info.formattedAudioSize,
-                            detail: "\(info.audioChunkCount) files"
-                        )
-                        
-                        StorageUsageRow(
-                            title: "Database",
-                            value: info.formattedDatabaseSize,
-                            detail: "\(info.summaryCount) summaries"
-                        )
-                        
-                        StorageUsageRow(
-                            title: "Local AI Model",
-                            value: info.formattedLocalModelSize,
-                            detail: nil
-                        )
-                        
-                        StorageUsageRow(
-                            title: "Total",
-                            value: info.formattedTotalSize,
-                            detail: nil,
-                            isBold: true
-                        )
-                    } else {
-                        HStack {
-                            ProgressView()
-                            Text("Loading storage info...")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                } header: {
-                    Text("Storage Usage")
-                }
-                
                 // Yearly Data Section
                 if !yearlyData.isEmpty {
                     Section {
@@ -244,7 +205,6 @@ struct DataManagementView: View {
                 }
             }
             .task {
-                await loadStorageInfo()
                 await loadYearlyData()
             }
             .onAppear {
@@ -332,22 +292,6 @@ struct DataManagementView: View {
         }
     }
     
-    private func loadStorageInfo() async {
-        do {
-            if let dbManager = coordinator.getDatabaseManager() {
-                let exporter = DataExporter(databaseManager: dbManager)
-                // Get local model size from coordinator
-                let modelSize = await coordinator.getLocalModelCoordinator()?.modelSizeBytes()
-                let info = try await exporter.getStorageInfo(localModelSize: modelSize)
-                await MainActor.run {
-                    storageInfo = info
-                }
-            }
-        } catch {
-            print("❌ Failed to load storage info: \(error)")
-        }
-    }
-    
     private func loadYearlyData() async {
         do {
             if let dataCoordinator = coordinator.getDataCoordinator() {
@@ -405,7 +349,6 @@ struct DataManagementView: View {
     private func deleteAllData() {
         Task {
             await coordinator.deleteAllData()
-            await loadStorageInfo()
             coordinator.showSuccess("All data deleted")
         }
     }
@@ -466,43 +409,11 @@ struct DataManagementView: View {
                         coordinator.showError("❌ Import failed: \(result.errors.first?.error ?? "Unknown error")")
                     }
                 }
-                
-                await loadStorageInfo()
             }
         } catch {
             await MainActor.run {
                 coordinator.showError("Import failed: \(error.localizedDescription)")
             }
-        }
-    }
-}
-
-// MARK: - Storage Usage Row
-
-struct StorageUsageRow: View {
-    let title: String
-    let value: String
-    let detail: String?
-    var isBold: Bool = false
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(isBold ? .headline : .body)
-                
-                if let detail = detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            Text(value)
-                .font(isBold ? .headline : .body)
-                .foregroundColor(isBold ? .primary : .secondary)
         }
     }
 }
