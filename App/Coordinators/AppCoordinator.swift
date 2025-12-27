@@ -931,11 +931,7 @@ public final class AppCoordinator: ObservableObject {
     /// Manual Year Wrap using external intelligence (keeps deterministic rollup as default)
     public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
         // Delegate to SummaryCoordinator
-        do {
-            try await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate)
-        } catch {
-            showError("Year Wrap failed. Check your external key and try again.")
-        }
+        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate)
     }
 
     /// Delete a recording and its associated data
