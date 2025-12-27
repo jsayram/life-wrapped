@@ -74,6 +74,8 @@
 		46EF679A2EFF861200DE6C0A /* TranscriptChunkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67982EFF861200DE6C0A /* TranscriptChunkView.swift */; };
 		46EF679B2EFF861200DE6C0A /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67962EFF861200DE6C0A /* RecordingDetailView.swift */; };
 		46EF679C2EFF861200DE6C0A /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67972EFF861200DE6C0A /* SessionDetailView.swift */; };
+		46EF679E2EFF877C00DE6C0A /* SummaryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF679D2EFF877C00DE6C0A /* SummaryRow.swift */; };
+		46EF67A12EFF881100DE6C0A /* FilteredSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF679F2EFF881100DE6C0A /* FilteredSessionsView.swift */; };
 		4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */; };
 		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
@@ -179,6 +181,8 @@
 		46EF67962EFF861200DE6C0A /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		46EF67972EFF861200DE6C0A /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		46EF67982EFF861200DE6C0A /* TranscriptChunkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptChunkView.swift; sourceTree = "<group>"; };
+		46EF679D2EFF877C00DE6C0A /* SummaryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryRow.swift; sourceTree = "<group>"; };
+		46EF679F2EFF881100DE6C0A /* FilteredSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilteredSessionsView.swift; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
@@ -272,6 +276,7 @@
 		46EF66CD2EFF391E00DE6C0A /* Rows */ = {
 			isa = PBXGroup;
 			children = (
+				46EF679D2EFF877C00DE6C0A /* SummaryRow.swift */,
 				46EF67882EFF7DE000DE6C0A /* InsightSessionRow.swift */,
 				46EF67862EFF7DB000DE6C0A /* SessionRowView.swift */,
 				46EF67842EFF7D8200DE6C0A /* DetailRow.swift */,
@@ -349,6 +354,7 @@
 		46EF66E52EFF391E00DE6C0A /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				46EF67A02EFF881100DE6C0A /* Overview */,
 				46EF67992EFF861200DE6C0A /* Details */,
 				46EF67902EFF7ECE00DE6C0A /* Utility */,
 				46EF677C2EFF7C1900DE6C0A /* AI */,
@@ -439,6 +445,14 @@
 				46EF67982EFF861200DE6C0A /* TranscriptChunkView.swift */,
 			);
 			path = Details;
+			sourceTree = "<group>";
+		};
+		46EF67A02EFF881100DE6C0A /* Overview */ = {
+			isa = PBXGroup;
+			children = (
+				46EF679F2EFF881100DE6C0A /* FilteredSessionsView.swift */,
+			);
+			path = Overview;
 			sourceTree = "<group>";
 		};
 		5C6D7E8F9G0H1I2J3K4L5M6N /* Constants */ = {
@@ -644,6 +658,7 @@
 				46EF66EE2EFF391E00DE6C0A /* RecordingRow.swift in Sources */,
 				46EF676D2EFF792A00DE6C0A /* YearWrappedCard.swift in Sources */,
 				46EF67782EFF7B8A00DE6C0A /* HistoricalDataView.swift in Sources */,
+				46EF67A12EFF881100DE6C0A /* FilteredSessionsView.swift in Sources */,
 				46EF67742EFF7B0F00DE6C0A /* YearInsightsView.swift in Sources */,
 				46EF67672EFF4E5000DE6C0A /* SessionSummaryCard.swift in Sources */,
 				46EF67682EFF4E5000DE6C0A /* PeriodSummaryCard.swift in Sources */,
@@ -670,6 +685,7 @@
 				46EF66FD2EFF391E00DE6C0A /* StreakDisplay.swift in Sources */,
 				244A734639F00E2AE85D6920 /* LifeWrappedApp.swift in Sources */,
 				4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */,
+				46EF679E2EFF877C00DE6C0A /* SummaryRow.swift in Sources */,
 				46EF67762EFF7B5300DE6C0A /* MonthInsightsView.swift in Sources */,
 				46EF675D2EFF4CE700DE6C0A /* OverviewSummaryCard.swift in Sources */,
 				46EF67952EFF80D400DE6C0A /* AppTheme.swift in Sources */,
