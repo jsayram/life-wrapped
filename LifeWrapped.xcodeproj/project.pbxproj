@@ -55,6 +55,8 @@
 		46EF67672EFF4E5000DE6C0A /* SessionSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67662EFF4E5000DE6C0A /* SessionSummaryCard.swift */; };
 		46EF67682EFF4E5000DE6C0A /* PeriodSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67652EFF4E5000DE6C0A /* PeriodSummaryCard.swift */; };
 		46EF67692EFF4E5000DE6C0A /* GeneratePeriodSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67642EFF4E5000DE6C0A /* GeneratePeriodSummaryCard.swift */; };
+		46EF676D2EFF792A00DE6C0A /* YearWrappedCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF676C2EFF792A00DE6C0A /* YearWrappedCard.swift */; };
+		46EF676F2EFF79D400DE6C0A /* GenerateYearWrapCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF676E2EFF79D400DE6C0A /* GenerateYearWrapCard.swift */; };
 		4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */; };
 		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
@@ -141,6 +143,8 @@
 		46EF67642EFF4E5000DE6C0A /* GeneratePeriodSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratePeriodSummaryCard.swift; sourceTree = "<group>"; };
 		46EF67652EFF4E5000DE6C0A /* PeriodSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodSummaryCard.swift; sourceTree = "<group>"; };
 		46EF67662EFF4E5000DE6C0A /* SessionSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSummaryCard.swift; sourceTree = "<group>"; };
+		46EF676C2EFF792A00DE6C0A /* YearWrappedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearWrappedCard.swift; sourceTree = "<group>"; };
+		46EF676E2EFF79D400DE6C0A /* GenerateYearWrapCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerateYearWrapCard.swift; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
@@ -345,6 +349,8 @@
 		46EF675C2EFF4CE700DE6C0A /* Cards */ = {
 			isa = PBXGroup;
 			children = (
+				46EF676E2EFF79D400DE6C0A /* GenerateYearWrapCard.swift */,
+				46EF676C2EFF792A00DE6C0A /* YearWrappedCard.swift */,
 				46EF67642EFF4E5000DE6C0A /* GeneratePeriodSummaryCard.swift */,
 				46EF67652EFF4E5000DE6C0A /* PeriodSummaryCard.swift */,
 				46EF67662EFF4E5000DE6C0A /* SessionSummaryCard.swift */,
@@ -547,6 +553,7 @@
 				46EF66EC2EFF391E00DE6C0A /* SessionRow.swift in Sources */,
 				46EF66ED2EFF391E00DE6C0A /* OverviewTab.swift in Sources */,
 				46EF66EE2EFF391E00DE6C0A /* RecordingRow.swift in Sources */,
+				46EF676D2EFF792A00DE6C0A /* YearWrappedCard.swift in Sources */,
 				46EF67672EFF4E5000DE6C0A /* SessionSummaryCard.swift in Sources */,
 				46EF67682EFF4E5000DE6C0A /* PeriodSummaryCard.swift in Sources */,
 				46EF67692EFF4E5000DE6C0A /* GeneratePeriodSummaryCard.swift in Sources */,
@@ -561,6 +568,7 @@
 				46EF66F72EFF391E00DE6C0A /* LoadingOverlay.swift in Sources */,
 				46EF66F82EFF391E00DE6C0A /* LoadingView.swift in Sources */,
 				46EF67552EFF4AB400DE6C0A /* RecordingDetailView.swift in Sources */,
+				46EF676F2EFF79D400DE6C0A /* GenerateYearWrapCard.swift in Sources */,
 				46EF66F92EFF391E00DE6C0A /* TimeRange.swift in Sources */,
 				46EF66FA2EFF391E00DE6C0A /* SiriWaveView.swift in Sources */,
 				46EF66FB2EFF391E00DE6C0A /* HistoryTab.swift in Sources */,
