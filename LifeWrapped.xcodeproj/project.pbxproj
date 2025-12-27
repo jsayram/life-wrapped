@@ -79,6 +79,7 @@
 		46EF67A42EFF899500DE6C0A /* GenerationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67A22EFF899500DE6C0A /* GenerationOverlay.swift */; };
 		46EF67A62EFF8C4F00DE6C0A /* TranscriptionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67A52EFF8C4F00DE6C0A /* TranscriptionCoordinator.swift */; };
 		46EF67A72EFF8D5000DE6C0A /* DataCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67A82EFF8D5000DE6C0A /* DataCoordinator.swift */; };
+		46EF67A82EFF98E100DE6C0A /* SummaryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67A72EFF98E100DE6C0A /* SummaryCoordinator.swift */; };
 		4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */; };
 		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
@@ -188,6 +189,7 @@
 		46EF679F2EFF881100DE6C0A /* FilteredSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilteredSessionsView.swift; sourceTree = "<group>"; };
 		46EF67A22EFF899500DE6C0A /* GenerationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationOverlay.swift; sourceTree = "<group>"; };
 		46EF67A52EFF8C4F00DE6C0A /* TranscriptionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionCoordinator.swift; sourceTree = "<group>"; };
+		46EF67A72EFF98E100DE6C0A /* SummaryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCoordinator.swift; sourceTree = "<group>"; };
 		46EF67A82EFF8D5000DE6C0A /* DataCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataCoordinator.swift; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
@@ -525,6 +527,7 @@
 		DE26631D9D076574CFFC015F /* Coordinators */ = {
 			isa = PBXGroup;
 			children = (
+				46EF67A72EFF98E100DE6C0A /* SummaryCoordinator.swift */,
 				46EF67A52EFF8C4F00DE6C0A /* TranscriptionCoordinator.swift */,
 				46EF67A82EFF8D5000DE6C0A /* DataCoordinator.swift */,
 				D8A7D9951119195D635799E7 /* AppCoordinator.swift */,
@@ -710,6 +713,7 @@
 				46EF675D2EFF4CE700DE6C0A /* OverviewSummaryCard.swift in Sources */,
 				46EF67952EFF80D400DE6C0A /* AppTheme.swift in Sources */,
 				46EF679A2EFF861200DE6C0A /* TranscriptChunkView.swift in Sources */,
+				46EF67A82EFF98E100DE6C0A /* SummaryCoordinator.swift in Sources */,
 				46EF679B2EFF861200DE6C0A /* RecordingDetailView.swift in Sources */,
 				46EF679C2EFF861200DE6C0A /* SessionDetailView.swift in Sources */,
 				46EF67852EFF7D8200DE6C0A /* DetailRow.swift in Sources */,
