@@ -73,6 +73,7 @@
 		46EF678E2EFF7E7D00DE6C0A /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF678C2EFF7E7D00DE6C0A /* FlowLayout.swift */; };
 		46EF67912EFF7ECE00DE6C0A /* PrivacyPolicyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF678F2EFF7ECE00DE6C0A /* PrivacyPolicyView.swift */; };
 		46EF67932EFF7F0300DE6C0A /* ExcludedWordsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67922EFF7F0300DE6C0A /* ExcludedWordsView.swift */; };
+		46EF67952EFF80D400DE6C0A /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46EF67942EFF80D400DE6C0A /* AppTheme.swift */; };
 		4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */; };
 		62C642FA0851509AA7E2E6A6 /* LifeWrappedWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CE4CD365415267B2AFBBA60B /* LifeWrappedWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
@@ -177,6 +178,7 @@
 		46EF678C2EFF7E7D00DE6C0A /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		46EF678F2EFF7ECE00DE6C0A /* PrivacyPolicyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPolicyView.swift; sourceTree = "<group>"; };
 		46EF67922EFF7F0300DE6C0A /* ExcludedWordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExcludedWordsView.swift; sourceTree = "<group>"; };
+		46EF67942EFF80D400DE6C0A /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StopWords.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
@@ -442,6 +444,7 @@
 		5C6D7E8F9G0H1I2J3K4L5M6N /* Constants */ = {
 			isa = PBXGroup;
 			children = (
+				46EF67942EFF80D400DE6C0A /* AppTheme.swift */,
 				4B2C3D4E5F6G7H8I9J0K1L2M /* StopWords.swift */,
 			);
 			path = Constants;
@@ -672,6 +675,7 @@
 				4A1B2C3D4E5F6G7H8I9J0K1L /* StopWords.swift in Sources */,
 				46EF67762EFF7B5300DE6C0A /* MonthInsightsView.swift in Sources */,
 				46EF675D2EFF4CE700DE6C0A /* OverviewSummaryCard.swift in Sources */,
+				46EF67952EFF80D400DE6C0A /* AppTheme.swift in Sources */,
 				46EF67852EFF7D8200DE6C0A /* DetailRow.swift in Sources */,
 				46EF678B2EFF7E1000DE6C0A /* WordCategory.swift in Sources */,
 			);
