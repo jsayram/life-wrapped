@@ -333,8 +333,29 @@ struct OverviewTab: View {
             }
             .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
                 Button("Cancel", role: .cancel) { }
-                Button(actionButtonTitle()) {
-                    handleYearWrapAction()
+                
+                // Always show Local AI option
+                Button("Use Local AI") {
+                    Task {
+                        await wrapUpYear(forceRegenerate: true)
+                    }
+                }
+                
+                // Show Smartest option only if API is configured
+                if hasExternalAPIConfigured() {
+                    let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+                    Button("Use \(provider) (Smartest)") {
+                        Task {
+                            await wrapUpYear(forceRegenerate: true)
+                        }
+                    }
+                } else {
+                    Button("Setup Smartest API") {
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("NavigateToSmartestConfig"),
+                            object: nil
+                        )
+                    }
                 }
             } message: {
                 Text(yearWrapMessage())
@@ -362,28 +383,9 @@ struct OverviewTab: View {
     private func yearWrapMessage() -> String {
         if hasExternalAPIConfigured() {
             let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-            return "This will use your personal \(provider) API to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
+            return "Generate your Year Wrap summary:\n\n• **Local AI** - Works offline, good quality (~2.1GB model)\n• **\(provider) (Smartest)** - Best quality, most detailed insights\n\nThis may take 30-60 seconds."
         } else {
-            return "Year Wrap works best with the 'Smartest' AI engine for the most comprehensive and detailed analysis.\n\nTo unlock the best Year Wrap experience, you'll need to add your personal OpenAI or Anthropic API key. This gives you access to the most capable AI models for analyzing your year.\n\nWe'll guide you to the settings to configure your preferred AI provider."
-        }
-    }
-    
-    private func actionButtonTitle() -> String {
-        return hasExternalAPIConfigured() ? "Generate" : "Open Settings"
-    }
-    
-    private func handleYearWrapAction() {
-        if hasExternalAPIConfigured() {
-            Task {
-                await wrapUpYear(forceRegenerate: true)
-            }
-        } else {
-            // Navigate to AI & Summaries settings to configure Smartest engine
-            // Post notification to switch to Settings tab and open AI & Summaries
-            NotificationCenter.default.post(
-                name: NSNotification.Name("NavigateToSmartestConfig"),
-                object: nil
-            )
+            return "Generate your Year Wrap with Local AI (Phi-3.5 Mini).\n\nThis works completely offline and provides good quality summaries.\n\n💡 For the most comprehensive and detailed analysis, add your OpenAI or Anthropic API key to unlock the 'Smartest' AI engine."
         }
     }
     
