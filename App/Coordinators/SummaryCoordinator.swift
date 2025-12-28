@@ -758,17 +758,28 @@ public final class SummaryCoordinator {
     
     /// Get count of new sessions created after Year Wrap generation
     public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
-        // Fetch all sessions for the year
-        let sessions = try await databaseManager.fetchSessionsByYear(year)
+        // Fetch all years with their session IDs
+        let yearlyData = try await databaseManager.fetchSessionsByYear()
         
-        // Count sessions created after Year Wrap timestamp
-        let newSessions = sessions.filter { session in
-            session.createdAt > yearWrap.createdAt
+        // Find the specified year
+        guard let yearData = yearlyData.first(where: { $0.year == year }) else {
+            print("⚠️ [SummaryCoordinator] No sessions found for year \(year)")
+            return 0
         }
         
-        print("📊 [SummaryCoordinator] Year Wrap staleness check: \(newSessions.count) new sessions since \(yearWrap.createdAt)")
+        // For each session ID, fetch its first chunk time and compare
+        var newCount = 0
+        for sessionId in yearData.sessionIds {
+            if let firstChunk = try? await databaseManager.fetchChunksBySession(sessionId: sessionId).first {
+                if firstChunk.createdAt > yearWrap.createdAt {
+                    newCount += 1
+                }
+            }
+        }
         
-        return newSessions.count
+        print("📊 [SummaryCoordinator] Year Wrap staleness check: \(newCount) new sessions since \(yearWrap.createdAt)")
+        
+        return newCount
     }
     
     // MARK: - Helpers
