@@ -287,13 +287,13 @@ public actor SummaryRepository {
     ) async throws {
         // Check if summary exists
         if let existing = try await fetchPeriodSummary(type: type, date: start) {
-            // Update existing with structured data
+            // Update existing with structured data AND update created_at to current time (for staleness detection)
             try await connection.withDatabase { db in
                 guard let db = db else { throw StorageError.notOpen }
                 
                 let sql = """
                     UPDATE summaries
-                    SET text = ?, period_end = ?, topics_json = ?, entities_json = ?, engine_tier = ?, source_ids = ?, input_hash = ?
+                    SET text = ?, period_end = ?, topics_json = ?, entities_json = ?, engine_tier = ?, source_ids = ?, input_hash = ?, created_at = ?
                     WHERE id = ?
                     """
                 
@@ -337,7 +337,10 @@ public actor SummaryRepository {
                     sqlite3_bind_null(stmt, 7)
                 }
                 
-                sqlite3_bind_text(stmt, 8, existing.id.uuidString, -1, SQLITE_TRANSIENT)
+                // Update created_at to NOW (for staleness detection on regeneration)
+                sqlite3_bind_double(stmt, 8, Date().timeIntervalSince1970)
+                
+                sqlite3_bind_text(stmt, 9, existing.id.uuidString, -1, SQLITE_TRANSIENT)
                 
                 guard sqlite3_step(stmt) == SQLITE_DONE else {
                     throw StorageError.stepFailed(await self.connection.lastError())

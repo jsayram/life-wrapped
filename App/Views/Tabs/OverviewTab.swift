@@ -285,7 +285,7 @@ struct OverviewTab: View {
     private func handleYearWrapAction() {
         if hasExternalAPIConfigured() {
             Task {
-                await wrapUpYear(forceRegenerate: false)
+                await wrapUpYear(forceRegenerate: true)
             }
         } else {
             // Navigate to AI & Summaries settings to configure Smartest engine
@@ -376,8 +376,25 @@ struct OverviewTab: View {
 
         if selectedTimeRange == .allTime {
             yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            
+            // Check for staleness after fetching Year Wrap
+            if let yearWrap = yearWrapSummary {
+                let calendar = Calendar.current
+                let year = calendar.component(.year, from: dateForFetch)
+                
+                if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
+                    await MainActor.run {
+                        coordinator.updateYearWrapNewSessionCount(newCount)
+                    }
+                }
+            } else {
+                // No Year Wrap exists, reset staleness count
+                coordinator.updateYearWrapNewSessionCount(0)
+            }
         } else {
             yearWrapSummary = nil
+            // Reset staleness count when not viewing Year
+            coordinator.updateYearWrapNewSessionCount(0)
         }
         
         // Debug logging
@@ -449,6 +466,10 @@ struct OverviewTab: View {
 
         await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
 
+        // Wait briefly for database transaction to complete
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        // Fetch the newly generated/updated Year Wrap
         yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
         
         // Check for staleness after fetching Year Wrap
@@ -456,10 +477,18 @@ struct OverviewTab: View {
             let calendar = Calendar.current
             let year = calendar.component(.year, from: dateForGeneration)
             
+            print("🔍 [OverviewTab] Year Wrap fetched with createdAt: \(yearWrap.createdAt)")
+            
             if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
                 await MainActor.run {
                     coordinator.updateYearWrapNewSessionCount(newCount)
                 }
+                print("📊 [OverviewTab] Updated staleness count to \(newCount)")
+            }
+        } else {
+            // Reset count if no Year Wrap found
+            await MainActor.run {
+                coordinator.updateYearWrapNewSessionCount(0)
             }
         }
         

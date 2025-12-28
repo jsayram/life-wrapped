@@ -727,6 +727,23 @@ public final class SummaryCoordinator {
                     print("💾 [SummaryCoordinator] ✅ CACHE HIT - Year Wrap unchanged, skipping external call")
                     return
                 }
+                if forceRegenerate && existing.inputHash == inputHash {
+                    print("🔄 [SummaryCoordinator] Force regenerate - updating timestamp even though hash matches")
+                    // Update timestamp by calling upsert with same data
+                    try await databaseManager.upsertPeriodSummary(
+                        type: .yearWrap,
+                        text: existing.text,
+                        start: startOfYear,
+                        end: endOfYear,
+                        topicsJSON: existing.topicsJSON,
+                        entitiesJSON: existing.entitiesJSON,
+                        engineTier: existing.engineTier,
+                        sourceIds: sourceIds,
+                        inputHash: inputHash
+                    )
+                    print("✅ [SummaryCoordinator] Year Wrap timestamp updated")
+                    return
+                }
                 print(forceRegenerate ? "🔄 [SummaryCoordinator] Force regenerate enabled" : "🔄 [SummaryCoordinator] Hash mismatch - regenerating Year Wrap")
             } else {
                 print("📝 [SummaryCoordinator] No Year Wrap found, generating new one")
@@ -767,12 +784,18 @@ public final class SummaryCoordinator {
             return 0
         }
         
-        // For each session ID, fetch its first chunk time and compare
+        print("🔍 [SummaryCoordinator] Checking \(yearData.sessionIds.count) sessions against Year Wrap createdAt: \(yearWrap.createdAt)")
+        
+        // For each session ID, fetch its first chunk time and compare with Year Wrap's createdAt
+        // This ensures we count sessions created AFTER the wrap was last generated
         var newCount = 0
         for sessionId in yearData.sessionIds {
             if let firstChunk = try? await databaseManager.fetchChunksBySession(sessionId: sessionId).first {
                 if firstChunk.createdAt > yearWrap.createdAt {
                     newCount += 1
+                    print("  ✅ Session \(sessionId.uuidString.prefix(8)): \(firstChunk.createdAt) > \(yearWrap.createdAt) = NEW")
+                } else {
+                    print("  ⏭️ Session \(sessionId.uuidString.prefix(8)): \(firstChunk.createdAt) <= \(yearWrap.createdAt) = OLD")
                 }
             }
         }
