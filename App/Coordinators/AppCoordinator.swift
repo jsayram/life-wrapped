@@ -113,6 +113,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
     @Published public private(set) var isDownloadingLocalModel: Bool = false
+    @Published public private(set) var yearWrapNewSessionCount: Int = 0
     
     // MARK: - Dependencies
     

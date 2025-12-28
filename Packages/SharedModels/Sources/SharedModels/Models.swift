@@ -352,3 +352,81 @@ public enum EventType: String, Codable, Sendable, CaseIterable {
     case importBackup
     case summarize
 }
+
+// MARK: - Year Wrap Data Models
+
+/// Enhanced Year Wrap data structure for Spotify-style insights
+public struct YearWrapData: Codable, Sendable {
+    public let yearTitle: String
+    public let yearSummary: String
+    public let majorArcs: [String]
+    public let biggestWins: [String]
+    public let biggestLosses: [String]
+    public let biggestChallenges: [String]
+    public let finishedProjects: [String]
+    public let unfinishedProjects: [String]
+    public let topWorkedOnTopics: [String]
+    public let topTalkedAboutThings: [String]
+    public let valuableActionsTaken: [String]
+    public let opportunitiesMissed: [String]
+    public let peopleMentioned: [PersonMention]
+    public let placesVisited: [PlaceVisit]
+    
+    public init(
+        yearTitle: String,
+        yearSummary: String,
+        majorArcs: [String],
+        biggestWins: [String],
+        biggestLosses: [String],
+        biggestChallenges: [String],
+        finishedProjects: [String],
+        unfinishedProjects: [String],
+        topWorkedOnTopics: [String],
+        topTalkedAboutThings: [String],
+        valuableActionsTaken: [String],
+        opportunitiesMissed: [String],
+        peopleMentioned: [PersonMention],
+        placesVisited: [PlaceVisit]
+    ) {
+        self.yearTitle = yearTitle
+        self.yearSummary = yearSummary
+        self.majorArcs = majorArcs
+        self.biggestWins = biggestWins
+        self.biggestLosses = biggestLosses
+        self.biggestChallenges = biggestChallenges
+        self.finishedProjects = finishedProjects
+        self.unfinishedProjects = unfinishedProjects
+        self.topWorkedOnTopics = topWorkedOnTopics
+        self.topTalkedAboutThings = topTalkedAboutThings
+        self.valuableActionsTaken = valuableActionsTaken
+        self.opportunitiesMissed = opportunitiesMissed
+        self.peopleMentioned = peopleMentioned
+        self.placesVisited = placesVisited
+    }
+}
+
+/// Person mentioned in Year Wrap with relationship context
+public struct PersonMention: Codable, Sendable {
+    public let name: String
+    public let relationship: String
+    public let impact: String
+    
+    public init(name: String, relationship: String, impact: String) {
+        self.name = name
+        self.relationship = relationship
+        self.impact = impact
+    }
+}
+
+/// Place visited during the year with frequency context
+public struct PlaceVisit: Codable, Sendable {
+    public let name: String
+    public let frequency: String
+    public let context: String
+    
+    public init(name: String, frequency: String, context: String) {
+        self.name = name
+        self.frequency = frequency
+        self.context = context
+    }
+}

@@ -756,7 +756,20 @@ public final class SummaryCoordinator {
         }
     }
     
-    // Methods will be added in Step 3.4
+    /// Get count of new sessions created after Year Wrap generation
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+        // Fetch all sessions for the year
+        let sessions = try await databaseManager.fetchSessionsByYear(year)
+        
+        // Count sessions created after Year Wrap timestamp
+        let newSessions = sessions.filter { session in
+            session.createdAt > yearWrap.createdAt
+        }
+        
+        print("📊 [SummaryCoordinator] Year Wrap staleness check: \(newSessions.count) new sessions since \(yearWrap.createdAt)")
+        
+        return newSessions.count
+    }
     
     // MARK: - Helpers
     

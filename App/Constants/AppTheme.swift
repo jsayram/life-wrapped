@@ -193,3 +193,67 @@ public struct AppTheme {
         return ratio >= (isLargeText ? 3.0 : 4.5)
     }
 }
+
+// MARK: - Year Wrap Theme
+
+/// Spotify-inspired Year Wrap color system with solid colors for sections and charts
+public struct YearWrapTheme {
+    // MARK: - Spotify-Style Base Colors
+    
+    /// Vibrant orange - Primary accent
+    public static let vibrantOrange = Color(hex: "#FF6B35")
+    
+    /// Hot pink - Secondary accent
+    public static let hotPink = Color(hex: "#FF006E")
+    
+    /// Electric purple - Hero sections
+    public static let electricPurple = Color(hex: "#A855F7")
+    
+    /// Spotify green - Success/positive actions
+    public static let spotifyGreen = Color(hex: "#1DB954")
+    
+    // MARK: - Section Colors (Consistent by Type)
+    
+    /// Wins section color
+    public static let winsColor = Color.green
+    
+    /// Losses section color
+    public static let lossesColor = Color.red
+    
+    /// Challenges section color
+    public static let challengesColor = Color.orange
+    
+    /// Finished projects section color
+    public static let finishedProjectsColor = Color.blue
+    
+    /// Unfinished projects section color
+    public static let unfinishedProjectsColor = Color.yellow
+    
+    /// People section color
+    public static let peopleColor = Color.purple
+    
+    /// Places section color
+    public static let placesColor = Color.cyan
+    
+    /// Topics section color
+    public static let topicsColor = Color.mint
+    
+    /// Actions section color
+    public static let actionsColor = spotifyGreen
+    
+    /// Opportunities section color
+    public static let opportunitiesColor = Color.pink
+    
+    // MARK: - Chart Colors (Alternating)
+    
+    /// Colors for monthly activity charts (cycles through for visual distinction)
+    public static let chartColors: [Color] = [electricPurple, hotPink, vibrantOrange]
+    
+    // MARK: - UIKit Conversion Helper
+    
+    /// Convert SwiftUI Color to UIColor for PDF rendering
+    public static func uiColor(from color: Color) -> UIColor {
+        return UIColor(color)
+    }
+}
+

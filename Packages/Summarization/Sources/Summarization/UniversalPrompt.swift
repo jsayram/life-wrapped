@@ -212,19 +212,23 @@ public struct UniversalPrompt {
     }
     """
     
-    /// Yearly schema - aggregates monthly summaries
+    /// Yearly schema - aggregates monthly summaries (enhanced for Year Wrap)
     public static let yearlySchema = """
     {
       "year_title": "string - one-line year title",
       "year_summary": "string - 5-6 sentence summary",
       "major_arcs": ["string array of major life arcs"],
       "biggest_wins": ["string array of biggest accomplishments"],
-      "biggest_challenges": ["string array of biggest challenges"],
-      "key_relationships": ["string array of key relationship changes"],
-      "health_overview": ["string array of health observations"],
-      "work_learning_overview": ["string array of work/learning highlights"],
-      "next_year_focus": ["string array of focus areas for next year"],
-      "open_loops": ["string array of unresolved items"]
+      "biggest_losses": ["string array of setbacks, failures, or losses"],
+      "biggest_challenges": ["string array of biggest challenges faced"],
+      "finished_projects": ["string array of completed projects/goals (look for 'completed', 'finished', 'done')"],
+      "unfinished_projects": ["string array of abandoned/ongoing projects (look for 'abandoned', 'gave up', 'still working')"],
+      "top_worked_on_topics": ["string array of most frequently worked on topics, ranked by frequency"],
+      "top_talked_about_things": ["string array of most frequently mentioned subjects, ranked by mentions"],
+      "valuable_actions_taken": ["string array of positive actions or decisions made"],
+      "opportunities_missed": ["string array of missed chances or regrets"],
+      "people_mentioned": [{"name": "string", "relationship": "string", "impact": "string - how they influenced the year"}],
+      "places_visited": [{"name": "string", "frequency": "string - once/occasionally/frequently", "context": "string - why visited"}]
     }
     """
     
@@ -264,13 +268,26 @@ public struct UniversalPrompt {
             metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
         }
         
+        // Add special instructions for Year Wrap level
+        let specialInstructions = level == .yearWrap ? """
+        
+        YEAR WRAP SPECIAL INSTRUCTIONS:
+        - Extract people and places from entities mentioned in monthly summaries (filter for confidence ≥0.7 if available)
+        - Classify projects as 'finished' vs 'unfinished' by keywords: 'completed', 'finished', 'done' vs 'abandoned', 'gave up', 'still working', 'ongoing'
+        - Rank topics and talked-about-things by frequency across all months (like Spotify's Top Artists)
+        - Look for losses, failures, and setbacks in addition to wins
+        - Identify valuable actions (decisions made, habits formed) and opportunities missed (regrets mentioned)
+        - For people: extract name, relationship type (friend/colleague/family), and their impact on the year
+        - For places: note how often visited (once/occasionally/frequently) and context (work/vacation/family)
+        """ : ""
+        
         let userMessage = """
         Task: Summarize at LEVEL = \(level.rawValue).
         Use ONLY the provided INPUT below.
         Return VALID JSON matching this schema exactly:
         
         \(schema)
-        \(metadataStr)
+        \(metadataStr)\(specialInstructions)
         
         INPUT:
         \(input)
