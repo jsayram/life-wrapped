@@ -7,6 +7,9 @@ struct OverviewTab: View {
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
     @State private var yearWrapSummary: Summary?
+    @State private var yearWrapWorkSummary: Summary?
+    @State private var yearWrapPersonalSummary: Summary?
+    @State private var yearWrapFilter: ItemFilter = .all
     @State private var isWrappingUpYear = false
     @State private var isRegeneratingPeriodSummary = false
     @State private var isLoading = true
@@ -22,6 +25,17 @@ struct OverviewTab: View {
     @State private var selectedSession: RecordingSession?
     @State private var showSessionDetail = false
     
+    /// The currently active Year Wrap based on filter selection
+    private var activeYearWrap: Summary? {
+        switch yearWrapFilter {
+        case .all:
+            return yearWrapSummary
+        case .workOnly:
+            return yearWrapWorkSummary
+        case .personalOnly:
+            return yearWrapPersonalSummary
+        }
+    }
 
     
     var body: some View {
@@ -136,7 +150,41 @@ struct OverviewTab: View {
                                 
                                 // Year Wrapped Summary (only show for Year timerange)
                                 if selectedTimeRange == .allTime {
-                                    if let yearWrap = yearWrapSummary {
+                                    // Filter picker for Year Wrap
+                                    HStack(spacing: 0) {
+                                        ForEach(ItemFilter.allCases) { filter in
+                                            Button {
+                                                withAnimation(.easeInOut(duration: 0.2)) {
+                                                    yearWrapFilter = filter
+                                                }
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: filter.icon)
+                                                        .font(.caption2)
+                                                    Text(filter.displayName)
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                }
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .frame(maxWidth: .infinity)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .fill(yearWrapFilter == filter ? filterColor(for: filter) : Color.clear)
+                                                )
+                                                .foregroundStyle(yearWrapFilter == filter ? .white : .secondary)
+                                            }
+                                        }
+                                    }
+                                    .padding(4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color(.tertiarySystemBackground))
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                    
+                                    if let yearWrap = activeYearWrap {
                                         YearWrappedCard(
                                             summary: yearWrap,
                                             coordinator: coordinator,
@@ -144,6 +192,37 @@ struct OverviewTab: View {
                                                 showYearWrapConfirmation = true
                                             },
                                             isRegenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if yearWrapFilter != .all && yearWrapSummary != nil {
+                                        // Show message if category-specific wrap doesn't exist yet
+                                        VStack(spacing: 12) {
+                                            Image(systemName: yearWrapFilter == .workOnly ? "briefcase" : "house")
+                                                .font(.title)
+                                                .foregroundStyle(.secondary)
+                                            Text("No \\(yearWrapFilter.displayName) Year Wrap")
+                                                .font(.headline)
+                                                .foregroundStyle(.secondary)
+                                            Text("Regenerate Year Wrap to create category-specific summaries")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                                .multilineTextAlignment(.center)
+                                            Button {
+                                                showYearWrapConfirmation = true
+                                            } label: {
+                                                Label("Generate", systemImage: "sparkles")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                            .tint(filterColor(for: yearWrapFilter))
+                                        }
+                                        .padding(24)
+                                        .frame(maxWidth: .infinity)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .fill(Color(.secondarySystemBackground))
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -269,6 +348,17 @@ struct OverviewTab: View {
         return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
     }
     
+    private func filterColor(for filter: ItemFilter) -> Color {
+        switch filter {
+        case .all:
+            return AppTheme.purple
+        case .workOnly:
+            return .blue
+        case .personalOnly:
+            return .green
+        }
+    }
+    
     private func yearWrapMessage() -> String {
         if hasExternalAPIConfigured() {
             let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
@@ -376,6 +466,10 @@ struct OverviewTab: View {
 
         if selectedTimeRange == .allTime {
             yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForFetch)
+            yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForFetch)
+            
+            print("📊 [OverviewTab] Year Wraps loaded - Combined: \(yearWrapSummary != nil), Work: \(yearWrapWorkSummary != nil), Personal: \(yearWrapPersonalSummary != nil)")
             
             // Check for staleness after fetching Year Wrap
             if let yearWrap = yearWrapSummary {
@@ -393,6 +487,8 @@ struct OverviewTab: View {
             }
         } else {
             yearWrapSummary = nil
+            yearWrapWorkSummary = nil
+            yearWrapPersonalSummary = nil
             // Reset staleness count when not viewing Year
             coordinator.updateYearWrapNewSessionCount(0)
         }

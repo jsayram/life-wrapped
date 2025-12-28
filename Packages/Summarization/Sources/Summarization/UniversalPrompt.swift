@@ -19,6 +19,8 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
     case month
     case year
     case yearWrap
+    case yearWrapWork
+    case yearWrapPersonal
     
     public var displayName: String {
         switch self {
@@ -29,6 +31,8 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
         case .month: return "Monthly"
         case .year: return "Yearly"
         case .yearWrap: return "Year Wrap"
+        case .yearWrapWork: return "Work Year Wrap"
+        case .yearWrapPersonal: return "Personal Year Wrap"
         }
     }
     
@@ -42,6 +46,8 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
         case .month: return .month
         case .year: return .year
         case .yearWrap: return .yearWrap
+        case .yearWrapWork: return .yearWrapWork
+        case .yearWrapPersonal: return .yearWrapPersonal
         }
     }
 }
@@ -264,7 +270,7 @@ public struct UniversalPrompt {
         case .week: return weeklySchema
         case .month: return monthlySchema
         case .year: return yearlySchema
-        case .yearWrap: return yearlySchema
+        case .yearWrap, .yearWrapWork, .yearWrapPersonal: return yearlySchema
         }
     }
     

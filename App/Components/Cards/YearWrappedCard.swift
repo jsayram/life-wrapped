@@ -93,7 +93,7 @@ struct YearWrappedCard: View {
                 Text(extractYearSummary(from: summary.text))
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .lineLimit(5)
+                    .lineLimit(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 Button {

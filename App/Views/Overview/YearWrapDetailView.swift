@@ -25,7 +25,7 @@ extension ItemFilter: Identifiable {
 }
 
 struct YearWrapDetailView: View {
-    let yearWrap: Summary
+    let yearWrap: Summary  // Initial combined summary
     let coordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var redactPeople = false
@@ -39,6 +39,36 @@ struct YearWrapDetailView: View {
     @State private var isGeneratingPDF = false
     @State private var showingShareSheet = false
     
+    // Cached summaries for each filter
+    @State private var combinedSummary: Summary?
+    @State private var workSummary: Summary?
+    @State private var personalSummary: Summary?
+    @State private var isLoadingSummary = false
+    
+    /// The currently active summary based on filter selection
+    private var activeSummary: Summary? {
+        switch displayFilter {
+        case .all:
+            return combinedSummary ?? yearWrap
+        case .workOnly:
+            return workSummary
+        case .personalOnly:
+            return personalSummary
+        }
+    }
+    
+    /// Title for the current filter
+    private var filterTitle: String {
+        switch displayFilter {
+        case .all:
+            return "Year Wrap"
+        case .workOnly:
+            return "Work Year Wrap"
+        case .personalOnly:
+            return "Personal Year Wrap"
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -49,8 +79,19 @@ struct YearWrapDetailView: View {
                     // Stats Grid
                     statsSection
                     
-                    // Insights Sections
-                    if let data = parsedData {
+                    // Loading state
+                    if isLoadingSummary {
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            Text("Loading \(filterTitle)...")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 60)
+                    } else if let data = parsedData {
+                        // Insights Sections
                         VStack(spacing: 24) {
                             majorArcsSection(data.majorArcs)
                             biggestWinsSection(data.biggestWins)
@@ -67,9 +108,17 @@ struct YearWrapDetailView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 24)
-                    } else {
+                    } else if activeSummary == nil {
+                        // No summary available for this filter
+                        ContentUnavailableView(
+                            "No \(filterTitle) Available",
+                            systemImage: displayFilter == .workOnly ? "briefcase" : "house",
+                            description: Text("Generate a Year Wrap with \(displayFilter == .workOnly ? "work" : "personal") sessions to see insights here.")
+                        )
+                        .padding(.vertical, 60)
+                    } else if let summary = activeSummary {
                         // Fallback: show raw text if parsing fails
-                        Text(yearWrap.text)
+                        Text(summary.text)
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .padding(16)
@@ -135,10 +184,56 @@ struct YearWrapDetailView: View {
             }
         }
         .onAppear {
+            combinedSummary = yearWrap
             parsedData = parseYearWrapJSON(from: yearWrap.text)
             Task {
                 await loadYearStats()
+                await loadAllSummaries()
             }
+        }
+        .onChange(of: displayFilter) { _, newFilter in
+            updateParsedDataForFilter(newFilter)
+        }
+    }
+    
+    // MARK: - Summary Loading
+    
+    private func loadAllSummaries() async {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: yearWrap.periodStart)
+        var startComponents = DateComponents()
+        startComponents.year = year
+        startComponents.month = 1
+        startComponents.day = 1
+        guard let startOfYear = calendar.date(from: startComponents) else { return }
+        
+        // Load work and personal summaries
+        do {
+            workSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: startOfYear)
+            personalSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: startOfYear)
+            print("📊 [YearWrapDetailView] Loaded summaries - Work: \(workSummary != nil), Personal: \(personalSummary != nil)")
+        } catch {
+            print("❌ [YearWrapDetailView] Failed to load category summaries: \(error)")
+        }
+    }
+    
+    private func updateParsedDataForFilter(_ filter: ItemFilter) {
+        let summary: Summary?
+        switch filter {
+        case .all:
+            summary = combinedSummary
+        case .workOnly:
+            summary = workSummary
+        case .personalOnly:
+            summary = personalSummary
+        }
+        
+        if let text = summary?.text {
+            parsedData = parseYearWrapJSON(from: text)
+            print("📊 [YearWrapDetailView] Switched to \(filter.displayName) summary")
+        } else {
+            parsedData = nil
+            print("⚠️ [YearWrapDetailView] No summary available for \(filter.displayName)")
         }
     }
     

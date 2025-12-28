@@ -272,7 +272,7 @@ public actor InsightsManager {
             let end = calendar.date(byAdding: .year, value: 1, to: start) ?? date
             return (start, end)
             
-        case .yearWrap:
+        case .yearWrap, .yearWrapWork, .yearWrapPersonal:
             let components = calendar.dateComponents([.year], from: date)
             let start = calendar.date(from: components) ?? date
             let end = calendar.date(byAdding: .year, value: 1, to: start) ?? date
@@ -295,7 +295,7 @@ public actor InsightsManager {
             return calendar.date(byAdding: .month, value: 1, to: date) ?? date
         case .year:
             return calendar.date(byAdding: .year, value: 1, to: date) ?? date
-        case .yearWrap:
+        case .yearWrap, .yearWrapWork, .yearWrapPersonal:
             return calendar.date(byAdding: .year, value: 1, to: date) ?? date
         }
     }

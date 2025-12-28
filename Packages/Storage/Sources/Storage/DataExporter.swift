@@ -713,6 +713,12 @@ public actor DataExporter {
         case .yearWrap:
             formatter.dateFormat = "yyyy"
             return "Year Wrap \(formatter.string(from: start))"
+        case .yearWrapWork:
+            formatter.dateFormat = "yyyy"
+            return "Work Year Wrap \(formatter.string(from: start))"
+        case .yearWrapPersonal:
+            formatter.dateFormat = "yyyy"
+            return "Personal Year Wrap \(formatter.string(from: start))"
         }
     }
 

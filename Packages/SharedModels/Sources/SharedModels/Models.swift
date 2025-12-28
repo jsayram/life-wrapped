@@ -279,6 +279,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case month
     case year
     case yearWrap
+    case yearWrapWork
+    case yearWrapPersonal
 
     public var displayName: String {
         switch self {
@@ -296,6 +298,10 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Year"
         case .yearWrap:
             return "Year Wrap"
+        case .yearWrapWork:
+            return "Year Wrap (Work)"
+        case .yearWrapPersonal:
+            return "Year Wrap (Personal)"
         }
     }
 }
