@@ -41,6 +41,23 @@ struct PermissionsView: View {
         .task {
             await checkPermissions()
         }
+        .onAppear {
+            // Recheck permissions when view appears (handles coming back from system permission dialogs)
+            Task {
+                await checkPermissions()
+                print("🔄 [PermissionsView] onAppear - Rechecked permissions")
+                
+                // If we're still on permissions screen but permissions are granted, auto-proceed
+                if setupStep == .permissions && allPermissionsGranted && !isRequestingPermissions {
+                    print("🎯 [PermissionsView] Permissions already granted, auto-proceeding to model download")
+                    // Small delay to show the checkmarks
+                    try? await Task.sleep(nanoseconds: 800_000_000) // 0.8s delay
+                    await MainActor.run {
+                        proceedToModelDownload()
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Permissions Content
@@ -221,7 +238,7 @@ struct PermissionsView: View {
                     .font(.system(size: 80))
                     .foregroundStyle(.purple.gradient)
                 
-                Text("Download Local AI")
+                Text("On Device Artificial Intelligence")
                     .font(.title.bold())
                 
                 Text("Phi-3.5 Mini • \(coordinator.expectedLocalModelSizeMB)")
@@ -283,11 +300,12 @@ struct PermissionsView: View {
                     }
                     .padding(.horizontal)
                 } else if let error = downloadError {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 12) {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.red)
                             .multilineTextAlignment(.center)
+                            .padding(.bottom, 8)
                         
                         Button {
                             startModelDownload()
@@ -303,16 +321,11 @@ struct PermissionsView: View {
                     }
                     .padding(.horizontal)
                 } else {
-                    Button {
-                        startModelDownload()
-                    } label: {
-                        Text("Download Model")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.purple)
-                            .cornerRadius(12)
+                    VStack(spacing: 12) {
+                        Text("AI model download will begin automatically...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                     .padding(.horizontal)
                 }
@@ -334,21 +347,29 @@ struct PermissionsView: View {
     // MARK: - Setup Flow Methods
     
     private func proceedToModelDownload() {
+        print("➡️ [PermissionsView] Proceeding to model download screen")
         withAnimation {
             setupStep = .modelDownload
         }
-        // Auto-start download
+        print("✅ [PermissionsView] Transitioned to model download step")
+        
+        // Auto-start mandatory download after brief transition delay
         Task {
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay for transition
             await MainActor.run {
+                print("🚀 [PermissionsView] Auto-starting mandatory model download...")
                 startModelDownload()
             }
         }
     }
     
     private func startModelDownload() {
-        guard !isDownloading else { return }
+        guard !isDownloading else {
+            print("⚠️ [PermissionsView] Download already in progress")
+            return
+        }
         
+        print("📥 [PermissionsView] Starting model download...")
         isDownloading = true
         downloadError = nil
         downloadProgress = 0.0
@@ -362,11 +383,13 @@ struct PermissionsView: View {
                 }
                 
                 await MainActor.run {
+                    print("✅ [PermissionsView] Model download complete")
                     isDownloading = false
                     finishSetup()
                 }
             } catch {
                 await MainActor.run {
+                    print("❌ [PermissionsView] Model download failed: \(error)")
                     isDownloading = false
                     downloadError = "Download failed: \(error.localizedDescription)"
                 }
@@ -407,6 +430,20 @@ struct PermissionsView: View {
             
             await MainActor.run {
                 isRequestingPermissions = false
+                print("✅ [PermissionsView] Permissions requested, status updated")
+                print("🔐 [PermissionsView] Mic: \(microphoneStatus), Speech: \(speechStatus)")
+                
+                // If both permissions granted, auto-proceed to model download
+                if allPermissionsGranted {
+                    print("🎉 [PermissionsView] All permissions granted, auto-proceeding to model download")
+                    // Small delay to show the checkmarks
+                    Task {
+                        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
+                        await MainActor.run {
+                            proceedToModelDownload()
+                        }
+                    }
+                }
             }
         }
     }
@@ -446,10 +483,19 @@ struct PermissionsView: View {
     }
     
     private func finishSetup() {
+        print("🚀 [PermissionsView] Finishing setup...")
         Task {
-            print("🚀 [PermissionsView] Finishing setup...")
-            await coordinator.permissionsGranted()
-            print("✅ [PermissionsView] Setup complete, permissions sheet should close")
+            do {
+                // Initialize coordinator (this may take a moment)
+                print("🔧 [PermissionsView] Calling coordinator.permissionsGranted()...")
+                await coordinator.permissionsGranted()
+                print("✅ [PermissionsView] Setup complete, permissions sheet should close")
+            } catch {
+                print("❌ [PermissionsView] Setup failed with error: \(error)")
+                await MainActor.run {
+                    downloadError = "Setup failed: \(error.localizedDescription)"
+                }
+            }
         }
     }
 }
