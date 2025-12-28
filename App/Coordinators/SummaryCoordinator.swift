@@ -109,7 +109,7 @@ public final class SummaryCoordinator {
         if includeNotes {
             print("📝 [SummaryCoordinator] includeNotes=true, fetching metadata...")
             if let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sessionId) {
-                print("📝 [SummaryCoordinator] Metadata fetched: title=\(metadata.title ?? "nil"), notes=\(metadata.notes ?? "nil"), notesLength=\(metadata.notes?.count ?? 0)")
+                print("📝 [SummaryCoordinator] Metadata fetched: title=\(metadata.title ?? "nil"), notes=\(metadata.notes ?? "nil"), notesLength=\(metadata.notes?.count ?? 0), category=\(metadata.category?.displayName ?? "nil")")
                 if let notes = metadata.notes, !notes.isEmpty {
                     print("📝 [SummaryCoordinator] ✅ Appending user notes (\(notes.count) chars) to transcript for summary generation")
                     print("📝 [SummaryCoordinator] Notes preview: \(notes.prefix(100))...")
@@ -117,11 +117,23 @@ public final class SummaryCoordinator {
                 } else {
                     print("📝 [SummaryCoordinator] ⚠️ Notes are empty or nil, not appending")
                 }
+                
+                // Add category context to transcript if present
+                if let category = metadata.category {
+                    print("🏷️ [SummaryCoordinator] ✅ Adding category context: \(category.displayName)")
+                    fullText = "[Recording Category: \(category.displayName.uppercased())]\n\n" + fullText
+                }
             } else {
                 print("❌ [SummaryCoordinator] Failed to fetch metadata for session")
             }
         } else {
-            print("📝 [SummaryCoordinator] includeNotes=false, skipping notes")
+            print("📝 [SummaryCoordinator] includeNotes=false, checking for category...")
+            // Even if notes are not included, we still want category for AI context
+            if let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sessionId),
+               let category = metadata.category {
+                print("🏷️ [SummaryCoordinator] ✅ Adding category context: \(category.displayName)")
+                fullText = "[Recording Category: \(category.displayName.uppercased())]\n\n" + fullText
+            }
         }
         
         let wordCount = fullText.split(separator: " ").count
@@ -715,6 +727,23 @@ public final class SummaryCoordinator {
                     print("💾 [SummaryCoordinator] ✅ CACHE HIT - Year Wrap unchanged, skipping external call")
                     return
                 }
+                if forceRegenerate && existing.inputHash == inputHash {
+                    print("🔄 [SummaryCoordinator] Force regenerate - updating timestamp even though hash matches")
+                    // Update timestamp by calling upsert with same data
+                    try await databaseManager.upsertPeriodSummary(
+                        type: .yearWrap,
+                        text: existing.text,
+                        start: startOfYear,
+                        end: endOfYear,
+                        topicsJSON: existing.topicsJSON,
+                        entitiesJSON: existing.entitiesJSON,
+                        engineTier: existing.engineTier,
+                        sourceIds: sourceIds,
+                        inputHash: inputHash
+                    )
+                    print("✅ [SummaryCoordinator] Year Wrap timestamp updated")
+                    return
+                }
                 print(forceRegenerate ? "🔄 [SummaryCoordinator] Force regenerate enabled" : "🔄 [SummaryCoordinator] Hash mismatch - regenerating Year Wrap")
             } else {
                 print("📝 [SummaryCoordinator] No Year Wrap found, generating new one")
@@ -744,7 +773,37 @@ public final class SummaryCoordinator {
         }
     }
     
-    // Methods will be added in Step 3.4
+    /// Get count of new sessions created after Year Wrap generation
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+        // Fetch all years with their session IDs
+        let yearlyData = try await databaseManager.fetchSessionsByYear()
+        
+        // Find the specified year
+        guard let yearData = yearlyData.first(where: { $0.year == year }) else {
+            print("⚠️ [SummaryCoordinator] No sessions found for year \(year)")
+            return 0
+        }
+        
+        print("🔍 [SummaryCoordinator] Checking \(yearData.sessionIds.count) sessions against Year Wrap createdAt: \(yearWrap.createdAt)")
+        
+        // For each session ID, fetch its first chunk time and compare with Year Wrap's createdAt
+        // This ensures we count sessions created AFTER the wrap was last generated
+        var newCount = 0
+        for sessionId in yearData.sessionIds {
+            if let firstChunk = try? await databaseManager.fetchChunksBySession(sessionId: sessionId).first {
+                if firstChunk.createdAt > yearWrap.createdAt {
+                    newCount += 1
+                    print("  ✅ Session \(sessionId.uuidString.prefix(8)): \(firstChunk.createdAt) > \(yearWrap.createdAt) = NEW")
+                } else {
+                    print("  ⏭️ Session \(sessionId.uuidString.prefix(8)): \(firstChunk.createdAt) <= \(yearWrap.createdAt) = OLD")
+                }
+            }
+        }
+        
+        print("📊 [SummaryCoordinator] Year Wrap staleness check: \(newCount) new sessions since \(yearWrap.createdAt)")
+        
+        return newCount
+    }
     
     // MARK: - Helpers
     

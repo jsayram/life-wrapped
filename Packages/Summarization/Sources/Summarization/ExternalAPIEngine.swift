@@ -543,38 +543,45 @@ public actor ExternalAPIEngine: SummarizationEngine {
         print("✅ [ExternalAPIEngine] Successfully parsed period JSON response")
         print("🔑 [ExternalAPIEngine] Available keys: \(Array(json.keys))")
         
-        // Try multiple field names for summary (API might use different conventions)
-        // Break into smaller expressions to help the compiler
+        // For Year Wrap, preserve the entire JSON structure
         let summary: String
-        if let s = json["summary"] as? String {
-            summary = s
-        } else if let s = json["period_summary"] as? String {
-            summary = s
-        } else if let s = json["day_summary"] as? String {
-            summary = s
-        } else if let s = json["daily_summary"] as? String {
-            summary = s
-        } else if let s = json["week_summary"] as? String {
-            summary = s
-        } else if let s = json["weekly_summary"] as? String {
-            summary = s
-        } else if let s = json["month_summary"] as? String {
-            summary = s
-        } else if let s = json["monthly_summary"] as? String {
-            summary = s
-        } else if let s = json["year_summary"] as? String {
-            summary = s
-        } else if let s = json["yearly_summary"] as? String {
-            summary = s
-        } else if let s = json["session_summary"] as? String {
-            summary = s
-        } else if let s = json["text"] as? String {
-            summary = s
+        if periodType == .yearWrap {
+            // Store the complete JSON as the summary text for Year Wrap
+            let jsonData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+            summary = String(data: jsonData, encoding: .utf8) ?? "No summary available"
+            print("📊 [ExternalAPIEngine] Year Wrap: Preserving full JSON structure (\(summary.count) chars)")
         } else {
-            summary = "No summary available"
+            // For other period types, extract just the summary field
+            // Try multiple field names for summary (API might use different conventions)
+            if let s = json["summary"] as? String {
+                summary = s
+            } else if let s = json["period_summary"] as? String {
+                summary = s
+            } else if let s = json["day_summary"] as? String {
+                summary = s
+            } else if let s = json["daily_summary"] as? String {
+                summary = s
+            } else if let s = json["week_summary"] as? String {
+                summary = s
+            } else if let s = json["weekly_summary"] as? String {
+                summary = s
+            } else if let s = json["month_summary"] as? String {
+                summary = s
+            } else if let s = json["monthly_summary"] as? String {
+                summary = s
+            } else if let s = json["year_summary"] as? String {
+                summary = s
+            } else if let s = json["yearly_summary"] as? String {
+                summary = s
+            } else if let s = json["session_summary"] as? String {
+                summary = s
+            } else if let s = json["text"] as? String {
+                summary = s
+            } else {
+                summary = "No summary available"
+            }
+            print("📝 [ExternalAPIEngine] Extracted period summary (\(summary.count) chars): \(summary.prefix(100))...")
         }
-        
-        print("📝 [ExternalAPIEngine] Extracted period summary (\(summary.count) chars): \(summary.prefix(100))...")
         
         let topics = json["topics"] as? [String] ?? []
         let trends = json["trends"] as? [String]

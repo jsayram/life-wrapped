@@ -10,6 +10,7 @@ struct HistoryTab: View {
     @State private var playbackError: String?
     @State private var searchText = ""
     @State private var showFavoritesOnly = false
+    @State private var categoryFilter: SessionCategory? = nil
     @State private var transcriptMatchingSessionIds: Set<UUID> = []
     @State private var isSearchingTranscripts = false
     @State private var searchDebounceTask: Task<Void, Never>?
@@ -20,6 +21,11 @@ struct HistoryTab: View {
         // Filter by favorites if enabled
         if showFavoritesOnly {
             result = result.filter { $0.isFavorite }
+        }
+        
+        // Filter by category if selected
+        if let category = categoryFilter {
+            result = result.filter { $0.category == category }
         }
         
         // Filter by search text
@@ -75,6 +81,31 @@ struct HistoryTab: View {
                             if isSearchingTranscripts {
                                 ProgressView()
                                     .scaleEffect(0.7)
+                            }
+                            
+                            // Category filter menu
+                            Menu {
+                                Button {
+                                    categoryFilter = nil
+                                } label: {
+                                    Label("All", systemImage: categoryFilter == nil ? "checkmark" : "")
+                                }
+                                
+                                Divider()
+                                
+                                ForEach(SessionCategory.allCases, id: \.self) { category in
+                                    Button {
+                                        categoryFilter = categoryFilter == category ? nil : category
+                                    } label: {
+                                        Label(
+                                            category.displayName,
+                                            systemImage: categoryFilter == category ? "checkmark" : category.systemImage
+                                        )
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: categoryFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                                    .foregroundStyle(categoryFilter == nil ? .secondary : Color(hex: categoryFilter!.colorHex))
                             }
                             
                             Button {

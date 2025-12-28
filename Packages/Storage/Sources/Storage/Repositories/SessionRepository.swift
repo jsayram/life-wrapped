@@ -19,20 +19,22 @@ public actor SessionRepository {
     
     // MARK: - Session Metadata Model
     
-    /// Session metadata model for title, notes, favorites
+    /// Session metadata model for title, notes, favorites, and category
     public struct SessionMetadata: Sendable {
         public let sessionId: UUID
         public var title: String?
         public var notes: String?
         public var isFavorite: Bool
+        public var category: SessionCategory?
         public let createdAt: Date
         public var updatedAt: Date
         
-        public init(sessionId: UUID, title: String? = nil, notes: String? = nil, isFavorite: Bool = false, createdAt: Date = Date(), updatedAt: Date = Date()) {
+        public init(sessionId: UUID, title: String? = nil, notes: String? = nil, isFavorite: Bool = false, category: SessionCategory? = nil, createdAt: Date = Date(), updatedAt: Date = Date()) {
             self.sessionId = sessionId
             self.title = title
             self.notes = notes
             self.isFavorite = isFavorite
+            self.category = category
             self.createdAt = createdAt
             self.updatedAt = updatedAt
         }
@@ -171,6 +173,55 @@ public actor SessionRepository {
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw StorageError.stepFailed(await connection.lastError())
             }
+        }
+    }
+    
+    /// Fetch sessions filtered by category
+    public func fetchSessionsByCategory(category: SessionCategory, limit: Int? = nil) async throws -> [RecordingSession] {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            
+            let sql = """
+                SELECT DISTINCT ac.session_id, MIN(ac.start_time) as first_time
+                FROM audio_chunks ac
+                INNER JOIN session_metadata sm ON ac.session_id = sm.session_id
+                WHERE sm.category = ?
+                GROUP BY ac.session_id
+                ORDER BY first_time DESC
+                \(limit != nil ? "LIMIT ?" : "")
+                """
+            
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            
+            sqlite3_bind_text(stmt, 1, category.rawValue, -1, SQLITE_TRANSIENT)
+            if let limit = limit {
+                sqlite3_bind_int(stmt, 2, Int32(limit))
+            }
+            
+            var sessions: [RecordingSession] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let idString = sqlite3_column_text(stmt, 0),
+                   let id = UUID(uuidString: String(cString: idString)) {
+                    // Fetch full session with chunks and metadata
+                    let chunks = try await fetchChunksBySession(sessionId: id)
+                    let metadata = try await fetchSessionMetadata(sessionId: id)
+                    sessions.append(RecordingSession(
+                        sessionId: id,
+                        chunks: chunks,
+                        title: metadata?.title,
+                        notes: metadata?.notes,
+                        isFavorite: metadata?.isFavorite ?? false,
+                        category: metadata?.category
+                    ))
+                }
+            }
+            
+            return sessions
         }
     }
     
@@ -427,12 +478,13 @@ public actor SessionRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                INSERT INTO session_metadata (session_id, title, notes, is_favorite, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO session_metadata (session_id, title, notes, is_favorite, category, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     title = excluded.title,
                     notes = excluded.notes,
                     is_favorite = excluded.is_favorite,
+                    category = excluded.category,
                     updated_at = excluded.updated_at
                 """
             
@@ -458,8 +510,15 @@ public actor SessionRepository {
             }
             
             sqlite3_bind_int(stmt, 4, metadata.isFavorite ? 1 : 0)
-            sqlite3_bind_double(stmt, 5, metadata.createdAt.timeIntervalSince1970)
-            sqlite3_bind_double(stmt, 6, metadata.updatedAt.timeIntervalSince1970)
+            
+            if let category = metadata.category {
+                sqlite3_bind_text(stmt, 5, category.rawValue, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 5)
+            }
+            
+            sqlite3_bind_double(stmt, 6, metadata.createdAt.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 7, metadata.updatedAt.timeIntervalSince1970)
             
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw StorageError.stepFailed(await connection.lastError())
@@ -475,7 +534,7 @@ public actor SessionRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT session_id, title, notes, is_favorite, created_at, updated_at
+                SELECT session_id, title, notes, is_favorite, category, created_at, updated_at
                 FROM session_metadata
                 WHERE session_id = ?
                 """
@@ -537,6 +596,19 @@ public actor SessionRepository {
             let metadata = SessionMetadata(sessionId: sessionId, isFavorite: true)
             try await upsertSessionMetadata(metadata)
             return true
+        }
+    }
+    
+    /// Update session category
+    public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
+        if let existing = try await fetchSessionMetadata(sessionId: sessionId) {
+            var updated = existing
+            updated.category = category
+            updated.updatedAt = Date()
+            try await upsertSessionMetadata(updated)
+        } else {
+            let metadata = SessionMetadata(sessionId: sessionId, category: category)
+            try await upsertSessionMetadata(metadata)
         }
     }
     
@@ -639,14 +711,20 @@ public actor SessionRepository {
             : nil
         
         let isFavorite = sqlite3_column_int(stmt, 3) != 0
-        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
-        let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 5))
+        
+        let category: SessionCategory? = sqlite3_column_type(stmt, 4) != SQLITE_NULL
+            ? SessionCategory(rawValue: String(cString: sqlite3_column_text(stmt, 4)))
+            : nil
+        
+        let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 5))
+        let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 6))
         
         return SessionMetadata(
             sessionId: sessionId,
             title: title,
             notes: notes,
             isFavorite: isFavorite,
+            category: category,
             createdAt: createdAt,
             updatedAt: updatedAt
         )

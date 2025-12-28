@@ -9,6 +9,8 @@ struct SettingsTab: View {
     @State private var debugTapCount: Int = 0
     @State private var showDebugSection: Bool = false
     @State private var databasePath: String?
+    @State private var navigateToAISettings: Bool = false
+    @State private var fromYearWrap: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -155,6 +157,16 @@ struct SettingsTab: View {
                 Task {
                     await loadActiveEngine()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToSmartestConfig"))) { _ in
+                fromYearWrap = true
+                navigateToAISettings = true
+            }
+            .navigationDestination(isPresented: $navigateToAISettings) {
+                AISettingsView(fromYearWrap: fromYearWrap)
+                    .onDisappear {
+                        fromYearWrap = false
+                    }
             }
         }
     }

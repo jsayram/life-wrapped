@@ -113,6 +113,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
     @Published public private(set) var isDownloadingLocalModel: Bool = false
+    @Published public private(set) var yearWrapNewSessionCount: Int = 0
     
     // MARK: - Dependencies
     
@@ -123,7 +124,7 @@ public final class AppCoordinator: ObservableObject {
     private var transcriptionCoordinator: TranscriptionCoordinator?
     private var dataCoordinator: DataCoordinator?
     private var summaryCoordinator: SummaryCoordinator?
-    private var recordingCoordinator: RecordingCoordinator?
+    public var recordingCoordinator: RecordingCoordinator?
     private var widgetCoordinator: WidgetCoordinator?
     private var permissionsCoordinator: PermissionsCoordinator?
     private var localModelCoordinator: LocalModelCoordinator?
@@ -169,6 +170,17 @@ public final class AppCoordinator: ObservableObject {
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
             
+            // If this is the first chunk (index 0), create/update session metadata with category
+            if chunk.chunkIndex == 0, let category = recordingCoordinator?.currentCategory {
+                print("📂 [AppCoordinator] First chunk - creating session metadata with category: \(category.displayName)")
+                let metadata = DatabaseManager.SessionMetadata(
+                    sessionId: chunk.sessionId,
+                    category: category
+                )
+                try await dbManager.upsertSessionMetadata(metadata)
+                print("✅ [AppCoordinator] Session metadata with category saved")
+            }
+            
             // Delegate to transcription coordinator for parallel processing
             print("📝 [AppCoordinator] Delegating chunk \(chunk.chunkIndex) to TranscriptionCoordinator")
             transcriptionCoordinator?.enqueueChunk(chunk.id)
@@ -178,6 +190,51 @@ public final class AppCoordinator: ObservableObject {
     }
     
     // MARK: - Async Initialization
+    
+    /// Initialize minimal components needed for model download (before permissions)
+    public func initializeForModelDownload() async {
+        print("🔧 [AppCoordinator] Initializing minimal setup for model download...")
+        
+        // Only initialize if not already done
+        guard localModelCoordinator == nil else {
+            print("✅ [AppCoordinator] LocalModelCoordinator already initialized")
+            return
+        }
+        
+        do {
+            // Initialize database (needed for summarization coordinator)
+            if databaseManager == nil {
+                print("📦 [AppCoordinator] Initializing DatabaseManager for model download...")
+                let dbManager = try await DatabaseManager()
+                self.databaseManager = dbManager
+                print("✅ [AppCoordinator] DatabaseManager initialized")
+            }
+            
+            // Initialize SummarizationCoordinator (needed for LocalModelCoordinator)
+            if summarizationCoordinator == nil {
+                print("📝 [AppCoordinator] Initializing SummarizationCoordinator for model download...")
+                let coordinator = SummarizationCoordinator(storage: databaseManager!)
+                self.summarizationCoordinator = coordinator
+                print("✅ [AppCoordinator] SummarizationCoordinator initialized")
+            }
+            
+            // Initialize LocalModelCoordinator
+            print("🧠 [AppCoordinator] Initializing LocalModelCoordinator...")
+            let localModelCoord = LocalModelCoordinator(summarizationCoordinator: summarizationCoordinator!)
+            localModelCoord.onSuccess = { [weak self] message in
+                self?.showSuccess(message)
+            }
+            localModelCoord.onError = { [weak self] message in
+                self?.showError(message)
+            }
+            localModelCoord.$isDownloadingLocalModel.assign(to: &self.$isDownloadingLocalModel)
+            self.localModelCoordinator = localModelCoord
+            print("✅ [AppCoordinator] LocalModelCoordinator initialized for download")
+            
+        } catch {
+            print("❌ [AppCoordinator] Failed to initialize for model download: \(error)")
+        }
+    }
     
     /// Initialize the app coordinator and load initial state
     public func initialize() async {
@@ -391,15 +448,17 @@ public final class AppCoordinator: ObservableObject {
     public func permissionsGranted() async {
         print("✅ [AppCoordinator] Permissions granted, initializing...")
         
-        // Initialize first (with error handling)
-        await initialize()
-        
-        // Only close permissions sheet after successful initialization
-        if isInitialized {
-            needsPermissions = false
-            print("✅ [AppCoordinator] Successfully initialized, closing permissions sheet")
-        } else {
-            print("⚠️ [AppCoordinator] Initialization did not complete, keeping permissions sheet open")
+        do {
+            // Initialize with error handling
+            await initialize()
+            
+            // Only close permissions sheet after successful initialization
+            if isInitialized {
+                needsPermissions = false
+                print("✅ [AppCoordinator] Successfully initialized, closing permissions sheet")
+            } else {
+                print("⚠️ [AppCoordinator] Initialization did not complete, keeping permissions sheet open")
+            }
         }
     }
     
@@ -534,7 +593,8 @@ public final class AppCoordinator: ObservableObject {
                 chunks: chunks,
                 title: metadata?.title,
                 notes: metadata?.notes,
-                isFavorite: metadata?.isFavorite ?? false
+                isFavorite: metadata?.isFavorite ?? false,
+                category: metadata?.category
             )
             sessions.append(session)
         }
@@ -559,7 +619,8 @@ public final class AppCoordinator: ObservableObject {
                     chunks: chunks,
                     title: metadata?.title,
                     notes: metadata?.notes,
-                    isFavorite: metadata?.isFavorite ?? false
+                    isFavorite: metadata?.isFavorite ?? false,
+                    category: metadata?.category
                 )
                 sessions.append(session)
             }
@@ -893,6 +954,13 @@ public final class AppCoordinator: ObservableObject {
         return isFavorite
     }
     
+    /// Update session category
+    public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        try await data.updateSessionCategory(sessionId: sessionId, category: category)
+        print("🏷️ [AppCoordinator] Updated session category: \(category?.displayName ?? "None")")
+    }
+    
     /// Fetch session metadata
     public func fetchSessionMetadata(sessionId: UUID) async throws -> DatabaseManager.SessionMetadata? {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
@@ -960,6 +1028,19 @@ public final class AppCoordinator: ObservableObject {
     public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
         // Delegate to SummaryCoordinator
         await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate)
+    }
+    
+    /// Get count of new sessions created after Year Wrap generation
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+        guard let summaryCoordinator = summaryCoordinator else {
+            throw AppCoordinatorError.notInitialized
+        }
+        return try await summaryCoordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year)
+    }
+    
+    /// Update Year Wrap staleness count
+    public func updateYearWrapNewSessionCount(_ count: Int) {
+        yearWrapNewSessionCount = count
     }
 
     /// Delete a recording and its associated data

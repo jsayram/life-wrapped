@@ -26,6 +26,7 @@ struct SessionDetailView: View {
     @State private var sessionNotes: String = ""
     @State private var initialSessionNotes: String = ""  // Track initial notes to detect changes
     @State private var isFavorite: Bool = false
+    @State private var sessionCategory: SessionCategory? = nil
     @State private var isEditingTitle: Bool = false
     @State private var isEditingNotes: Bool = false
     
@@ -191,6 +192,38 @@ struct SessionDetailView: View {
                 let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
                 InfoRow(label: "Word Count", value: "\(wordCount) words")
             }
+            
+            // Category picker
+            HStack {
+                Text("Category")
+                    .foregroundStyle(.secondary)
+                
+                Spacer()
+                
+                Picker("Category", selection: Binding(
+                    get: { sessionCategory },
+                    set: { newValue in
+                        sessionCategory = newValue
+                        Task {
+                            do {
+                                try await coordinator.updateSessionCategory(sessionId: session.sessionId, category: newValue)
+                                print("✅ Category updated to: \(newValue?.displayName ?? "None")")
+                            } catch {
+                                print("❌ Failed to update category: \(error)")
+                            }
+                        }
+                    }
+                )) {
+                    Text("None").tag(SessionCategory?.none)
+                    ForEach(SessionCategory.allCases, id: \.self) { category in
+                        Label(category.displayName, systemImage: category.systemImage)
+                            .tag(category as SessionCategory?)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(sessionCategory != nil ? Color(hex: sessionCategory!.colorHex) : .secondary)
+            }
+            .padding(.vertical, 8)
         }
         .padding()
         .background(Color(.secondarySystemBackground))
@@ -1288,6 +1321,7 @@ struct SessionDetailView: View {
                 sessionNotes = metadata?.notes ?? ""
                 initialSessionNotes = metadata?.notes ?? ""  // Track initial state
                 isFavorite = metadata?.isFavorite ?? false
+                sessionCategory = metadata?.category
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load metadata: \(error)")

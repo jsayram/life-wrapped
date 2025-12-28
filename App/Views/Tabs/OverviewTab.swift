@@ -271,9 +271,10 @@ struct OverviewTab: View {
     
     private func yearWrapMessage() -> String {
         if hasExternalAPIConfigured() {
-            return "This will use ChatGPT or Claude to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
+            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+            return "This will use your personal \(provider) API to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
         } else {
-            return "To generate a Year Wrap, you need to configure your ChatGPT (OpenAI) or Claude (Anthropic) API key in Settings.\n\nTap 'Open Settings' to add your API credentials."
+            return "Year Wrap works best with the 'Smartest' AI engine for the most comprehensive and detailed analysis.\n\nTo unlock the best Year Wrap experience, you'll need to add your personal OpenAI or Anthropic API key. This gives you access to the most capable AI models for analyzing your year.\n\nWe'll guide you to the settings to configure your preferred AI provider."
         }
     }
     
@@ -284,11 +285,15 @@ struct OverviewTab: View {
     private func handleYearWrapAction() {
         if hasExternalAPIConfigured() {
             Task {
-                await wrapUpYear(forceRegenerate: false)
+                await wrapUpYear(forceRegenerate: true)
             }
         } else {
-            // Post notification to switch to Settings tab
-            NotificationCenter.default.post(name: NSNotification.Name("SwitchToSettingsTab"), object: nil)
+            // Navigate to AI & Summaries settings to configure Smartest engine
+            // Post notification to switch to Settings tab and open AI & Summaries
+            NotificationCenter.default.post(
+                name: NSNotification.Name("NavigateToSmartestConfig"),
+                object: nil
+            )
         }
     }
     
@@ -371,8 +376,25 @@ struct OverviewTab: View {
 
         if selectedTimeRange == .allTime {
             yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            
+            // Check for staleness after fetching Year Wrap
+            if let yearWrap = yearWrapSummary {
+                let calendar = Calendar.current
+                let year = calendar.component(.year, from: dateForFetch)
+                
+                if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
+                    await MainActor.run {
+                        coordinator.updateYearWrapNewSessionCount(newCount)
+                    }
+                }
+            } else {
+                // No Year Wrap exists, reset staleness count
+                coordinator.updateYearWrapNewSessionCount(0)
+            }
         } else {
             yearWrapSummary = nil
+            // Reset staleness count when not viewing Year
+            coordinator.updateYearWrapNewSessionCount(0)
         }
         
         // Debug logging
@@ -444,7 +466,32 @@ struct OverviewTab: View {
 
         await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
 
+        // Wait briefly for database transaction to complete
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        // Fetch the newly generated/updated Year Wrap
         yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        
+        // Check for staleness after fetching Year Wrap
+        if let yearWrap = yearWrapSummary {
+            let calendar = Calendar.current
+            let year = calendar.component(.year, from: dateForGeneration)
+            
+            print("🔍 [OverviewTab] Year Wrap fetched with createdAt: \(yearWrap.createdAt)")
+            
+            if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
+                await MainActor.run {
+                    coordinator.updateYearWrapNewSessionCount(newCount)
+                }
+                print("📊 [OverviewTab] Updated staleness count to \(newCount)")
+            }
+        } else {
+            // Reset count if no Year Wrap found
+            await MainActor.run {
+                coordinator.updateYearWrapNewSessionCount(0)
+            }
+        }
+        
         isWrappingUpYear = false
     }
     

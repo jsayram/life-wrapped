@@ -25,6 +25,29 @@ struct HomeTab: View {
                     // Streak Display - Minimal and transparent
                     StreakDisplay(streak: coordinator.currentStreak)
                     
+                    // Category Selector
+                    if let recordingCoord = coordinator.recordingCoordinator {
+                        Picker("Category", selection: Binding(
+                            get: { recordingCoord.selectedCategory },
+                            set: { recordingCoord.selectedCategory = $0 }
+                        )) {
+                            ForEach(SessionCategory.allCases, id: \.self) { cat in
+                                Label {
+                                    Text(cat.displayName)
+                                        .font(.subheadline)
+                                } icon: {
+                                    Image(systemName: cat.systemImage)
+                                }
+                                .tag(cat)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(coordinator.recordingState != .idle)
+                        .opacity(coordinator.recordingState != .idle ? 0.6 : 1.0)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 8)
+                    }
+                    
                     // Recording Button
                     RecordingButton()
                     

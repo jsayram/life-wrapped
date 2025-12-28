@@ -162,6 +162,14 @@ public actor DatabaseManager {
         try await sessionRepository.toggleSessionFavorite(sessionId: sessionId)
     }
     
+    public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
+        try await sessionRepository.updateSessionCategory(sessionId: sessionId, category: category)
+    }
+    
+    public func fetchSessionsByCategory(category: SessionCategory, limit: Int? = nil) async throws -> [RecordingSession] {
+        try await sessionRepository.fetchSessionsByCategory(category: category, limit: limit)
+    }
+    
     public func deleteSessionMetadata(sessionId: UUID) async throws {
         try await sessionRepository.deleteSessionMetadata(sessionId: sessionId)
     }

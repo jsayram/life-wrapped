@@ -130,13 +130,54 @@ public actor SummarizationCoordinator {
     }
     
     /// Set the preferred engine tier
-    /// Will fall back to basic if preferred tier is unavailable
-    /// Persists the preference to UserDefaults
+    /// Will fall back to highest available engine if preferred tier is unavailable
+    /// Only persists the preference if the engine is actually available
     public func setPreferredEngine(_ tier: EngineTier) async {
         preferredTier = tier
-        UserDefaults.standard.set(tier.rawValue, forKey: Self.preferredEngineKey)
-        print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
+        
+        // Check if the preferred tier is actually available
+        let isAvailable = await checkEngineAvailability(tier)
+        
+        // Only persist if available, otherwise fallback without persisting
+        if isAvailable {
+            UserDefaults.standard.set(tier.rawValue, forKey: Self.preferredEngineKey)
+            print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
+        } else {
+            print("⚠️ [SummarizationCoordinator] Engine \(tier.displayName) not available, falling back without persisting")
+            // Find highest available engine to persist instead
+            let fallbackTier = await determineFallbackEngine()
+            UserDefaults.standard.set(fallbackTier.rawValue, forKey: Self.preferredEngineKey)
+            print("💾 [SummarizationCoordinator] Persisting fallback: \(fallbackTier.displayName)")
+        }
+        
         await selectBestAvailableEngine()
+    }
+    
+    /// Check if a specific engine tier is available
+    private func checkEngineAvailability(_ tier: EngineTier) async -> Bool {
+        switch tier {
+        case .basic:
+            return true // Always available
+        case .local:
+            return await localEngine.isAvailable()
+        case .apple:
+            guard let apple = appleEngine else { return false }
+            return await apple.isAvailable()
+        case .external:
+            guard let external = externalEngine else { return false }
+            return await external.isAvailable()
+        }
+    }
+    
+    /// Determine the highest available fallback engine
+    private func determineFallbackEngine() async -> EngineTier {
+        if await localEngine.isAvailable() {
+            return .local
+        } else if let apple = appleEngine, await apple.isAvailable() {
+            return .apple
+        } else {
+            return .basic
+        }
     }
     
     /// Select the best available engine based on user preference

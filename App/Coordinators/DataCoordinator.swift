@@ -301,6 +301,12 @@ public final class DataCoordinator {
         return isFavorite
     }
     
+    /// Update session category
+    public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
+        try await databaseManager.updateSessionCategory(sessionId: sessionId, category: category)
+        print("🏷️ [DataCoordinator] Session category updated: \(category?.displayName ?? "None")")
+    }
+    
     /// Fetch session metadata
     public func fetchSessionMetadata(sessionId: UUID) async throws -> DatabaseManager.SessionMetadata? {
         return try await databaseManager.fetchSessionMetadata(sessionId: sessionId)

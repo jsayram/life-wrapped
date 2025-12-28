@@ -9,6 +9,9 @@ struct AISettingsView: View {
     @State private var showingSmartestConfig = false
     @State private var wiggleAPIKeyField = false
     
+    // Track if coming from Year Wrap flow
+    var fromYearWrap: Bool = false
+    
     // Local AI model state
     @State private var localModelStatus: String = "Checking..."
     @State private var isLocalModelDownloaded: Bool = false
@@ -310,6 +313,20 @@ struct AISettingsView: View {
                 await loadEngineStatus()
             }
         }
+        .onAppear {
+            // If coming from Year Wrap, expand Smartest section and scroll to it
+            if fromYearWrap {
+                activeEngine = .external
+                showingSmartestConfig = true
+                showAPIKeyField = true
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation {
+                        scrollProxy?.scrollTo("smartestConfig", anchor: .top)
+                    }
+                }
+            }
+        }
         .onChange(of: coordinator.isDownloadingLocalModel) { wasDownloading, isDownloading in
             // Refresh model status when download completes
             if wasDownloading && !isDownloading {
@@ -414,12 +431,6 @@ struct AISettingsView: View {
             
             // Update activeEngine immediately so section appears right away
             activeEngine = .external
-            
-            // Persist engine preference in background (without triggering refresh)
-            Task {
-                guard let summCoord = coordinator.summarizationCoordinator else { return }
-                await summCoord.setPreferredEngine(tier)
-            }
             
             // Show config and trigger wiggle animation
             showingSmartestConfig = true
