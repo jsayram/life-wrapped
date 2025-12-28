@@ -92,7 +92,14 @@ public final class LocalModelCoordinator: ObservableObject {
         isDownloadingLocalModel = true
         defer { isDownloadingLocalModel = false }
         try await summarizationCoordinator.getLocalEngine().downloadModel(progress: progress)
-        onSuccess?("Local AI model downloaded")
+        
+        // After successful download during onboarding, set Local AI as default
+        await summarizationCoordinator.setPreferredEngine(.local)
+        
+        onSuccess?("Local AI model downloaded and activated")
+        
+        // Notify that engine changed
+        NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
     }
     
     // MARK: - Model Deletion
