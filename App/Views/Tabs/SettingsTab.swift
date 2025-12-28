@@ -9,6 +9,7 @@ struct SettingsTab: View {
     @State private var debugTapCount: Int = 0
     @State private var showDebugSection: Bool = false
     @State private var databasePath: String?
+    @State private var navigateToExternalAPI: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -155,6 +156,12 @@ struct SettingsTab: View {
                 Task {
                     await loadActiveEngine()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToExternalAPISettings"))) { _ in
+                navigateToExternalAPI = true
+            }
+            .navigationDestination(isPresented: $navigateToExternalAPI) {
+                ExternalAPISettingsView()
             }
         }
     }

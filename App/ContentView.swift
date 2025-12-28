@@ -54,6 +54,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToSettingsTab"))) { _ in
             selectedTab = 3
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToExternalAPISettings"))) { _ in
+            selectedTab = 3
+        }
         .overlay {
             if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
                 LoadingOverlay()

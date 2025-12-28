@@ -271,9 +271,11 @@ struct OverviewTab: View {
     
     private func yearWrapMessage() -> String {
         if hasExternalAPIConfigured() {
-            return "This will use ChatGPT or Claude to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
+            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+            return "This will use your personal \(provider) API to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
         } else {
-            return "To generate a Year Wrap, you need to configure your ChatGPT (OpenAI) or Claude (Anthropic) API key in Settings.\n\nTap 'Open Settings' to add your API credentials."
+            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+            return "To generate a Year Wrap, you need to configure your \(provider) API key.\n\nWe'll switch to the 'Smartest' AI engine and guide you to add your personal API credentials."
         }
     }
     
@@ -287,8 +289,17 @@ struct OverviewTab: View {
                 await wrapUpYear(forceRegenerate: false)
             }
         } else {
-            // Post notification to switch to Settings tab
-            NotificationCenter.default.post(name: NSNotification.Name("SwitchToSettingsTab"), object: nil)
+            // Switch to Smartest (External) engine and navigate to External API settings
+            Task {
+                if let summCoord = coordinator.summarizationCoordinator {
+                    await summCoord.setPreferredEngine(.external)
+                }
+                // Post notification to switch to Settings tab and navigate to External API
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("NavigateToExternalAPISettings"),
+                    object: nil
+                )
+            }
         }
     }
     
