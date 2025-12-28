@@ -705,6 +705,7 @@ public final class SummaryCoordinator {
         do {
             print("📊 [SummaryCoordinator] Starting Year Wrap for \(year)")
 
+            // Use monthly rollups for Year Wrap (less context, more efficient)
             var sourceSummaries = try await databaseManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
                 .sorted { $0.periodStart < $1.periodStart }
 
@@ -717,6 +718,14 @@ public final class SummaryCoordinator {
                 print("ℹ️ [SummaryCoordinator] No rollups available to build a Year Wrap")
                 return
             }
+
+            // Fetch session categories for context
+            let categoryMap = try await fetchSessionCategoriesForYear(year: year)
+            let workCount = categoryMap.values.filter { $0 == .work }.count
+            let personalCount = categoryMap.values.filter { $0 == .personal }.count
+            let totalSessions = categoryMap.count
+            
+            print("📊 [SummaryCoordinator] Year \(year): \(workCount) work sessions, \(personalCount) personal sessions out of \(totalSessions) total")
 
             let sourceIds = await databaseManager.sourceIdsToJSON(sourceSummaries.map { $0.id })
             let inputHash = await databaseManager.computeInputHash(sourceSummaries.map { $0.text })
@@ -732,15 +741,13 @@ public final class SummaryCoordinator {
                 print("📝 [SummaryCoordinator] No Year Wrap found, generating new one")
             }
 
-            // Fetch category information for the year
-            let categoryMap = try await fetchSessionCategoriesForYear(year: year)
-            let categoryContext = buildCategoryContext(categoryMap: categoryMap)
-
+            // Pass category proportions to AI for classification
             let wrapSummary = try await summarizationEngine.generateYearWrapSummary(
                 startOfYear: startOfYear,
                 endOfYear: endOfYear,
                 sourceSummaries: sourceSummaries,
-                categoryContext: categoryContext
+                workSessionCount: workCount,
+                personalSessionCount: personalCount
             )
 
             try await databaseManager.upsertPeriodSummary(
@@ -822,36 +829,6 @@ public final class SummaryCoordinator {
         print("📊 [SummaryCoordinator] Year \(year): \(workCount) work sessions, \(personalCount) personal sessions out of \(yearData.sessionIds.count) total")
         
         return categoryMap
-    }
-    
-    /// Build category context string for AI prompt
-    private func buildCategoryContext(categoryMap: [UUID: SessionCategory]) -> String? {
-        guard !categoryMap.isEmpty else { return nil }
-        
-        let workCount = categoryMap.values.filter { $0 == .work }.count
-        let personalCount = categoryMap.values.filter { $0 == .personal }.count
-        
-        guard workCount > 0 || personalCount > 0 else { return nil }
-        
-        var parts: [String] = []
-        if workCount > 0 {
-            parts.append("\(workCount) work session\(workCount == 1 ? "" : "s")")
-        }
-        if personalCount > 0 {
-            parts.append("\(personalCount) personal session\(personalCount == 1 ? "" : "s")")
-        }
-        
-        return """
-        The user has categorized their recording sessions this year as: \(parts.joined(separator: " and ")).
-        
-        When classifying items in the Year Wrap:
-        - Items from work sessions should be marked as "work"
-        - Items from personal sessions should be marked as "personal"
-        - Items that appear across both types or cannot be clearly attributed should be marked as "both"
-        
-        The monthly/weekly summaries you're analyzing aggregate content from these categorized sessions.
-        Use the session categories as context to infer which domain each insight belongs to.
-        """
     }
     
     /// Calculate hash of input text for caching

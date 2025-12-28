@@ -698,10 +698,17 @@ public final class AppCoordinator: ObservableObject {
             
             print("✅ [AppCoordinator] Session transcription is complete!")
             
+            // Update rollups now that transcription data is available
+            print("2️⃣ [AppCoordinator] Updating rollups with new transcription data...")
+            await updateRollupsAndStats()
+            
             // Delegate to SummaryCoordinator
             print("3️⃣ [AppCoordinator] 🚀 Delegating to SummaryCoordinator...")
             await summaryCoordinator?.checkAndGenerateSessionSummary(for: sessionId)
             print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
+            
+            // Update widget data with new stats
+            await updateWidgetData()
             
             // Unload model after session is complete to free memory
             if let coordinator = self.summarizationCoordinator {
@@ -734,9 +741,10 @@ public final class AppCoordinator: ObservableObject {
         guard let insights = insightsManager else { return }
         
         do {
-            // Generate daily rollup for today
-            _ = try await insights.generateRollup(bucketType: .day, for: Date())
-            print("✅ [AppCoordinator] Daily rollup generated")
+            // Generate all rollups for today (hour, day, week, month)
+            let rollups = try await insights.generateAllRollups(for: Date())
+            let types = rollups.map { $0.bucketType.rawValue }.joined(separator: ", ")
+            print("✅ [AppCoordinator] Rollups generated: \(types)")
             
         } catch {
             print("❌ [AppCoordinator] Rollup generation failed: \(error)")

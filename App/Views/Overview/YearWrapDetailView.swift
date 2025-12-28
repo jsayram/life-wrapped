@@ -9,9 +9,9 @@ extension ItemFilter: Identifiable {
     
     var displayName: String {
         switch self {
-        case .all: return "All Items"
-        case .workOnly: return "Work Only"
-        case .personalOnly: return "Personal Only"
+        case .all: return "ALL"
+        case .workOnly: return "WORK"
+        case .personalOnly: return "PERSONAL"
         }
     }
     
@@ -30,7 +30,7 @@ struct YearWrapDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var redactPeople = false
     @State private var redactPlaces = false
-    @State private var pdfFilter: ItemFilter = .all
+    @State private var displayFilter: ItemFilter = .all
     @State private var parsedData: YearWrapData?
     @State private var totalSessions: Int = 0
     @State private var totalDuration: TimeInterval = 0
@@ -90,8 +90,8 @@ struct YearWrapDetailView: View {
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Section("PDF Content Filter") {
-                            Picker("Filter Items", selection: $pdfFilter) {
+                        Section("Display Filter") {
+                            Picker("Filter Items", selection: $displayFilter) {
                                 ForEach(ItemFilter.allCases) { filter in
                                     Label(filter.displayName, systemImage: filter.icon)
                                         .tag(filter)
@@ -460,6 +460,8 @@ struct YearWrapDetailView: View {
     // Generic insight section builder
     @ViewBuilder
     private func insightSection(title: String, items: [ClassifiedItem], color: Color, emptyMessage: String) -> some View {
+        let filteredItems = filterItems(items, by: displayFilter)
+        
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
@@ -469,7 +471,7 @@ struct YearWrapDetailView: View {
             }
             
             // Content
-            if items.isEmpty {
+            if filteredItems.isEmpty {
                 Text(emptyMessage)
                     .font(.body)
                     .foregroundStyle(.tertiary)
@@ -478,7 +480,7 @@ struct YearWrapDetailView: View {
                     .padding(.vertical, 8)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    ForEach(Array(filteredItems.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .top, spacing: 12) {
                             Circle()
                                 .fill(color)
@@ -547,6 +549,21 @@ struct YearWrapDetailView: View {
         }
     }
     
+    // MARK: - Filtering Helper
+    
+    private func filterItems(_ items: [ClassifiedItem], by filter: ItemFilter) -> [ClassifiedItem] {
+        switch filter {
+        case .all:
+            return items
+        case .workOnly:
+            // Include items that are work OR both (since both applies to work too)
+            return items.filter { $0.category == .work || $0.category == .both }
+        case .personalOnly:
+            // Include items that are personal OR both (since both applies to personal too)
+            return items.filter { $0.category == .personal || $0.category == .both }
+        }
+    }
+    
     // MARK: - Footer
     
     private var footerSection: some View {
@@ -572,6 +589,17 @@ struct YearWrapDetailView: View {
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let decoded = try decoder.decode(YearWrapData.self, from: data)
             print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (new format)")
+            
+            // Debug: Log category distribution
+            let allItems = decoded.majorArcs + decoded.biggestWins + decoded.biggestLosses + 
+                          decoded.biggestChallenges + decoded.finishedProjects + decoded.unfinishedProjects +
+                          decoded.topWorkedOnTopics + decoded.topTalkedAboutThings + 
+                          decoded.valuableActionsTaken + decoded.opportunitiesMissed
+            let workCount = allItems.filter { $0.category == .work }.count
+            let personalCount = allItems.filter { $0.category == .personal }.count
+            let bothCount = allItems.filter { $0.category == .both }.count
+            print("📊 [YearWrapDetailView] Category distribution: \(workCount) work, \(personalCount) personal, \(bothCount) both (total: \(allItems.count))")
+            
             return decoded
         } catch let newFormatError {
             // If new format fails, try parsing old format (string arrays) and convert
@@ -639,7 +667,7 @@ struct YearWrapDetailView: View {
             let year = calendar.component(.year, from: yearWrap.periodStart)
             
             let exporter = DataExporter(databaseManager: dbManager)
-            let data = try await exporter.exportToPDF(year: year, redactPeople: redactPeople, redactPlaces: redactPlaces, filter: pdfFilter)
+            let data = try await exporter.exportToPDF(year: year, redactPeople: redactPeople, redactPlaces: redactPlaces, filter: displayFilter)
             
             await MainActor.run {
                 pdfData = data

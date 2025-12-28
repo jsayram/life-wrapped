@@ -103,7 +103,16 @@ Database schema lives in `Packages/Storage/Sources/Storage/DatabaseManager.swift
 - User-editable session titles
 - Personal notes per session
 - Favorites system with star toggle
+- **Session categorization** (Work/Personal) - User marks sessions, not AI inference
 - Full-text search across transcripts
+
+**Session Category System:**
+
+- Users manually mark sessions as Work or Personal via picker in SessionDetailView
+- Categories stored in `session_metadata` table (`category: SessionCategory?`)
+- Year Wrap generation fetches all session categories and passes to AI as context
+- AI classifies Year Wrap items as work/personal/both based on user's session categories
+- **Architecture**: User choice → Database → Context → AI classification (NOT AI inference from content)
 
 **To modify schema**: Edit CREATE TABLE, delete app, reinstall. Test data regenerates from new recordings.
 
@@ -127,6 +136,39 @@ if newWordCount < currentWordCount {
 - `RecordingSession`: Groups multiple chunks by `sessionId`
 - `TranscriptSegment`: Time-bounded text from transcription
 - `Summary`: AI-generated summary (supports period-based OR session-based)
+- `ItemCategory`: Classification for Year Wrap items (work, personal, both)
+- `ClassifiedItem`: Year Wrap insight with category (text + category)
+- `ItemFilter`: PDF export filter (all, workOnly, personalOnly)
+
+### Year Wrap Work/Personal Classification
+
+**Architecture**: User-defined session categories → AI classification context
+
+Year Wrap items are classified based on which sessions they originated from:
+
+```swift
+// 1. User marks sessions in UI
+SessionDetailView → Picker → updateSessionCategory(category: .work/.personal)
+
+// 2. Year Wrap generation fetches categories
+fetchSessionCategoriesForYear(year:) → [UUID: SessionCategory]
+buildCategoryContext(categoryMap:) → String (context for AI)
+
+// 3. AI receives context and classifies items
+UniversalPrompt.buildMessages(categoryContext: "5 work sessions, 3 personal...")
+AI returns: [ClassifiedItem] with .work, .personal, or .both
+
+// 4. UI displays badges and PDF filters
+CategoryBadge(category: .work) → 💼 Work (blue)
+PDF Export with ItemFilter → filter items by category
+```
+
+**Key Files**:
+
+- [SessionDetailView.swift](../../App/Views/Details/SessionDetailView.swift) - Category picker UI
+- [SummaryCoordinator.swift](../../App/Coordinators/SummaryCoordinator.swift) - Category fetching logic
+- [UniversalPrompt.swift](../../Packages/Summarization/Sources/Summarization/UniversalPrompt.swift) - AI schema with category rules
+- [YearWrapDetailView.swift](../../App/Views/Overview/YearWrapDetailView.swift) - Category badges and PDF filters
 
 ### Enum Extensions for Display
 

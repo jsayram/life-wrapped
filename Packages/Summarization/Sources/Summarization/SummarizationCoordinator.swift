@@ -480,7 +480,8 @@ public actor SummarizationCoordinator {
         startOfYear: Date,
         endOfYear: Date,
         sourceSummaries: [Summary],
-        categoryContext: String? = nil
+        workSessionCount: Int,
+        personalSessionCount: Int
     ) async throws -> Summary {
         guard !sourceSummaries.isEmpty else {
             throw SummarizationError.noTranscriptData
@@ -512,9 +513,12 @@ public actor SummarizationCoordinator {
                 duration: summary.periodEnd.timeIntervalSince(summary.periodStart),
                 wordCount: wordCount,
                 languageCodes: ["en-US"],
-                category: nil  // Not used for rollup summaries
+                category: nil  // Monthly summaries don't have single category
             )
         }
+
+        // Build category context from session counts
+        let categoryContext = buildCategoryContext(workCount: workSessionCount, personalCount: personalSessionCount)
 
         let intelligence = try await external.summarizePeriod(
             periodType: .yearWrap,
@@ -525,6 +529,28 @@ public actor SummarizationCoordinator {
         )
 
         return try convertToSummary(periodIntelligence: intelligence)
+    }
+    
+    /// Build category context string for AI prompt
+    private func buildCategoryContext(workCount: Int, personalCount: Int) -> String? {
+        guard workCount > 0 || personalCount > 0 else { return nil }
+        
+        let total = workCount + personalCount
+        let workPercent = total > 0 ? Int((Double(workCount) / Double(total)) * 100) : 0
+        let personalPercent = total > 0 ? Int((Double(personalCount) / Double(total)) * 100) : 0
+        
+        return """
+        SESSION CATEGORY DISTRIBUTION:
+        - Work sessions: \(workCount) (\(workPercent)%)
+        - Personal sessions: \(personalCount) (\(personalPercent)%)
+        
+        CLASSIFICATION RULES (MANDATORY):
+        1. Classify ~\(workPercent)% of items as "work" and ~\(personalPercent)% as "personal"
+        2. Work items: professional topics, projects, meetings, career-related
+        3. Personal items: hobbies, family, health, personal goals, non-work activities
+        4. Use "both" ONLY if an item genuinely spans both domains (rare, <10% of items)
+        5. When uncertain, use the proportional split as a guide
+        """
     }
     
     /// Generate a period summary by aggregating session-level summaries

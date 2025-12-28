@@ -233,17 +233,25 @@ public struct UniversalPrompt {
     
     CATEGORY CLASSIFICATION RULES:
     
-    The user has already manually categorized their recording sessions as "Work" or "Personal".
-    Your job is to respect those user-provided categories when classifying items.
+    The user has categorized their recording sessions as Work or Personal.
+    You will receive the exact session counts in the prompt.
     
-    For each insight item, determine its category based on which types of sessions it came from:
+    CLASSIFICATION IS MANDATORY - follow these rules:
     
-    - "work" = Item derived primarily from sessions the user marked as Work
-    - "personal" = Item derived primarily from sessions the user marked as Personal  
-    - "both" = Item appears across both Work and Personal sessions, OR the source is ambiguous
+    1. PROPORTIONAL DISTRIBUTION: Match the work/personal ratio of sessions
+       - If 50% work sessions → classify ~50% of items as "work"
+       - If 70% personal sessions → classify ~70% of items as "personal"
     
-    IMPORTANT: Do not try to guess work vs personal based on content. Use the session category context provided.
-    If session category information is not available, only then classify based on content as a fallback.
+    2. CONTENT-BASED ASSIGNMENT:
+       - "work" = Professional topics (projects, meetings, career, business, deadlines)
+       - "personal" = Life topics (family, hobbies, health, relationships, personal goals)
+    
+    3. USE "both" SPARINGLY (<10% of items):
+       - Only for items that genuinely apply to BOTH domains
+       - Example: "time management" could be both work and personal
+       - When in doubt, pick work OR personal based on primary context
+    
+    4. DO NOT default to "both" - make definitive choices
     """
     
     // MARK: - Schema Selection
