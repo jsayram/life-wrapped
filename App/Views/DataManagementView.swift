@@ -21,6 +21,8 @@ struct DataManagementView: View {
     @State private var importErrors: [(id: String, message: String)] = []
     @State private var showImportErrorSheet = false
     @State private var yearlyData: [(year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval)] = []
+    @State private var yearToDelete: Int?
+    @State private var showYearDeleteConfirmation = false
     
     enum ExportFormat: String, CaseIterable {
         case json = "JSON"
@@ -58,6 +60,17 @@ struct DataManagementView: View {
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                     }
+                                    
+                                    Button(role: .destructive) {
+                                        yearToDelete = yearData.year
+                                        showYearDeleteConfirmation = true
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.title3)
+                                            .foregroundColor(.red)
+                                            .padding(8)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                                 
                                 // Export buttons row
@@ -289,6 +302,21 @@ struct DataManagementView: View {
                     Text("This action cannot be undone. All your recordings, transcriptions, and summaries will be permanently deleted.")
                 }
             }
+            .alert("Delete \(yearToDelete ?? 0) Data?", isPresented: $showYearDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    if let year = yearToDelete {
+                        deleteYearData(year: year)
+                    }
+                }
+            } message: {
+                if let year = yearToDelete,
+                   let yearInfo = yearlyData.first(where: { $0.year == year }) {
+                    Text("This will permanently delete all data from \(year):\n\n• \(yearInfo.sessionCount) sessions\n• \(yearInfo.wordCount.formatted()) words\n\nThis action cannot be undone.")
+                } else {
+                    Text("This will permanently delete all data from this year. This action cannot be undone.")
+                }
+            }
         }
     }
     
@@ -350,6 +378,24 @@ struct DataManagementView: View {
         Task {
             await coordinator.deleteAllData()
             coordinator.showSuccess("All data deleted")
+        }
+    }
+    
+    private func deleteYearData(year: Int) {
+        Task {
+            do {
+                if let dataCoordinator = coordinator.getDataCoordinator() {
+                    try await dataCoordinator.deleteDataForYear(year: year)
+                    await loadYearlyData()
+                    await MainActor.run {
+                        coordinator.showSuccess("Data from \(year) deleted")
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    coordinator.showError("Failed to delete data: \(error.localizedDescription)")
+                }
+            }
         }
     }
     

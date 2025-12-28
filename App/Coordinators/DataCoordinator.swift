@@ -187,6 +187,50 @@ public final class DataCoordinator {
         }
     }
     
+    /// Delete all data for a specific year
+    public func deleteDataForYear(year: Int) async throws {
+        // Get all sessions for this year
+        let yearData = try await databaseManager.fetchSessionsByYear()
+        guard let yearInfo = yearData.first(where: { $0.year == year }) else {
+            print("⚠️ [DataCoordinator] No data found for year \(year)")
+            return
+        }
+        
+        // Delete each session's data
+        for sessionId in yearInfo.sessionIds {
+            // Fetch chunks for this session
+            let chunks = try await databaseManager.fetchChunksBySession(sessionId: sessionId)
+            
+            // Delete audio files
+            for chunk in chunks {
+                try? FileManager.default.removeItem(at: chunk.fileURL)
+            }
+            
+            // Delete transcript segments
+            for chunk in chunks {
+                let segments = try await databaseManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                for segment in segments {
+                    try await databaseManager.deleteTranscriptSegment(id: segment.id)
+                }
+            }
+            
+            // Delete audio chunks from database
+            for chunk in chunks {
+                try await databaseManager.deleteAudioChunk(id: chunk.id)
+            }
+            
+            // Delete session metadata
+            try? await databaseManager.deleteSessionMetadata(sessionId: sessionId)
+            
+            // Delete session summary
+            if let summary = try await databaseManager.fetchSummaryForSession(sessionId: sessionId) {
+                try await databaseManager.deleteSummary(id: summary.id)
+            }
+        }
+        
+        print("✅ [DataCoordinator] Deleted all data for year \(year)")
+    }
+    
     /// Fetch sessions grouped by hour of day
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         return try await databaseManager.fetchSessionsByHour()
