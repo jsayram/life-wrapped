@@ -452,8 +452,14 @@ public final class SummaryCoordinator {
         let calendar = Calendar.current
         var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         components.weekday = 2 // Monday
-        guard let startOfWeek = calendar.date(from: components) else { return }
-        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
+        guard let startOfWeek = calendar.date(from: components) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate start of week")
+            return 
+        }
+        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate end of week")
+            return 
+        }
 
         let periodKey = "week-\(startOfWeek.timeIntervalSince1970)"
 
@@ -529,8 +535,14 @@ public final class SummaryCoordinator {
     public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month], from: date)
-        guard let startOfMonth = calendar.date(from: components) else { return }
-        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
+        guard let startOfMonth = calendar.date(from: components) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate start of month")
+            return 
+        }
+        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate end of month")
+            return 
+        }
 
         let periodKey = "month-\(startOfMonth.timeIntervalSince1970)"
 
@@ -545,27 +557,22 @@ public final class SummaryCoordinator {
         do {
             print("📊 [SummaryCoordinator] Updating monthly rollup for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
 
-            var weeklySummaries = try await databaseManager.fetchWeeklySummaries(from: startOfMonth, to: endOfMonth)
+            // First try to get daily summaries directly (more reliable for partial weeks)
+            let dailySummaries = try await databaseManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
                 .sorted { $0.periodStart < $1.periodStart }
-            print("📊 [SummaryCoordinator] Found \(weeklySummaries.count) weekly summaries for this month")
+            print("📊 [SummaryCoordinator] Found \(dailySummaries.count) daily summaries for this month")
 
-            if weeklySummaries.isEmpty {
-                print("ℹ️ [SummaryCoordinator] No weekly summaries found, checking daily summaries...")
-                weeklySummaries = try await databaseManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
-                    .sorted { $0.periodStart < $1.periodStart }
-            }
-
-            guard !weeklySummaries.isEmpty else {
-                print("ℹ️ [SummaryCoordinator] No rollups found for this month")
+            guard !dailySummaries.isEmpty else {
+                print("ℹ️ [SummaryCoordinator] No daily summaries found for this month")
                 return
             }
 
-            let weeklyIds = weeklySummaries.map { $0.id }
-            let weeklyTexts = weeklySummaries.map { $0.text }
-            let sourceIds = await databaseManager.sourceIdsToJSON(weeklyIds)
-            let inputHash = await databaseManager.computeInputHash(weeklyTexts)
+            let dailyIds = dailySummaries.map { $0.id }
+            let dailyTexts = dailySummaries.map { $0.text }
+            let sourceIds = await databaseManager.sourceIdsToJSON(dailyIds)
+            let inputHash = await databaseManager.computeInputHash(dailyTexts)
 
-            print("🔐 [SummaryCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) rollups")
+            print("🔐 [SummaryCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
 
             if let existing = try? await databaseManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
                 print("📂 [SummaryCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
@@ -578,10 +585,10 @@ public final class SummaryCoordinator {
                 print("📝 [SummaryCoordinator] No existing monthly summary found, will generate new rollup")
             }
 
-            // Generate rollup summary from weekly summaries (oldest to newest)
+            // Generate rollup summary from daily summaries (oldest to newest)
             // Store clean text without timestamps - metadata is in periodStart/periodEnd
-            print("📝 [SummaryCoordinator] Generating rollup from \(weeklySummaries.count) weekly summaries (oldest to newest)")
-            let lines = weeklySummaries.map { summary in
+            print("📝 [SummaryCoordinator] Generating rollup from \(dailySummaries.count) daily summaries (oldest to newest)")
+            let lines = dailySummaries.map { summary in
                 // Clean text only - no timestamps to prevent accumulation in nested rollups
                 return "• \(summary.text)"
             }

@@ -332,34 +332,35 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
-            .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                
-                // Always show Local AI option
-                Button("Use Local AI") {
-                    Task {
-                        await wrapUpYear(forceRegenerate: true, useLocalAI: true)
-                    }
-                }
-                
-                // Show Smartest option only if API is configured
-                if hasExternalAPIConfigured() {
-                    let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-                    Button("Use \(provider) (Smartest)") {
+            .sheet(isPresented: $showYearWrapConfirmation) {
+                YearWrapGenerationSheet(
+                    hasExternalAPI: hasExternalAPIConfigured(),
+                    provider: UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI",
+                    onGenerateWithExternal: {
+                        showYearWrapConfirmation = false
                         Task {
                             await wrapUpYear(forceRegenerate: true, useLocalAI: false)
                         }
-                    }
-                } else {
-                    Button("Setup Smartest API") {
+                    },
+                    onGenerateWithLocal: {
+                        showYearWrapConfirmation = false
+                        Task {
+                            await wrapUpYear(forceRegenerate: true, useLocalAI: true)
+                        }
+                    },
+                    onSetupAPI: {
+                        showYearWrapConfirmation = false
                         NotificationCenter.default.post(
                             name: NSNotification.Name("NavigateToSmartestConfig"),
                             object: nil
                         )
+                    },
+                    onCancel: {
+                        showYearWrapConfirmation = false
                     }
-                }
-            } message: {
-                Text(yearWrapMessage())
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
             }
         }
     }
@@ -378,15 +379,6 @@ struct OverviewTab: View {
             return .blue
         case .personalOnly:
             return .green
-        }
-    }
-    
-    private func yearWrapMessage() -> String {
-        if hasExternalAPIConfigured() {
-            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-            return "Generate your Year Wrap summary:\n\n• **Local AI** - Works offline, good quality (~2.1GB model)\n• **\(provider) (Smartest)** - Best quality, most detailed insights\n\nThis may take 30-60 seconds."
-        } else {
-            return "Generate your Year Wrap with Local AI (Phi-3.5 Mini).\n\nThis works completely offline and provides good quality summaries.\n\n💡 For the most comprehensive and detailed analysis, add your OpenAI or Anthropic API key to unlock the 'Smartest' AI engine."
         }
     }
     
@@ -645,15 +637,20 @@ struct OverviewTab: View {
             var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
             components.weekday = 2 // Monday
             let startOfWeek = calendar.date(from: components) ?? now
-            return (startOfWeek, now)
+            let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) ?? now
+            return (startOfWeek, endOfWeek)
         case .month:
-            let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
-            return (start, now)
+            // Current month: 1st of month to end of month
+            let components = calendar.dateComponents([.year, .month], from: now)
+            let startOfMonth = calendar.date(from: components) ?? now
+            let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) ?? now
+            return (startOfMonth, endOfMonth)
         case .allTime:
             // Show only current year (e.g., 2025) up to today
             let currentYear = calendar.component(.year, from: now)
             let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
-            return (startOfYear, now)
+            let endOfYear = calendar.date(from: DateComponents(year: currentYear + 1, month: 1, day: 1)) ?? now
+            return (startOfYear, endOfYear)
         }
     }
 
@@ -951,4 +948,177 @@ struct OverviewTab: View {
         }
     }
     
+}
+
+// MARK: - Year Wrap Generation Sheet
+
+struct YearWrapGenerationSheet: View {
+    let hasExternalAPI: Bool
+    let provider: String
+    let onGenerateWithExternal: () -> Void
+    let onGenerateWithLocal: () -> Void
+    let onSetupAPI: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Header
+            VStack(spacing: 8) {
+                Text("✨ Generate Year Wrap")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Text("Create your personalized year in review")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 8)
+            
+            Divider()
+            
+            // Options
+            VStack(spacing: 12) {
+                if hasExternalAPI {
+                    // External API is configured - show as primary (purple)
+                    Button(action: onGenerateWithExternal) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(provider) (Smartest)")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                Text("Best quality, most detailed insights")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("Recommended")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Local AI as secondary option
+                    Button(action: onGenerateWithLocal) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "iphone")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local AI")
+                                    .font(.headline)
+                                Text("Works offline (~2.1GB model)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    
+                } else {
+                    // No External API - Local AI is primary (purple)
+                    Button(action: onGenerateWithLocal) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local AI (Phi-3.5)")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                Text("Works completely offline")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("Best Available")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Setup API suggestion
+                    Button(action: onSetupAPI) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "gearshape")
+                                .font(.title2)
+                                .foregroundStyle(AppTheme.purple)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Setup Smartest API")
+                                    .font(.headline)
+                                Text("OpenAI or Anthropic for better results")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            // Timing note
+            Text("This may take 30-60 seconds")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            // Cancel button
+            Button("Cancel", action: onCancel)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+        }
+        .padding()
+    }
 }
