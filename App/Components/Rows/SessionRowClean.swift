@@ -33,6 +33,19 @@ struct SessionRowClean: View {
                 
                 Spacer()
                 
+                // Category badge
+                if let category = session.category {
+                    Label(category.displayName, systemImage: category.systemImage)
+                        .font(.caption2)
+                        .foregroundStyle(Color(hex: category.colorHex))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(Color(hex: category.colorHex).opacity(0.15))
+                        )
+                }
+                
                 // Favorite star
                 if session.isFavorite {
                     Image(systemName: "star.fill")

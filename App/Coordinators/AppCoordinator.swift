@@ -545,7 +545,8 @@ public final class AppCoordinator: ObservableObject {
                 chunks: chunks,
                 title: metadata?.title,
                 notes: metadata?.notes,
-                isFavorite: metadata?.isFavorite ?? false
+                isFavorite: metadata?.isFavorite ?? false,
+                category: metadata?.category
             )
             sessions.append(session)
         }
@@ -570,7 +571,8 @@ public final class AppCoordinator: ObservableObject {
                     chunks: chunks,
                     title: metadata?.title,
                     notes: metadata?.notes,
-                    isFavorite: metadata?.isFavorite ?? false
+                    isFavorite: metadata?.isFavorite ?? false,
+                    category: metadata?.category
                 )
                 sessions.append(session)
             }
@@ -902,6 +904,13 @@ public final class AppCoordinator: ObservableObject {
         let isFavorite = try await data.toggleSessionFavorite(sessionId: sessionId)
         print("⭐ [AppCoordinator] Session favorite: \(isFavorite)")
         return isFavorite
+    }
+    
+    /// Update session category
+    public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        try await data.updateSessionCategory(sessionId: sessionId, category: category)
+        print("🏷️ [AppCoordinator] Updated session category: \(category?.displayName ?? "None")")
     }
     
     /// Fetch session metadata
