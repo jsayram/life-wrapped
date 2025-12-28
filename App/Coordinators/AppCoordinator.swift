@@ -190,6 +190,51 @@ public final class AppCoordinator: ObservableObject {
     
     // MARK: - Async Initialization
     
+    /// Initialize minimal components needed for model download (before permissions)
+    public func initializeForModelDownload() async {
+        print("🔧 [AppCoordinator] Initializing minimal setup for model download...")
+        
+        // Only initialize if not already done
+        guard localModelCoordinator == nil else {
+            print("✅ [AppCoordinator] LocalModelCoordinator already initialized")
+            return
+        }
+        
+        do {
+            // Initialize database (needed for summarization coordinator)
+            if databaseManager == nil {
+                print("📦 [AppCoordinator] Initializing DatabaseManager for model download...")
+                let dbManager = try await DatabaseManager()
+                self.databaseManager = dbManager
+                print("✅ [AppCoordinator] DatabaseManager initialized")
+            }
+            
+            // Initialize SummarizationCoordinator (needed for LocalModelCoordinator)
+            if summarizationCoordinator == nil {
+                print("📝 [AppCoordinator] Initializing SummarizationCoordinator for model download...")
+                let coordinator = SummarizationCoordinator(storage: databaseManager!)
+                self.summarizationCoordinator = coordinator
+                print("✅ [AppCoordinator] SummarizationCoordinator initialized")
+            }
+            
+            // Initialize LocalModelCoordinator
+            print("🧠 [AppCoordinator] Initializing LocalModelCoordinator...")
+            let localModelCoord = LocalModelCoordinator(summarizationCoordinator: summarizationCoordinator!)
+            localModelCoord.onSuccess = { [weak self] message in
+                self?.showSuccess(message)
+            }
+            localModelCoord.onError = { [weak self] message in
+                self?.showError(message)
+            }
+            localModelCoord.$isDownloadingLocalModel.assign(to: &self.$isDownloadingLocalModel)
+            self.localModelCoordinator = localModelCoord
+            print("✅ [AppCoordinator] LocalModelCoordinator initialized for download")
+            
+        } catch {
+            print("❌ [AppCoordinator] Failed to initialize for model download: \(error)")
+        }
+    }
+    
     /// Initialize the app coordinator and load initial state
     public func initialize() async {
         print("🚀 [AppCoordinator] Starting initialization...")
