@@ -10,6 +10,7 @@ struct SettingsTab: View {
     @State private var showDebugSection: Bool = false
     @State private var databasePath: String?
     @State private var navigateToExternalAPI: Bool = false
+    @State private var fromYearWrap: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -158,10 +159,14 @@ struct SettingsTab: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToExternalAPISettings"))) { _ in
+                fromYearWrap = true
                 navigateToExternalAPI = true
             }
             .navigationDestination(isPresented: $navigateToExternalAPI) {
-                ExternalAPISettingsView()
+                ExternalAPISettingsView(fromYearWrap: fromYearWrap)
+                    .onDisappear {
+                        fromYearWrap = false
+                    }
             }
         }
     }
