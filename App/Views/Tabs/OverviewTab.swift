@@ -450,6 +450,19 @@ struct OverviewTab: View {
         await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
 
         yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        
+        // Check for staleness after fetching Year Wrap
+        if let yearWrap = yearWrapSummary {
+            let calendar = Calendar.current
+            let year = calendar.component(.year, from: dateForGeneration)
+            
+            if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
+                await MainActor.run {
+                    coordinator.updateYearWrapNewSessionCount(newCount)
+                }
+            }
+        }
+        
         isWrappingUpYear = false
     }
     

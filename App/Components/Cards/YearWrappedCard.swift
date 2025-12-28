@@ -25,6 +25,23 @@ struct YearWrappedCard: View {
                     Text("AI-powered yearly summary")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    
+                    // Staleness badge
+                    if coordinator.yearWrapNewSessionCount > 0 {
+                        Label(
+                            "Outdated (\(coordinator.yearWrapNewSessionCount) new \(coordinator.yearWrapNewSessionCount == 1 ? "session" : "sessions"))",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.orange.opacity(0.15))
+                        )
+                        .padding(.top, 2)
+                    }
                 }
                 
                 Spacer()

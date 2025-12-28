@@ -1029,6 +1029,19 @@ public final class AppCoordinator: ObservableObject {
         // Delegate to SummaryCoordinator
         await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate)
     }
+    
+    /// Get count of new sessions created after Year Wrap generation
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+        guard let summaryCoordinator = summaryCoordinator else {
+            throw AppCoordinatorError.notInitialized
+        }
+        return try await summaryCoordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year)
+    }
+    
+    /// Update Year Wrap staleness count
+    public func updateYearWrapNewSessionCount(_ count: Int) {
+        yearWrapNewSessionCount = count
+    }
 
     /// Delete a recording and its associated data
     public func deleteRecording(_ chunkId: UUID) async throws {
