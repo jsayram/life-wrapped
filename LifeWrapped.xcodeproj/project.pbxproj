@@ -81,7 +81,6 @@
 		B563ACAF356FCFFCB92306CA /* SharedModels in Frameworks */ = {isa = PBXBuildFile; productRef = CA3DCC7908C3EAF40858A0FB /* SharedModels */; };
 		B6818869F253453456AAD6DA /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C95B298DE0C9B26176BF5D8 /* RecordingCoordinator.swift */; };
 		D14C9A4F63A98331357D0036 /* HomeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC556CAC9CF922EDF7F2F7F8 /* HomeTab.swift */; };
-		D2E74C795C7ED013E48140F2 /* HistoricalDataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC625D63065318BDAAEB8E36 /* HistoricalDataView.swift */; };
 		D41BACD485D306D89EF79563 /* SiriWave.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76E83A83100425254931F505 /* SiriWave.swift */; };
 		D828E01FAC94C04D2E74F945 /* ExternalAIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EE3DD2DB50EACCB43791292 /* ExternalAIView.swift */; };
 		DAA27F8C4260053A4557642A /* InsightSessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200F8F4BD1F6154EA4DA2E8A /* InsightSessionRow.swift */; };
@@ -199,7 +198,6 @@
 		D6F85ADCAC4D2970F0FC7C9F /* LoadingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingOverlay.swift; sourceTree = "<group>"; };
 		D8A7D9951119195D635799E7 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		D9BF0A84EFA77115EE53D4E4 /* SessionSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSummaryCard.swift; sourceTree = "<group>"; };
-		DC625D63065318BDAAEB8E36 /* HistoricalDataView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoricalDataView.swift; sourceTree = "<group>"; };
 		DE9841CEDE82071586FB3F04 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
 		E075703BA63467E041B06A7D /* OverviewSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewSummaryCard.swift; sourceTree = "<group>"; };
 		E5D13A37A732D6B796860408 /* WordCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordCategory.swift; sourceTree = "<group>"; };
@@ -409,7 +407,6 @@
 		8A48824DF85EFDC2F203157B /* Insights */ = {
 			isa = PBXGroup;
 			children = (
-				DC625D63065318BDAAEB8E36 /* HistoricalDataView.swift */,
 				02C3706BBE26E274F89CA4EF /* MonthInsightsView.swift */,
 				7267DD1EAEA5D508663E0A17 /* TopicTagsView.swift */,
 				80787FF1A57FB6D86F9E8AB3 /* YearInsightsView.swift */,
@@ -697,7 +694,6 @@
 				0E43495432ACAC887111E142 /* GeneratePeriodSummaryCard.swift in Sources */,
 				3F4BFBF03BD4056C36FD4F3A /* GenerateYearWrapCard.swift in Sources */,
 				B347BC51BCD19786669427D6 /* GenerationOverlay.swift in Sources */,
-				D2E74C795C7ED013E48140F2 /* HistoricalDataView.swift in Sources */,
 				07CA18D171747965F02521E8 /* HistoryTab.swift in Sources */,
 				D14C9A4F63A98331357D0036 /* HomeTab.swift in Sources */,
 				9EDDEAA04C184D4724FFC0BF /* InfoRow.swift in Sources */,

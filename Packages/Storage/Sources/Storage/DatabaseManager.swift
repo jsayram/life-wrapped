@@ -128,6 +128,10 @@ public actor DatabaseManager {
         try await sessionRepository.fetchSessionsByDayOfWeek()
     }
     
+    public func fetchSessionsByYear() async throws -> [(year: Int, count: Int, sessionIds: [UUID])] {
+        try await sessionRepository.fetchSessionsByYear()
+    }
+    
     public func deleteSession(sessionId: UUID) async throws {
         try await sessionRepository.deleteSession(sessionId: sessionId)
     }
@@ -160,6 +164,10 @@ public actor DatabaseManager {
     
     public func deleteSessionMetadata(sessionId: UUID) async throws {
         try await sessionRepository.deleteSessionMetadata(sessionId: sessionId)
+    }
+    
+    public func deleteAllSessionMetadata() async throws {
+        try await sessionRepository.deleteAllMetadata()
     }
     
     // MARK: - Transcript CRUD
@@ -312,6 +320,10 @@ public actor DatabaseManager {
         try await insightsRepository.delete(id: id)
     }
     
+    public func deleteAllInsightRollups() async throws {
+        try await insightsRepository.deleteAll()
+    }
+    
     // MARK: - ControlEvent CRUD
     
     public func insertEvent(_ event: ControlEvent) async throws {
@@ -328,5 +340,9 @@ public actor DatabaseManager {
     
     public func deleteEvent(id: UUID) async throws {
         try await controlEventRepository.delete(id: id)
+    }
+    
+    public func deleteAllControlEvents() async throws {
+        try await controlEventRepository.deleteAll()
     }
 }

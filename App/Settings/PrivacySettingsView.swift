@@ -4,6 +4,22 @@ struct PrivacySettingsView: View {
     var body: some View {
         List {
             Section {
+                HStack {
+                    Label {
+                        Text("Transcription: On-Device")
+                    } icon: {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            } footer: {
+                Text("All transcription happens 100% on-device using Apple's Speech framework. No audio or transcripts ever leave your device.")
+            }
+            
+            Section {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Label("Transcription", systemImage: "waveform")
@@ -59,7 +75,7 @@ struct PrivacySettingsView: View {
                 }
             }
         }
-        .navigationTitle("Privacy")
+        .navigationTitle("Privacy Policy")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

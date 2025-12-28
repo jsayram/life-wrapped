@@ -378,6 +378,47 @@ public actor SessionRepository {
         }
     }
     
+    /// Fetch sessions grouped by year
+    public func fetchSessionsByYear() async throws -> [(year: Int, count: Int, sessionIds: [UUID])] {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            
+            let sql = """
+                SELECT 
+                    CAST(strftime('%Y', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as year,
+                    session_id
+                FROM audio_chunks
+                WHERE chunk_index = 0
+                ORDER BY year DESC
+                """
+            
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            
+            // Group by year
+            var yearGroups: [Int: [UUID]] = [:]
+            
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let year = Int(sqlite3_column_int(stmt, 0))
+                guard let sessionIdString = sqlite3_column_text(stmt, 1),
+                      let sessionId = UUID(uuidString: String(cString: sessionIdString)) else {
+                    continue
+                }
+                
+                yearGroups[year, default: []].append(sessionId)
+            }
+            
+            // Convert to array and sort by year (descending: newest first)
+            return yearGroups
+                .map { (year: $0.key, count: $0.value.count, sessionIds: $0.value) }
+                .sorted { $0.year > $1.year }
+        }
+    }
+    
     // MARK: - Session Metadata CRUD
     
     /// Insert or update session metadata
@@ -514,6 +555,26 @@ public actor SessionRepository {
             }
             
             sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+            
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw StorageError.stepFailed(await connection.lastError())
+            }
+        }
+    }
+    
+    /// Delete all session metadata
+    public func deleteAllMetadata() async throws {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            
+            let sql = "DELETE FROM session_metadata"
+            
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
             
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw StorageError.stepFailed(await connection.lastError())

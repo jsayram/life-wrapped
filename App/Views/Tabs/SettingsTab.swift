@@ -70,11 +70,11 @@ struct SettingsTab: View {
                     }
                 }
                 
-                // Privacy Section
+                // Privacy Policy Section
                 Section {
                     NavigationLink(destination: PrivacySettingsView()) {
                         Label {
-                            Text("Privacy")
+                            Text("Privacy Policy")
                         } icon: {
                             Image(systemName: "lock.shield.fill")
                                 .foregroundStyle(AppTheme.darkPurple)
@@ -104,22 +104,8 @@ struct SettingsTab: View {
                             debugTapCount = 0
                         }
                     }
-                    
-                    HStack {
-                        Label {
-                            Text("Transcription: On-Device")
-                        } icon: {
-                            Image(systemName: "checkmark.shield.fill")
-                                .foregroundStyle(AppTheme.emerald)
-                        }
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(AppTheme.emerald)
-                    }
                 } header: {
                     Text("About")
-                } footer: {
-                    Text("AI summaries use your API keys or on-device fallback.")
                 }
                 
                 // Debug Section (hidden by default)

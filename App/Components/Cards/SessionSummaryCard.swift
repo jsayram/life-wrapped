@@ -6,11 +6,10 @@ import Summarization
 struct SessionSummaryCard: View {
     let summary: Summary
     let coordinator: AppCoordinator
+    let onSessionTap: ((RecordingSession) -> Void)?
     @Environment(\.colorScheme) var colorScheme
     @State private var isLoadingSession = false
     @State private var showSessionNotFoundAlert = false
-    @State private var fetchedSession: RecordingSession?
-    @State private var shouldNavigate = false
     
     /// Whether this card is for a session that can be navigated to
     private var isNavigable: Bool {
@@ -19,9 +18,6 @@ struct SessionSummaryCard: View {
     
     var body: some View {
         cardContent
-            .navigationDestination(isPresented: $shouldNavigate) {
-                destinationView
-            }
             .alert("Session Not Found", isPresented: $showSessionNotFoundAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -119,15 +115,6 @@ struct SessionSummaryCard: View {
             }
         }
 
-    @ViewBuilder
-    private var destinationView: some View {
-        if let session = fetchedSession {
-            SessionDetailView(session: session)
-        } else {
-            EmptyView()
-        }
-    }
-    
     private var relativeTimeString: String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
@@ -195,9 +182,8 @@ struct SessionSummaryCard: View {
                     )
                     
                     await MainActor.run {
-                        fetchedSession = session
-                        shouldNavigate = true
                         isLoadingSession = false
+                        onSessionTap?(session)
                     }
                 } else {
                     await MainActor.run {

@@ -6,6 +6,8 @@
 
 import Foundation
 import SharedModels
+import PDFKit
+import UIKit
 
 public actor DataExporter {
     private let databaseManager: DatabaseManager
@@ -17,11 +19,27 @@ public actor DataExporter {
     // MARK: - JSON Export
     
     /// Export all data to JSON format
-    public func exportToJSON() async throws -> Data {
-        let chunks = try await databaseManager.fetchAllAudioChunks()
-        let summaries = try await databaseManager.fetchAllSummaries()
+    public func exportToJSON(year: Int? = nil) async throws -> Data {
+        let allChunks = try await databaseManager.fetchAllAudioChunks()
+        let allSummaries = try await databaseManager.fetchAllSummaries()
         
-        // Fetch all transcript segments
+        // Filter by year if specified
+        let chunks: [AudioChunk]
+        let summaries: [Summary]
+        
+        if let year = year {
+            let calendar = Calendar.current
+            let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1))!
+            let endOfYear = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1))!
+            
+            chunks = allChunks.filter { $0.createdAt >= startOfYear && $0.createdAt < endOfYear }
+            summaries = allSummaries.filter { $0.periodStart >= startOfYear && $0.periodStart < endOfYear }
+        } else {
+            chunks = allChunks
+            summaries = allSummaries
+        }
+        
+        // Fetch all transcript segments for filtered chunks
         var allSegments: [TranscriptSegment] = []
         for chunk in chunks {
             let segments = try await databaseManager.fetchTranscriptSegments(audioChunkID: chunk.id)
@@ -46,10 +64,27 @@ public actor DataExporter {
     // MARK: - Markdown Export
     
     /// Export all data to Markdown format
-    public func exportToMarkdown() async throws -> String {
-        let summaries = try await databaseManager.fetchAllSummaries()
+    public func exportToMarkdown(year: Int? = nil) async throws -> String {
+        let allSummaries = try await databaseManager.fetchAllSummaries()
+        
+        // Filter by year if specified
+        let summaries: [Summary]
+        if let year = year {
+            let calendar = Calendar.current
+            let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1))!
+            let endOfYear = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1))!
+            
+            summaries = allSummaries.filter {
+                $0.periodStart >= startOfYear && $0.periodStart < endOfYear
+            }
+        } else {
+            summaries = allSummaries
+        }
         
         var markdown = "# Life Wrapped Export\n\n"
+        if let year = year {
+            markdown += "**Year:** \(year)\n\n"
+        }
         markdown += "**Export Date:** \(DateFormatter.localizedString(from: Date(), dateStyle: .long, timeStyle: .short))\n\n"
         markdown += "---\n\n"
         
@@ -80,6 +115,131 @@ public actor DataExporter {
         }
         
         return markdown
+    }
+    
+    // MARK: - PDF Export
+    
+    /// Export summaries to PDF format (summaries only, not full transcripts)
+    public func exportToPDF(year: Int? = nil) async throws -> Data {
+        let summaries = try await databaseManager.fetchAllSummaries()
+        
+        // Filter by year if specified
+        let filteredSummaries: [Summary]
+        if let year = year {
+            let calendar = Calendar.current
+            let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1))!
+            let endOfYear = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1))!
+            
+            filteredSummaries = summaries.filter {
+                $0.periodStart >= startOfYear && $0.periodStart < endOfYear
+            }
+        } else {
+            filteredSummaries = summaries
+        }
+        
+        // Create PDF
+        let pdfMetaData = [
+            kCGPDFContextCreator: "Life Wrapped",
+            kCGPDFContextTitle: year != nil ? "Life Wrapped Export \(year!)" : "Life Wrapped Export All"
+        ]
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = pdfMetaData as [String: Any]
+        
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+        
+        let data = renderer.pdfData { context in
+            var yOffset: CGFloat = 50
+            
+            // Add disclaimer on first page
+            context.beginPage()
+            let disclaimerText = "This PDF contains summaries only, not full transcripts."
+            let disclaimerAttributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.italicSystemFont(ofSize: 12),
+                .foregroundColor: UIColor.gray
+            ]
+            let disclaimerSize = disclaimerText.size(withAttributes: disclaimerAttributes)
+            disclaimerText.draw(at: CGPoint(x: 50, y: yOffset), withAttributes: disclaimerAttributes)
+            yOffset += disclaimerSize.height + 30
+            
+            // Group summaries by period type
+            let groupedSummaries = Dictionary(grouping: filteredSummaries) { $0.periodType }
+            let sortedGroups = groupedSummaries.sorted { $0.key.rawValue < $1.key.rawValue }
+            
+            for (periodType, summaries) in sortedGroups {
+                // Add section header
+                let headerText = "\(periodType.displayName) Summaries"
+                let headerAttributes: [NSAttributedString.Key: Any] = [
+                    .font: UIFont.boldSystemFont(ofSize: 18),
+                    .foregroundColor: UIColor.black
+                ]
+                let headerSize = headerText.size(withAttributes: headerAttributes)
+                
+                if yOffset + headerSize.height > pageRect.height - 50 {
+                    context.beginPage()
+                    yOffset = 50
+                }
+                
+                headerText.draw(at: CGPoint(x: 50, y: yOffset), withAttributes: headerAttributes)
+                yOffset += headerSize.height + 20
+                
+                // Add each summary
+                for summary in summaries.sorted(by: { $0.periodStart > $1.periodStart }) {
+                    let titleText = formatPeriod(summary.periodType, start: summary.periodStart, end: summary.periodEnd)
+                    let titleAttributes: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.boldSystemFont(ofSize: 14),
+                        .foregroundColor: UIColor.black
+                    ]
+                    
+                    let bodyAttributes: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.systemFont(ofSize: 12),
+                        .foregroundColor: UIColor.darkGray
+                    ]
+                    
+                    let titleSize = titleText.boundingRect(
+                        with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin],
+                        attributes: titleAttributes,
+                        context: nil
+                    ).size
+                    
+                    let bodySize = summary.text.boundingRect(
+                        with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin],
+                        attributes: bodyAttributes,
+                        context: nil
+                    ).size
+                    
+                    // Check if we need a new page
+                    if yOffset + titleSize.height + bodySize.height + 40 > pageRect.height - 50 {
+                        context.beginPage()
+                        yOffset = 50
+                    }
+                    
+                    // Draw title
+                    titleText.draw(
+                        with: CGRect(x: 50, y: yOffset, width: pageRect.width - 100, height: titleSize.height),
+                        options: [.usesLineFragmentOrigin],
+                        attributes: titleAttributes,
+                        context: nil
+                    )
+                    yOffset += titleSize.height + 10
+                    
+                    // Draw body
+                    summary.text.draw(
+                        with: CGRect(x: 50, y: yOffset, width: pageRect.width - 100, height: bodySize.height),
+                        options: [.usesLineFragmentOrigin],
+                        attributes: bodyAttributes,
+                        context: nil
+                    )
+                    yOffset += bodySize.height + 30
+                }
+                
+                yOffset += 20 // Extra space between sections
+            }
+        }
+        
+        return data
     }
     
     private func formatSummaryMarkdown(_ summary: Summary) -> String {
@@ -125,7 +285,7 @@ public actor DataExporter {
     // MARK: - Storage Info
     
     /// Get storage usage statistics
-    public func getStorageInfo() async throws -> StorageInfo {
+    public func getStorageInfo(localModelSize: Int64? = nil) async throws -> StorageInfo {
         let chunks = try await databaseManager.fetchAllAudioChunks()
         let summaries = try await databaseManager.fetchAllSummaries()
         
@@ -141,24 +301,22 @@ public actor DataExporter {
             audioChunkCount: chunks.count,
             summaryCount: summaries.count,
             totalAudioSize: totalAudioSize,
-            databaseSize: try await getDatabaseSize()
+            databaseSize: try await getDatabaseSize(),
+            localModelSize: localModelSize
         )
     }
     
     private func getDatabaseSize() async throws -> Int64 {
-        // Get database file size from container
-        let chunks = try await databaseManager.fetchAllAudioChunks()
-        if let firstChunk = chunks.first {
-            // Navigate up from audio file to database directory
-            let dbDirectory = firstChunk.fileURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Database")
-            let dbPath = dbDirectory.appendingPathComponent("lifewrapped.db").path
-            if FileManager.default.fileExists(atPath: dbPath) {
-                let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
-                if let size = attrs[FileAttributeKey.size] as? Int64 {
-                    return size
-                }
+        // Get database path from DatabaseManager
+        let dbPath = await databaseManager.getDatabasePath()
+        
+        if FileManager.default.fileExists(atPath: dbPath) {
+            let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
+            if let size = attrs[FileAttributeKey.size] as? Int64 {
+                return size
             }
         }
+        
         return 0
     }
 }
@@ -246,9 +404,10 @@ public struct StorageInfo: Sendable {
     public let summaryCount: Int
     public let totalAudioSize: Int64
     public let databaseSize: Int64
+    public let localModelSize: Int64?
     
     public var totalSize: Int64 {
-        totalAudioSize + databaseSize
+        totalAudioSize + databaseSize + (localModelSize ?? 0)
     }
     
     public var formattedTotalSize: String {
@@ -261,5 +420,12 @@ public struct StorageInfo: Sendable {
     
     public var formattedDatabaseSize: String {
         ByteCountFormatter.string(fromByteCount: databaseSize, countStyle: .file)
+    }
+    
+    public var formattedLocalModelSize: String {
+        guard let localModelSize = localModelSize else {
+            return "Not Downloaded"
+        }
+        return ByteCountFormatter.string(fromByteCount: localModelSize, countStyle: .file)
     }
 }

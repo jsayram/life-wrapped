@@ -49,6 +49,11 @@ public final class LocalModelCoordinator: ObservableObject {
         return await summarizationCoordinator.getLocalEngine().modelSizeFormatted()
     }
     
+    /// Get model size in bytes, or nil if not downloaded
+    public func modelSizeBytes() async -> Int64? {
+        return await summarizationCoordinator.getLocalEngine().modelSizeBytes()
+    }
+    
     // MARK: - Model Download
     
     /// Download the local AI model in the background

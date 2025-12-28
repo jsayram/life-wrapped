@@ -148,6 +148,89 @@ public final class DataCoordinator {
     
     // MARK: - Session Analytics
     
+    /// Fetch sessions grouped by year with aggregated statistics
+    public func fetchYearlyData() async throws -> [(year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval)] {
+        let yearData = try await databaseManager.fetchSessionsByYear()
+        
+        return try await withThrowingTaskGroup(of: (year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval).self) { group in
+            for yearInfo in yearData {
+                group.addTask {
+                    // Calculate word count for all sessions in this year
+                    var totalWords = 0
+                    var totalDuration: TimeInterval = 0
+                    
+                    for sessionId in yearInfo.sessionIds {
+                        // Fetch word count from database (uses cached word_count column)
+                        let wordCount = try await self.databaseManager.fetchSessionWordCount(sessionId: sessionId)
+                        totalWords += wordCount
+                        
+                        // Fetch all chunks for this session to calculate duration
+                        let chunks = try await self.databaseManager.fetchChunksBySession(sessionId: sessionId)
+                        totalDuration += chunks.reduce(0.0) { $0 + $1.duration }
+                    }
+                    
+                    return (
+                        year: yearInfo.year,
+                        sessionCount: yearInfo.count,
+                        wordCount: totalWords,
+                        duration: totalDuration
+                    )
+                }
+            }
+            
+            var results: [(year: Int, sessionCount: Int, wordCount: Int, duration: TimeInterval)] = []
+            for try await result in group {
+                results.append(result)
+            }
+            
+            return results.sorted { $0.year > $1.year } // Most recent year first
+        }
+    }
+    
+    /// Delete all data for a specific year
+    public func deleteDataForYear(year: Int) async throws {
+        // Get all sessions for this year
+        let yearData = try await databaseManager.fetchSessionsByYear()
+        guard let yearInfo = yearData.first(where: { $0.year == year }) else {
+            print("⚠️ [DataCoordinator] No data found for year \(year)")
+            return
+        }
+        
+        // Delete each session's data
+        for sessionId in yearInfo.sessionIds {
+            // Fetch chunks for this session
+            let chunks = try await databaseManager.fetchChunksBySession(sessionId: sessionId)
+            
+            // Delete audio files
+            for chunk in chunks {
+                try? FileManager.default.removeItem(at: chunk.fileURL)
+            }
+            
+            // Delete transcript segments
+            for chunk in chunks {
+                let segments = try await databaseManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                for segment in segments {
+                    try await databaseManager.deleteTranscriptSegment(id: segment.id)
+                }
+            }
+            
+            // Delete audio chunks from database
+            for chunk in chunks {
+                try await databaseManager.deleteAudioChunk(id: chunk.id)
+            }
+            
+            // Delete session metadata
+            try? await databaseManager.deleteSessionMetadata(sessionId: sessionId)
+            
+            // Delete session summary
+            if let summary = try await databaseManager.fetchSummaryForSession(sessionId: sessionId) {
+                try await databaseManager.deleteSummary(id: summary.id)
+            }
+        }
+        
+        print("✅ [DataCoordinator] Deleted all data for year \(year)")
+    }
+    
     /// Fetch sessions grouped by hour of day
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         return try await databaseManager.fetchSessionsByHour()
@@ -234,5 +317,32 @@ public final class DataCoordinator {
     /// Search for sessions by transcript text
     public func searchSessionsByTranscript(query: String) async throws -> Set<UUID> {
         return try await databaseManager.searchSessionsByTranscript(query: query)
+    }
+    
+    // MARK: - Delete Statistics
+    
+    /// Get statistics about data to be deleted (for confirmation dialog)
+    public func getDeleteStats() async -> (chunks: Int, transcripts: Int, summaries: Int, modelSize: String) {
+        do {
+            let chunks = try await databaseManager.fetchAllAudioChunks()
+            let summaries = try await databaseManager.fetchAllSummaries()
+            
+            // Calculate total transcript segments across all chunks
+            var transcriptCount = 0
+            for chunk in chunks {
+                let segments = try await databaseManager.fetchTranscriptSegments(audioChunkID: chunk.id)
+                transcriptCount += segments.count
+            }
+            
+            return (
+                chunks: chunks.count,
+                transcripts: transcriptCount,
+                summaries: summaries.count,
+                modelSize: "Not available"
+            )
+        } catch {
+            print("❌ [DataCoordinator] Failed to get delete stats: \(error)")
+            return (chunks: 0, transcripts: 0, summaries: 0, modelSize: "Unknown")
+        }
     }
 }

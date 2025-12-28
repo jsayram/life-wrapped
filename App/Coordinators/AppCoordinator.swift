@@ -443,6 +443,16 @@ public final class AppCoordinator: ObservableObject {
         return databaseManager
     }
     
+    /// Get local model coordinator for model operations
+    public func getLocalModelCoordinator() -> LocalModelCoordinator? {
+        return localModelCoordinator
+    }
+    
+    /// Get data coordinator for data operations
+    public func getDataCoordinator() -> DataCoordinator? {
+        return dataCoordinator
+    }
+    
     /// Get database file path for debugging
     public func getDatabasePath() async -> String? {
         guard let dbManager = databaseManager else { return nil }
@@ -465,6 +475,24 @@ public final class AppCoordinator: ObservableObject {
             let summaries = try await dbManager.fetchAllSummaries()
             for summary in summaries {
                 try await dbManager.deleteSummary(id: summary.id)
+            }
+            
+            // Delete all insight rollups
+            try await dbManager.deleteAllInsightRollups()
+            
+            // Delete all session metadata
+            try await dbManager.deleteAllSessionMetadata()
+            
+            // Delete all control events
+            try await dbManager.deleteAllControlEvents()
+            
+            // Delete API keys from Keychain
+            KeychainHelper.delete(key: "openai_api_key")
+            KeychainHelper.delete(key: "anthropic_api_key")
+            
+            // Delete local AI model
+            if let modelCoordinator = localModelCoordinator {
+                try? await modelCoordinator.deleteLocalModel()
             }
             
             // Refresh stats

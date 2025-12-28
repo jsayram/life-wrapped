@@ -1,32 +1,13 @@
 import SwiftUI
+import Storage
 
 struct DataSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var showDataManagement = false
-    @State private var storageUsed: String = "Calculating..."
+    @State private var storageInfo: StorageInfo?
     
     var body: some View {
         List {
-            Section {
-                NavigationLink(destination: HistoricalDataView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Historical Data")
-                            Text("View and manage data by year")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .foregroundStyle(.blue)
-                    }
-                }
-            } header: {
-                Text("Browse Data")
-            } footer: {
-                Text("The Overview tab always shows the current year. Use Historical Data to browse previous years.")
-            }
-            
             Section {
                 Button {
                     showDataManagement = true
@@ -49,11 +30,56 @@ struct DataSettingsView: View {
             }
             
             Section {
-                HStack {
-                    Label("Storage Used", systemImage: "internaldrive")
-                    Spacer()
-                    Text(storageUsed)
-                        .foregroundStyle(.secondary)
+                if let info = storageInfo {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Audio Recordings")
+                                .font(.body)
+                            Text("\(info.audioChunkCount) files")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Text(info.formattedAudioSize)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Database")
+                                .font(.body)
+                            Text("\(info.summaryCount) summaries")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Text(info.formattedDatabaseSize)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Local AI Model")
+                                .font(.body)
+                        }
+                        Spacer()
+                        Text(info.formattedLocalModelSize)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Total")
+                            .font(.headline)
+                        Spacer()
+                        Text(info.formattedTotalSize)
+                            .font(.headline)
+                    }
+                } else {
+                    HStack {
+                        ProgressView()
+                        Text("Loading storage info...")
+                            .foregroundColor(.secondary)
+                    }
                 }
             } header: {
                 Text("Storage")
@@ -68,36 +94,24 @@ struct DataSettingsView: View {
                 .environmentObject(coordinator)
         }
         .task {
-            await calculateStorage()
+            await loadStorageInfo()
         }
     }
     
-    private func calculateStorage() async {
-        // Calculate total storage used by app
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-        
-        if let url = documentsURL {
-            let size = directorySize(url: url)
-            let formatter = ByteCountFormatter()
-            formatter.allowedUnits = [.useMB, .useGB]
-            formatter.countStyle = .file
-            storageUsed = formatter.string(fromByteCount: Int64(size))
-        }
-    }
-    
-    private func directorySize(url: URL) -> Int {
-        let fileManager = FileManager.default
-        var totalSize = 0
-        
-        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
-            for case let fileURL as URL in enumerator {
-                if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                    totalSize += fileSize
+    private func loadStorageInfo() async {
+        do {
+            if let dbManager = coordinator.getDatabaseManager() {
+                let exporter = DataExporter(databaseManager: dbManager)
+                // Get local model size from coordinator
+                let modelSize = await coordinator.getLocalModelCoordinator()?.modelSizeBytes()
+                let info = try await exporter.getStorageInfo(localModelSize: modelSize)
+                await MainActor.run {
+                    storageInfo = info
                 }
             }
+        } catch {
+            print("❌ Failed to load storage info: \(error)")
         }
-        
-        return totalSize
     }
 }
 

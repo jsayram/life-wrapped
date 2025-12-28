@@ -56,6 +56,17 @@ extension UserDefaults {
         get { string(forKey: "rollupTimeFormat") ?? "h:mm a" }
         set { set(newValue, forKey: "rollupTimeFormat") }
     }
+    
+    var lastExportFormat: String? {
+        get { string(forKey: "lastExportFormat") }
+        set {
+            if let value = newValue {
+                set(value, forKey: "lastExportFormat")
+            } else {
+                removeObject(forKey: "lastExportFormat")
+            }
+        }
+    }
 }
 
 // MARK: - Array Extensions
