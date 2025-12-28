@@ -480,8 +480,20 @@ struct YearWrapDetailView: View {
     // MARK: - Helpers
     
     private func parseYearWrapJSON(from text: String) -> YearWrapData? {
-        guard let data = text.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(YearWrapData.self, from: data)
+        guard let data = text.data(using: .utf8) else {
+            print("❌ [YearWrapDetailView] Failed to convert text to data")
+            return nil
+        }
+        
+        do {
+            let decoded = try JSONDecoder().decode(YearWrapData.self, from: data)
+            print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data")
+            return decoded
+        } catch {
+            print("❌ [YearWrapDetailView] JSON decode failed: \(error)")
+            print("📄 [YearWrapDetailView] First 200 chars: \(String(text.prefix(200)))")
+            return nil
+        }
     }
     
     private func formatNumber(_ number: Int) -> String {
@@ -506,7 +518,7 @@ struct YearWrapDetailView: View {
             
             // For now, use the existing PDF export (Step 7 will enhance this)
             let exporter = DataExporter(databaseManager: dbManager)
-            let data = try await exporter.exportToPDF(year: year)
+            let data = try await exporter.exportToPDF(year: year, redactPeople: redactPeople, redactPlaces: redactPlaces)
             
             await MainActor.run {
                 pdfData = data
