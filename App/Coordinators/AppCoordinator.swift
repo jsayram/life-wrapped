@@ -1032,10 +1032,10 @@ public final class AppCoordinator: ObservableObject {
         await summaryCoordinator?.updateYearlySummary(date: date, forceRegenerate: forceRegenerate)
     }
 
-    /// Manual Year Wrap using external intelligence (keeps deterministic rollup as default)
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
+    /// Manual Year Wrap using specified AI engine (keeps deterministic rollup as default)
+    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
         // Delegate to SummaryCoordinator
-        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate)
+        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
     }
     
     /// Get count of new sessions created after Year Wrap generation

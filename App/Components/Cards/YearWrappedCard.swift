@@ -6,10 +6,47 @@ import Summarization
 struct YearWrappedCard: View {
     let summary: Summary
     let coordinator: AppCoordinator
+    let filter: ItemFilter
     let onRegenerate: () -> Void
     let isRegenerating: Bool
     @Environment(\.colorScheme) var colorScheme
     @State private var showDetailView = false
+    
+    /// Label text for the current filter
+    private var filterLabel: String {
+        switch filter {
+        case .all:
+            return "Combined"
+        case .workOnly:
+            return "Work"
+        case .personalOnly:
+            return "Personal"
+        }
+    }
+    
+    /// Icon for the current filter
+    private var filterIcon: String {
+        switch filter {
+        case .all:
+            return "square.stack.3d.up.fill"
+        case .workOnly:
+            return "briefcase.fill"
+        case .personalOnly:
+            return "house.fill"
+        }
+    }
+    
+    /// Color for the current filter
+    private var filterColor: Color {
+        switch filter {
+        case .all:
+            return AppTheme.purple
+        case .workOnly:
+            return .blue
+        case .personalOnly:
+            return .green
+        }
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,6 +59,18 @@ struct YearWrappedCard: View {
                         Text("Year Wrapped")
                             .font(.title3)
                             .fontWeight(.bold)
+                        
+                        // Filter badge
+                        Label(filterLabel, systemImage: filterIcon)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(filterColor)
+                            )
                     }
                     Text("AI-powered yearly summary")
                         .font(.caption)
@@ -146,7 +195,7 @@ struct YearWrappedCard: View {
         .cornerRadius(16)
         .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
         .sheet(isPresented: $showDetailView) {
-            YearWrapDetailView(yearWrap: summary, coordinator: coordinator)
+            YearWrapDetailView(yearWrap: summary, coordinator: coordinator, initialFilter: filter)
         }
     }
     

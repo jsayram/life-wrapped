@@ -188,6 +188,7 @@ struct OverviewTab: View {
                                         YearWrappedCard(
                                             summary: yearWrap,
                                             coordinator: coordinator,
+                                            filter: yearWrapFilter,
                                             onRegenerate: {
                                                 showYearWrapConfirmation = true
                                             },
@@ -337,7 +338,7 @@ struct OverviewTab: View {
                 // Always show Local AI option
                 Button("Use Local AI") {
                     Task {
-                        await wrapUpYear(forceRegenerate: true)
+                        await wrapUpYear(forceRegenerate: true, useLocalAI: true)
                     }
                 }
                 
@@ -346,7 +347,7 @@ struct OverviewTab: View {
                     let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
                     Button("Use \(provider) (Smartest)") {
                         Task {
-                            await wrapUpYear(forceRegenerate: true)
+                            await wrapUpYear(forceRegenerate: true, useLocalAI: false)
                         }
                     }
                 } else {
@@ -557,18 +558,20 @@ struct OverviewTab: View {
         }
     }
 
-    private func wrapUpYear(forceRegenerate: Bool) async {
+    private func wrapUpYear(forceRegenerate: Bool, useLocalAI: Bool) async {
         guard !isWrappingUpYear else { return }
         isWrappingUpYear = true
         let dateForGeneration = Date()
 
-        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
+        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
 
         // Wait briefly for database transaction to complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
-        // Fetch the newly generated/updated Year Wrap
+        // Fetch all Year Wrap summaries
         yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
+        yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
         
         // Check for staleness after fetching Year Wrap
         if let yearWrap = yearWrapSummary {

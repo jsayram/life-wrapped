@@ -27,6 +27,7 @@ extension ItemFilter: Identifiable {
 struct YearWrapDetailView: View {
     let yearWrap: Summary  // Initial combined summary
     let coordinator: AppCoordinator
+    let initialFilter: ItemFilter
     @Environment(\.dismiss) private var dismiss
     @State private var redactPeople = false
     @State private var redactPlaces = false
@@ -44,6 +45,14 @@ struct YearWrapDetailView: View {
     @State private var workSummary: Summary?
     @State private var personalSummary: Summary?
     @State private var isLoadingSummary = false
+    
+    init(yearWrap: Summary, coordinator: AppCoordinator, initialFilter: ItemFilter = .all) {
+        self.yearWrap = yearWrap
+        self.coordinator = coordinator
+        self.initialFilter = initialFilter
+        // Initialize displayFilter with initialFilter
+        _displayFilter = State(initialValue: initialFilter)
+    }
     
     /// The currently active summary based on filter selection
     private var activeSummary: Summary? {
@@ -700,12 +709,18 @@ struct YearWrapDetailView: View {
             // If new format fails, try parsing old format (string arrays) and convert
             print("⚠️ [YearWrapDetailView] New format decode failed, trying old format: \(newFormatError)")
             
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let yearTitle = json["year_title"] as? String,
-                  let yearSummary = json["year_summary"] as? String else {
-                print("❌ [YearWrapDetailView] Failed to parse old format")
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                print("❌ [YearWrapDetailView] Failed to parse as JSON object")
                 return nil
             }
+            
+            // Check for year_summary - required field for all formats
+            guard let yearSummary = json["year_summary"] as? String else {
+                print("❌ [YearWrapDetailView] No year_summary field found")
+                return nil
+            }
+            
+            let yearTitle = json["year_title"] as? String ?? "Year in Review"
             
             // Helper to convert old string arrays to ClassifiedItem arrays
             func parseStringArray(_ key: String) -> [ClassifiedItem] {
@@ -713,6 +728,40 @@ struct YearWrapDetailView: View {
                 return strings.map { ClassifiedItem(text: $0, category: .both) }
             }
             
+            // Check if this is simplified Local AI format (has top_highlights instead of detailed fields)
+            let isSimplifiedFormat = json["top_highlights"] != nil
+            
+            if isSimplifiedFormat {
+                print("🤖 [YearWrapDetailView] Detected simplified Local AI format")
+                
+                // Parse Local AI simplified format
+                let topHighlights = parseStringArray("top_highlights")
+                let challenges = parseStringArray("biggest_challenges")
+                let topics = parseStringArray("top_topics")
+                
+                // Create Year Wrap with available data, using highlights as wins
+                let yearWrap = YearWrapData(
+                    yearTitle: yearTitle,
+                    yearSummary: yearSummary,
+                    majorArcs: [],
+                    biggestWins: topHighlights,
+                    biggestLosses: [],
+                    biggestChallenges: challenges,
+                    finishedProjects: [],
+                    unfinishedProjects: [],
+                    topWorkedOnTopics: topics,
+                    topTalkedAboutThings: [],
+                    valuableActionsTaken: [],
+                    opportunitiesMissed: [],
+                    peopleMentioned: [],
+                    placesVisited: []
+                )
+                
+                print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (Local AI simplified format)")
+                return yearWrap
+            }
+            
+            // Standard old format with detailed fields
             let yearWrap = YearWrapData(
                 yearTitle: yearTitle,
                 yearSummary: yearSummary,

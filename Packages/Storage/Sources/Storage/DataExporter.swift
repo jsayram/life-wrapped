@@ -600,11 +600,12 @@ public actor DataExporter {
             return nil
         }
         
-        // Extract all fields
-        guard let yearTitle = json["year_title"] as? String,
-              let yearSummary = json["year_summary"] as? String else {
+        // Check for year_summary - required field for all formats
+        guard let yearSummary = json["year_summary"] as? String else {
             return nil
         }
+        
+        let yearTitle = json["year_title"] as? String ?? "Year in Review"
         
         // Helper to parse classified items (supports both old string format and new object format)
         func parseClassifiedItems(_ key: String) -> [ClassifiedItem] {
@@ -626,6 +627,34 @@ public actor DataExporter {
             }
         }
         
+        // Check if this is simplified Local AI format (has top_highlights instead of detailed fields)
+        let isSimplifiedFormat = json["top_highlights"] != nil
+        
+        if isSimplifiedFormat {
+            // Parse Local AI simplified format
+            let topHighlights = parseClassifiedItems("top_highlights")
+            let challenges = parseClassifiedItems("biggest_challenges")
+            let topics = parseClassifiedItems("top_topics")
+            
+            return YearWrapData(
+                yearTitle: yearTitle,
+                yearSummary: yearSummary,
+                majorArcs: [],
+                biggestWins: topHighlights,
+                biggestLosses: [],
+                biggestChallenges: challenges,
+                finishedProjects: [],
+                unfinishedProjects: [],
+                topWorkedOnTopics: topics,
+                topTalkedAboutThings: [],
+                valuableActionsTaken: [],
+                opportunitiesMissed: [],
+                peopleMentioned: [],
+                placesVisited: []
+            )
+        }
+        
+        // Standard format with detailed fields
         return YearWrapData(
             yearTitle: yearTitle,
             yearSummary: yearSummary,

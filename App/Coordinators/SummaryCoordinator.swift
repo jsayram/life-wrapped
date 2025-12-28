@@ -691,7 +691,7 @@ public final class SummaryCoordinator {
     }
 
     /// Manual Year Wrap using external intelligence - generates Combined, Work, and Personal wraps
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
+    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: date)
         var startComponents = DateComponents()
@@ -756,6 +756,7 @@ public final class SummaryCoordinator {
                 startOfYear: startOfYear,
                 endOfYear: endOfYear,
                 forceRegenerate: forceRegenerate,
+                useLocalAI: useLocalAI,
                 label: "Combined"
             )
 
@@ -768,6 +769,7 @@ public final class SummaryCoordinator {
                     startOfYear: startOfYear,
                     endOfYear: endOfYear,
                     forceRegenerate: forceRegenerate,
+                    useLocalAI: useLocalAI,
                     label: "Work"
                 )
             } else {
@@ -783,6 +785,7 @@ public final class SummaryCoordinator {
                     startOfYear: startOfYear,
                     endOfYear: endOfYear,
                     forceRegenerate: forceRegenerate,
+                    useLocalAI: useLocalAI,
                     label: "Personal"
                 )
             } else {
@@ -802,6 +805,7 @@ public final class SummaryCoordinator {
         startOfYear: Date,
         endOfYear: Date,
         forceRegenerate: Bool,
+        useLocalAI: Bool,
         label: String
     ) async {
         do {
@@ -827,7 +831,8 @@ public final class SummaryCoordinator {
                 endOfYear: endOfYear,
                 sourceSummaries: sourceSummaries,
                 workSessionCount: workCount,
-                personalSessionCount: personalCount
+                personalSessionCount: personalCount,
+                useLocalAI: useLocalAI
             )
 
             try await databaseManager.upsertPeriodSummary(
@@ -837,7 +842,7 @@ public final class SummaryCoordinator {
                 end: endOfYear,
                 topicsJSON: wrapSummary.topicsJSON,
                 entitiesJSON: wrapSummary.entitiesJSON,
-                engineTier: wrapSummary.engineTier ?? EngineTier.external.rawValue,
+                engineTier: wrapSummary.engineTier ?? (useLocalAI ? EngineTier.local.rawValue : EngineTier.external.rawValue),
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )

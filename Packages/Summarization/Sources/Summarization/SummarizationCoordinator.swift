@@ -475,28 +475,46 @@ public actor SummarizationCoordinator {
         )
     }
 
-    /// Generate a Year Wrap summary using the external engine and higher-level rollups
+    /// Generate a Year Wrap summary using the specified engine (External or Local AI)
     public func generateYearWrapSummary(
         startOfYear: Date,
         endOfYear: Date,
         sourceSummaries: [Summary],
         workSessionCount: Int,
-        personalSessionCount: Int
+        personalSessionCount: Int,
+        useLocalAI: Bool = false
     ) async throws -> Summary {
         guard !sourceSummaries.isEmpty else {
             throw SummarizationError.noTranscriptData
         }
 
-        guard let external = externalEngine else {
-            throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
-        }
-
-        guard await external.isAvailable() else {
-            throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
+        // Select engine based on user choice
+        let engine: any SummarizationEngine
+        let engineTier: String
+        
+        if useLocalAI {
+            // Use Local AI (Phi-3.5 Mini)
+            guard await localEngine.isAvailable() else {
+                throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
+            }
+            engine = localEngine
+            engineTier = EngineTier.local.rawValue
+            print("🤖 [SummarizationCoordinator] Using Local AI for Year Wrap")
+        } else {
+            // Use External API (OpenAI/Anthropic)
+            guard let external = externalEngine else {
+                throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
+            }
+            guard await external.isAvailable() else {
+                throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
+            }
+            engine = external
+            engineTier = EngineTier.external.rawValue
+            print("☁️ [SummarizationCoordinator] Using External API for Year Wrap")
         }
 
         let previousEngine = activeEngine
-        activeEngine = external
+        activeEngine = engine
         defer { activeEngine = previousEngine }
 
         let intelligences = sourceSummaries.map { summary -> SessionIntelligence in
@@ -520,7 +538,7 @@ public actor SummarizationCoordinator {
         // Build category context from session counts
         let categoryContext = buildCategoryContext(workCount: workSessionCount, personalCount: personalSessionCount)
 
-        let intelligence = try await external.summarizePeriod(
+        let intelligence = try await engine.summarizePeriod(
             periodType: .yearWrap,
             sessionSummaries: intelligences,
             periodStart: startOfYear,
