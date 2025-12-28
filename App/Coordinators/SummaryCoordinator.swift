@@ -400,16 +400,25 @@ public final class SummaryCoordinator {
             // Store clean text without timestamps - metadata is in periodStart/periodEnd
             print("📝 [SummaryCoordinator] Generating rollup from \(sessionSummaries.count) session summaries (oldest to newest)")
             
-            // Build lines, appending user notes if they exist for each session
+            // Build lines, appending category and user notes if they exist for each session
             var lines: [String] = []
             for summary in sessionSummaries {
-                var lineText = "• \(summary.text)"
+                var lineText = "• "
                 
-                // Append user notes if they exist for this session
+                // Prepend category tag if available
                 if let sid = summary.sessionId,
-                   let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sid),
-                   let notes = metadata.notes, !notes.isEmpty {
-                    lineText += "\n  (Notes: \(notes))"
+                   let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sid) {
+                    if let category = metadata.category {
+                        lineText += "[\(category.displayName.uppercased())] "
+                    }
+                    lineText += summary.text
+                    
+                    // Append user notes if they exist for this session
+                    if let notes = metadata.notes, !notes.isEmpty {
+                        lineText += "\n  (Notes: \(notes))"
+                    }
+                } else {
+                    lineText += summary.text
                 }
                 
                 lines.append(lineText)

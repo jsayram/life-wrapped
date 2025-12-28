@@ -437,13 +437,13 @@ struct OverviewTab: View {
         
         switch periodType {
         case .day:
-            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
         case .week:
-            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
         case .month:
-            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
         case .year:
-            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: true)
         default:
             break
         }
