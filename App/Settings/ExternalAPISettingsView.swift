@@ -274,17 +274,24 @@ struct ExternalAPISettingsView: View {
     }
     
     private func activateExternalEngine() {
-        guard availableEngines.contains(.external) else {
-            coordinator.showError("Configure an API key first")
-            return
-        }
-        
         Task {
+            // Refresh available engines first
             guard let summCoord = coordinator.summarizationCoordinator else { return }
+            let available = await summCoord.getAvailableEngines()
+            
+            guard available.contains(.external) else {
+                // No valid API key - fall back to next best engine
+                await fallbackToNextBestEngine()
+                return
+            }
+            
             await summCoord.setPreferredEngine(.external)
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-            coordinator.showSuccess("Switched to External API")
+            
+            await MainActor.run {
+                coordinator.showSuccess("Switched to External API")
+            }
         }
     }
     
@@ -327,6 +334,11 @@ struct ExternalAPISettingsView: View {
                 } else {
                     // Show warning that invalid key won't be saved
                     coordinator.showError("Invalid API key - not saved")
+                    
+                    // Fall back to next best available engine
+                    Task {
+                        await fallbackToNextBestEngine()
+                    }
                 }
             }
         }

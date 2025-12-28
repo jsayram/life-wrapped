@@ -54,7 +54,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToSettingsTab"))) { _ in
             selectedTab = 3
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToExternalAPISettings"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToSmartestConfig"))) { _ in
             selectedTab = 3
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToOverviewTab"))) { _ in

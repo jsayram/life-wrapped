@@ -9,7 +9,7 @@ struct SettingsTab: View {
     @State private var debugTapCount: Int = 0
     @State private var showDebugSection: Bool = false
     @State private var databasePath: String?
-    @State private var navigateToExternalAPI: Bool = false
+    @State private var navigateToAISettings: Bool = false
     @State private var fromYearWrap: Bool = false
     
     var body: some View {
@@ -158,12 +158,12 @@ struct SettingsTab: View {
                     await loadActiveEngine()
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToExternalAPISettings"))) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToSmartestConfig"))) { _ in
                 fromYearWrap = true
-                navigateToExternalAPI = true
+                navigateToAISettings = true
             }
-            .navigationDestination(isPresented: $navigateToExternalAPI) {
-                ExternalAPISettingsView(fromYearWrap: fromYearWrap)
+            .navigationDestination(isPresented: $navigateToAISettings) {
+                AISettingsView(fromYearWrap: fromYearWrap)
                     .onDisappear {
                         fromYearWrap = false
                     }

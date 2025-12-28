@@ -274,8 +274,7 @@ struct OverviewTab: View {
             let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
             return "This will use your personal \(provider) API to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
         } else {
-            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-            return "To generate a Year Wrap, you need to configure your \(provider) API key.\n\nWe'll switch to the 'Smartest' AI engine and guide you to add your personal API credentials."
+            return "Year Wrap works best with the 'Smartest' AI engine for the most comprehensive and detailed analysis.\n\nTo unlock the best Year Wrap experience, you'll need to add your personal OpenAI or Anthropic API key. This gives you access to the most capable AI models for analyzing your year.\n\nWe'll guide you to the settings to configure your preferred AI provider."
         }
     }
     
@@ -289,17 +288,12 @@ struct OverviewTab: View {
                 await wrapUpYear(forceRegenerate: false)
             }
         } else {
-            // Switch to Smartest (External) engine and navigate to External API settings
-            Task {
-                if let summCoord = coordinator.summarizationCoordinator {
-                    await summCoord.setPreferredEngine(.external)
-                }
-                // Post notification to switch to Settings tab and navigate to External API
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("NavigateToExternalAPISettings"),
-                    object: nil
-                )
-            }
+            // Navigate to AI & Summaries settings to configure Smartest engine
+            // Post notification to switch to Settings tab and open AI & Summaries
+            NotificationCenter.default.post(
+                name: NSNotification.Name("NavigateToSmartestConfig"),
+                object: nil
+            )
         }
     }
     
