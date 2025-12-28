@@ -162,7 +162,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
         periodType: PeriodType,
         sessionSummaries: [SessionIntelligence],
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        categoryContext: String? = nil
     ) async throws -> PeriodIntelligence {
         
         guard !sessionSummaries.isEmpty else {
@@ -208,7 +209,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
         let messages = UniversalPrompt.buildMessages(
             level: summaryLevel,
             input: inputJSON,
-            metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue]
+            metadata: ["sessionCount": sessionSummaries.count, "periodType": periodType.rawValue],
+            categoryContext: categoryContext
         )
         
         // Call API with proper message structure
@@ -329,14 +331,41 @@ public actor ExternalAPIEngine: SummarizationEngine {
     
     private func buildPeriodPrompt(periodType: PeriodType, sessionSummaries: [SessionIntelligence]) -> String {
         let summariesText = sessionSummaries.enumerated().map { index, summary in
-            "Session \(index + 1): \(summary.summary)"
+            var sessionLine = "Session \(index + 1)"
+            if let category = summary.category {
+                sessionLine += " [\(category.rawValue.uppercased())]"
+            }
+            sessionLine += ": \(summary.summary)"
+            return sessionLine
         }.joined(separator: "\n")
+        
+        // Build category context summary
+        let categoryContext: String
+        let workCount = sessionSummaries.filter { $0.category == .work }.count
+        let personalCount = sessionSummaries.filter { $0.category == .personal }.count
+        let uncategorizedCount = sessionSummaries.filter { $0.category == nil }.count
+        
+        if workCount > 0 || personalCount > 0 {
+            var categoryParts: [String] = []
+            if workCount > 0 {
+                categoryParts.append("\(workCount) work session\(workCount == 1 ? "" : "s")")
+            }
+            if personalCount > 0 {
+                categoryParts.append("\(personalCount) personal session\(personalCount == 1 ? "" : "s")")
+            }
+            if uncategorizedCount > 0 {
+                categoryParts.append("\(uncategorizedCount) uncategorized")
+            }
+            categoryContext = "\n\nSESSION CATEGORIES: The user has marked " + categoryParts.joined(separator: ", ") + ". Use [WORK] or [PERSONAL] tags shown above to classify each insight item."
+        } else {
+            categoryContext = ""
+        }
         
         return """
         Analyze these \(sessionSummaries.count) session summaries from a \(periodType.displayName) period.
         
         Summaries:
-        \(summariesText)
+        \(summariesText)\(categoryContext)
         
         IMPORTANT: Return ONLY a JSON object with these EXACT field names (do not rename or add prefixes):
         {

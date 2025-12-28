@@ -2,12 +2,35 @@ import SwiftUI
 import SharedModels
 import Storage
 
+// MARK: - ItemFilter Extensions for UI
+
+extension ItemFilter: Identifiable {
+    public var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .all: return "All Items"
+        case .workOnly: return "Work Only"
+        case .personalOnly: return "Personal Only"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .all: return "list.bullet"
+        case .workOnly: return "briefcase.fill"
+        case .personalOnly: return "house.fill"
+        }
+    }
+}
+
 struct YearWrapDetailView: View {
     let yearWrap: Summary
     let coordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var redactPeople = false
     @State private var redactPlaces = false
+    @State private var pdfFilter: ItemFilter = .all
     @State private var parsedData: YearWrapData?
     @State private var totalSessions: Int = 0
     @State private var totalDuration: TimeInterval = 0
@@ -67,12 +90,23 @@ struct YearWrapDetailView: View {
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Toggle(isOn: $redactPeople) {
-                            Label("Redact People", systemImage: "person.slash")
+                        Section("PDF Content Filter") {
+                            Picker("Filter Items", selection: $pdfFilter) {
+                                ForEach(ItemFilter.allCases) { filter in
+                                    Label(filter.displayName, systemImage: filter.icon)
+                                        .tag(filter)
+                                }
+                            }
                         }
                         
-                        Toggle(isOn: $redactPlaces) {
-                            Label("Redact Places", systemImage: "mappin.slash")
+                        Section("Privacy") {
+                            Toggle(isOn: $redactPeople) {
+                                Label("Redact People", systemImage: "person.slash")
+                            }
+                            
+                            Toggle(isOn: $redactPlaces) {
+                                Label("Redact Places", systemImage: "mappin.slash")
+                            }
                         }
                         
                         Divider()
@@ -451,9 +485,13 @@ struct YearWrapDetailView: View {
                                 .frame(width: 6, height: 6)
                                 .padding(.top, 6)
                             
-                            Text(item.text)
-                                .font(.body)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.text)
+                                    .font(.body)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                
+                                categoryBadge(for: item.category)
+                            }
                         }
                     }
                 }
@@ -464,6 +502,49 @@ struct YearWrapDetailView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(.secondarySystemBackground))
         )
+    }
+    
+    // Category badge view
+    @ViewBuilder
+    private func categoryBadge(for category: ItemCategory) -> some View {
+        HStack(spacing: 4) {
+            switch category {
+            case .work:
+                Label("Work", systemImage: "briefcase.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue)
+                    .clipShape(Capsule())
+            case .personal:
+                Label("Personal", systemImage: "house.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green)
+                    .clipShape(Capsule())
+            case .both:
+                HStack(spacing: 4) {
+                    Label("Work", systemImage: "briefcase.fill")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                    
+                    Label("Personal", systemImage: "house.fill")
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.green)
+                        .clipShape(Capsule())
+                }
+            }
+        }
     }
     
     // MARK: - Footer
@@ -557,9 +638,8 @@ struct YearWrapDetailView: View {
             let calendar = Calendar.current
             let year = calendar.component(.year, from: yearWrap.periodStart)
             
-            // For now, use the existing PDF export (Step 7 will enhance this)
             let exporter = DataExporter(databaseManager: dbManager)
-            let data = try await exporter.exportToPDF(year: year, redactPeople: redactPeople, redactPlaces: redactPlaces)
+            let data = try await exporter.exportToPDF(year: year, redactPeople: redactPeople, redactPlaces: redactPlaces, filter: pdfFilter)
             
             await MainActor.run {
                 pdfData = data

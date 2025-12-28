@@ -118,7 +118,8 @@ public protocol SummarizationEngine: Sendable {
         periodType: PeriodType,
         sessionSummaries: [SessionIntelligence],
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        categoryContext: String?
     ) async throws -> PeriodIntelligence
 }
 

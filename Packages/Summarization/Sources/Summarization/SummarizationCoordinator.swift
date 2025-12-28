@@ -479,7 +479,8 @@ public actor SummarizationCoordinator {
     public func generateYearWrapSummary(
         startOfYear: Date,
         endOfYear: Date,
-        sourceSummaries: [Summary]
+        sourceSummaries: [Summary],
+        categoryContext: String? = nil
     ) async throws -> Summary {
         guard !sourceSummaries.isEmpty else {
             throw SummarizationError.noTranscriptData
@@ -510,7 +511,8 @@ public actor SummarizationCoordinator {
                 sentiment: 0.0,
                 duration: summary.periodEnd.timeIntervalSince(summary.periodStart),
                 wordCount: wordCount,
-                languageCodes: ["en-US"]
+                languageCodes: ["en-US"],
+                category: nil  // Not used for rollup summaries
             )
         }
 
@@ -518,7 +520,8 @@ public actor SummarizationCoordinator {
             periodType: .yearWrap,
             sessionSummaries: intelligences,
             periodStart: startOfYear,
-            periodEnd: endOfYear
+            periodEnd: endOfYear,
+            categoryContext: categoryContext
         )
 
         return try convertToSummary(periodIntelligence: intelligence)
@@ -572,7 +575,8 @@ public actor SummarizationCoordinator {
             periodType: periodType,
             sessionSummaries: intelligences,
             periodStart: startDate,
-            periodEnd: endDate
+            periodEnd: endDate,
+            categoryContext: nil
         )
         
         // Convert to Summary for database storage

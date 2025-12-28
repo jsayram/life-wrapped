@@ -123,7 +123,7 @@ public actor DataExporter {
     // MARK: - PDF Export
     
     /// Export summaries to PDF format (summaries only, not full transcripts)
-    public func exportToPDF(year: Int? = nil, redactPeople: Bool = false, redactPlaces: Bool = false) async throws -> Data {
+    public func exportToPDF(year: Int? = nil, redactPeople: Bool = false, redactPlaces: Bool = false, filter: ItemFilter = .all) async throws -> Data {
         let summaries = try await databaseManager.fetchAllSummaries()
         
         // Filter by year if specified
@@ -145,7 +145,7 @@ public actor DataExporter {
         
         if let yearWrap = yearWrap, let year = year {
             // Render enhanced Year Wrap PDF
-            return try await renderYearWrapPDF(yearWrap: yearWrap, year: year, redactPeople: redactPeople, redactPlaces: redactPlaces)
+            return try await renderYearWrapPDF(yearWrap: yearWrap, year: year, redactPeople: redactPeople, redactPlaces: redactPlaces, filter: filter)
         } else {
             // Render standard summary PDF
             return renderStandardPDF(summaries: filteredSummaries, year: year)
@@ -262,7 +262,7 @@ public actor DataExporter {
     
     // MARK: - Year Wrap PDF Rendering
     
-    private func renderYearWrapPDF(yearWrap: Summary, year: Int, redactPeople: Bool, redactPlaces: Bool) async throws -> Data {
+    private func renderYearWrapPDF(yearWrap: Summary, year: Int, redactPeople: Bool, redactPlaces: Bool, filter: ItemFilter) async throws -> Data {
         guard let parsedData = parseYearWrapJSON(from: yearWrap.text) else {
             // Fallback to standard PDF if parsing fails
             return renderStandardPDF(summaries: [yearWrap], year: year)
@@ -294,16 +294,16 @@ public actor DataExporter {
             yOffset = renderStatsSection(context: context, pageRect: pageRect, yOffset: yOffset, stats: stats)
             
             // Insights Sections
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Major Arcs", emoji: "🌟", items: parsedData.majorArcs, color: YearWrapTheme.sectionColors[0], requireNewPage: false)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Wins", emoji: "🏆", items: parsedData.biggestWins, color: YearWrapTheme.sectionColors[1], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Losses", emoji: "💔", items: parsedData.biggestLosses, color: YearWrapTheme.sectionColors[2], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Challenges", emoji: "⚡", items: parsedData.biggestChallenges, color: YearWrapTheme.sectionColors[3], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Finished Projects", emoji: "✅", items: parsedData.finishedProjects, color: YearWrapTheme.sectionColors[4], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Unfinished Projects", emoji: "🚧", items: parsedData.unfinishedProjects, color: YearWrapTheme.sectionColors[5], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Worked On", emoji: "💼", items: parsedData.topWorkedOnTopics, color: YearWrapTheme.sectionColors[6], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Talked About", emoji: "💬", items: parsedData.topTalkedAboutThings, color: YearWrapTheme.sectionColors[7], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Valuable Actions", emoji: "🎯", items: parsedData.valuableActionsTaken, color: YearWrapTheme.sectionColors[8], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Opportunities Missed", emoji: "🤔", items: parsedData.opportunitiesMissed, color: YearWrapTheme.sectionColors[9], requireNewPage: true)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Major Arcs", emoji: "🌟", items: parsedData.majorArcs, color: YearWrapTheme.sectionColors[0], requireNewPage: false, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Wins", emoji: "🏆", items: parsedData.biggestWins, color: YearWrapTheme.sectionColors[1], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Losses", emoji: "💔", items: parsedData.biggestLosses, color: YearWrapTheme.sectionColors[2], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Challenges", emoji: "⚡", items: parsedData.biggestChallenges, color: YearWrapTheme.sectionColors[3], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Finished Projects", emoji: "✅", items: parsedData.finishedProjects, color: YearWrapTheme.sectionColors[4], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Unfinished Projects", emoji: "🚧", items: parsedData.unfinishedProjects, color: YearWrapTheme.sectionColors[5], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Worked On", emoji: "💼", items: parsedData.topWorkedOnTopics, color: YearWrapTheme.sectionColors[6], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Talked About", emoji: "💬", items: parsedData.topTalkedAboutThings, color: YearWrapTheme.sectionColors[7], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Valuable Actions", emoji: "🎯", items: parsedData.valuableActionsTaken, color: YearWrapTheme.sectionColors[8], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Opportunities Missed", emoji: "🤔", items: parsedData.opportunitiesMissed, color: YearWrapTheme.sectionColors[9], requireNewPage: true, filter: filter)
             
             // People & Places
             yOffset = renderPeopleSection(context: context, pageRect: pageRect, yOffset: yOffset, people: parsedData.peopleMentioned, redact: redactPeople)
@@ -407,8 +407,19 @@ public actor DataExporter {
     }
     
     @discardableResult
-    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [ClassifiedItem], color: String, requireNewPage: Bool) -> CGFloat {
-        if items.isEmpty {
+    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [ClassifiedItem], color: String, requireNewPage: Bool, filter: ItemFilter) -> CGFloat {
+        // Apply filter
+        let filteredItems: [ClassifiedItem]
+        switch filter {
+        case .all:
+            filteredItems = items
+        case .workOnly:
+            filteredItems = items.filter { $0.category == .work || $0.category == .both }
+        case .personalOnly:
+            filteredItems = items.filter { $0.category == .personal || $0.category == .both }
+        }
+        
+        if filteredItems.isEmpty {
             return yOffset
         }
         
@@ -428,15 +439,15 @@ public actor DataExporter {
         headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
         y += headerSize.height + 20
         
-        // Items as bullets with category indicators
+        // Items as bullets with category indicators (only for "All" filter)
         let bulletAttributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 14),
             .foregroundColor: UIColor.darkGray
         ]
         
-        for item in items {
-            // Add category prefix for "All" view
-            let categoryPrefix = getCategoryPrefix(item.category)
+        for item in filteredItems {
+            // Add category prefix only when showing all items
+            let categoryPrefix = filter == .all ? getCategoryPrefix(item.category) : ""
             let bulletText = "• \(categoryPrefix)\(item.text)"
             let bulletSize = bulletText.boundingRect(
                 with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),

@@ -392,6 +392,13 @@ public enum ItemCategory: String, Codable, Sendable {
     case both
 }
 
+/// PDF export filter options
+public enum ItemFilter: String, Codable, Sendable, CaseIterable {
+    case all
+    case workOnly
+    case personalOnly
+}
+
 /// Classified item with work/personal designation
 public struct ClassifiedItem: Codable, Sendable, Hashable {
     public let text: String

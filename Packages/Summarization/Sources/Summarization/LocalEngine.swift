@@ -446,7 +446,8 @@ public actor LocalEngine: SummarizationEngine {
         periodType: PeriodType,
         sessionSummaries: [SessionIntelligence],
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        categoryContext: String? = nil
     ) async throws -> PeriodIntelligence {
         // For period summaries, use simple aggregation (BasicEngine style)
         guard !sessionSummaries.isEmpty else {

@@ -727,32 +727,20 @@ public final class SummaryCoordinator {
                     print("💾 [SummaryCoordinator] ✅ CACHE HIT - Year Wrap unchanged, skipping external call")
                     return
                 }
-                if forceRegenerate && existing.inputHash == inputHash {
-                    print("🔄 [SummaryCoordinator] Force regenerate - updating timestamp even though hash matches")
-                    // Update timestamp by calling upsert with same data
-                    try await databaseManager.upsertPeriodSummary(
-                        type: .yearWrap,
-                        text: existing.text,
-                        start: startOfYear,
-                        end: endOfYear,
-                        topicsJSON: existing.topicsJSON,
-                        entitiesJSON: existing.entitiesJSON,
-                        engineTier: existing.engineTier,
-                        sourceIds: sourceIds,
-                        inputHash: inputHash
-                    )
-                    print("✅ [SummaryCoordinator] Year Wrap timestamp updated")
-                    return
-                }
-                print(forceRegenerate ? "🔄 [SummaryCoordinator] Force regenerate enabled" : "🔄 [SummaryCoordinator] Hash mismatch - regenerating Year Wrap")
+                print(forceRegenerate ? "🔄 [SummaryCoordinator] Force regenerate enabled - will call AI" : "🔄 [SummaryCoordinator] Hash mismatch - regenerating Year Wrap")
             } else {
                 print("📝 [SummaryCoordinator] No Year Wrap found, generating new one")
             }
 
+            // Fetch category information for the year
+            let categoryMap = try await fetchSessionCategoriesForYear(year: year)
+            let categoryContext = buildCategoryContext(categoryMap: categoryMap)
+
             let wrapSummary = try await summarizationEngine.generateYearWrapSummary(
                 startOfYear: startOfYear,
                 endOfYear: endOfYear,
-                sourceSummaries: sourceSummaries
+                sourceSummaries: sourceSummaries,
+                categoryContext: categoryContext
             )
 
             try await databaseManager.upsertPeriodSummary(
@@ -806,6 +794,65 @@ public final class SummaryCoordinator {
     }
     
     // MARK: - Helpers
+    
+    /// Fetch session category distribution for a given year
+    private func fetchSessionCategoriesForYear(year: Int) async throws -> [UUID: SessionCategory] {
+        // Fetch all sessions for the year
+        let yearlyData = try await databaseManager.fetchSessionsByYear()
+        guard let yearData = yearlyData.first(where: { $0.year == year }) else {
+            print("ℹ️ [SummaryCoordinator] No sessions found for year \(year)")
+            return [:]
+        }
+        
+        // Fetch metadata for all sessions in the year
+        let metadata = try await databaseManager.fetchSessionMetadataBatch(sessionIds: yearData.sessionIds)
+        
+        // Build UUID -> SessionCategory map
+        // Note: For Year Wrap, we use this to provide overall category context to the AI
+        // The AI will look at which sessions were marked work/personal and classify items accordingly
+        var categoryMap: [UUID: SessionCategory] = [:]
+        for (sessionId, meta) in metadata {
+            if let category = meta.category {
+                categoryMap[sessionId] = category
+            }
+        }
+        
+        let workCount = categoryMap.values.filter { $0 == .work }.count
+        let personalCount = categoryMap.values.filter { $0 == .personal }.count
+        print("📊 [SummaryCoordinator] Year \(year): \(workCount) work sessions, \(personalCount) personal sessions out of \(yearData.sessionIds.count) total")
+        
+        return categoryMap
+    }
+    
+    /// Build category context string for AI prompt
+    private func buildCategoryContext(categoryMap: [UUID: SessionCategory]) -> String? {
+        guard !categoryMap.isEmpty else { return nil }
+        
+        let workCount = categoryMap.values.filter { $0 == .work }.count
+        let personalCount = categoryMap.values.filter { $0 == .personal }.count
+        
+        guard workCount > 0 || personalCount > 0 else { return nil }
+        
+        var parts: [String] = []
+        if workCount > 0 {
+            parts.append("\(workCount) work session\(workCount == 1 ? "" : "s")")
+        }
+        if personalCount > 0 {
+            parts.append("\(personalCount) personal session\(personalCount == 1 ? "" : "s")")
+        }
+        
+        return """
+        The user has categorized their recording sessions this year as: \(parts.joined(separator: " and ")).
+        
+        When classifying items in the Year Wrap:
+        - Items from work sessions should be marked as "work"
+        - Items from personal sessions should be marked as "personal"
+        - Items that appear across both types or cannot be clearly attributed should be marked as "both"
+        
+        The monthly/weekly summaries you're analyzing aggregate content from these categorized sessions.
+        Use the session categories as context to infer which domain each insight belongs to.
+        """
+    }
     
     /// Calculate hash of input text for caching
     private func calculateHash(for text: String) -> String {

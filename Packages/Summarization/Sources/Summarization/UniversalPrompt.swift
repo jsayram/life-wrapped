@@ -231,12 +231,19 @@ public struct UniversalPrompt {
       "places_visited": [{"name": "string", "frequency": "string - once/occasionally/frequently", "context": "string - why visited"}]
     }
     
-    IMPORTANT: For all items (major_arcs, biggest_wins, etc.), classify each as "work", "personal", or "both":
-    - "work": Clearly work-related (projects, colleagues, career achievements)
-    - "personal": Clearly personal (hobbies, family, personal growth)
-    - "both": Mixed or spans both domains
+    CATEGORY CLASSIFICATION RULES:
     
-    Be thoughtful about classification - use context from transcripts to determine work vs personal nature.
+    The user has already manually categorized their recording sessions as "Work" or "Personal".
+    Your job is to respect those user-provided categories when classifying items.
+    
+    For each insight item, determine its category based on which types of sessions it came from:
+    
+    - "work" = Item derived primarily from sessions the user marked as Work
+    - "personal" = Item derived primarily from sessions the user marked as Personal  
+    - "both" = Item appears across both Work and Personal sessions, OR the source is ambiguous
+    
+    IMPORTANT: Do not try to guess work vs personal based on content. Use the session category context provided.
+    If session category information is not available, only then classify based on content as a fallback.
     """
     
     // MARK: - Schema Selection
@@ -264,7 +271,8 @@ public struct UniversalPrompt {
     public static func buildMessages(
         level: SummaryLevel,
         input: String,
-        metadata: [String: Any] = [:]
+        metadata: [String: Any] = [:],
+        categoryContext: String? = nil
     ) -> (system: String, user: String) {
         let schema = schema(for: level)
         
@@ -274,6 +282,9 @@ public struct UniversalPrompt {
             let parts = metadata.map { "\($0.key): \($0.value)" }
             metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
         }
+        
+        // Add category context if provided
+        let categorySection = categoryContext.map { "\n\nSESSION CATEGORIES:\n\($0)" } ?? ""
         
         // Add special instructions for Year Wrap level
         let specialInstructions = level == .yearWrap ? """
@@ -294,7 +305,7 @@ public struct UniversalPrompt {
         Return VALID JSON matching this schema exactly:
         
         \(schema)
-        \(metadataStr)\(specialInstructions)
+        \(metadataStr)\(categorySection)\(specialInstructions)
         
         INPUT:
         \(input)
