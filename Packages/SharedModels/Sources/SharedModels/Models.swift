@@ -408,10 +408,10 @@ public struct YearWrapData: Codable, Sendable {
 /// Person mentioned in Year Wrap with relationship context
 public struct PersonMention: Codable, Sendable {
     public let name: String
-    public let relationship: String
-    public let impact: String
+    public let relationship: String?
+    public let impact: String?
     
-    public init(name: String, relationship: String, impact: String) {
+    public init(name: String, relationship: String? = nil, impact: String? = nil) {
         self.name = name
         self.relationship = relationship
         self.impact = impact
@@ -421,10 +421,10 @@ public struct PersonMention: Codable, Sendable {
 /// Place visited during the year with frequency context
 public struct PlaceVisit: Codable, Sendable {
     public let name: String
-    public let frequency: String
-    public let context: String
+    public let frequency: String?
+    public let context: String?
     
-    public init(name: String, frequency: String, context: String) {
+    public init(name: String, frequency: String? = nil, context: String? = nil) {
         self.name = name
         self.frequency = frequency
         self.context = context

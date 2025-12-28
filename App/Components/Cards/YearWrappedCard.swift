@@ -9,6 +9,7 @@ struct YearWrappedCard: View {
     let onRegenerate: () -> Void
     let isRegenerating: Bool
     @Environment(\.colorScheme) var colorScheme
+    @State private var showDetailView = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -87,16 +88,35 @@ struct YearWrappedCard: View {
             
             Divider()
             
-            // Summary text - scrollable
-            ScrollView {
-                Text(summary.text)
+            // Summary preview with View Full button
+            VStack(spacing: 12) {
+                Text(extractYearSummary(from: summary.text))
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .textSelection(.enabled)
+                    .lineLimit(5)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
+                
+                Button {
+                    showDetailView = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("View Full Wrap")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.subheadline)
+                        Spacer()
+                    }
+                    .foregroundStyle(YearWrapTheme.electricPurple)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(YearWrapTheme.electricPurple.opacity(0.15))
+                    )
+                }
             }
-            .frame(height: 300)
+            .padding(12)
             .background(Color(.tertiarySystemBackground))
             .cornerRadius(8)
         }
@@ -125,6 +145,34 @@ struct YearWrappedCard: View {
         )
         .cornerRadius(16)
         .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
+        .sheet(isPresented: $showDetailView) {
+            YearWrapDetailView(yearWrap: summary, coordinator: coordinator)
+        }
+    }
+    
+    // MARK: - Helpers
+    
+    private func extractYearSummary(from text: String) -> String {
+        // Try to parse JSON and extract year_summary field
+        guard let data = text.data(using: .utf8) else {
+            print("❌ [YearWrappedCard] Failed to convert text to data")
+            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
+        }
+        
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("❌ [YearWrappedCard] Failed to parse JSON")
+            print("📄 [YearWrappedCard] First 100 chars: \(String(text.prefix(100)))")
+            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
+        }
+        
+        guard let yearSummary = json["year_summary"] as? String else {
+            print("❌ [YearWrappedCard] No year_summary field found")
+            print("🔑 [YearWrappedCard] Available keys: \(json.keys.joined(separator: ", "))")
+            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
+        }
+        
+        print("✅ [YearWrappedCard] Extracted year_summary: \(String(yearSummary.prefix(50)))...")
+        return yearSummary
     }
 }
 
