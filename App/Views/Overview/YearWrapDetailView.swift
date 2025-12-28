@@ -486,7 +486,9 @@ struct YearWrapDetailView: View {
         }
         
         do {
-            let decoded = try JSONDecoder().decode(YearWrapData.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            let decoded = try decoder.decode(YearWrapData.self, from: data)
             print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data")
             return decoded
         } catch {
