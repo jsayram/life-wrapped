@@ -7,7 +7,10 @@
 import Foundation
 import SharedModels
 import PDFKit
+
+#if canImport(UIKit)
 import UIKit
+#endif
 
 public actor DataExporter {
     private let databaseManager: DatabaseManager
@@ -404,7 +407,7 @@ public actor DataExporter {
     }
     
     @discardableResult
-    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [String], color: String, requireNewPage: Bool) -> CGFloat {
+    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [ClassifiedItem], color: String, requireNewPage: Bool) -> CGFloat {
         if items.isEmpty {
             return yOffset
         }
@@ -425,14 +428,16 @@ public actor DataExporter {
         headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
         y += headerSize.height + 20
         
-        // Items as bullets
+        // Items as bullets with category indicators
         let bulletAttributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 14),
             .foregroundColor: UIColor.darkGray
         ]
         
         for item in items {
-            let bulletText = "• \(item)"
+            // Add category prefix for "All" view
+            let categoryPrefix = getCategoryPrefix(item.category)
+            let bulletText = "• \(categoryPrefix)\(item.text)"
             let bulletSize = bulletText.boundingRect(
                 with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin],
@@ -450,6 +455,14 @@ public actor DataExporter {
         }
         
         return y + 30
+    }
+    
+    private func getCategoryPrefix(_ category: ItemCategory) -> String {
+        switch category {
+        case .work: return "💼 "
+        case .personal: return "🏠 "
+        case .both: return "🔀 "
+        }
     }
     
     private func renderPeopleSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, people: [PersonMention], redact: Bool) -> CGFloat {
@@ -582,19 +595,39 @@ public actor DataExporter {
             return nil
         }
         
+        // Helper to parse classified items (supports both old string format and new object format)
+        func parseClassifiedItems(_ key: String) -> [ClassifiedItem] {
+            guard let array = json[key] as? [Any] else { return [] }
+            
+            return array.compactMap { item in
+                // New format: {"text": "...", "category": "work|personal|both"}
+                if let dict = item as? [String: String],
+                   let text = dict["text"],
+                   let categoryStr = dict["category"],
+                   let category = ItemCategory(rawValue: categoryStr) {
+                    return ClassifiedItem(text: text, category: category)
+                }
+                // Old format: just strings - default to "both"
+                else if let text = item as? String {
+                    return ClassifiedItem(text: text, category: .both)
+                }
+                return nil
+            }
+        }
+        
         return YearWrapData(
             yearTitle: yearTitle,
             yearSummary: yearSummary,
-            majorArcs: json["major_arcs"] as? [String] ?? [],
-            biggestWins: json["biggest_wins"] as? [String] ?? [],
-            biggestLosses: json["biggest_losses"] as? [String] ?? [],
-            biggestChallenges: json["biggest_challenges"] as? [String] ?? [],
-            finishedProjects: json["finished_projects"] as? [String] ?? [],
-            unfinishedProjects: json["unfinished_projects"] as? [String] ?? [],
-            topWorkedOnTopics: json["top_worked_on_topics"] as? [String] ?? [],
-            topTalkedAboutThings: json["top_talked_about_things"] as? [String] ?? [],
-            valuableActionsTaken: json["valuable_actions_taken"] as? [String] ?? [],
-            opportunitiesMissed: json["opportunities_missed"] as? [String] ?? [],
+            majorArcs: parseClassifiedItems("major_arcs"),
+            biggestWins: parseClassifiedItems("biggest_wins"),
+            biggestLosses: parseClassifiedItems("biggest_losses"),
+            biggestChallenges: parseClassifiedItems("biggest_challenges"),
+            finishedProjects: parseClassifiedItems("finished_projects"),
+            unfinishedProjects: parseClassifiedItems("unfinished_projects"),
+            topWorkedOnTopics: parseClassifiedItems("top_worked_on_topics"),
+            topTalkedAboutThings: parseClassifiedItems("top_talked_about_things"),
+            valuableActionsTaken: parseClassifiedItems("valuable_actions_taken"),
+            opportunitiesMissed: parseClassifiedItems("opportunities_missed"),
             peopleMentioned: (json["people_mentioned"] as? [[String: String]] ?? []).compactMap { dict in
                 guard let name = dict["name"] else { return nil }
                 return PersonMention(name: name, relationship: dict["relationship"], impact: dict["impact"])

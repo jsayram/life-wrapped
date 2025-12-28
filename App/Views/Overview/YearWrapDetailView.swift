@@ -222,7 +222,7 @@ struct YearWrapDetailView: View {
     // MARK: - Insight Sections
     
     @ViewBuilder
-    private func majorArcsSection(_ items: [String]) -> some View {
+    private func majorArcsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "📖 Major Arcs",
             items: items,
@@ -232,7 +232,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func biggestWinsSection(_ items: [String]) -> some View {
+    private func biggestWinsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "🏆 Biggest Wins",
             items: items,
@@ -242,7 +242,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func biggestLossesSection(_ items: [String]) -> some View {
+    private func biggestLossesSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "💔 Biggest Losses",
             items: items,
@@ -252,7 +252,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func biggestChallengesSection(_ items: [String]) -> some View {
+    private func biggestChallengesSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "⚡ Biggest Challenges",
             items: items,
@@ -262,7 +262,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func finishedProjectsSection(_ items: [String]) -> some View {
+    private func finishedProjectsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "✅ Finished Projects",
             items: items,
@@ -272,7 +272,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func unfinishedProjectsSection(_ items: [String]) -> some View {
+    private func unfinishedProjectsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "⏸️ Unfinished Projects",
             items: items,
@@ -282,7 +282,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func topWorkedOnSection(_ items: [String]) -> some View {
+    private func topWorkedOnSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "🔨 Top Worked-On Topics",
             items: items,
@@ -292,7 +292,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func topTalkedAboutSection(_ items: [String]) -> some View {
+    private func topTalkedAboutSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "💬 Top Talked-About Things",
             items: items,
@@ -302,7 +302,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func valuableActionsSection(_ items: [String]) -> some View {
+    private func valuableActionsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "💎 Valuable Actions Taken",
             items: items,
@@ -312,7 +312,7 @@ struct YearWrapDetailView: View {
     }
     
     @ViewBuilder
-    private func opportunitiesMissedSection(_ items: [String]) -> some View {
+    private func opportunitiesMissedSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
             title: "🎯 Opportunities Missed",
             items: items,
@@ -324,7 +324,7 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func peopleMentionedSection(_ people: [PersonMention]) -> some View {
         if people.isEmpty {
-            insightSection(title: "👥 People Mentioned", items: [], color: .blue, emptyMessage: "None")
+            insightSection(title: "👥 People Mentioned", items: [] as [ClassifiedItem], color: .blue, emptyMessage: "None")
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 // Header
@@ -375,7 +375,7 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func placesVisitedSection(_ places: [PlaceVisit]) -> some View {
         if places.isEmpty {
-            insightSection(title: "📍 Places Visited", items: [], color: .purple, emptyMessage: "None")
+            insightSection(title: "📍 Places Visited", items: [] as [ClassifiedItem], color: .purple, emptyMessage: "None")
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 // Header
@@ -425,7 +425,7 @@ struct YearWrapDetailView: View {
     
     // Generic insight section builder
     @ViewBuilder
-    private func insightSection(title: String, items: [String], color: Color, emptyMessage: String) -> some View {
+    private func insightSection(title: String, items: [ClassifiedItem], color: Color, emptyMessage: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
@@ -451,7 +451,7 @@ struct YearWrapDetailView: View {
                                 .frame(width: 6, height: 6)
                                 .padding(.top, 6)
                             
-                            Text(item)
+                            Text(item.text)
                                 .font(.body)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -486,15 +486,54 @@ struct YearWrapDetailView: View {
         }
         
         do {
+            // Try new format first (ClassifiedItem arrays)
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let decoded = try decoder.decode(YearWrapData.self, from: data)
-            print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data")
+            print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (new format)")
             return decoded
-        } catch {
-            print("❌ [YearWrapDetailView] JSON decode failed: \(error)")
-            print("📄 [YearWrapDetailView] First 200 chars: \(String(text.prefix(200)))")
-            return nil
+        } catch let newFormatError {
+            // If new format fails, try parsing old format (string arrays) and convert
+            print("⚠️ [YearWrapDetailView] New format decode failed, trying old format: \(newFormatError)")
+            
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let yearTitle = json["year_title"] as? String,
+                  let yearSummary = json["year_summary"] as? String else {
+                print("❌ [YearWrapDetailView] Failed to parse old format")
+                return nil
+            }
+            
+            // Helper to convert old string arrays to ClassifiedItem arrays
+            func parseStringArray(_ key: String) -> [ClassifiedItem] {
+                guard let strings = json[key] as? [String] else { return [] }
+                return strings.map { ClassifiedItem(text: $0, category: .both) }
+            }
+            
+            let yearWrap = YearWrapData(
+                yearTitle: yearTitle,
+                yearSummary: yearSummary,
+                majorArcs: parseStringArray("major_arcs"),
+                biggestWins: parseStringArray("biggest_wins"),
+                biggestLosses: parseStringArray("biggest_losses"),
+                biggestChallenges: parseStringArray("biggest_challenges"),
+                finishedProjects: parseStringArray("finished_projects"),
+                unfinishedProjects: parseStringArray("unfinished_projects"),
+                topWorkedOnTopics: parseStringArray("top_worked_on_topics"),
+                topTalkedAboutThings: parseStringArray("top_talked_about_things"),
+                valuableActionsTaken: parseStringArray("valuable_actions_taken"),
+                opportunitiesMissed: parseStringArray("opportunities_missed"),
+                peopleMentioned: (json["people_mentioned"] as? [[String: String]] ?? []).compactMap { dict in
+                    guard let name = dict["name"] else { return nil }
+                    return PersonMention(name: name, relationship: dict["relationship"], impact: dict["impact"])
+                },
+                placesVisited: (json["places_visited"] as? [[String: String]] ?? []).compactMap { dict in
+                    guard let name = dict["name"] else { return nil }
+                    return PlaceVisit(name: name, frequency: dict["frequency"], context: dict["context"])
+                }
+            )
+            
+            print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (old format, converted)")
+            return yearWrap
         }
     }
     

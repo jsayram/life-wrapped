@@ -217,19 +217,26 @@ public struct UniversalPrompt {
     {
       "year_title": "string - one-line year title",
       "year_summary": "string - 5-6 sentence summary",
-      "major_arcs": ["string array of major life arcs"],
-      "biggest_wins": ["string array of biggest accomplishments"],
-      "biggest_losses": ["string array of setbacks, failures, or losses"],
-      "biggest_challenges": ["string array of biggest challenges faced"],
-      "finished_projects": ["string array of completed projects/goals (look for 'completed', 'finished', 'done')"],
-      "unfinished_projects": ["string array of abandoned/ongoing projects (look for 'abandoned', 'gave up', 'still working')"],
-      "top_worked_on_topics": ["string array of most frequently worked on topics, ranked by frequency"],
-      "top_talked_about_things": ["string array of most frequently mentioned subjects, ranked by mentions"],
-      "valuable_actions_taken": ["string array of positive actions or decisions made"],
-      "opportunities_missed": ["string array of missed chances or regrets"],
+      "major_arcs": [{"text": "string", "category": "work|personal|both"}],
+      "biggest_wins": [{"text": "string", "category": "work|personal|both"}],
+      "biggest_losses": [{"text": "string", "category": "work|personal|both"}],
+      "biggest_challenges": [{"text": "string", "category": "work|personal|both"}],
+      "finished_projects": [{"text": "string", "category": "work|personal|both"}],
+      "unfinished_projects": [{"text": "string", "category": "work|personal|both"}],
+      "top_worked_on_topics": [{"text": "string", "category": "work|personal|both"}],
+      "top_talked_about_things": [{"text": "string", "category": "work|personal|both"}],
+      "valuable_actions_taken": [{"text": "string", "category": "work|personal|both"}],
+      "opportunities_missed": [{"text": "string", "category": "work|personal|both"}],
       "people_mentioned": [{"name": "string", "relationship": "string", "impact": "string - how they influenced the year"}],
       "places_visited": [{"name": "string", "frequency": "string - once/occasionally/frequently", "context": "string - why visited"}]
     }
+    
+    IMPORTANT: For all items (major_arcs, biggest_wins, etc.), classify each as "work", "personal", or "both":
+    - "work": Clearly work-related (projects, colleagues, career achievements)
+    - "personal": Clearly personal (hobbies, family, personal growth)
+    - "both": Mixed or spans both domains
+    
+    Be thoughtful about classification - use context from transcripts to determine work vs personal nature.
     """
     
     // MARK: - Schema Selection
