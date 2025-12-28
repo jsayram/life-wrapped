@@ -109,7 +109,7 @@ public final class SummaryCoordinator {
         if includeNotes {
             print("📝 [SummaryCoordinator] includeNotes=true, fetching metadata...")
             if let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sessionId) {
-                print("📝 [SummaryCoordinator] Metadata fetched: title=\(metadata.title ?? "nil"), notes=\(metadata.notes ?? "nil"), notesLength=\(metadata.notes?.count ?? 0)")
+                print("📝 [SummaryCoordinator] Metadata fetched: title=\(metadata.title ?? "nil"), notes=\(metadata.notes ?? "nil"), notesLength=\(metadata.notes?.count ?? 0), category=\(metadata.category?.displayName ?? "nil")")
                 if let notes = metadata.notes, !notes.isEmpty {
                     print("📝 [SummaryCoordinator] ✅ Appending user notes (\(notes.count) chars) to transcript for summary generation")
                     print("📝 [SummaryCoordinator] Notes preview: \(notes.prefix(100))...")
@@ -117,11 +117,23 @@ public final class SummaryCoordinator {
                 } else {
                     print("📝 [SummaryCoordinator] ⚠️ Notes are empty or nil, not appending")
                 }
+                
+                // Add category context to transcript if present
+                if let category = metadata.category {
+                    print("🏷️ [SummaryCoordinator] ✅ Adding category context: \(category.displayName)")
+                    fullText = "[Recording Category: \(category.displayName.uppercased())]\n\n" + fullText
+                }
             } else {
                 print("❌ [SummaryCoordinator] Failed to fetch metadata for session")
             }
         } else {
-            print("📝 [SummaryCoordinator] includeNotes=false, skipping notes")
+            print("📝 [SummaryCoordinator] includeNotes=false, checking for category...")
+            // Even if notes are not included, we still want category for AI context
+            if let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sessionId),
+               let category = metadata.category {
+                print("🏷️ [SummaryCoordinator] ✅ Adding category context: \(category.displayName)")
+                fullText = "[Recording Category: \(category.displayName.uppercased())]\n\n" + fullText
+            }
         }
         
         let wordCount = fullText.split(separator: " ").count

@@ -18,8 +18,15 @@ public final class RecordingCoordinator: ObservableObject {
     // MARK: - State
     
     @Published public private(set) var recordingState: RecordingState = .idle
+    @Published public var selectedCategory: SessionCategory = .personal {
+        didSet {
+            // Persist selection to UserDefaults
+            UserDefaults.standard.set(selectedCategory.rawValue, forKey: "lastRecordingCategory")
+        }
+    }
     private var recordingStartTime: Date?
     private var lastCompletedChunk: AudioChunk?
+    private var currentSessionCategory: SessionCategory?
     
     // MARK: - Callbacks
     
@@ -36,6 +43,12 @@ public final class RecordingCoordinator: ObservableObject {
     
     public init(audioCapture: AudioCaptureManager) {
         self.audioCapture = audioCapture
+        
+        // Load last selected category from UserDefaults
+        if let savedCategory = UserDefaults.standard.string(forKey: "lastRecordingCategory"),
+           let category = SessionCategory(rawValue: savedCategory) {
+            self.selectedCategory = category
+        }
     }
     
     // MARK: - Recording State Queries
@@ -46,6 +59,11 @@ public final class RecordingCoordinator: ObservableObject {
     
     public var isProcessing: Bool {
         recordingState.isProcessing
+    }
+    
+    /// Get the category for the current recording session
+    public var currentCategory: SessionCategory? {
+        currentSessionCategory
     }
     
     // MARK: - Recording Lifecycle
@@ -61,6 +79,10 @@ public final class RecordingCoordinator: ObservableObject {
         
         // Clear any previous chunk
         lastCompletedChunk = nil
+        
+        // Store current category for this session
+        currentSessionCategory = selectedCategory
+        print("📂 [RecordingCoordinator] Recording category: \(currentSessionCategory?.displayName ?? "None")")
         
         // Start recording
         print("🎤 [RecordingCoordinator] Starting AudioCaptureManager...")

@@ -59,15 +59,17 @@ public struct RecordingSession: Identifiable, Sendable, Hashable {
     public var title: String?
     public var notes: String?
     public var isFavorite: Bool
+    public var category: SessionCategory?
     
     public var id: UUID { sessionId }
     
-    public init(sessionId: UUID, chunks: [AudioChunk], title: String? = nil, notes: String? = nil, isFavorite: Bool = false) {
+    public init(sessionId: UUID, chunks: [AudioChunk], title: String? = nil, notes: String? = nil, isFavorite: Bool = false, category: SessionCategory? = nil) {
         self.sessionId = sessionId
         self.chunks = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
         self.title = title
         self.notes = notes
         self.isFavorite = isFavorite
+        self.category = category
     }
     
     /// Display name: title if set, otherwise formatted time

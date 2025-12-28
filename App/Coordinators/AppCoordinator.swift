@@ -123,7 +123,7 @@ public final class AppCoordinator: ObservableObject {
     private var transcriptionCoordinator: TranscriptionCoordinator?
     private var dataCoordinator: DataCoordinator?
     private var summaryCoordinator: SummaryCoordinator?
-    private var recordingCoordinator: RecordingCoordinator?
+    public var recordingCoordinator: RecordingCoordinator?
     private var widgetCoordinator: WidgetCoordinator?
     private var permissionsCoordinator: PermissionsCoordinator?
     private var localModelCoordinator: LocalModelCoordinator?
@@ -168,6 +168,17 @@ public final class AppCoordinator: ObservableObject {
             }
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
+            
+            // If this is the first chunk (index 0), create/update session metadata with category
+            if chunk.chunkIndex == 0, let category = recordingCoordinator?.currentCategory {
+                print("📂 [AppCoordinator] First chunk - creating session metadata with category: \(category.displayName)")
+                let metadata = DatabaseManager.SessionMetadata(
+                    sessionId: chunk.sessionId,
+                    category: category
+                )
+                try await dbManager.upsertSessionMetadata(metadata)
+                print("✅ [AppCoordinator] Session metadata with category saved")
+            }
             
             // Delegate to transcription coordinator for parallel processing
             print("📝 [AppCoordinator] Delegating chunk \(chunk.chunkIndex) to TranscriptionCoordinator")

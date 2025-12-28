@@ -181,6 +181,7 @@ public actor SchemaManager {
                 title TEXT,
                 notes TEXT,
                 is_favorite INTEGER NOT NULL DEFAULT 0,
+                category TEXT,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             )
@@ -189,6 +190,11 @@ public actor SchemaManager {
         try await connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_session_metadata_favorite
             ON session_metadata(is_favorite)
+            """)
+        
+        try await connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_session_metadata_category
+            ON session_metadata(category)
             """)
         
         // Insights rollups table
