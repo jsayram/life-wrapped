@@ -16,7 +16,7 @@ struct YearWrappedCard: View {
     private var filterLabel: String {
         switch filter {
         case .all:
-            return "Combined"
+            return "All"
         case .workOnly:
             return "Work"
         case .personalOnly:
