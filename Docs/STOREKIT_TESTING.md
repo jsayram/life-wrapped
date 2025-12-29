@@ -216,10 +216,10 @@ Before starting, ensure you have:
 5. Select **Non-Consumable** as the type
 6. Fill in the details:
 
-| Field | Value |
-|-------|-------|
-| **Reference Name** | Smartest AI |
-| **Product ID** | `com.jsayram.lifewrapped.smartestai` |
+| Field              | Value                                |
+| ------------------ | ------------------------------------ |
+| **Reference Name** | Smartest AI                          |
+| **Product ID**     | `com.jsayram.lifewrapped.smartestai` |
 
 > ⚠️ **CRITICAL**: The Product ID must match EXACTLY what's in `StoreManager.swift`. This cannot be changed after creation!
 
@@ -252,14 +252,15 @@ At least one localization is **required** for review.
 3. Select **English (U.S.)** (or your primary language)
 4. Fill in:
 
-| Field | Value |
-|-------|-------|
-| **Display Name** | Smartest AI |
-| **Description** | Unlock GPT-4, Claude, and other premium AI providers for the highest quality summaries and insights. Bring your own API keys for complete control. |
+| Field            | Value                                                                                                                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Display Name** | Smartest AI                                                                                                                                        |
+| **Description**  | Unlock GPT-4, Claude, and other premium AI providers for the highest quality summaries and insights. Bring your own API keys for complete control. |
 
 5. Click **Save**
 
 **Optional**: Add more languages if your app is localized:
+
 - Spanish: "IA Más Inteligente" / "Desbloquea GPT-4, Claude y otros proveedores de IA premium..."
 - etc.
 
@@ -275,14 +276,13 @@ This is **required** for Apple's review team to test your IAP.
    - Should show the "Unlock Smartest AI" button or purchase confirmation
    - Resolution: At least 640x920 pixels
    - Format: PNG or JPEG
-   
 3. Add **Review Notes** (explain to Apple what this IAP does):
 
 ```
 This in-app purchase unlocks the "Smartest AI" feature, which allows users to configure their own API keys for external AI providers (OpenAI GPT-4 or Anthropic Claude).
 
 How it works:
-1. User purchases "Smartest AI" 
+1. User purchases "Smartest AI"
 2. User goes to Settings → AI Settings → Smartest Configuration
 3. User enters their own API key from OpenAI or Anthropic
 4. AI summaries are now generated using the external provider
@@ -309,11 +309,13 @@ To test:
 **Two submission options:**
 
 **Option A: Submit with App** (Recommended for first release)
+
 - The IAP will be reviewed when you submit your app update
 - Go to your app version → Submit for Review
 - The IAP is automatically included
 
 **Option B: Submit IAP Separately** (For adding IAP to existing app)
+
 - In the IAP list, select the IAP
 - Click **Submit for Review** at the top
 - Can be approved before app update
@@ -331,6 +333,7 @@ Ensure these are configured in your app's App Store listing:
 3. Enter your privacy policy URL (e.g., `https://yourwebsite.com/privacy`)
 
 Your privacy policy should mention:
+
 - What data the app collects (audio recordings, transcripts)
 - That transcription is on-device
 - That API keys are stored securely on-device
@@ -349,11 +352,11 @@ In App Store Connect → Your App → **App Privacy**:
 
 For Life Wrapped with IAP, you'll likely need to declare:
 
-| Data Type | Purpose | Linked to User? |
-|-----------|---------|-----------------|
-| **Purchases** → Purchase History | App Functionality | No |
-| **Audio Data** → Audio Data | App Functionality | No |
-| **Identifiers** → Device ID | App Functionality (if using for StoreKit) | No |
+| Data Type                        | Purpose                                   | Linked to User? |
+| -------------------------------- | ----------------------------------------- | --------------- |
+| **Purchases** → Purchase History | App Functionality                         | No              |
+| **Audio Data** → Audio Data      | App Functionality                         | No              |
+| **Identifiers** → Device ID      | App Functionality (if using for StoreKit) | No              |
 
 **How to fill out:**
 
@@ -438,13 +441,13 @@ Before submitting, test with real App Store Connect (not just Xcode StoreKit):
 
 ### Common Rejection Reasons
 
-| Reason | Solution |
-|--------|----------|
-| **Missing restore purchases** | Ensure "Restore Purchases" button exists in Settings |
-| **IAP not clearly explained** | Add clear description of what user gets before purchase |
-| **No way to use without IAP** | Ensure free tier (On-Device AI) is fully functional |
-| **Price not displayed** | Show price in the purchase button (e.g., "Unlock for $1.99") |
-| **Missing privacy policy** | Add privacy policy URL in App Store Connect |
+| Reason                        | Solution                                                     |
+| ----------------------------- | ------------------------------------------------------------ |
+| **Missing restore purchases** | Ensure "Restore Purchases" button exists in Settings         |
+| **IAP not clearly explained** | Add clear description of what user gets before purchase      |
+| **No way to use without IAP** | Ensure free tier (On-Device AI) is fully functional          |
+| **Price not displayed**       | Show price in the purchase button (e.g., "Unlock for $1.99") |
+| **Missing privacy policy**    | Add privacy policy URL in App Store Connect                  |
 
 ---
 
