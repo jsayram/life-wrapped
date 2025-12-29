@@ -6,30 +6,30 @@ import Foundation
 
 // MARK: - Widget Display Mode
 
-/// Configurable display modes for the widget
+/// Configurable display modes for the widget (simplified)
 public enum WidgetDisplayMode: String, CaseIterable, Sendable, Codable {
-    case overview = "Overview"
-    case streak = "Streak Focus"
-    case weekly = "Weekly Stats"
+    case today = "Today"
+    case record = "Record"
+    case sessions = "Sessions"
     
     public var displayName: String { rawValue }
     
     public var description: String {
         switch self {
-        case .overview:
-            return "Show all key metrics at a glance"
-        case .streak:
-            return "Focus on your journaling streak"
-        case .weekly:
-            return "View your weekly statistics"
+        case .today:
+            return "View today's journaling stats"
+        case .record:
+            return "Quick record with category selection"
+        case .sessions:
+            return "View today's session count"
         }
     }
     
     public var icon: String {
         switch self {
-        case .overview: return "rectangle.grid.2x2"
-        case .streak: return "flame.fill"
-        case .weekly: return "calendar"
+        case .today: return "calendar"
+        case .record: return "mic.fill"
+        case .sessions: return "waveform"
         }
     }
 }

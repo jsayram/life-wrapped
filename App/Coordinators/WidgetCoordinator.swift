@@ -51,13 +51,6 @@ public final class WidgetCoordinator: Sendable {
                 todayEntries = todayRollup.segmentCount
             }
             
-            // Get weekly stats
-            let calendar = Calendar.current
-            let weekAgo = calendar.date(byAdding: .day, value: -7, to: today)!
-            let weeklyRollups = dailyRollups.filter { $0.bucketStart >= weekAgo }
-            let weeklyWordCount = weeklyRollups.reduce(0) { $0 + $1.wordCount }
-            let weeklyMinutes = weeklyRollups.reduce(0.0) { $0 + $1.speakingSeconds } / 60.0
-            
             // Create widget data
             let widgetData = WidgetData(
                 streakDays: streakInfo.currentStreak,
@@ -66,18 +59,18 @@ public final class WidgetCoordinator: Sendable {
                 todayEntries: todayEntries,
                 lastEntryTime: activityDates.first,
                 isStreakAtRisk: StreakCalculator.streakAtRisk(streakInfo),
-                weeklyWords: weeklyWordCount,
-                weeklyMinutes: Int(weeklyMinutes),
                 lastUpdated: Date()
             )
             
             widgetDataManager.writeWidgetData(widgetData)
             
-            // Tell WidgetKit to refresh widgets
+            // Tell WidgetKit to refresh all widget timelines immediately
             WidgetCenter.shared.reloadAllTimelines()
             
+            print("✅ [WidgetCoordinator] Updated widget data: streak=\(streakInfo.currentStreak), words=\(todayWordCount), sessions=\(todayEntries)")
+            
         } catch {
-            print("Failed to update widget data: \(error)")
+            print("❌ [WidgetCoordinator] Failed to update widget data: \(error)")
         }
     }
 }

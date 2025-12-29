@@ -11,11 +11,9 @@ public struct WidgetData: Codable, Sendable, Equatable {
     public let streakDays: Int
     public let todayWords: Int
     public let todayMinutes: Int
-    public let todayEntries: Int
+    public let todayEntries: Int  // Session count for today
     public let lastEntryTime: Date?
     public let isStreakAtRisk: Bool
-    public let weeklyWords: Int
-    public let weeklyMinutes: Int
     public let lastUpdated: Date
     
     public init(
@@ -25,8 +23,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
         todayEntries: Int = 0,
         lastEntryTime: Date? = nil,
         isStreakAtRisk: Bool = false,
-        weeklyWords: Int = 0,
-        weeklyMinutes: Int = 0,
         lastUpdated: Date = Date()
     ) {
         self.streakDays = streakDays
@@ -35,8 +31,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
         self.todayEntries = todayEntries
         self.lastEntryTime = lastEntryTime
         self.isStreakAtRisk = isStreakAtRisk
-        self.weeklyWords = weeklyWords
-        self.weeklyMinutes = weeklyMinutes
         self.lastUpdated = lastUpdated
     }
     
@@ -49,8 +43,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
         todayEntries: 2,
         lastEntryTime: Date().addingTimeInterval(-3600),
         isStreakAtRisk: false,
-        weeklyWords: 2450,
-        weeklyMinutes: 35,
         lastUpdated: Date()
     )
 }
@@ -65,9 +57,7 @@ extension WidgetData {
         todayWordCount: Int,
         todayDuration: TimeInterval,
         todayEntryCount: Int,
-        lastEntryDate: Date?,
-        weeklyWordCount: Int,
-        weeklyDuration: TimeInterval
+        lastEntryDate: Date?
     ) -> WidgetData {
         // Check if streak is at risk (no entry today and it's past noon)
         let calendar = Calendar.current
@@ -83,8 +73,6 @@ extension WidgetData {
             todayEntries: todayEntryCount,
             lastEntryTime: lastEntryDate,
             isStreakAtRisk: isStreakAtRisk,
-            weeklyWords: weeklyWordCount,
-            weeklyMinutes: Int(weeklyDuration / 60),
             lastUpdated: Date()
         )
     }

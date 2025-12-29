@@ -4,7 +4,6 @@
 
 import WidgetKit
 import SwiftUI
-import AppIntents
 import WidgetCore
 
 // MARK: - Deep Link URLs
@@ -15,6 +14,8 @@ enum WidgetDeepLink {
     static let overview = URL(string: "lifewrapped://overview")!
     static let settings = URL(string: "lifewrapped://settings")!
     static let record = URL(string: "lifewrapped://record")!
+    static let recordWork = URL(string: "lifewrapped://record?category=work")!
+    static let recordPersonal = URL(string: "lifewrapped://record?category=personal")!
 }
 
 // MARK: - Widget Entry
@@ -22,62 +23,29 @@ enum WidgetDeepLink {
 struct LifeWrappedEntry: TimelineEntry {
     let date: Date
     let widgetData: WidgetData
-    let configuration: WidgetDisplayModeIntent
     
     var streakDays: Int { widgetData.streakDays }
     var todayWords: Int { widgetData.todayWords }
     var todayMinutes: Int { widgetData.todayMinutes }
+    var todaySessions: Int { widgetData.todayEntries }
     var lastEntryTime: Date? { widgetData.lastEntryTime }
     var isStreakAtRisk: Bool { widgetData.isStreakAtRisk }
     
     static let placeholder = LifeWrappedEntry(
         date: Date(),
-        widgetData: .placeholder,
-        configuration: .overview
+        widgetData: .placeholder
     )
     
     static let empty = LifeWrappedEntry(
         date: Date(),
-        widgetData: .empty,
-        configuration: .overview
+        widgetData: .empty
     )
-}
-
-// MARK: - Widget Display Mode Intent
-
-enum WidgetDisplayModeIntent: String, CaseIterable, AppEnum {
-    case overview = "Overview"
-    case streak = "Streak Focus"
-    case weekly = "Weekly Stats"
-    
-    static var typeDisplayRepresentation: TypeDisplayRepresentation {
-        "Display Mode"
-    }
-    
-    static var caseDisplayRepresentations: [WidgetDisplayModeIntent: DisplayRepresentation] {
-        [
-            .overview: "Overview",
-            .streak: "Streak Focus",
-            .weekly: "Weekly Stats"
-        ]
-    }
-}
-
-// MARK: - Widget Configuration Intent
-
-struct LifeWrappedWidgetIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Configure Widget"
-    static let description: IntentDescription = "Choose what to display in your widget."
-    
-    @Parameter(title: "Display Mode", default: .overview)
-    var displayMode: WidgetDisplayModeIntent
 }
 
 // MARK: - Timeline Provider
 
-struct LifeWrappedProvider: AppIntentTimelineProvider {
+struct LifeWrappedProvider: TimelineProvider {
     typealias Entry = LifeWrappedEntry
-    typealias Intent = LifeWrappedWidgetIntent
     
     private let dataManager = WidgetDataManager.shared
     
@@ -85,101 +53,116 @@ struct LifeWrappedProvider: AppIntentTimelineProvider {
         .placeholder
     }
     
-    func snapshot(for configuration: LifeWrappedWidgetIntent, in context: Context) async -> LifeWrappedEntry {
-        // Return placeholder for preview
+    func getSnapshot(in context: Context, completion: @escaping (LifeWrappedEntry) -> Void) {
         if context.isPreview {
-            return .placeholder
+            completion(.placeholder)
+            return
         }
-        
-        // Return actual data
-        return loadCurrentEntry(configuration: configuration.displayMode)
+        completion(loadCurrentEntry())
     }
     
-    func timeline(for configuration: LifeWrappedWidgetIntent, in context: Context) async -> Timeline<LifeWrappedEntry> {
-        let entry = loadCurrentEntry(configuration: configuration.displayMode)
+    func getTimeline(in context: Context, completion: @escaping (Timeline<LifeWrappedEntry>) -> Void) {
+        let entry = loadCurrentEntry()
         
-        // Refresh every 30 minutes
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date()
+        // Refresh every 15 minutes for fresher data
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date()
         
-        return Timeline(entries: [entry], policy: .after(nextUpdate))
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        completion(timeline)
     }
     
-    private func loadCurrentEntry(configuration: WidgetDisplayModeIntent) -> LifeWrappedEntry {
+    private func loadCurrentEntry() -> LifeWrappedEntry {
         let widgetData = dataManager.readWidgetData()
-        
-        return LifeWrappedEntry(
-            date: Date(),
-            widgetData: widgetData,
-            configuration: configuration
-        )
+        return LifeWrappedEntry(date: Date(), widgetData: widgetData)
     }
 }
 
-// MARK: - Widget Views
+// MARK: - Today Widget (Main Stats)
 
-struct LifeWrappedWidgetEntryView: View {
+struct TodayWidget: Widget {
+    let kind: String = "LifeWrappedTodayWidget"
+    
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: LifeWrappedProvider()) { entry in
+            TodayWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Today's Summary")
+        .description("View your daily journaling stats and streak.")
+        .supportedFamilies([
+            .systemSmall,
+            .systemMedium,
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryInline
+        ])
+    }
+}
+
+struct TodayWidgetView: View {
+    let entry: LifeWrappedEntry
     @Environment(\.widgetFamily) var family
-    var entry: LifeWrappedEntry
     
     var body: some View {
         switch family {
         case .systemSmall:
-            SmallWidgetView(entry: entry)
+            TodaySmallView(entry: entry)
         case .systemMedium:
-            MediumWidgetView(entry: entry)
-        case .systemLarge:
-            LargeWidgetView(entry: entry)
+            TodayMediumView(entry: entry)
         case .accessoryCircular:
-            AccessoryCircularView(entry: entry)
+            TodayCircularView(entry: entry)
         case .accessoryRectangular:
-            AccessoryRectangularView(entry: entry)
+            TodayRectangularView(entry: entry)
         case .accessoryInline:
-            AccessoryInlineView(entry: entry)
+            TodayInlineView(entry: entry)
         default:
-            SmallWidgetView(entry: entry)
+            TodaySmallView(entry: entry)
         }
     }
 }
 
-// MARK: - Small Widget
-
-struct SmallWidgetView: View {
+struct TodaySmallView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Streak
-            HStack {
+            // Streak at top
+            HStack(spacing: 4) {
                 Image(systemName: "flame.fill")
                     .foregroundStyle(entry.streakDays > 0 ? .orange : .gray)
                 Text("\(entry.streakDays)")
-                    .font(.title2)
+                    .font(.title3)
                     .fontWeight(.bold)
                 Text("day streak")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
             
-            // Today's words
+            // Words count
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(entry.todayWords)")
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                 Text("words today")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             
-            // Today's minutes
-            HStack(spacing: 4) {
-                Image(systemName: "clock")
+            // Sessions and minutes
+            HStack(spacing: 12) {
+                Label("\(entry.todaySessions)", systemImage: "waveform")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("\(entry.todayMinutes) min")
+                Label("\(entry.todayMinutes)m", systemImage: "clock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            
+            if entry.isStreakAtRisk {
+                Text("Record today!")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fontWeight(.medium)
             }
         }
         .padding()
@@ -188,17 +171,15 @@ struct SmallWidgetView: View {
     }
 }
 
-// MARK: - Medium Widget
-
-struct MediumWidgetView: View {
+struct TodayMediumView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
         HStack(spacing: 16) {
             // Left side - Streak
-            VStack(alignment: .center, spacing: 4) {
+            VStack(spacing: 8) {
                 Image(systemName: "flame.fill")
-                    .font(.largeTitle)
+                    .font(.system(size: 36))
                     .foregroundStyle(entry.streakDays > 0 ? .orange : .gray)
                 
                 Text("\(entry.streakDays)")
@@ -210,35 +191,36 @@ struct MediumWidgetView: View {
                     .foregroundStyle(.secondary)
                 
                 if entry.isStreakAtRisk {
-                    Text("Journal today!")
+                    Text("At risk!")
                         .font(.caption2)
                         .foregroundStyle(.red)
+                        .fontWeight(.medium)
                 }
             }
             .frame(maxWidth: .infinity)
             
             Divider()
             
-            // Right side - Stats
-            VStack(alignment: .leading, spacing: 8) {
-                StatRow(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "words")
-                StatRow(icon: "clock", value: "\(entry.todayMinutes)", label: "minutes")
-                StatRow(icon: "doc.text", value: "\(entry.widgetData.todayEntries)", label: "entries")
+            // Right side - Today's Stats
+            VStack(alignment: .leading, spacing: 10) {
+                StatRowView(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "words", color: .blue)
+                StatRowView(icon: "waveform", value: "\(entry.todaySessions)", label: "sessions", color: .purple)
+                StatRowView(icon: "clock", value: "\(entry.todayMinutes)m", label: "speaking", color: .green)
             }
             .frame(maxWidth: .infinity)
             
-            // Record button area
+            // Record button
             Link(destination: WidgetDeepLink.record) {
                 VStack(spacing: 4) {
                     Image(systemName: "mic.circle.fill")
-                        .font(.system(size: 32))
+                        .font(.system(size: 36))
                         .foregroundStyle(.red)
                     Text("Record")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .fontWeight(.medium)
                 }
             }
-            .frame(width: 50)
+            .frame(width: 60)
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
@@ -246,160 +228,35 @@ struct MediumWidgetView: View {
     }
 }
 
-struct StatRow: View {
-    let icon: String
-    let value: String
-    let label: String
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            
-            Text(value)
-                .font(.headline)
-                .fontWeight(.semibold)
-            
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-// MARK: - Large Widget
-
-struct LargeWidgetView: View {
-    let entry: LifeWrappedEntry
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            // Header with Record Button
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Life Wrapped")
-                        .font(.headline)
-                    Text("Today's Journal")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                // Record button
-                Link(destination: WidgetDeepLink.record) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "mic.circle.fill")
-                            .foregroundStyle(.red)
-                        Text("Record")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.red.opacity(0.15))
-                    .clipShape(Capsule())
-                }
-                
-                // Streak badge
-                HStack(spacing: 4) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                    Text("\(entry.streakDays)")
-                        .fontWeight(.bold)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.orange.opacity(0.2))
-                .clipShape(Capsule())
-            }
-            
-            Divider()
-            
-            // Stats grid with links
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 16) {
-                Link(destination: WidgetDeepLink.history) {
-                    StatCard(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "Words", color: .blue)
-                }
-                Link(destination: WidgetDeepLink.history) {
-                    StatCard(icon: "clock", value: "\(entry.todayMinutes)m", label: "Speaking", color: .green)
-                }
-                Link(destination: WidgetDeepLink.history) {
-                    StatCard(icon: "doc.text", value: "\(entry.widgetData.todayEntries)", label: "Entries", color: .purple)
-                }
-                Link(destination: WidgetDeepLink.history) {
-                    StatCard(icon: "calendar", value: lastEntryText, label: "Last Entry", color: .orange)
-                }
-            }
-            
-            Spacer()
-            
-            // Weekly summary bar
-            HStack {
-                Label("\(entry.widgetData.weeklyWords) words this week", systemImage: "chart.bar.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Label("\(entry.widgetData.weeklyMinutes) min", systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(WidgetDeepLink.home)
-    }
-    
-    private var lastEntryText: String {
-        guard let lastEntry = entry.lastEntryTime else { return "Never" }
-        
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: lastEntry, relativeTo: Date())
-    }
-}
-
-struct StatCard: View {
+struct StatRowView: View {
     let icon: String
     let value: String
     let label: String
     let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.caption)
                 .foregroundStyle(color)
-            
+                .frame(width: 16)
             Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
-            
+                .font(.headline)
+                .fontWeight(.semibold)
             Text(label)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
-// MARK: - Lock Screen Widgets
-
-struct AccessoryCircularView: View {
+// Lock Screen Widgets
+struct TodayCircularView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
         ZStack {
             AccessoryWidgetBackground()
-            
             VStack(spacing: 2) {
                 Image(systemName: "flame.fill")
                     .font(.caption)
@@ -412,18 +269,17 @@ struct AccessoryCircularView: View {
     }
 }
 
-struct AccessoryRectangularView: View {
+struct TodayRectangularView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "flame.fill")
                 .font(.title3)
-            
             VStack(alignment: .leading) {
                 Text("\(entry.streakDays) day streak")
                     .font(.headline)
-                Text("\(entry.todayWords) words today")
+                Text("\(entry.todayWords) words · \(entry.todaySessions) sessions")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -432,425 +288,127 @@ struct AccessoryRectangularView: View {
     }
 }
 
-struct AccessoryInlineView: View {
+struct TodayInlineView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
-        Text("🔥 \(entry.streakDays) day streak")
+        Text("🔥 \(entry.streakDays)d · \(entry.todayWords) words")
             .widgetURL(WidgetDeepLink.home)
     }
 }
 
-// MARK: - Widget Configuration
+// MARK: - Record Widget (With Work/Personal Toggle)
 
-struct LifeWrappedWidget: Widget {
-    let kind: String = "LifeWrappedWidget"
+struct RecordWidget: Widget {
+    let kind: String = "LifeWrappedRecordWidget"
     
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
-            LifeWrappedWidgetEntryView(entry: entry)
-        }
-        .configurationDisplayName("Life Wrapped")
-        .description("Track your journaling streak and daily progress.")
-        .supportedFamilies([
-            .systemSmall,
-            .systemMedium,
-            .systemLarge,
-            .accessoryCircular,
-            .accessoryRectangular,
-            .accessoryInline
-        ])
-    }
-}
-
-// MARK: - Streak Focus Widget
-
-struct StreakFocusWidget: Widget {
-    let kind: String = "LifeWrappedStreakWidget"
-    
-    var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
-            StreakFocusWidgetView(entry: entry)
-        }
-        .configurationDisplayName("Streak Focus")
-        .description("Keep your journaling streak alive!")
-        .supportedFamilies([
-            .systemSmall,
-            .accessoryCircular,
-            .accessoryRectangular
-        ])
-    }
-}
-
-struct StreakFocusWidgetView: View {
-    let entry: LifeWrappedEntry
-    @Environment(\.widgetFamily) var family
-    
-    var body: some View {
-        switch family {
-        case .systemSmall:
-            StreakSmallView(entry: entry)
-        case .accessoryCircular:
-            AccessoryCircularView(entry: entry)
-        case .accessoryRectangular:
-            AccessoryRectangularView(entry: entry)
-        default:
-            StreakSmallView(entry: entry)
-        }
-    }
-}
-
-struct StreakSmallView: View {
-    let entry: LifeWrappedEntry
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            // Flame with animation hint
-            Image(systemName: entry.streakDays > 0 ? "flame.fill" : "flame")
-                .font(.system(size: 48))
-                .foregroundStyle(flameGradient)
-            
-            // Streak count
-            Text("\(entry.streakDays)")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
-            
-            Text(entry.streakDays == 1 ? "day" : "days")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            
-            // Status message
-            if entry.isStreakAtRisk {
-                Text("Journal today!")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .fontWeight(.medium)
-            } else if entry.streakDays > 0 {
-                Text("Keep going! 🎯")
-                    .font(.caption2)
-                    .foregroundStyle(.green)
-            }
-        }
-        .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(WidgetDeepLink.home)
-    }
-    
-    private var flameGradient: LinearGradient {
-        LinearGradient(
-            colors: entry.streakDays > 0 
-                ? [.orange, .red] 
-                : [.gray, .gray.opacity(0.5)],
-            startPoint: .bottom,
-            endPoint: .top
-        )
-    }
-}
-
-// MARK: - Weekly Stats Widget
-
-struct WeeklyStatsWidget: Widget {
-    let kind: String = "LifeWrappedWeeklyWidget"
-    
-    var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
-            WeeklyStatsWidgetView(entry: entry)
-        }
-        .configurationDisplayName("Weekly Stats")
-        .description("View your weekly journaling summary.")
-        .supportedFamilies([
-            .systemMedium,
-            .systemLarge
-        ])
-    }
-}
-
-struct WeeklyStatsWidgetView: View {
-    let entry: LifeWrappedEntry
-    @Environment(\.widgetFamily) var family
-    
-    var body: some View {
-        switch family {
-        case .systemMedium:
-            WeeklyMediumView(entry: entry)
-        case .systemLarge:
-            WeeklyLargeView(entry: entry)
-        default:
-            WeeklyMediumView(entry: entry)
-        }
-    }
-}
-
-struct WeeklyMediumView: View {
-    let entry: LifeWrappedEntry
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            // Weekly summary
-            VStack(alignment: .leading, spacing: 8) {
-                Text("This Week")
-                    .font(.headline)
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "text.word.spacing")
-                        .foregroundStyle(.blue)
-                    Text("\(entry.widgetData.weeklyWords)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("words")
-                        .foregroundStyle(.secondary)
-                }
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .foregroundStyle(.green)
-                    Text("\(entry.widgetData.weeklyMinutes)")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("minutes")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            
-            Divider()
-            
-            // Streak
-            VStack(spacing: 4) {
-                Image(systemName: "flame.fill")
-                    .font(.largeTitle)
-                    .foregroundStyle(.orange)
-                
-                Text("\(entry.streakDays)")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Text("day streak")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity)
-            
-            // Record button
-            Link(destination: WidgetDeepLink.record) {
-                VStack(spacing: 4) {
-                    Image(systemName: "mic.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.red)
-                    Text("Record")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding()
-        .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(WidgetDeepLink.overview)
-    }
-}
-
-struct WeeklyLargeView: View {
-    let entry: LifeWrappedEntry
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            // Header with record button
-            HStack {
-                Text("Weekly Summary")
-                    .font(.headline)
-                Spacer()
-                
-                // Record button
-                Link(destination: WidgetDeepLink.record) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "mic.circle.fill")
-                            .foregroundStyle(.red)
-                        Text("Record")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.red.opacity(0.15))
-                    .clipShape(Capsule())
-                }
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                    Text("\(entry.streakDays) days")
-                        .fontWeight(.semibold)
-                }
-            }
-            
-            Divider()
-            
-            // Stats grid
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 16) {
-                Link(destination: WidgetDeepLink.history) {
-                    WeeklyStatCard(
-                        icon: "text.word.spacing",
-                        title: "Words",
-                        thisWeek: entry.widgetData.weeklyWords,
-                        today: entry.todayWords,
-                        color: .blue
-                    )
-                }
-                
-                Link(destination: WidgetDeepLink.history) {
-                    WeeklyStatCard(
-                        icon: "clock",
-                        title: "Minutes",
-                        thisWeek: entry.widgetData.weeklyMinutes,
-                        today: entry.todayMinutes,
-                        color: .green
-                    )
-                }
-            }
-            
-            Spacer()
-            
-            // Today's entries summary
-            HStack {
-                Label("\(entry.widgetData.todayEntries) entries today", systemImage: "doc.text")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if entry.isStreakAtRisk {
-                    Text("Journal today to keep your streak!")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .padding()
-        .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(WidgetDeepLink.overview)
-    }
-}
-
-struct WeeklyStatCard: View {
-    let icon: String
-    let title: String
-    let thisWeek: Int
-    let today: Int
-    let color: Color
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundStyle(color)
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Text("\(thisWeek)")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("Today: \(today)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Quick Record Widget
-
-struct QuickRecordWidget: Widget {
-    let kind: String = "LifeWrappedQuickRecordWidget"
-    
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: QuickRecordProvider()) { entry in
-            QuickRecordWidgetView(entry: entry)
+        StaticConfiguration(kind: kind, provider: LifeWrappedProvider()) { entry in
+            RecordWidgetView(entry: entry)
         }
         .configurationDisplayName("Quick Record")
-        .description("Quickly start recording your journal.")
+        .description("Start recording with Work or Personal category.")
         .supportedFamilies([
             .systemSmall,
+            .systemMedium,
             .accessoryCircular
         ])
     }
 }
 
-struct QuickRecordEntry: TimelineEntry {
-    let date: Date
-    let streakDays: Int
-    let todayWords: Int
-    let isStreakAtRisk: Bool
-    
-    static let placeholder = QuickRecordEntry(
-        date: Date(),
-        streakDays: 7,
-        todayWords: 250,
-        isStreakAtRisk: false
-    )
-}
-
-struct QuickRecordProvider: TimelineProvider {
-    typealias Entry = QuickRecordEntry
-    
-    private let dataManager = WidgetDataManager.shared
-    
-    func placeholder(in context: Context) -> QuickRecordEntry {
-        .placeholder
-    }
-    
-    func getSnapshot(in context: Context, completion: @escaping (QuickRecordEntry) -> Void) {
-        let widgetData = dataManager.readWidgetData()
-        let entry = QuickRecordEntry(
-            date: Date(),
-            streakDays: widgetData.streakDays,
-            todayWords: widgetData.todayWords,
-            isStreakAtRisk: widgetData.isStreakAtRisk
-        )
-        completion(entry)
-    }
-    
-    func getTimeline(in context: Context, completion: @escaping (Timeline<QuickRecordEntry>) -> Void) {
-        let widgetData = dataManager.readWidgetData()
-        let entry = QuickRecordEntry(
-            date: Date(),
-            streakDays: widgetData.streakDays,
-            todayWords: widgetData.todayWords,
-            isStreakAtRisk: widgetData.isStreakAtRisk
-        )
-        
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date()
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
-        completion(timeline)
-    }
-}
-
-struct QuickRecordWidgetView: View {
-    let entry: QuickRecordEntry
+struct RecordWidgetView: View {
+    let entry: LifeWrappedEntry
     @Environment(\.widgetFamily) var family
     
     var body: some View {
         switch family {
         case .systemSmall:
-            QuickRecordSmallView(entry: entry)
+            RecordSmallView(entry: entry)
+        case .systemMedium:
+            RecordMediumView(entry: entry)
         case .accessoryCircular:
-            QuickRecordCircularView(entry: entry)
+            RecordCircularView(entry: entry)
         default:
-            QuickRecordSmallView(entry: entry)
+            RecordSmallView(entry: entry)
         }
     }
 }
 
-struct QuickRecordSmallView: View {
-    let entry: QuickRecordEntry
+struct RecordSmallView: View {
+    let entry: LifeWrappedEntry
     
     var body: some View {
         VStack(spacing: 12) {
-            // Record button as main focus
+            // Work button
+            Link(destination: WidgetDeepLink.recordWork) {
+                HStack {
+                    Image(systemName: "briefcase.fill")
+                    Text("Work")
+                        .fontWeight(.medium)
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.blue.opacity(0.2))
+                .foregroundStyle(.blue)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            
+            // Personal button
+            Link(destination: WidgetDeepLink.recordPersonal) {
+                HStack {
+                    Image(systemName: "person.fill")
+                    Text("Personal")
+                        .fontWeight(.medium)
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.purple.opacity(0.2))
+                .foregroundStyle(.purple)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            
+            // Streak indicator
+            if entry.isStreakAtRisk {
+                Text("🔥 Save your streak!")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            } else if entry.streakDays > 0 {
+                Text("🔥 \(entry.streakDays) day streak")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct RecordMediumView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        HStack(spacing: 16) {
+            // Work button
+            Link(destination: WidgetDeepLink.recordWork) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.2))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "briefcase.fill")
+                            .font(.title2)
+                            .foregroundStyle(.blue)
+                    }
+                    Text("Work")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            
+            // Big mic button
             Link(destination: WidgetDeepLink.record) {
                 ZStack {
                     Circle()
@@ -859,53 +417,59 @@ struct QuickRecordSmallView: View {
                                 colors: [.red, .red.opacity(0.7)],
                                 center: .center,
                                 startRadius: 0,
-                                endRadius: 40
+                                endRadius: 35
                             )
                         )
                         .frame(width: 70, height: 70)
-                    
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 28))
+                        .font(.title)
                         .foregroundStyle(.white)
                 }
             }
             
-            Text("Tap to Record")
-                .font(.caption)
-                .fontWeight(.medium)
-            
-            // Today's stats
-            HStack(spacing: 12) {
-                Label("\(entry.todayWords)", systemImage: "text.word.spacing")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                
-                if entry.streakDays > 0 {
-                    Label("\(entry.streakDays)", systemImage: "flame.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
+            // Personal button
+            Link(destination: WidgetDeepLink.recordPersonal) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.purple.opacity(0.2))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "person.fill")
+                            .font(.title2)
+                            .foregroundStyle(.purple)
+                    }
+                    Text("Personal")
+                        .font(.caption)
+                        .fontWeight(.medium)
                 }
             }
-            
-            // Streak warning
-            if entry.isStreakAtRisk {
-                Text("Save your streak!")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .fontWeight(.medium)
+            .frame(maxWidth: .infinity)
+        }
+        .padding()
+        .overlay(alignment: .bottom) {
+            HStack {
+                if entry.isStreakAtRisk {
+                    Label("Save your \(entry.streakDays) day streak!", systemImage: "flame.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                } else {
+                    Label("\(entry.todaySessions) sessions today", systemImage: "waveform")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .padding(.bottom, 8)
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
 }
 
-struct QuickRecordCircularView: View {
-    let entry: QuickRecordEntry
+struct RecordCircularView: View {
+    let entry: LifeWrappedEntry
     
     var body: some View {
         ZStack {
             AccessoryWidgetBackground()
-            
             VStack(spacing: 2) {
                 Image(systemName: "mic.fill")
                     .font(.title3)
@@ -918,59 +482,154 @@ struct QuickRecordCircularView: View {
     }
 }
 
+// MARK: - Sessions Widget
+
+struct SessionsWidget: Widget {
+    let kind: String = "LifeWrappedSessionsWidget"
+    
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: LifeWrappedProvider()) { entry in
+            SessionsWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Today's Sessions")
+        .description("Quick view of your session count for today.")
+        .supportedFamilies([
+            .systemSmall,
+            .accessoryCircular,
+            .accessoryInline
+        ])
+    }
+}
+
+struct SessionsWidgetView: View {
+    let entry: LifeWrappedEntry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            SessionsSmallView(entry: entry)
+        case .accessoryCircular:
+            SessionsCircularView(entry: entry)
+        case .accessoryInline:
+            SessionsInlineView(entry: entry)
+        default:
+            SessionsSmallView(entry: entry)
+        }
+    }
+}
+
+struct SessionsSmallView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "waveform")
+                .font(.system(size: 32))
+                .foregroundStyle(.purple)
+            
+            Text("\(entry.todaySessions)")
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+            
+            Text(entry.todaySessions == 1 ? "session today" : "sessions today")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            // Streak indicator
+            if entry.streakDays > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                    Text("\(entry.streakDays)")
+                        .fontWeight(.semibold)
+                }
+                .font(.caption)
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.history)
+    }
+}
+
+struct SessionsCircularView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            VStack(spacing: 2) {
+                Image(systemName: "waveform")
+                    .font(.caption)
+                Text("\(entry.todaySessions)")
+                    .font(.headline)
+                    .fontWeight(.bold)
+            }
+        }
+        .widgetURL(WidgetDeepLink.history)
+    }
+}
+
+struct SessionsInlineView: View {
+    let entry: LifeWrappedEntry
+    
+    var body: some View {
+        Text("📝 \(entry.todaySessions) sessions today")
+            .widgetURL(WidgetDeepLink.history)
+    }
+}
+
 // MARK: - Widget Bundle
 
 @main
 struct LifeWrappedWidgetBundle: WidgetBundle {
     var body: some Widget {
-        LifeWrappedWidget()
-        StreakFocusWidget()
-        WeeklyStatsWidget()
-        QuickRecordWidget()
+        TodayWidget()
+        RecordWidget()
+        SessionsWidget()
     }
 }
 
 // MARK: - Previews
 
-#Preview("Small", as: .systemSmall) {
-    LifeWrappedWidget()
+#Preview("Today Small", as: .systemSmall) {
+    TodayWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
     LifeWrappedEntry.empty
 }
 
-#Preview("Medium", as: .systemMedium) {
-    LifeWrappedWidget()
+#Preview("Today Medium", as: .systemMedium) {
+    TodayWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
 }
 
-#Preview("Large", as: .systemLarge) {
-    LifeWrappedWidget()
+#Preview("Record Small", as: .systemSmall) {
+    RecordWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
 }
 
-#Preview("Streak Small", as: .systemSmall) {
-    StreakFocusWidget()
+#Preview("Record Medium", as: .systemMedium) {
+    RecordWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
 }
 
-#Preview("Weekly Large", as: .systemLarge) {
-    WeeklyStatsWidget()
+#Preview("Sessions Small", as: .systemSmall) {
+    SessionsWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
 }
 
-#Preview("Quick Record Small", as: .systemSmall) {
-    QuickRecordWidget()
+#Preview("Today Rectangular", as: .accessoryRectangular) {
+    TodayWidget()
 } timeline: {
-    QuickRecordEntry.placeholder
+    LifeWrappedEntry.placeholder
 }
 
-#Preview("Quick Record Circular", as: .accessoryCircular) {
-    QuickRecordWidget()
+#Preview("Record Circular", as: .accessoryCircular) {
+    RecordWidget()
 } timeline: {
-    QuickRecordEntry.placeholder
+    LifeWrappedEntry.placeholder
 }

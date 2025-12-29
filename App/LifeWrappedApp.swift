@@ -66,6 +66,15 @@ struct LifeWrappedApp: App {
             return
         }
         
+        // Parse query parameters
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryItems = components?.queryItems ?? []
+        let categoryString = queryItems.first(where: { $0.name == "category" })?.value
+        
+        if let categoryString = categoryString {
+            print("📂 [LifeWrappedApp] Category from deep link: \(categoryString)")
+        }
+        
         if let destination = DeepLinkDestination(rawValue: host) {
             print("📍 [LifeWrappedApp] Navigating to: \(destination)")
             
@@ -82,6 +91,12 @@ struct LifeWrappedApp: App {
                 Task { @MainActor in
                     // Small delay to ensure UI is ready
                     try? await Task.sleep(nanoseconds: 500_000_000)
+                    
+                    // Set category if provided in deep link
+                    if let categoryString = categoryString {
+                        coordinator.setRecordingCategory(from: categoryString)
+                    }
+                    
                     if coordinator.recordingState.isRecording {
                         try? await coordinator.stopRecording()
                     } else {

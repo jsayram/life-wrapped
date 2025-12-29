@@ -658,6 +658,16 @@ public final class AppCoordinator: ObservableObject {
         await recordingCoordinator?.cancelRecording()
     }
     
+    /// Set the recording category from a deep link string
+    public func setRecordingCategory(from string: String) {
+        guard let category = SessionCategory(rawValue: string) else {
+            print("⚠️ [AppCoordinator] Invalid category string: \(string)")
+            return
+        }
+        recordingCoordinator?.selectedCategory = category
+        print("📂 [AppCoordinator] Recording category set to: \(category.displayName)")
+    }
+    
     /// Reset to idle state after viewing completed/failed state
     public func resetRecordingState() {
         recordingCoordinator?.resetRecordingState()

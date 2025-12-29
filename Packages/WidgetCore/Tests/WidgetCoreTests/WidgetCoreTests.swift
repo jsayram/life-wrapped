@@ -21,8 +21,6 @@ struct WidgetDataTests {
         #expect(data.todayEntries == 0)
         #expect(data.lastEntryTime == nil)
         #expect(data.isStreakAtRisk == false)
-        #expect(data.weeklyWords == 0)
-        #expect(data.weeklyMinutes == 0)
     }
     
     @Test("Placeholder widget data has sample values")
@@ -35,8 +33,6 @@ struct WidgetDataTests {
         #expect(data.todayEntries == 2)
         #expect(data.lastEntryTime != nil)
         #expect(data.isStreakAtRisk == false)
-        #expect(data.weeklyWords == 2450)
-        #expect(data.weeklyMinutes == 35)
     }
     
     @Test("Widget data initializes with custom values")
@@ -48,9 +44,7 @@ struct WidgetDataTests {
             todayMinutes: 8,
             todayEntries: 3,
             lastEntryTime: lastEntry,
-            isStreakAtRisk: true,
-            weeklyWords: 3500,
-            weeklyMinutes: 50
+            isStreakAtRisk: true
         )
         
         #expect(data.streakDays == 10)
@@ -59,8 +53,6 @@ struct WidgetDataTests {
         #expect(data.todayEntries == 3)
         #expect(data.lastEntryTime == lastEntry)
         #expect(data.isStreakAtRisk == true)
-        #expect(data.weeklyWords == 3500)
-        #expect(data.weeklyMinutes == 50)
     }
     
     @Test("Widget data is Codable")
@@ -78,20 +70,18 @@ struct WidgetDataTests {
         #expect(decoded.todayMinutes == original.todayMinutes)
     }
     
-    @Test("Widget data from rollup calculates minutes")
-    func fromRollupCalculatesMinutes() {
+    @Test("Widget data from factory calculates minutes")
+    func fromFactoryCalculatesMinutes() {
         let data = WidgetData.from(
             streakDays: 5,
             todayWordCount: 250,
-            todayDuration: 300, // 5 minutes
+            todayDuration: 300, // 5 minutes in seconds
             todayEntryCount: 1,
-            lastEntryDate: Date(),
-            weeklyWordCount: 1500,
-            weeklyDuration: 1800 // 30 minutes
+            lastEntryDate: Date()
         )
         
         #expect(data.todayMinutes == 5)
-        #expect(data.weeklyMinutes == 30)
+        #expect(data.todayEntries == 1)
     }
     
     @Test("Widget data is Equatable")
@@ -106,20 +96,18 @@ struct WidgetDataTests {
         #expect(data1 != data3)
     }
     
-    @Test("Widget data minutes converts from seconds")
-    func minutesConversion() {
+    @Test("Widget data session count tracks todayEntries")
+    func sessionCountTracking() {
         let data = WidgetData.from(
-            streakDays: 1,
-            todayWordCount: 100,
-            todayDuration: 180, // 3 minutes
-            todayEntryCount: 1,
-            lastEntryDate: Date(),
-            weeklyWordCount: 500,
-            weeklyDuration: 900 // 15 minutes
+            streakDays: 3,
+            todayWordCount: 450,
+            todayDuration: 540, // 9 minutes
+            todayEntryCount: 5,
+            lastEntryDate: Date()
         )
         
-        #expect(data.todayMinutes == 3)
-        #expect(data.weeklyMinutes == 15)
+        #expect(data.todayEntries == 5)
+        #expect(data.todayMinutes == 9)
     }
 }
 
@@ -160,9 +148,7 @@ struct WidgetDataManagerTests {
             todayMinutes: 7,
             todayEntries: 2,
             lastEntryTime: Date(),
-            isStreakAtRisk: false,
-            weeklyWords: 2940,
-            weeklyMinutes: 49
+            isStreakAtRisk: false
         )
         
         let writeSuccess = manager.writeWidgetData(original)
@@ -172,6 +158,7 @@ struct WidgetDataManagerTests {
         #expect(read.streakDays == 15)
         #expect(read.todayWords == 420)
         #expect(read.todayMinutes == 7)
+        #expect(read.todayEntries == 2)
     }
     
     @Test("Manager updates widget data")
@@ -189,9 +176,7 @@ struct WidgetDataManagerTests {
                 todayMinutes: 2,
                 todayEntries: 1,
                 lastEntryTime: Date(),
-                isStreakAtRisk: false,
-                weeklyWords: 100,
-                weeklyMinutes: 2
+                isStreakAtRisk: false
             )
         }
         
@@ -246,9 +231,9 @@ struct WidgetDisplayModeTests {
     
     @Test("All display modes have correct raw values")
     func correctRawValues() {
-        #expect(WidgetDisplayMode.overview.rawValue == "Overview")
-        #expect(WidgetDisplayMode.streak.rawValue == "Streak Focus")
-        #expect(WidgetDisplayMode.weekly.rawValue == "Weekly Stats")
+        #expect(WidgetDisplayMode.today.rawValue == "Today")
+        #expect(WidgetDisplayMode.record.rawValue == "Record")
+        #expect(WidgetDisplayMode.sessions.rawValue == "Sessions")
     }
     
     @Test("Display modes have unique raw values")
@@ -294,46 +279,37 @@ struct WidgetDisplayModeTests {
     
     @Test("Display modes are Sendable")
     func sendableDisplayMode() async {
-        let mode = WidgetDisplayMode.overview
+        let mode = WidgetDisplayMode.today
         
         await Task {
-            #expect(mode.rawValue == "Overview")
+            #expect(mode.rawValue == "Today")
         }.value
     }
     
-    @Test("Overview mode properties")
-    func overviewModeProperties() {
-        let mode = WidgetDisplayMode.overview
+    @Test("Today mode properties")
+    func todayModeProperties() {
+        let mode = WidgetDisplayMode.today
         
-        #expect(mode.displayName == "Overview")
-        #expect(mode.description.contains("metrics"))
-        #expect(mode.icon == "rectangle.grid.2x2")
-    }
-    
-    @Test("Streak mode properties")
-    func streakModeProperties() {
-        let mode = WidgetDisplayMode.streak
-        
-        #expect(mode.displayName == "Streak Focus")
-        #expect(mode.description.contains("streak"))
-        #expect(mode.icon == "flame.fill")
-    }
-    
-    @Test("Goals mode properties")
-    func goalsModeProperties() {
-        let mode = WidgetDisplayMode.goals
-        
-        #expect(mode.displayName == "Goals")
-        #expect(mode.description.contains("goal"))
-        #expect(mode.icon == "target")
-    }
-    
-    @Test("Weekly mode properties")
-    func weeklyModeProperties() {
-        let mode = WidgetDisplayMode.weekly
-        
-        #expect(mode.displayName == "Weekly Stats")
-        #expect(mode.description.contains("weekly"))
+        #expect(mode.displayName == "Today")
+        #expect(mode.description.contains("today"))
         #expect(mode.icon == "calendar")
+    }
+    
+    @Test("Record mode properties")
+    func recordModeProperties() {
+        let mode = WidgetDisplayMode.record
+        
+        #expect(mode.displayName == "Record")
+        #expect(mode.description.contains("record") || mode.description.contains("Quick"))
+        #expect(mode.icon == "mic.fill")
+    }
+    
+    @Test("Sessions mode properties")
+    func sessionsModeProperties() {
+        let mode = WidgetDisplayMode.sessions
+        
+        #expect(mode.displayName == "Sessions")
+        #expect(mode.description.contains("session"))
+        #expect(mode.icon == "waveform")
     }
 }
