@@ -441,14 +441,14 @@ public actor LocalEngine: SummarizationEngine {
         )
     }
     
-    /// Summarize a time period using basic aggregation
+    /// Summarize a time period using LLM for Year Wrap, basic aggregation for others
     public func summarizePeriod(
         periodType: PeriodType,
         sessionSummaries: [SessionIntelligence],
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        categoryContext: String? = nil
     ) async throws -> PeriodIntelligence {
-        // For period summaries, use simple aggregation (BasicEngine style)
         guard !sessionSummaries.isEmpty else {
             return PeriodIntelligence(
                 periodType: periodType,
@@ -465,6 +465,229 @@ public actor LocalEngine: SummarizationEngine {
             )
         }
         
+        // For Year Wrap, use LLM to generate structured JSON
+        if periodType == .yearWrap || periodType == .yearWrapWork || periodType == .yearWrapPersonal {
+            return try await generateYearWrapWithLLM(
+                periodType: periodType,
+                sessionSummaries: sessionSummaries,
+                periodStart: periodStart,
+                periodEnd: periodEnd,
+                categoryContext: categoryContext
+            )
+        }
+        
+        // For other period types, use simple aggregation (BasicEngine style)
+        return aggregatePeriodSummaries(
+            periodType: periodType,
+            sessionSummaries: sessionSummaries,
+            periodStart: periodStart,
+            periodEnd: periodEnd
+        )
+    }
+    
+    /// Generate Year Wrap using LLM with simplified JSON schema
+    private func generateYearWrapWithLLM(
+        periodType: PeriodType,
+        sessionSummaries: [SessionIntelligence],
+        periodStart: Date,
+        periodEnd: Date,
+        categoryContext: String?
+    ) async throws -> PeriodIntelligence {
+        // Calculate aggregates
+        let totalDuration = sessionSummaries.reduce(0) { $0 + $1.duration }
+        let totalWordCount = sessionSummaries.reduce(0) { $0 + $1.wordCount }
+        let averageSentiment = sessionSummaries.reduce(0.0) { $0 + $1.sentiment } / Double(sessionSummaries.count)
+        
+        // Collect all topics
+        var topicCounts: [String: Int] = [:]
+        for session in sessionSummaries {
+            for topic in session.topics {
+                topicCounts[topic, default: 0] += 1
+            }
+        }
+        let topTopics = topicCounts.sorted { $0.value > $1.value }
+            .prefix(10)
+            .map { $0.key }
+        
+        // Collect all entities
+        var allEntities: [Entity] = []
+        for session in sessionSummaries {
+            allEntities.append(contentsOf: session.entities)
+        }
+        
+        // Build combined session summaries for context
+        let combinedSummaries = sessionSummaries
+            .prefix(20)  // Limit to avoid context overflow
+            .map { "- \($0.summary)" }
+            .joined(separator: "\n")
+        
+        // Ensure model is loaded
+        if !(await llamaContext.isReady()) {
+            print("📥 [LocalEngine] Model not loaded, loading for Year Wrap...")
+            try await loadModel()
+        }
+        
+        // Build simplified Year Wrap prompt for Local AI
+        let categoryLabel = periodType == .yearWrapWork ? "WORK" : (periodType == .yearWrapPersonal ? "PERSONAL" : "ALL")
+        let prompt = buildYearWrapPrompt(
+            summaries: combinedSummaries,
+            sessionCount: sessionSummaries.count,
+            topTopics: topTopics,
+            categoryLabel: categoryLabel
+        )
+        
+        print("🤖 [LocalEngine] Generating \(categoryLabel) Year Wrap with LLM...")
+        
+        do {
+            // Generate with higher token limit for Year Wrap
+            let rawOutput = try await llamaContext.generate(prompt: prompt, maxTokens: 512)
+            
+            // Try to parse as JSON
+            if let jsonSummary = parseYearWrapJSON(rawOutput) {
+                print("✅ [LocalEngine] Year Wrap JSON parsed successfully")
+                return PeriodIntelligence(
+                    periodType: periodType,
+                    periodStart: periodStart,
+                    periodEnd: periodEnd,
+                    summary: jsonSummary,
+                    topics: Array(topTopics),
+                    entities: allEntities,
+                    sentiment: averageSentiment,
+                    sessionCount: sessionSummaries.count,
+                    totalDuration: totalDuration,
+                    totalWordCount: totalWordCount,
+                    trends: nil
+                )
+            } else {
+                // LLM didn't produce valid JSON - wrap plain text in JSON structure
+                print("⚠️ [LocalEngine] LLM output not valid JSON, wrapping in structure")
+                let cleanedOutput = cleanupMetaCommentary(rawOutput)
+                let wrappedJSON = wrapPlainTextAsYearWrapJSON(
+                    text: cleanedOutput,
+                    topTopics: topTopics,
+                    sessionCount: sessionSummaries.count
+                )
+                return PeriodIntelligence(
+                    periodType: periodType,
+                    periodStart: periodStart,
+                    periodEnd: periodEnd,
+                    summary: wrappedJSON,
+                    topics: Array(topTopics),
+                    entities: allEntities,
+                    sentiment: averageSentiment,
+                    sessionCount: sessionSummaries.count,
+                    totalDuration: totalDuration,
+                    totalWordCount: totalWordCount,
+                    trends: nil
+                )
+            }
+        } catch {
+            print("❌ [LocalEngine] LLM generation failed: \(error)")
+            // Fall back to aggregation wrapped in JSON
+            let fallbackJSON = buildFallbackYearWrapJSON(
+                sessionSummaries: sessionSummaries,
+                topTopics: topTopics
+            )
+            return PeriodIntelligence(
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd,
+                summary: fallbackJSON,
+                topics: Array(topTopics),
+                entities: allEntities,
+                sentiment: averageSentiment,
+                sessionCount: sessionSummaries.count,
+                totalDuration: totalDuration,
+                totalWordCount: totalWordCount,
+                trends: nil
+            )
+        }
+    }
+    
+    /// Build simplified Year Wrap prompt for Local AI
+    private func buildYearWrapPrompt(summaries: String, sessionCount: Int, topTopics: [String], categoryLabel: String) -> String {
+        let topicsStr = topTopics.prefix(5).joined(separator: ", ")
+        
+        return """
+        You are summarizing a year of voice recordings. Create a Year Wrap summary.
+        
+        SESSION COUNT: \(sessionCount)
+        CATEGORY: \(categoryLabel)
+        TOP TOPICS: \(topicsStr)
+        
+        SESSION SUMMARIES:
+        \(summaries)
+        
+        Output ONLY valid JSON with this EXACT structure (no markdown, no explanation):
+        {"year_summary":"5-6 sentence summary of the year","year_title":"Short title for the year","top_highlights":["highlight 1","highlight 2","highlight 3"],"biggest_challenges":["challenge 1","challenge 2"],"top_topics":["topic 1","topic 2","topic 3"]}
+        
+        JSON:
+        """
+    }
+    
+    /// Parse Year Wrap JSON from LLM output
+    private func parseYearWrapJSON(_ output: String) -> String? {
+        // Try to find JSON in the output
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Look for JSON object
+        guard let startIndex = trimmed.firstIndex(of: "{"),
+              let endIndex = trimmed.lastIndex(of: "}") else {
+            return nil
+        }
+        
+        let jsonString = String(trimmed[startIndex...endIndex])
+        
+        // Validate it's actual JSON
+        guard let data = jsonString.data(using: .utf8),
+              let _ = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        
+        return jsonString
+    }
+    
+    /// Wrap plain text in Year Wrap JSON structure
+    private func wrapPlainTextAsYearWrapJSON(text: String, topTopics: [String], sessionCount: Int) -> String {
+        // Clean the text
+        let cleanText = text
+            .replacingOccurrences(of: "\"", with: "'")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Take first 3 topics
+        let highlights = topTopics.prefix(3).map { "\"\($0)\"" }.joined(separator: ",")
+        
+        return """
+        {"year_summary":"\(cleanText)","year_title":"Year in Review","top_highlights":[\(highlights)],"biggest_challenges":[],"top_topics":[\(highlights)]}
+        """
+    }
+    
+    /// Build fallback Year Wrap JSON from aggregated data
+    private func buildFallbackYearWrapJSON(sessionSummaries: [SessionIntelligence], topTopics: [String]) -> String {
+        // Create summary from first few session summaries
+        let summaryText = sessionSummaries.prefix(5)
+            .map { $0.summary }
+            .joined(separator: " ")
+            .prefix(500)
+            .replacingOccurrences(of: "\"", with: "'")
+            .replacingOccurrences(of: "\n", with: " ")
+        
+        let highlights = topTopics.prefix(3).map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ",")
+        let topics = topTopics.prefix(5).map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ",")
+        
+        return """
+        {"year_summary":"\(summaryText)","year_title":"Year in Review","top_highlights":[\(highlights)],"biggest_challenges":[],"top_topics":[\(topics)]}
+        """
+    }
+    
+    /// Aggregate period summaries (for non-Year Wrap periods)
+    private func aggregatePeriodSummaries(
+        periodType: PeriodType,
+        sessionSummaries: [SessionIntelligence],
+        periodStart: Date,
+        periodEnd: Date
+    ) -> PeriodIntelligence {
         // Aggregate session summaries
         let combinedSummaries = sessionSummaries
             .map { "• \($0.summary)" }

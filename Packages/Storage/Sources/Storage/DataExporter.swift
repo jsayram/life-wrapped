@@ -7,7 +7,10 @@
 import Foundation
 import SharedModels
 import PDFKit
+
+#if canImport(UIKit)
 import UIKit
+#endif
 
 public actor DataExporter {
     private let databaseManager: DatabaseManager
@@ -120,7 +123,7 @@ public actor DataExporter {
     // MARK: - PDF Export
     
     /// Export summaries to PDF format (summaries only, not full transcripts)
-    public func exportToPDF(year: Int? = nil, redactPeople: Bool = false, redactPlaces: Bool = false) async throws -> Data {
+    public func exportToPDF(year: Int? = nil, redactPeople: Bool = false, redactPlaces: Bool = false, filter: ItemFilter = .all) async throws -> Data {
         let summaries = try await databaseManager.fetchAllSummaries()
         
         // Filter by year if specified
@@ -142,7 +145,7 @@ public actor DataExporter {
         
         if let yearWrap = yearWrap, let year = year {
             // Render enhanced Year Wrap PDF
-            return try await renderYearWrapPDF(yearWrap: yearWrap, year: year, redactPeople: redactPeople, redactPlaces: redactPlaces)
+            return try await renderYearWrapPDF(yearWrap: yearWrap, year: year, redactPeople: redactPeople, redactPlaces: redactPlaces, filter: filter)
         } else {
             // Render standard summary PDF
             return renderStandardPDF(summaries: filteredSummaries, year: year)
@@ -259,7 +262,7 @@ public actor DataExporter {
     
     // MARK: - Year Wrap PDF Rendering
     
-    private func renderYearWrapPDF(yearWrap: Summary, year: Int, redactPeople: Bool, redactPlaces: Bool) async throws -> Data {
+    private func renderYearWrapPDF(yearWrap: Summary, year: Int, redactPeople: Bool, redactPlaces: Bool, filter: ItemFilter) async throws -> Data {
         guard let parsedData = parseYearWrapJSON(from: yearWrap.text) else {
             // Fallback to standard PDF if parsing fails
             return renderStandardPDF(summaries: [yearWrap], year: year)
@@ -291,16 +294,16 @@ public actor DataExporter {
             yOffset = renderStatsSection(context: context, pageRect: pageRect, yOffset: yOffset, stats: stats)
             
             // Insights Sections
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Major Arcs", emoji: "🌟", items: parsedData.majorArcs, color: YearWrapTheme.sectionColors[0], requireNewPage: false)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Wins", emoji: "🏆", items: parsedData.biggestWins, color: YearWrapTheme.sectionColors[1], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Losses", emoji: "💔", items: parsedData.biggestLosses, color: YearWrapTheme.sectionColors[2], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Challenges", emoji: "⚡", items: parsedData.biggestChallenges, color: YearWrapTheme.sectionColors[3], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Finished Projects", emoji: "✅", items: parsedData.finishedProjects, color: YearWrapTheme.sectionColors[4], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Unfinished Projects", emoji: "🚧", items: parsedData.unfinishedProjects, color: YearWrapTheme.sectionColors[5], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Worked On", emoji: "💼", items: parsedData.topWorkedOnTopics, color: YearWrapTheme.sectionColors[6], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Talked About", emoji: "💬", items: parsedData.topTalkedAboutThings, color: YearWrapTheme.sectionColors[7], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Valuable Actions", emoji: "🎯", items: parsedData.valuableActionsTaken, color: YearWrapTheme.sectionColors[8], requireNewPage: true)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Opportunities Missed", emoji: "🤔", items: parsedData.opportunitiesMissed, color: YearWrapTheme.sectionColors[9], requireNewPage: true)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Major Arcs", emoji: "🌟", items: parsedData.majorArcs, color: YearWrapTheme.sectionColors[0], requireNewPage: false, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Wins", emoji: "🏆", items: parsedData.biggestWins, color: YearWrapTheme.sectionColors[1], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Losses", emoji: "💔", items: parsedData.biggestLosses, color: YearWrapTheme.sectionColors[2], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Challenges", emoji: "⚡", items: parsedData.biggestChallenges, color: YearWrapTheme.sectionColors[3], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Finished Projects", emoji: "✅", items: parsedData.finishedProjects, color: YearWrapTheme.sectionColors[4], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Unfinished Projects", emoji: "🚧", items: parsedData.unfinishedProjects, color: YearWrapTheme.sectionColors[5], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Worked On", emoji: "💼", items: parsedData.topWorkedOnTopics, color: YearWrapTheme.sectionColors[6], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Talked About", emoji: "💬", items: parsedData.topTalkedAboutThings, color: YearWrapTheme.sectionColors[7], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Valuable Actions", emoji: "🎯", items: parsedData.valuableActionsTaken, color: YearWrapTheme.sectionColors[8], requireNewPage: true, filter: filter)
+            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Opportunities Missed", emoji: "🤔", items: parsedData.opportunitiesMissed, color: YearWrapTheme.sectionColors[9], requireNewPage: true, filter: filter)
             
             // People & Places
             yOffset = renderPeopleSection(context: context, pageRect: pageRect, yOffset: yOffset, people: parsedData.peopleMentioned, redact: redactPeople)
@@ -404,8 +407,19 @@ public actor DataExporter {
     }
     
     @discardableResult
-    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [String], color: String, requireNewPage: Bool) -> CGFloat {
-        if items.isEmpty {
+    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [ClassifiedItem], color: String, requireNewPage: Bool, filter: ItemFilter) -> CGFloat {
+        // Apply filter
+        let filteredItems: [ClassifiedItem]
+        switch filter {
+        case .all:
+            filteredItems = items
+        case .workOnly:
+            filteredItems = items.filter { $0.category == .work || $0.category == .both }
+        case .personalOnly:
+            filteredItems = items.filter { $0.category == .personal || $0.category == .both }
+        }
+        
+        if filteredItems.isEmpty {
             return yOffset
         }
         
@@ -425,14 +439,16 @@ public actor DataExporter {
         headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
         y += headerSize.height + 20
         
-        // Items as bullets
+        // Items as bullets with category indicators (only for "All" filter)
         let bulletAttributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 14),
             .foregroundColor: UIColor.darkGray
         ]
         
-        for item in items {
-            let bulletText = "• \(item)"
+        for item in filteredItems {
+            // Add category prefix only when showing all items
+            let categoryPrefix = filter == .all ? getCategoryPrefix(item.category) : ""
+            let bulletText = "• \(categoryPrefix)\(item.text)"
             let bulletSize = bulletText.boundingRect(
                 with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin],
@@ -450,6 +466,14 @@ public actor DataExporter {
         }
         
         return y + 30
+    }
+    
+    private func getCategoryPrefix(_ category: ItemCategory) -> String {
+        switch category {
+        case .work: return "💼 "
+        case .personal: return "🏠 "
+        case .both: return "🔀 "
+        }
     }
     
     private func renderPeopleSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, people: [PersonMention], redact: Bool) -> CGFloat {
@@ -576,25 +600,74 @@ public actor DataExporter {
             return nil
         }
         
-        // Extract all fields
-        guard let yearTitle = json["year_title"] as? String,
-              let yearSummary = json["year_summary"] as? String else {
+        // Check for year_summary - required field for all formats
+        guard let yearSummary = json["year_summary"] as? String else {
             return nil
         }
         
+        let yearTitle = json["year_title"] as? String ?? "Year in Review"
+        
+        // Helper to parse classified items (supports both old string format and new object format)
+        func parseClassifiedItems(_ key: String) -> [ClassifiedItem] {
+            guard let array = json[key] as? [Any] else { return [] }
+            
+            return array.compactMap { item in
+                // New format: {"text": "...", "category": "work|personal|both"}
+                if let dict = item as? [String: String],
+                   let text = dict["text"],
+                   let categoryStr = dict["category"],
+                   let category = ItemCategory(rawValue: categoryStr) {
+                    return ClassifiedItem(text: text, category: category)
+                }
+                // Old format: just strings - default to "both"
+                else if let text = item as? String {
+                    return ClassifiedItem(text: text, category: .both)
+                }
+                return nil
+            }
+        }
+        
+        // Check if this is simplified Local AI format (has top_highlights instead of detailed fields)
+        let isSimplifiedFormat = json["top_highlights"] != nil
+        
+        if isSimplifiedFormat {
+            // Parse Local AI simplified format
+            let topHighlights = parseClassifiedItems("top_highlights")
+            let challenges = parseClassifiedItems("biggest_challenges")
+            let topics = parseClassifiedItems("top_topics")
+            
+            return YearWrapData(
+                yearTitle: yearTitle,
+                yearSummary: yearSummary,
+                majorArcs: [],
+                biggestWins: topHighlights,
+                biggestLosses: [],
+                biggestChallenges: challenges,
+                finishedProjects: [],
+                unfinishedProjects: [],
+                topWorkedOnTopics: topics,
+                topTalkedAboutThings: [],
+                valuableActionsTaken: [],
+                opportunitiesMissed: [],
+                peopleMentioned: [],
+                placesVisited: []
+            )
+        }
+        
+        // Standard format with detailed fields
         return YearWrapData(
             yearTitle: yearTitle,
             yearSummary: yearSummary,
-            majorArcs: json["major_arcs"] as? [String] ?? [],
-            biggestWins: json["biggest_wins"] as? [String] ?? [],
-            biggestLosses: json["biggest_losses"] as? [String] ?? [],
-            biggestChallenges: json["biggest_challenges"] as? [String] ?? [],
-            finishedProjects: json["finished_projects"] as? [String] ?? [],
-            unfinishedProjects: json["unfinished_projects"] as? [String] ?? [],
-            topWorkedOnTopics: json["top_worked_on_topics"] as? [String] ?? [],
-            topTalkedAboutThings: json["top_talked_about_things"] as? [String] ?? [],
-            valuableActionsTaken: json["valuable_actions_taken"] as? [String] ?? [],
-            opportunitiesMissed: json["opportunities_missed"] as? [String] ?? [],
+            majorArcs: parseClassifiedItems("major_arcs"),
+            biggestWins: parseClassifiedItems("biggest_wins"),
+            biggestLosses: parseClassifiedItems("biggest_losses"),
+            biggestChallenges: parseClassifiedItems("biggest_challenges"),
+            finishedProjects: parseClassifiedItems("finished_projects"),
+            unfinishedProjects: parseClassifiedItems("unfinished_projects"),
+            topWorkedOnTopics: parseClassifiedItems("top_worked_on_topics"),
+            topTalkedAboutThings: parseClassifiedItems("top_talked_about_things"),
+            valuableActionsTaken: parseClassifiedItems("valuable_actions_taken"),
+            opportunitiesMissed: parseClassifiedItems("opportunities_missed"),
             peopleMentioned: (json["people_mentioned"] as? [[String: String]] ?? []).compactMap { dict in
                 guard let name = dict["name"] else { return nil }
                 return PersonMention(name: name, relationship: dict["relationship"], impact: dict["impact"])
@@ -669,6 +742,12 @@ public actor DataExporter {
         case .yearWrap:
             formatter.dateFormat = "yyyy"
             return "Year Wrap \(formatter.string(from: start))"
+        case .yearWrapWork:
+            formatter.dateFormat = "yyyy"
+            return "Work Year Wrap \(formatter.string(from: start))"
+        case .yearWrapPersonal:
+            formatter.dateFormat = "yyyy"
+            return "Personal Year Wrap \(formatter.string(from: start))"
         }
     }
 

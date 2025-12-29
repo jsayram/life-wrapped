@@ -170,6 +170,10 @@ public actor DatabaseManager {
         try await sessionRepository.fetchSessionsByCategory(category: category, limit: limit)
     }
     
+    public func fetchSessionMetadataBatch(sessionIds: [UUID]) async throws -> [UUID: SessionMetadata] {
+        try await sessionRepository.fetchSessionMetadataBatch(sessionIds: sessionIds)
+    }
+    
     public func deleteSessionMetadata(sessionId: UUID) async throws {
         try await sessionRepository.deleteSessionMetadata(sessionId: sessionId)
     }

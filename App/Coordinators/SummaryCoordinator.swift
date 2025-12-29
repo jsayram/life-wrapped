@@ -400,16 +400,25 @@ public final class SummaryCoordinator {
             // Store clean text without timestamps - metadata is in periodStart/periodEnd
             print("📝 [SummaryCoordinator] Generating rollup from \(sessionSummaries.count) session summaries (oldest to newest)")
             
-            // Build lines, appending user notes if they exist for each session
+            // Build lines, appending category and user notes if they exist for each session
             var lines: [String] = []
             for summary in sessionSummaries {
-                var lineText = "• \(summary.text)"
+                var lineText = "• "
                 
-                // Append user notes if they exist for this session
+                // Prepend category tag if available
                 if let sid = summary.sessionId,
-                   let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sid),
-                   let notes = metadata.notes, !notes.isEmpty {
-                    lineText += "\n  (Notes: \(notes))"
+                   let metadata = try? await databaseManager.fetchSessionMetadata(sessionId: sid) {
+                    if let category = metadata.category {
+                        lineText += "[\(category.displayName.uppercased())] "
+                    }
+                    lineText += summary.text
+                    
+                    // Append user notes if they exist for this session
+                    if let notes = metadata.notes, !notes.isEmpty {
+                        lineText += "\n  (Notes: \(notes))"
+                    }
+                } else {
+                    lineText += summary.text
                 }
                 
                 lines.append(lineText)
@@ -443,8 +452,14 @@ public final class SummaryCoordinator {
         let calendar = Calendar.current
         var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         components.weekday = 2 // Monday
-        guard let startOfWeek = calendar.date(from: components) else { return }
-        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { return }
+        guard let startOfWeek = calendar.date(from: components) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate start of week")
+            return 
+        }
+        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate end of week")
+            return 
+        }
 
         let periodKey = "week-\(startOfWeek.timeIntervalSince1970)"
 
@@ -520,8 +535,14 @@ public final class SummaryCoordinator {
     public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
         let calendar = Calendar.current
         let components = calendar.dateComponents([.year, .month], from: date)
-        guard let startOfMonth = calendar.date(from: components) else { return }
-        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { return }
+        guard let startOfMonth = calendar.date(from: components) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate start of month")
+            return 
+        }
+        guard let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) else { 
+            print("❌ [SummaryCoordinator] Failed to calculate end of month")
+            return 
+        }
 
         let periodKey = "month-\(startOfMonth.timeIntervalSince1970)"
 
@@ -536,27 +557,22 @@ public final class SummaryCoordinator {
         do {
             print("📊 [SummaryCoordinator] Updating monthly rollup for \(startOfMonth.formatted(date: .abbreviated, time: .omitted))")
 
-            var weeklySummaries = try await databaseManager.fetchWeeklySummaries(from: startOfMonth, to: endOfMonth)
+            // First try to get daily summaries directly (more reliable for partial weeks)
+            let dailySummaries = try await databaseManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
                 .sorted { $0.periodStart < $1.periodStart }
-            print("📊 [SummaryCoordinator] Found \(weeklySummaries.count) weekly summaries for this month")
+            print("📊 [SummaryCoordinator] Found \(dailySummaries.count) daily summaries for this month")
 
-            if weeklySummaries.isEmpty {
-                print("ℹ️ [SummaryCoordinator] No weekly summaries found, checking daily summaries...")
-                weeklySummaries = try await databaseManager.fetchDailySummaries(from: startOfMonth, to: endOfMonth)
-                    .sorted { $0.periodStart < $1.periodStart }
-            }
-
-            guard !weeklySummaries.isEmpty else {
-                print("ℹ️ [SummaryCoordinator] No rollups found for this month")
+            guard !dailySummaries.isEmpty else {
+                print("ℹ️ [SummaryCoordinator] No daily summaries found for this month")
                 return
             }
 
-            let weeklyIds = weeklySummaries.map { $0.id }
-            let weeklyTexts = weeklySummaries.map { $0.text }
-            let sourceIds = await databaseManager.sourceIdsToJSON(weeklyIds)
-            let inputHash = await databaseManager.computeInputHash(weeklyTexts)
+            let dailyIds = dailySummaries.map { $0.id }
+            let dailyTexts = dailySummaries.map { $0.text }
+            let sourceIds = await databaseManager.sourceIdsToJSON(dailyIds)
+            let inputHash = await databaseManager.computeInputHash(dailyTexts)
 
-            print("🔐 [SummaryCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(weeklyTexts.count) rollups")
+            print("🔐 [SummaryCoordinator] Computed input hash: \(inputHash.prefix(16))... from \(dailyTexts.count) daily summaries")
 
             if let existing = try? await databaseManager.fetchPeriodSummary(type: .month, date: startOfMonth) {
                 print("📂 [SummaryCoordinator] Found existing monthly summary (hash: \(existing.inputHash?.prefix(16) ?? "nil")...), engine: \(existing.engineTier ?? "unknown")")
@@ -569,10 +585,10 @@ public final class SummaryCoordinator {
                 print("📝 [SummaryCoordinator] No existing monthly summary found, will generate new rollup")
             }
 
-            // Generate rollup summary from weekly summaries (oldest to newest)
+            // Generate rollup summary from daily summaries (oldest to newest)
             // Store clean text without timestamps - metadata is in periodStart/periodEnd
-            print("📝 [SummaryCoordinator] Generating rollup from \(weeklySummaries.count) weekly summaries (oldest to newest)")
-            let lines = weeklySummaries.map { summary in
+            print("📝 [SummaryCoordinator] Generating rollup from \(dailySummaries.count) daily summaries (oldest to newest)")
+            let lines = dailySummaries.map { summary in
                 // Clean text only - no timestamps to prevent accumulation in nested rollups
                 return "• \(summary.text)"
             }
@@ -681,8 +697,8 @@ public final class SummaryCoordinator {
         }
     }
 
-    /// Manual Year Wrap using external intelligence (keeps deterministic rollup as default)
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
+    /// Manual Year Wrap using external intelligence - generates Combined, Work, and Personal wraps
+    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: date)
         var startComponents = DateComponents()
@@ -703,73 +719,144 @@ public final class SummaryCoordinator {
         defer { generatingPeriodSummaries.remove(periodKey) }
 
         do {
-            print("📊 [SummaryCoordinator] Starting Year Wrap for \(year)")
+            print("📊 [SummaryCoordinator] Starting Year Wrap generation for \(year) (3 summaries: Combined, Work, Personal)")
 
-            var sourceSummaries = try await databaseManager.fetchMonthlySummaries(from: startOfYear, to: endOfYear)
+            // Fetch session categories
+            let categoryMap = try await fetchSessionCategoriesForYear(year: year)
+            let workSessionIds = Set(categoryMap.filter { $0.value == .work }.keys)
+            let personalSessionIds = Set(categoryMap.filter { $0.value == .personal }.keys)
+            
+            print("📊 [SummaryCoordinator] Year \(year): \(workSessionIds.count) work, \(personalSessionIds.count) personal sessions")
+
+            // Fetch all session summaries for the year
+            let allSessionSummaries = try await databaseManager.fetchSummaries(periodType: .session)
+                .filter { summary in
+                    guard let sessionId = summary.sessionId else { return false }
+                    return summary.periodStart >= startOfYear && summary.periodStart < endOfYear
+                }
                 .sorted { $0.periodStart < $1.periodStart }
+            
+            print("📊 [SummaryCoordinator] Found \(allSessionSummaries.count) session summaries for year \(year)")
 
-            if sourceSummaries.isEmpty {
-                sourceSummaries = try await databaseManager.fetchWeeklySummaries(from: startOfYear, to: endOfYear)
-                    .sorted { $0.periodStart < $1.periodStart }
-            }
-
-            guard !sourceSummaries.isEmpty else {
-                print("ℹ️ [SummaryCoordinator] No rollups available to build a Year Wrap")
+            guard !allSessionSummaries.isEmpty else {
+                print("ℹ️ [SummaryCoordinator] No session summaries available to build Year Wraps")
                 return
             }
 
+            // Filter summaries by category
+            let workSummaries = allSessionSummaries.filter { summary in
+                guard let sessionId = summary.sessionId else { return false }
+                return workSessionIds.contains(sessionId)
+            }
+            let personalSummaries = allSessionSummaries.filter { summary in
+                guard let sessionId = summary.sessionId else { return false }
+                return personalSessionIds.contains(sessionId)
+            }
+
+            print("📊 [SummaryCoordinator] Filtered: \(workSummaries.count) work summaries, \(personalSummaries.count) personal summaries")
+
+            // Generate Combined Year Wrap (all sessions)
+            print("🔄 [SummaryCoordinator] 1/3 Generating COMBINED Year Wrap...")
+            await generateSingleYearWrap(
+                periodType: .yearWrap,
+                sourceSummaries: allSessionSummaries,
+                startOfYear: startOfYear,
+                endOfYear: endOfYear,
+                forceRegenerate: forceRegenerate,
+                useLocalAI: useLocalAI,
+                label: "Combined"
+            )
+
+            // Generate Work-Only Year Wrap
+            if !workSummaries.isEmpty {
+                print("🔄 [SummaryCoordinator] 2/3 Generating WORK Year Wrap...")
+                await generateSingleYearWrap(
+                    periodType: .yearWrapWork,
+                    sourceSummaries: workSummaries,
+                    startOfYear: startOfYear,
+                    endOfYear: endOfYear,
+                    forceRegenerate: forceRegenerate,
+                    useLocalAI: useLocalAI,
+                    label: "Work"
+                )
+            } else {
+                print("⏭️ [SummaryCoordinator] 2/3 Skipping WORK Year Wrap (no work sessions)")
+            }
+
+            // Generate Personal-Only Year Wrap
+            if !personalSummaries.isEmpty {
+                print("🔄 [SummaryCoordinator] 3/3 Generating PERSONAL Year Wrap...")
+                await generateSingleYearWrap(
+                    periodType: .yearWrapPersonal,
+                    sourceSummaries: personalSummaries,
+                    startOfYear: startOfYear,
+                    endOfYear: endOfYear,
+                    forceRegenerate: forceRegenerate,
+                    useLocalAI: useLocalAI,
+                    label: "Personal"
+                )
+            } else {
+                print("⏭️ [SummaryCoordinator] 3/3 Skipping PERSONAL Year Wrap (no personal sessions)")
+            }
+
+            print("✅ [SummaryCoordinator] All Year Wraps generated successfully")
+        } catch {
+            print("❌ [SummaryCoordinator] Failed to generate Year Wraps: \(error)")
+        }
+    }
+    
+    /// Helper to generate a single Year Wrap summary
+    private func generateSingleYearWrap(
+        periodType: PeriodType,
+        sourceSummaries: [Summary],
+        startOfYear: Date,
+        endOfYear: Date,
+        forceRegenerate: Bool,
+        useLocalAI: Bool,
+        label: String
+    ) async {
+        do {
             let sourceIds = await databaseManager.sourceIdsToJSON(sourceSummaries.map { $0.id })
             let inputHash = await databaseManager.computeInputHash(sourceSummaries.map { $0.text })
 
-            if let existing = try? await databaseManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear) {
-                print("📂 [SummaryCoordinator] Found existing Year Wrap (hash: \(existing.inputHash?.prefix(16) ?? "nil")...)")
+            // Check cache
+            if let existing = try? await databaseManager.fetchPeriodSummary(type: periodType, date: startOfYear) {
                 if existing.inputHash == inputHash, !forceRegenerate {
-                    print("💾 [SummaryCoordinator] ✅ CACHE HIT - Year Wrap unchanged, skipping external call")
+                    print("💾 [SummaryCoordinator] ✅ CACHE HIT - \(label) Year Wrap unchanged")
                     return
                 }
-                if forceRegenerate && existing.inputHash == inputHash {
-                    print("🔄 [SummaryCoordinator] Force regenerate - updating timestamp even though hash matches")
-                    // Update timestamp by calling upsert with same data
-                    try await databaseManager.upsertPeriodSummary(
-                        type: .yearWrap,
-                        text: existing.text,
-                        start: startOfYear,
-                        end: endOfYear,
-                        topicsJSON: existing.topicsJSON,
-                        entitiesJSON: existing.entitiesJSON,
-                        engineTier: existing.engineTier,
-                        sourceIds: sourceIds,
-                        inputHash: inputHash
-                    )
-                    print("✅ [SummaryCoordinator] Year Wrap timestamp updated")
-                    return
-                }
-                print(forceRegenerate ? "🔄 [SummaryCoordinator] Force regenerate enabled" : "🔄 [SummaryCoordinator] Hash mismatch - regenerating Year Wrap")
-            } else {
-                print("📝 [SummaryCoordinator] No Year Wrap found, generating new one")
+                print(forceRegenerate ? "🔄 Force regenerate \(label)" : "🔄 Hash mismatch for \(label)")
             }
+
+            // For category-specific wraps, all items should be that category
+            // For combined, use proportional distribution
+            let workCount = periodType == .yearWrapWork ? sourceSummaries.count : (periodType == .yearWrapPersonal ? 0 : sourceSummaries.count / 2)
+            let personalCount = periodType == .yearWrapPersonal ? sourceSummaries.count : (periodType == .yearWrapWork ? 0 : sourceSummaries.count / 2)
 
             let wrapSummary = try await summarizationEngine.generateYearWrapSummary(
                 startOfYear: startOfYear,
                 endOfYear: endOfYear,
-                sourceSummaries: sourceSummaries
+                sourceSummaries: sourceSummaries,
+                workSessionCount: workCount,
+                personalSessionCount: personalCount,
+                useLocalAI: useLocalAI
             )
 
             try await databaseManager.upsertPeriodSummary(
-                type: .yearWrap,
+                type: periodType,
                 text: wrapSummary.text,
                 start: startOfYear,
                 end: endOfYear,
                 topicsJSON: wrapSummary.topicsJSON,
                 entitiesJSON: wrapSummary.entitiesJSON,
-                engineTier: wrapSummary.engineTier ?? EngineTier.external.rawValue,
+                engineTier: wrapSummary.engineTier ?? (useLocalAI ? EngineTier.local.rawValue : EngineTier.external.rawValue),
                 sourceIds: sourceIds,
                 inputHash: inputHash
             )
 
-            print("✅ [SummaryCoordinator] Year Wrap saved (engine: \(wrapSummary.engineTier ?? "external"))")
+            print("✅ [SummaryCoordinator] \(label) Year Wrap saved")
         } catch {
-            print("❌ [SummaryCoordinator] Failed to generate Year Wrap: \(error)")
+            print("❌ [SummaryCoordinator] Failed to generate \(label) Year Wrap: \(error)")
         }
     }
     
@@ -806,6 +893,35 @@ public final class SummaryCoordinator {
     }
     
     // MARK: - Helpers
+    
+    /// Fetch session category distribution for a given year
+    private func fetchSessionCategoriesForYear(year: Int) async throws -> [UUID: SessionCategory] {
+        // Fetch all sessions for the year
+        let yearlyData = try await databaseManager.fetchSessionsByYear()
+        guard let yearData = yearlyData.first(where: { $0.year == year }) else {
+            print("ℹ️ [SummaryCoordinator] No sessions found for year \(year)")
+            return [:]
+        }
+        
+        // Fetch metadata for all sessions in the year
+        let metadata = try await databaseManager.fetchSessionMetadataBatch(sessionIds: yearData.sessionIds)
+        
+        // Build UUID -> SessionCategory map
+        // Note: For Year Wrap, we use this to provide overall category context to the AI
+        // The AI will look at which sessions were marked work/personal and classify items accordingly
+        var categoryMap: [UUID: SessionCategory] = [:]
+        for (sessionId, meta) in metadata {
+            if let category = meta.category {
+                categoryMap[sessionId] = category
+            }
+        }
+        
+        let workCount = categoryMap.values.filter { $0 == .work }.count
+        let personalCount = categoryMap.values.filter { $0 == .personal }.count
+        print("📊 [SummaryCoordinator] Year \(year): \(workCount) work sessions, \(personalCount) personal sessions out of \(yearData.sessionIds.count) total")
+        
+        return categoryMap
+    }
     
     /// Calculate hash of input text for caching
     private func calculateHash(for text: String) -> String {

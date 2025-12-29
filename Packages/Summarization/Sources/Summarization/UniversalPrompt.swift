@@ -19,6 +19,8 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
     case month
     case year
     case yearWrap
+    case yearWrapWork
+    case yearWrapPersonal
     
     public var displayName: String {
         switch self {
@@ -29,6 +31,8 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
         case .month: return "Monthly"
         case .year: return "Yearly"
         case .yearWrap: return "Year Wrap"
+        case .yearWrapWork: return "Work Year Wrap"
+        case .yearWrapPersonal: return "Personal Year Wrap"
         }
     }
     
@@ -42,6 +46,8 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
         case .month: return .month
         case .year: return .year
         case .yearWrap: return .yearWrap
+        case .yearWrapWork: return .yearWrapWork
+        case .yearWrapPersonal: return .yearWrapPersonal
         }
     }
 }
@@ -217,19 +223,41 @@ public struct UniversalPrompt {
     {
       "year_title": "string - one-line year title",
       "year_summary": "string - 5-6 sentence summary",
-      "major_arcs": ["string array of major life arcs"],
-      "biggest_wins": ["string array of biggest accomplishments"],
-      "biggest_losses": ["string array of setbacks, failures, or losses"],
-      "biggest_challenges": ["string array of biggest challenges faced"],
-      "finished_projects": ["string array of completed projects/goals (look for 'completed', 'finished', 'done')"],
-      "unfinished_projects": ["string array of abandoned/ongoing projects (look for 'abandoned', 'gave up', 'still working')"],
-      "top_worked_on_topics": ["string array of most frequently worked on topics, ranked by frequency"],
-      "top_talked_about_things": ["string array of most frequently mentioned subjects, ranked by mentions"],
-      "valuable_actions_taken": ["string array of positive actions or decisions made"],
-      "opportunities_missed": ["string array of missed chances or regrets"],
+      "major_arcs": [{"text": "string", "category": "work|personal|both"}],
+      "biggest_wins": [{"text": "string", "category": "work|personal|both"}],
+      "biggest_losses": [{"text": "string", "category": "work|personal|both"}],
+      "biggest_challenges": [{"text": "string", "category": "work|personal|both"}],
+      "finished_projects": [{"text": "string", "category": "work|personal|both"}],
+      "unfinished_projects": [{"text": "string", "category": "work|personal|both"}],
+      "top_worked_on_topics": [{"text": "string", "category": "work|personal|both"}],
+      "top_talked_about_things": [{"text": "string", "category": "work|personal|both"}],
+      "valuable_actions_taken": [{"text": "string", "category": "work|personal|both"}],
+      "opportunities_missed": [{"text": "string", "category": "work|personal|both"}],
       "people_mentioned": [{"name": "string", "relationship": "string", "impact": "string - how they influenced the year"}],
       "places_visited": [{"name": "string", "frequency": "string - once/occasionally/frequently", "context": "string - why visited"}]
     }
+    
+    CATEGORY CLASSIFICATION RULES:
+    
+    The user has categorized their recording sessions as Work or Personal.
+    You will receive the exact session counts in the prompt.
+    
+    CLASSIFICATION IS MANDATORY - follow these rules:
+    
+    1. PROPORTIONAL DISTRIBUTION: Match the work/personal ratio of sessions
+       - If 50% work sessions → classify ~50% of items as "work"
+       - If 70% personal sessions → classify ~70% of items as "personal"
+    
+    2. CONTENT-BASED ASSIGNMENT:
+       - "work" = Professional topics (projects, meetings, career, business, deadlines)
+       - "personal" = Life topics (family, hobbies, health, relationships, personal goals)
+    
+    3. USE "both" SPARINGLY (<10% of items):
+       - Only for items that genuinely apply to BOTH domains
+       - Example: "time management" could be both work and personal
+       - When in doubt, pick work OR personal based on primary context
+    
+    4. DO NOT default to "both" - make definitive choices
     """
     
     // MARK: - Schema Selection
@@ -242,7 +270,7 @@ public struct UniversalPrompt {
         case .week: return weeklySchema
         case .month: return monthlySchema
         case .year: return yearlySchema
-        case .yearWrap: return yearlySchema
+        case .yearWrap, .yearWrapWork, .yearWrapPersonal: return yearlySchema
         }
     }
     
@@ -257,7 +285,8 @@ public struct UniversalPrompt {
     public static func buildMessages(
         level: SummaryLevel,
         input: String,
-        metadata: [String: Any] = [:]
+        metadata: [String: Any] = [:],
+        categoryContext: String? = nil
     ) -> (system: String, user: String) {
         let schema = schema(for: level)
         
@@ -267,6 +296,9 @@ public struct UniversalPrompt {
             let parts = metadata.map { "\($0.key): \($0.value)" }
             metadataStr = "\nMetadata: " + parts.joined(separator: ", ")
         }
+        
+        // Add category context if provided
+        let categorySection = categoryContext.map { "\n\nSESSION CATEGORIES:\n\($0)" } ?? ""
         
         // Add special instructions for Year Wrap level
         let specialInstructions = level == .yearWrap ? """
@@ -287,7 +319,7 @@ public struct UniversalPrompt {
         Return VALID JSON matching this schema exactly:
         
         \(schema)
-        \(metadataStr)\(specialInstructions)
+        \(metadataStr)\(categorySection)\(specialInstructions)
         
         INPUT:
         \(input)

@@ -658,6 +658,16 @@ public final class AppCoordinator: ObservableObject {
         await recordingCoordinator?.cancelRecording()
     }
     
+    /// Set the recording category from a deep link string
+    public func setRecordingCategory(from string: String) {
+        guard let category = SessionCategory(rawValue: string) else {
+            print("⚠️ [AppCoordinator] Invalid category string: \(string)")
+            return
+        }
+        recordingCoordinator?.selectedCategory = category
+        print("📂 [AppCoordinator] Recording category set to: \(category.displayName)")
+    }
+    
     /// Reset to idle state after viewing completed/failed state
     public func resetRecordingState() {
         recordingCoordinator?.resetRecordingState()
@@ -698,10 +708,17 @@ public final class AppCoordinator: ObservableObject {
             
             print("✅ [AppCoordinator] Session transcription is complete!")
             
+            // Update rollups now that transcription data is available
+            print("2️⃣ [AppCoordinator] Updating rollups with new transcription data...")
+            await updateRollupsAndStats()
+            
             // Delegate to SummaryCoordinator
             print("3️⃣ [AppCoordinator] 🚀 Delegating to SummaryCoordinator...")
             await summaryCoordinator?.checkAndGenerateSessionSummary(for: sessionId)
             print("✅ [AppCoordinator] ✨ Session summary generated and period summaries updated")
+            
+            // Update widget data with new stats
+            await updateWidgetData()
             
             // Unload model after session is complete to free memory
             if let coordinator = self.summarizationCoordinator {
@@ -734,9 +751,10 @@ public final class AppCoordinator: ObservableObject {
         guard let insights = insightsManager else { return }
         
         do {
-            // Generate daily rollup for today
-            _ = try await insights.generateRollup(bucketType: .day, for: Date())
-            print("✅ [AppCoordinator] Daily rollup generated")
+            // Generate all rollups for today (hour, day, week, month)
+            let rollups = try await insights.generateAllRollups(for: Date())
+            let types = rollups.map { $0.bucketType.rawValue }.joined(separator: ", ")
+            print("✅ [AppCoordinator] Rollups generated: \(types)")
             
         } catch {
             print("❌ [AppCoordinator] Rollup generation failed: \(error)")
@@ -745,6 +763,9 @@ public final class AppCoordinator: ObservableObject {
         // Refresh local stats after rollup generation
         await refreshStreak()
         await refreshTodayStats()
+        
+        // Update widgets with new data
+        await updateWidgetData()
     }
     
     // MARK: - Stats & Data Loading
@@ -1024,10 +1045,10 @@ public final class AppCoordinator: ObservableObject {
         await summaryCoordinator?.updateYearlySummary(date: date, forceRegenerate: forceRegenerate)
     }
 
-    /// Manual Year Wrap using external intelligence (keeps deterministic rollup as default)
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false) async {
+    /// Manual Year Wrap using specified AI engine (keeps deterministic rollup as default)
+    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
         // Delegate to SummaryCoordinator
-        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate)
+        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
     }
     
     /// Get count of new sessions created after Year Wrap generation

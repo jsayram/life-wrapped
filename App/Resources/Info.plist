@@ -54,5 +54,16 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.jsayram.lifewrapped</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>lifewrapped</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

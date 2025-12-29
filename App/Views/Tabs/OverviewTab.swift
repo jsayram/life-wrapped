@@ -7,6 +7,9 @@ struct OverviewTab: View {
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
     @State private var yearWrapSummary: Summary?
+    @State private var yearWrapWorkSummary: Summary?
+    @State private var yearWrapPersonalSummary: Summary?
+    @State private var yearWrapFilter: ItemFilter = .all
     @State private var isWrappingUpYear = false
     @State private var isRegeneratingPeriodSummary = false
     @State private var isLoading = true
@@ -22,6 +25,17 @@ struct OverviewTab: View {
     @State private var selectedSession: RecordingSession?
     @State private var showSessionDetail = false
     
+    /// The currently active Year Wrap based on filter selection
+    private var activeYearWrap: Summary? {
+        switch yearWrapFilter {
+        case .all:
+            return yearWrapSummary
+        case .workOnly:
+            return yearWrapWorkSummary
+        case .personalOnly:
+            return yearWrapPersonalSummary
+        }
+    }
 
     
     var body: some View {
@@ -136,14 +150,80 @@ struct OverviewTab: View {
                                 
                                 // Year Wrapped Summary (only show for Year timerange)
                                 if selectedTimeRange == .allTime {
-                                    if let yearWrap = yearWrapSummary {
+                                    // Filter picker for Year Wrap
+                                    HStack(spacing: 0) {
+                                        ForEach(ItemFilter.allCases) { filter in
+                                            Button {
+                                                withAnimation(.easeInOut(duration: 0.2)) {
+                                                    yearWrapFilter = filter
+                                                }
+                                            } label: {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: filter.icon)
+                                                        .font(.caption2)
+                                                    Text(filter.displayName)
+                                                        .font(.caption)
+                                                        .fontWeight(.medium)
+                                                }
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 8)
+                                                .frame(maxWidth: .infinity)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .fill(yearWrapFilter == filter ? filterColor(for: filter) : Color.clear)
+                                                )
+                                                .foregroundStyle(yearWrapFilter == filter ? .white : .secondary)
+                                            }
+                                        }
+                                    }
+                                    .padding(4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(Color(.tertiarySystemBackground))
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                    
+                                    if let yearWrap = activeYearWrap {
                                         YearWrappedCard(
                                             summary: yearWrap,
                                             coordinator: coordinator,
+                                            filter: yearWrapFilter,
                                             onRegenerate: {
                                                 showYearWrapConfirmation = true
                                             },
                                             isRegenerating: isWrappingUpYear
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if yearWrapFilter != .all && yearWrapSummary != nil {
+                                        // Show message if category-specific wrap doesn't exist yet
+                                        VStack(spacing: 12) {
+                                            Image(systemName: yearWrapFilter == .workOnly ? "briefcase" : "house")
+                                                .font(.title)
+                                                .foregroundStyle(.secondary)
+                                            Text("No \\(yearWrapFilter.displayName) Year Wrap")
+                                                .font(.headline)
+                                                .foregroundStyle(.secondary)
+                                            Text("Regenerate Year Wrap to create category-specific summaries")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                                .multilineTextAlignment(.center)
+                                            Button {
+                                                showYearWrapConfirmation = true
+                                            } label: {
+                                                Label("Generate", systemImage: "sparkles")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                            .tint(filterColor(for: yearWrapFilter))
+                                        }
+                                        .padding(24)
+                                        .frame(maxWidth: .infinity)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .fill(Color(.secondarySystemBackground))
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -252,13 +332,35 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
-            .alert("Generate Year Wrap", isPresented: $showYearWrapConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button(actionButtonTitle()) {
-                    handleYearWrapAction()
-                }
-            } message: {
-                Text(yearWrapMessage())
+            .sheet(isPresented: $showYearWrapConfirmation) {
+                YearWrapGenerationSheet(
+                    hasExternalAPI: hasExternalAPIConfigured(),
+                    provider: UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI",
+                    onGenerateWithExternal: {
+                        showYearWrapConfirmation = false
+                        Task {
+                            await wrapUpYear(forceRegenerate: true, useLocalAI: false)
+                        }
+                    },
+                    onGenerateWithLocal: {
+                        showYearWrapConfirmation = false
+                        Task {
+                            await wrapUpYear(forceRegenerate: true, useLocalAI: true)
+                        }
+                    },
+                    onSetupAPI: {
+                        showYearWrapConfirmation = false
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("NavigateToSmartestConfig"),
+                            object: nil
+                        )
+                    },
+                    onCancel: {
+                        showYearWrapConfirmation = false
+                    }
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
             }
         }
     }
@@ -269,31 +371,14 @@ struct OverviewTab: View {
         return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
     }
     
-    private func yearWrapMessage() -> String {
-        if hasExternalAPIConfigured() {
-            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-            return "This will use your personal \(provider) API to analyze your entire year of recordings and create a comprehensive year-in-review summary.\n\nThis process may take 30-60 seconds."
-        } else {
-            return "Year Wrap works best with the 'Smartest' AI engine for the most comprehensive and detailed analysis.\n\nTo unlock the best Year Wrap experience, you'll need to add your personal OpenAI or Anthropic API key. This gives you access to the most capable AI models for analyzing your year.\n\nWe'll guide you to the settings to configure your preferred AI provider."
-        }
-    }
-    
-    private func actionButtonTitle() -> String {
-        return hasExternalAPIConfigured() ? "Generate" : "Open Settings"
-    }
-    
-    private func handleYearWrapAction() {
-        if hasExternalAPIConfigured() {
-            Task {
-                await wrapUpYear(forceRegenerate: true)
-            }
-        } else {
-            // Navigate to AI & Summaries settings to configure Smartest engine
-            // Post notification to switch to Settings tab and open AI & Summaries
-            NotificationCenter.default.post(
-                name: NSNotification.Name("NavigateToSmartestConfig"),
-                object: nil
-            )
+    private func filterColor(for filter: ItemFilter) -> Color {
+        switch filter {
+        case .all:
+            return AppTheme.purple
+        case .workOnly:
+            return .blue
+        case .personalOnly:
+            return .green
         }
     }
     
@@ -376,6 +461,10 @@ struct OverviewTab: View {
 
         if selectedTimeRange == .allTime {
             yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForFetch)
+            yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForFetch)
+            
+            print("📊 [OverviewTab] Year Wraps loaded - Combined: \(yearWrapSummary != nil), Work: \(yearWrapWorkSummary != nil), Personal: \(yearWrapPersonalSummary != nil)")
             
             // Check for staleness after fetching Year Wrap
             if let yearWrap = yearWrapSummary {
@@ -393,6 +482,8 @@ struct OverviewTab: View {
             }
         } else {
             yearWrapSummary = nil
+            yearWrapWorkSummary = nil
+            yearWrapPersonalSummary = nil
             // Reset staleness count when not viewing Year
             coordinator.updateYearWrapNewSessionCount(0)
         }
@@ -437,13 +528,13 @@ struct OverviewTab: View {
         
         switch periodType {
         case .day:
-            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
         case .week:
-            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
         case .month:
-            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
         case .year:
-            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: false)
+            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: true)
         default:
             break
         }
@@ -459,18 +550,20 @@ struct OverviewTab: View {
         }
     }
 
-    private func wrapUpYear(forceRegenerate: Bool) async {
+    private func wrapUpYear(forceRegenerate: Bool, useLocalAI: Bool) async {
         guard !isWrappingUpYear else { return }
         isWrappingUpYear = true
         let dateForGeneration = Date()
 
-        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate)
+        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
 
         // Wait briefly for database transaction to complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
-        // Fetch the newly generated/updated Year Wrap
+        // Fetch all Year Wrap summaries
         yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+        yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
+        yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
         
         // Check for staleness after fetching Year Wrap
         if let yearWrap = yearWrapSummary {
@@ -544,15 +637,20 @@ struct OverviewTab: View {
             var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
             components.weekday = 2 // Monday
             let startOfWeek = calendar.date(from: components) ?? now
-            return (startOfWeek, now)
+            let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) ?? now
+            return (startOfWeek, endOfWeek)
         case .month:
-            let start = calendar.date(byAdding: .month, value: -1, to: now) ?? now
-            return (start, now)
+            // Current month: 1st of month to end of month
+            let components = calendar.dateComponents([.year, .month], from: now)
+            let startOfMonth = calendar.date(from: components) ?? now
+            let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) ?? now
+            return (startOfMonth, endOfMonth)
         case .allTime:
             // Show only current year (e.g., 2025) up to today
             let currentYear = calendar.component(.year, from: now)
             let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1)) ?? now
-            return (startOfYear, now)
+            let endOfYear = calendar.date(from: DateComponents(year: currentYear + 1, month: 1, day: 1)) ?? now
+            return (startOfYear, endOfYear)
         }
     }
 
@@ -850,4 +948,177 @@ struct OverviewTab: View {
         }
     }
     
+}
+
+// MARK: - Year Wrap Generation Sheet
+
+struct YearWrapGenerationSheet: View {
+    let hasExternalAPI: Bool
+    let provider: String
+    let onGenerateWithExternal: () -> Void
+    let onGenerateWithLocal: () -> Void
+    let onSetupAPI: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Header
+            VStack(spacing: 8) {
+                Text("✨ Generate Year Wrap")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Text("Create your personalized year in review")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 8)
+            
+            Divider()
+            
+            // Options
+            VStack(spacing: 12) {
+                if hasExternalAPI {
+                    // External API is configured - show as primary (purple)
+                    Button(action: onGenerateWithExternal) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(provider) (Smartest)")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                Text("Best quality, most detailed insights")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("Recommended")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Local AI as secondary option
+                    Button(action: onGenerateWithLocal) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "iphone")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local AI")
+                                    .font(.headline)
+                                Text("Works offline (~2.1GB model)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    
+                } else {
+                    // No External API - Local AI is primary (purple)
+                    Button(action: onGenerateWithLocal) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Local AI (Phi-3.5)")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                Text("Works completely offline")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                            
+                            Spacer()
+                            
+                            Text("Best Available")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
+                        .foregroundStyle(.white)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Setup API suggestion
+                    Button(action: onSetupAPI) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "gearshape")
+                                .font(.title2)
+                                .foregroundStyle(AppTheme.purple)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Setup Smartest API")
+                                    .font(.headline)
+                                Text("OpenAI or Anthropic for better results")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            // Timing note
+            Text("This may take 30-60 seconds")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            // Cancel button
+            Button("Cancel", action: onCancel)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+        }
+        .padding()
+    }
 }

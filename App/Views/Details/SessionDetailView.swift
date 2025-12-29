@@ -193,35 +193,53 @@ struct SessionDetailView: View {
                 InfoRow(label: "Word Count", value: "\(wordCount) words")
             }
             
-            // Category picker
+            // Category toggle
             HStack {
                 Text("Category")
                     .foregroundStyle(.secondary)
                 
                 Spacer()
                 
-                Picker("Category", selection: Binding(
-                    get: { sessionCategory },
-                    set: { newValue in
-                        sessionCategory = newValue
-                        Task {
-                            do {
-                                try await coordinator.updateSessionCategory(sessionId: session.sessionId, category: newValue)
-                                print("✅ Category updated to: \(newValue?.displayName ?? "None")")
-                            } catch {
-                                print("❌ Failed to update category: \(error)")
-                            }
+                HStack(spacing: 0) {
+                    // Personal button
+                    Button {
+                        updateCategory(.personal)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: SessionCategory.personal.systemImage)
+                                .font(.system(size: 14))
+                            Text(SessionCategory.personal.displayName)
+                                .font(.subheadline)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(sessionCategory == .personal ? Color(hex: SessionCategory.personal.colorHex) : Color(.tertiarySystemBackground))
+                        .foregroundStyle(sessionCategory == .personal ? .white : .primary)
                     }
-                )) {
-                    Text("None").tag(SessionCategory?.none)
-                    ForEach(SessionCategory.allCases, id: \.self) { category in
-                        Label(category.displayName, systemImage: category.systemImage)
-                            .tag(category as SessionCategory?)
+                    .buttonStyle(.plain)
+                    
+                    // Work button
+                    Button {
+                        updateCategory(.work)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: SessionCategory.work.systemImage)
+                                .font(.system(size: 14))
+                            Text(SessionCategory.work.displayName)
+                                .font(.subheadline)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(sessionCategory == .work ? Color(hex: SessionCategory.work.colorHex) : Color(.tertiarySystemBackground))
+                        .foregroundStyle(sessionCategory == .work ? .white : .primary)
                     }
+                    .buttonStyle(.plain)
                 }
-                .pickerStyle(.menu)
-                .tint(sessionCategory != nil ? Color(hex: sessionCategory!.colorHex) : .secondary)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(.separator), lineWidth: 0.5)
+                )
             }
             .padding(.vertical, 8)
         }
@@ -1312,6 +1330,23 @@ struct SessionDetailView: View {
         }
     }
     
+    private func updateCategory(_ newCategory: SessionCategory) {
+        let previousCategory = sessionCategory
+        sessionCategory = newCategory
+        Task {
+            do {
+                try await coordinator.updateSessionCategory(sessionId: session.sessionId, category: newCategory)
+                print("✅ Category updated to: \(newCategory.displayName)")
+            } catch {
+                print("❌ Failed to update category: \(error)")
+                // Revert on error
+                await MainActor.run {
+                    sessionCategory = previousCategory
+                }
+            }
+        }
+    }
+    
     private func loadSessionMetadata() async {
         do {
             // Load metadata and track initial notes value
@@ -1321,7 +1356,7 @@ struct SessionDetailView: View {
                 sessionNotes = metadata?.notes ?? ""
                 initialSessionNotes = metadata?.notes ?? ""  // Track initial state
                 isFavorite = metadata?.isFavorite ?? false
-                sessionCategory = metadata?.category
+                sessionCategory = metadata?.category ?? .personal  // Default to personal if none
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load metadata: \(error)")

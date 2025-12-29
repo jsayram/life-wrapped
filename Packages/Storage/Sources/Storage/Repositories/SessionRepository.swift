@@ -556,6 +556,44 @@ public actor SessionRepository {
         }
     }
     
+    /// Fetch session metadata for multiple sessions at once
+    public func fetchSessionMetadataBatch(sessionIds: [UUID]) async throws -> [UUID: SessionMetadata] {
+        guard !sessionIds.isEmpty else { return [:] }
+        
+        return try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            
+            // Build IN clause with placeholders
+            let placeholders = sessionIds.map { _ in "?" }.joined(separator: ", ")
+            let sql = """
+                SELECT session_id, title, notes, is_favorite, category, created_at, updated_at
+                FROM session_metadata
+                WHERE session_id IN (\(placeholders))
+                """
+            
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            
+            // Bind all session IDs
+            for (index, sessionId) in sessionIds.enumerated() {
+                sqlite3_bind_text(stmt, Int32(index + 1), sessionId.uuidString, -1, SQLITE_TRANSIENT)
+            }
+            
+            var result: [UUID: SessionMetadata] = [:]
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let metadata = parseSessionMetadata(from: stmt) {
+                    result[metadata.sessionId] = metadata
+                }
+            }
+            
+            return result
+        }
+    }
+    
     /// Update session title
     public func updateSessionTitle(sessionId: UUID, title: String?) async throws {
         // First check if metadata exists

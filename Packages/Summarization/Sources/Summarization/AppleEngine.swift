@@ -100,7 +100,8 @@ public actor AppleEngine: SummarizationEngine {
         periodType: PeriodType,
         sessionSummaries: [SessionIntelligence],
         periodStart: Date,
-        periodEnd: Date
+        periodEnd: Date,
+        categoryContext: String? = nil
     ) async throws -> PeriodIntelligence {
         
         guard !sessionSummaries.isEmpty else {

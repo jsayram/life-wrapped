@@ -95,6 +95,7 @@ public struct SessionIntelligence: Codable, Sendable {
     public let wordCount: Int
     public let languageCodes: [String]
     public let keyMoments: [KeyMoment]?
+    public let category: SessionCategory?  // Work/Personal classification from user
     
     public init(
         sessionId: UUID,
@@ -105,7 +106,8 @@ public struct SessionIntelligence: Codable, Sendable {
         duration: TimeInterval,
         wordCount: Int,
         languageCodes: [String],
-        keyMoments: [KeyMoment]? = nil
+        keyMoments: [KeyMoment]? = nil,
+        category: SessionCategory? = nil
     ) {
         self.sessionId = sessionId
         self.summary = summary
@@ -116,6 +118,7 @@ public struct SessionIntelligence: Codable, Sendable {
         self.wordCount = wordCount
         self.languageCodes = languageCodes
         self.keyMoments = keyMoments
+        self.category = category
     }
 }
 

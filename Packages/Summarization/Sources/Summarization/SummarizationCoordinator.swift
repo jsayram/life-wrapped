@@ -475,26 +475,46 @@ public actor SummarizationCoordinator {
         )
     }
 
-    /// Generate a Year Wrap summary using the external engine and higher-level rollups
+    /// Generate a Year Wrap summary using the specified engine (External or Local AI)
     public func generateYearWrapSummary(
         startOfYear: Date,
         endOfYear: Date,
-        sourceSummaries: [Summary]
+        sourceSummaries: [Summary],
+        workSessionCount: Int,
+        personalSessionCount: Int,
+        useLocalAI: Bool = false
     ) async throws -> Summary {
         guard !sourceSummaries.isEmpty else {
             throw SummarizationError.noTranscriptData
         }
 
-        guard let external = externalEngine else {
-            throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
-        }
-
-        guard await external.isAvailable() else {
-            throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
+        // Select engine based on user choice
+        let engine: any SummarizationEngine
+        let engineTier: String
+        
+        if useLocalAI {
+            // Use Local AI (Phi-3.5 Mini)
+            guard await localEngine.isAvailable() else {
+                throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
+            }
+            engine = localEngine
+            engineTier = EngineTier.local.rawValue
+            print("🤖 [SummarizationCoordinator] Using Local AI for Year Wrap")
+        } else {
+            // Use External API (OpenAI/Anthropic)
+            guard let external = externalEngine else {
+                throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
+            }
+            guard await external.isAvailable() else {
+                throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
+            }
+            engine = external
+            engineTier = EngineTier.external.rawValue
+            print("☁️ [SummarizationCoordinator] Using External API for Year Wrap")
         }
 
         let previousEngine = activeEngine
-        activeEngine = external
+        activeEngine = engine
         defer { activeEngine = previousEngine }
 
         let intelligences = sourceSummaries.map { summary -> SessionIntelligence in
@@ -510,18 +530,45 @@ public actor SummarizationCoordinator {
                 sentiment: 0.0,
                 duration: summary.periodEnd.timeIntervalSince(summary.periodStart),
                 wordCount: wordCount,
-                languageCodes: ["en-US"]
+                languageCodes: ["en-US"],
+                category: nil  // Monthly summaries don't have single category
             )
         }
 
-        let intelligence = try await external.summarizePeriod(
+        // Build category context from session counts
+        let categoryContext = buildCategoryContext(workCount: workSessionCount, personalCount: personalSessionCount)
+
+        let intelligence = try await engine.summarizePeriod(
             periodType: .yearWrap,
             sessionSummaries: intelligences,
             periodStart: startOfYear,
-            periodEnd: endOfYear
+            periodEnd: endOfYear,
+            categoryContext: categoryContext
         )
 
         return try convertToSummary(periodIntelligence: intelligence)
+    }
+    
+    /// Build category context string for AI prompt
+    private func buildCategoryContext(workCount: Int, personalCount: Int) -> String? {
+        guard workCount > 0 || personalCount > 0 else { return nil }
+        
+        let total = workCount + personalCount
+        let workPercent = total > 0 ? Int((Double(workCount) / Double(total)) * 100) : 0
+        let personalPercent = total > 0 ? Int((Double(personalCount) / Double(total)) * 100) : 0
+        
+        return """
+        SESSION CATEGORY DISTRIBUTION:
+        - Work sessions: \(workCount) (\(workPercent)%)
+        - Personal sessions: \(personalCount) (\(personalPercent)%)
+        
+        CLASSIFICATION RULES (MANDATORY):
+        1. Classify ~\(workPercent)% of items as "work" and ~\(personalPercent)% as "personal"
+        2. Work items: professional topics, projects, meetings, career-related
+        3. Personal items: hobbies, family, health, personal goals, non-work activities
+        4. Use "both" ONLY if an item genuinely spans both domains (rare, <10% of items)
+        5. When uncertain, use the proportional split as a guide
+        """
     }
     
     /// Generate a period summary by aggregating session-level summaries
@@ -572,7 +619,8 @@ public actor SummarizationCoordinator {
             periodType: periodType,
             sessionSummaries: intelligences,
             periodStart: startDate,
-            periodEnd: endDate
+            periodEnd: endDate,
+            categoryContext: nil
         )
         
         // Convert to Summary for database storage

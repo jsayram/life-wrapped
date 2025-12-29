@@ -50,6 +50,36 @@ public struct AudioChunk: Identifiable, Codable, Sendable, Hashable {
 
 // MARK: - Recording Session
 
+/// Category classification for recording sessions
+public enum SessionCategory: String, Codable, Sendable, CaseIterable {
+    case work
+    case personal
+    
+    /// Display name for UI
+    public var displayName: String {
+        switch self {
+        case .work: return "Work"
+        case .personal: return "Personal"
+        }
+    }
+    
+    /// SF Symbol icon name
+    public var systemImage: String {
+        switch self {
+        case .work: return "briefcase.fill"
+        case .personal: return "person.fill"
+        }
+    }
+    
+    /// Hex color code for UI theming
+    public var colorHex: String {
+        switch self {
+        case .work: return "#3B82F6"  // Blue
+        case .personal: return "#A855F7"  // Purple
+        }
+    }
+}
+
 /// Represents a logical recording session composed of multiple audio chunks
 public struct RecordingSession: Identifiable, Sendable, Hashable {
     public let sessionId: UUID
@@ -249,6 +279,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case month
     case year
     case yearWrap
+    case yearWrapWork
+    case yearWrapPersonal
 
     public var displayName: String {
         switch self {
@@ -266,6 +298,10 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Year"
         case .yearWrap:
             return "Year Wrap"
+        case .yearWrapWork:
+            return "Year Wrap (Work)"
+        case .yearWrapPersonal:
+            return "Year Wrap (Personal)"
         }
     }
 }
@@ -355,36 +391,63 @@ public enum EventType: String, Codable, Sendable, CaseIterable {
 
 // MARK: - Year Wrap Data Models
 
+/// Category for work/personal classification
+public enum ItemCategory: String, Codable, Sendable {
+    case work
+    case personal
+    case both
+}
+
+/// PDF export filter options
+public enum ItemFilter: String, Codable, Sendable, CaseIterable, Identifiable {
+    case all
+    case workOnly
+    case personalOnly
+    
+    public var id: String { rawValue }
+}
+
+/// Classified item with work/personal designation
+public struct ClassifiedItem: Codable, Sendable, Hashable {
+    public let text: String
+    public let category: ItemCategory
+    
+    public init(text: String, category: ItemCategory) {
+        self.text = text
+        self.category = category
+    }
+}
+
 /// Enhanced Year Wrap data structure for Spotify-style insights
 public struct YearWrapData: Codable, Sendable {
     public let yearTitle: String
     public let yearSummary: String
-    public let majorArcs: [String]
-    public let biggestWins: [String]
-    public let biggestLosses: [String]
-    public let biggestChallenges: [String]
-    public let finishedProjects: [String]
-    public let unfinishedProjects: [String]
-    public let topWorkedOnTopics: [String]
-    public let topTalkedAboutThings: [String]
-    public let valuableActionsTaken: [String]
-    public let opportunitiesMissed: [String]
+    public let majorArcs: [ClassifiedItem]
+    public let biggestWins: [ClassifiedItem]
+    public let biggestLosses: [ClassifiedItem]
+    public let biggestChallenges: [ClassifiedItem]
+    public let finishedProjects: [ClassifiedItem]
+    public let unfinishedProjects: [ClassifiedItem]
+    public let topWorkedOnTopics: [ClassifiedItem]
+    public let topTalkedAboutThings: [ClassifiedItem]
+    public let valuableActionsTaken: [ClassifiedItem]
+    public let opportunitiesMissed: [ClassifiedItem]
     public let peopleMentioned: [PersonMention]
     public let placesVisited: [PlaceVisit]
     
     public init(
         yearTitle: String,
         yearSummary: String,
-        majorArcs: [String],
-        biggestWins: [String],
-        biggestLosses: [String],
-        biggestChallenges: [String],
-        finishedProjects: [String],
-        unfinishedProjects: [String],
-        topWorkedOnTopics: [String],
-        topTalkedAboutThings: [String],
-        valuableActionsTaken: [String],
-        opportunitiesMissed: [String],
+        majorArcs: [ClassifiedItem],
+        biggestWins: [ClassifiedItem],
+        biggestLosses: [ClassifiedItem],
+        biggestChallenges: [ClassifiedItem],
+        finishedProjects: [ClassifiedItem],
+        unfinishedProjects: [ClassifiedItem],
+        topWorkedOnTopics: [ClassifiedItem],
+        topTalkedAboutThings: [ClassifiedItem],
+        valuableActionsTaken: [ClassifiedItem],
+        opportunitiesMissed: [ClassifiedItem],
         peopleMentioned: [PersonMention],
         placesVisited: [PlaceVisit]
     ) {
