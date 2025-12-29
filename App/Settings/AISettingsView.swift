@@ -713,6 +713,13 @@ struct SmartestPurchaseSheet: View {
             
             Spacer()
             
+            // Purchase disclaimer
+            Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            
             // Purchase button
             Button(action: onPurchase) {
                 HStack {

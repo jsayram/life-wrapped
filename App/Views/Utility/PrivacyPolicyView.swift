@@ -22,6 +22,12 @@ struct PrivacyPolicyView: View {
                     )
                     
                     PrivacyPoint(
+                        icon: "exclamationmark.shield.fill",
+                        title: "BYOK: Your Data, Your Responsibility",
+                        description: "When using External API with your keys, YOU are responsible for the data you send to third-party providers and any API costs. We are not responsible for how OpenAI or Anthropic handle your data."
+                    )
+                    
+                    PrivacyPoint(
                         icon: "network",
                         title: "Network Calls: Transparent",
                         description: "With API keys: Connects to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) using YOUR keys. Without keys: 100% offline."

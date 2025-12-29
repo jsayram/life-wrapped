@@ -1169,6 +1169,15 @@ struct YearWrapGenerationSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
+            // Purchase disclaimer (shown when purchase option visible)
+            if !isSmartestAIUnlocked {
+                Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            
             Spacer()
             
             // Cancel button
