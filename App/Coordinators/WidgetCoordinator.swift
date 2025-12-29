@@ -64,7 +64,6 @@ public final class WidgetCoordinator: Sendable {
                 todayWords: todayWordCount,
                 todayMinutes: Int(todayMinutes),
                 todayEntries: todayEntries,
-                goalProgress: 0.0, // Can be enhanced with user goals
                 lastEntryTime: activityDates.first,
                 isStreakAtRisk: StreakCalculator.streakAtRisk(streakInfo),
                 weeklyWords: weeklyWordCount,

@@ -399,10 +399,12 @@ public enum ItemCategory: String, Codable, Sendable {
 }
 
 /// PDF export filter options
-public enum ItemFilter: String, Codable, Sendable, CaseIterable {
+public enum ItemFilter: String, Codable, Sendable, CaseIterable, Identifiable {
     case all
     case workOnly
     case personalOnly
+    
+    public var id: String { rawValue }
 }
 
 /// Classified item with work/personal designation

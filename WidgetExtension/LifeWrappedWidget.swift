@@ -7,6 +7,16 @@ import SwiftUI
 import AppIntents
 import WidgetCore
 
+// MARK: - Deep Link URLs
+
+enum WidgetDeepLink {
+    static let home = URL(string: "lifewrapped://home")!
+    static let history = URL(string: "lifewrapped://history")!
+    static let overview = URL(string: "lifewrapped://overview")!
+    static let settings = URL(string: "lifewrapped://settings")!
+    static let record = URL(string: "lifewrapped://record")!
+}
+
 // MARK: - Widget Entry
 
 struct LifeWrappedEntry: TimelineEntry {
@@ -17,7 +27,6 @@ struct LifeWrappedEntry: TimelineEntry {
     var streakDays: Int { widgetData.streakDays }
     var todayWords: Int { widgetData.todayWords }
     var todayMinutes: Int { widgetData.todayMinutes }
-    var goalProgress: Double { widgetData.goalProgress }
     var lastEntryTime: Date? { widgetData.lastEntryTime }
     var isStreakAtRisk: Bool { widgetData.isStreakAtRisk }
     
@@ -39,7 +48,6 @@ struct LifeWrappedEntry: TimelineEntry {
 enum WidgetDisplayModeIntent: String, CaseIterable, AppEnum {
     case overview = "Overview"
     case streak = "Streak Focus"
-    case goals = "Goals"
     case weekly = "Weekly Stats"
     
     static var typeDisplayRepresentation: TypeDisplayRepresentation {
@@ -50,7 +58,6 @@ enum WidgetDisplayModeIntent: String, CaseIterable, AppEnum {
         [
             .overview: "Overview",
             .streak: "Streak Focus",
-            .goals: "Goals",
             .weekly: "Weekly Stats"
         ]
     }
@@ -148,36 +155,36 @@ struct SmallWidgetView: View {
                 Text("\(entry.streakDays)")
                     .font(.title2)
                     .fontWeight(.bold)
-            }
-            
-            // Today's words
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(entry.todayWords)")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                Text("words today")
-                    .font(.caption2)
+                Text("day streak")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
             
-            // Progress bar
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(.secondary.opacity(0.3))
-                        .frame(height: 6)
-                    
-                    Capsule()
-                        .fill(.blue)
-                        .frame(width: geometry.size.width * entry.goalProgress, height: 6)
-                }
+            // Today's words
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(entry.todayWords)")
+                    .font(.title)
+                    .fontWeight(.bold)
+                Text("words today")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(height: 6)
+            
+            // Today's minutes
+            HStack(spacing: 4) {
+                Image(systemName: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("\(entry.todayMinutes) min")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.home)
     }
 }
 
@@ -216,25 +223,26 @@ struct MediumWidgetView: View {
             VStack(alignment: .leading, spacing: 8) {
                 StatRow(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "words")
                 StatRow(icon: "clock", value: "\(entry.todayMinutes)", label: "minutes")
-                
-                // Progress
-                HStack {
-                    Text("Goal:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    ProgressView(value: entry.goalProgress)
-                        .tint(.blue)
-                    
-                    Text("\(Int(entry.goalProgress * 100))%")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                }
+                StatRow(icon: "doc.text", value: "\(entry.widgetData.todayEntries)", label: "entries")
             }
             .frame(maxWidth: .infinity)
+            
+            // Record button area
+            Link(destination: WidgetDeepLink.record) {
+                VStack(spacing: 4) {
+                    Image(systemName: "mic.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.red)
+                    Text("Record")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 50)
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.home)
     }
 }
 
@@ -268,7 +276,7 @@ struct LargeWidgetView: View {
     
     var body: some View {
         VStack(spacing: 16) {
-            // Header
+            // Header with Record Button
             HStack {
                 VStack(alignment: .leading) {
                     Text("Life Wrapped")
@@ -279,6 +287,21 @@ struct LargeWidgetView: View {
                 }
                 
                 Spacer()
+                
+                // Record button
+                Link(destination: WidgetDeepLink.record) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mic.circle.fill")
+                            .foregroundStyle(.red)
+                        Text("Record")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.red.opacity(0.15))
+                    .clipShape(Capsule())
+                }
                 
                 // Streak badge
                 HStack(spacing: 4) {
@@ -295,41 +318,41 @@ struct LargeWidgetView: View {
             
             Divider()
             
-            // Stats grid
+            // Stats grid with links
             LazyVGrid(columns: [
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 16) {
-                StatCard(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "Words", color: .blue)
-                StatCard(icon: "clock", value: "\(entry.todayMinutes)m", label: "Speaking", color: .green)
-                StatCard(icon: "target", value: "\(Int(entry.goalProgress * 100))%", label: "Goal", color: .purple)
-                StatCard(icon: "calendar", value: lastEntryText, label: "Last Entry", color: .orange)
+                Link(destination: WidgetDeepLink.history) {
+                    StatCard(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "Words", color: .blue)
+                }
+                Link(destination: WidgetDeepLink.history) {
+                    StatCard(icon: "clock", value: "\(entry.todayMinutes)m", label: "Speaking", color: .green)
+                }
+                Link(destination: WidgetDeepLink.history) {
+                    StatCard(icon: "doc.text", value: "\(entry.widgetData.todayEntries)", label: "Entries", color: .purple)
+                }
+                Link(destination: WidgetDeepLink.history) {
+                    StatCard(icon: "calendar", value: lastEntryText, label: "Last Entry", color: .orange)
+                }
             }
             
             Spacer()
             
-            // Progress bar
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Daily Goal Progress")
+            // Weekly summary bar
+            HStack {
+                Label("\(entry.widgetData.weeklyWords) words this week", systemImage: "chart.bar.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(.secondary.opacity(0.3))
-                            .frame(height: 8)
-                        
-                        Capsule()
-                            .fill(progressColor)
-                            .frame(width: geometry.size.width * entry.goalProgress, height: 8)
-                    }
-                }
-                .frame(height: 8)
+                Spacer()
+                Label("\(entry.widgetData.weeklyMinutes) min", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.home)
     }
     
     private var lastEntryText: String {
@@ -338,16 +361,6 @@ struct LargeWidgetView: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: lastEntry, relativeTo: Date())
-    }
-    
-    private var progressColor: Color {
-        switch entry.goalProgress {
-        case 0..<0.25: return .red
-        case 0.25..<0.5: return .orange
-        case 0.5..<0.75: return .yellow
-        case 0.75..<1.0: return .green
-        default: return .blue
-        }
     }
 }
 
@@ -395,6 +408,7 @@ struct AccessoryCircularView: View {
                     .fontWeight(.bold)
             }
         }
+        .widgetURL(WidgetDeepLink.home)
     }
 }
 
@@ -414,6 +428,7 @@ struct AccessoryRectangularView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .widgetURL(WidgetDeepLink.home)
     }
 }
 
@@ -422,6 +437,7 @@ struct AccessoryInlineView: View {
     
     var body: some View {
         Text("🔥 \(entry.streakDays) day streak")
+            .widgetURL(WidgetDeepLink.home)
     }
 }
 
@@ -515,6 +531,7 @@ struct StreakSmallView: View {
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.home)
     }
     
     private var flameGradient: LinearGradient {
@@ -525,156 +542,6 @@ struct StreakSmallView: View {
             startPoint: .bottom,
             endPoint: .top
         )
-    }
-}
-
-// MARK: - Goals Widget
-
-struct GoalsWidget: Widget {
-    let kind: String = "LifeWrappedGoalsWidget"
-    
-    var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: kind, intent: LifeWrappedWidgetIntent.self, provider: LifeWrappedProvider()) { entry in
-            GoalsWidgetView(entry: entry)
-        }
-        .configurationDisplayName("Daily Goals")
-        .description("Track your daily journaling goals.")
-        .supportedFamilies([
-            .systemSmall,
-            .systemMedium
-        ])
-    }
-}
-
-struct GoalsWidgetView: View {
-    let entry: LifeWrappedEntry
-    @Environment(\.widgetFamily) var family
-    
-    var body: some View {
-        switch family {
-        case .systemSmall:
-            GoalsSmallView(entry: entry)
-        case .systemMedium:
-            GoalsMediumView(entry: entry)
-        default:
-            GoalsSmallView(entry: entry)
-        }
-    }
-}
-
-struct GoalsSmallView: View {
-    let entry: LifeWrappedEntry
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            // Goal ring
-            ZStack {
-                Circle()
-                    .stroke(.secondary.opacity(0.3), lineWidth: 8)
-                
-                Circle()
-                    .trim(from: 0, to: entry.goalProgress)
-                    .stroke(progressColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                
-                VStack(spacing: 2) {
-                    Text("\(Int(entry.goalProgress * 100))%")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    Text("goal")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: 80, height: 80)
-            
-            Text("\(entry.todayWords) words")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .containerBackground(.fill.tertiary, for: .widget)
-    }
-    
-    private var progressColor: Color {
-        switch entry.goalProgress {
-        case 0..<0.25: return .red
-        case 0.25..<0.5: return .orange
-        case 0.5..<0.75: return .yellow
-        case 0.75..<1.0: return .green
-        default: return .blue
-        }
-    }
-}
-
-struct GoalsMediumView: View {
-    let entry: LifeWrappedEntry
-    
-    var body: some View {
-        HStack(spacing: 20) {
-            // Goal ring
-            ZStack {
-                Circle()
-                    .stroke(.secondary.opacity(0.3), lineWidth: 10)
-                
-                Circle()
-                    .trim(from: 0, to: entry.goalProgress)
-                    .stroke(progressColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                
-                VStack(spacing: 2) {
-                    Text("\(Int(entry.goalProgress * 100))%")
-                        .font(.title)
-                        .fontWeight(.bold)
-                }
-            }
-            .frame(width: 100, height: 100)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Today's Progress")
-                    .font(.headline)
-                
-                GoalProgressRow(icon: "text.word.spacing", label: "Words", value: entry.todayWords, color: .blue)
-                GoalProgressRow(icon: "clock", label: "Minutes", value: entry.todayMinutes, color: .green)
-                GoalProgressRow(icon: "doc.text", label: "Entries", value: entry.widgetData.todayEntries, color: .purple)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding()
-        .containerBackground(.fill.tertiary, for: .widget)
-    }
-    
-    private var progressColor: Color {
-        switch entry.goalProgress {
-        case 0..<0.25: return .red
-        case 0.25..<0.5: return .orange
-        case 0.5..<0.75: return .yellow
-        case 0.75..<1.0: return .green
-        default: return .blue
-        }
-    }
-}
-
-struct GoalProgressRow: View {
-    let icon: String
-    let label: String
-    let value: Int
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(color)
-                .frame(width: 16)
-            
-            Text("\(value)")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-            
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }
 
@@ -761,9 +628,22 @@ struct WeeklyMediumView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
+            
+            // Record button
+            Link(destination: WidgetDeepLink.record) {
+                VStack(spacing: 4) {
+                    Image(systemName: "mic.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.red)
+                    Text("Record")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.overview)
     }
 }
 
@@ -772,11 +652,26 @@ struct WeeklyLargeView: View {
     
     var body: some View {
         VStack(spacing: 16) {
-            // Header
+            // Header with record button
             HStack {
                 Text("Weekly Summary")
                     .font(.headline)
                 Spacer()
+                
+                // Record button
+                Link(destination: WidgetDeepLink.record) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "mic.circle.fill")
+                            .foregroundStyle(.red)
+                        Text("Record")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.red.opacity(0.15))
+                    .clipShape(Capsule())
+                }
                 
                 HStack(spacing: 4) {
                     Image(systemName: "flame.fill")
@@ -793,53 +688,45 @@ struct WeeklyLargeView: View {
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 16) {
-                WeeklyStatCard(
-                    icon: "text.word.spacing",
-                    title: "Words",
-                    thisWeek: entry.widgetData.weeklyWords,
-                    today: entry.todayWords,
-                    color: .blue
-                )
+                Link(destination: WidgetDeepLink.history) {
+                    WeeklyStatCard(
+                        icon: "text.word.spacing",
+                        title: "Words",
+                        thisWeek: entry.widgetData.weeklyWords,
+                        today: entry.todayWords,
+                        color: .blue
+                    )
+                }
                 
-                WeeklyStatCard(
-                    icon: "clock",
-                    title: "Minutes",
-                    thisWeek: entry.widgetData.weeklyMinutes,
-                    today: entry.todayMinutes,
-                    color: .green
-                )
+                Link(destination: WidgetDeepLink.history) {
+                    WeeklyStatCard(
+                        icon: "clock",
+                        title: "Minutes",
+                        thisWeek: entry.widgetData.weeklyMinutes,
+                        today: entry.todayMinutes,
+                        color: .green
+                    )
+                }
             }
             
             Spacer()
             
-            // Goal progress
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Daily Goal")
+            // Today's entries summary
+            HStack {
+                Label("\(entry.widgetData.todayEntries) entries today", systemImage: "doc.text")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if entry.isStreakAtRisk {
+                    Text("Journal today to keep your streak!")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(Int(entry.goalProgress * 100))%")
-                        .font(.caption)
-                        .fontWeight(.medium)
+                        .foregroundStyle(.red)
                 }
-                
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(.secondary.opacity(0.3))
-                            .frame(height: 8)
-                        
-                        Capsule()
-                            .fill(.blue)
-                            .frame(width: geometry.size.width * entry.goalProgress, height: 8)
-                    }
-                }
-                .frame(height: 8)
             }
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetDeepLink.overview)
     }
 }
 
@@ -875,6 +762,162 @@ struct WeeklyStatCard: View {
     }
 }
 
+// MARK: - Quick Record Widget
+
+struct QuickRecordWidget: Widget {
+    let kind: String = "LifeWrappedQuickRecordWidget"
+    
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: QuickRecordProvider()) { entry in
+            QuickRecordWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Quick Record")
+        .description("Quickly start recording your journal.")
+        .supportedFamilies([
+            .systemSmall,
+            .accessoryCircular
+        ])
+    }
+}
+
+struct QuickRecordEntry: TimelineEntry {
+    let date: Date
+    let streakDays: Int
+    let todayWords: Int
+    let isStreakAtRisk: Bool
+    
+    static let placeholder = QuickRecordEntry(
+        date: Date(),
+        streakDays: 7,
+        todayWords: 250,
+        isStreakAtRisk: false
+    )
+}
+
+struct QuickRecordProvider: TimelineProvider {
+    typealias Entry = QuickRecordEntry
+    
+    private let dataManager = WidgetDataManager.shared
+    
+    func placeholder(in context: Context) -> QuickRecordEntry {
+        .placeholder
+    }
+    
+    func getSnapshot(in context: Context, completion: @escaping (QuickRecordEntry) -> Void) {
+        let widgetData = dataManager.readWidgetData()
+        let entry = QuickRecordEntry(
+            date: Date(),
+            streakDays: widgetData.streakDays,
+            todayWords: widgetData.todayWords,
+            isStreakAtRisk: widgetData.isStreakAtRisk
+        )
+        completion(entry)
+    }
+    
+    func getTimeline(in context: Context, completion: @escaping (Timeline<QuickRecordEntry>) -> Void) {
+        let widgetData = dataManager.readWidgetData()
+        let entry = QuickRecordEntry(
+            date: Date(),
+            streakDays: widgetData.streakDays,
+            todayWords: widgetData.todayWords,
+            isStreakAtRisk: widgetData.isStreakAtRisk
+        )
+        
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date()
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        completion(timeline)
+    }
+}
+
+struct QuickRecordWidgetView: View {
+    let entry: QuickRecordEntry
+    @Environment(\.widgetFamily) var family
+    
+    var body: some View {
+        switch family {
+        case .systemSmall:
+            QuickRecordSmallView(entry: entry)
+        case .accessoryCircular:
+            QuickRecordCircularView(entry: entry)
+        default:
+            QuickRecordSmallView(entry: entry)
+        }
+    }
+}
+
+struct QuickRecordSmallView: View {
+    let entry: QuickRecordEntry
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            // Record button as main focus
+            Link(destination: WidgetDeepLink.record) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [.red, .red.opacity(0.7)],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 40
+                            )
+                        )
+                        .frame(width: 70, height: 70)
+                    
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.white)
+                }
+            }
+            
+            Text("Tap to Record")
+                .font(.caption)
+                .fontWeight(.medium)
+            
+            // Today's stats
+            HStack(spacing: 12) {
+                Label("\(entry.todayWords)", systemImage: "text.word.spacing")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                
+                if entry.streakDays > 0 {
+                    Label("\(entry.streakDays)", systemImage: "flame.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+            
+            // Streak warning
+            if entry.isStreakAtRisk {
+                Text("Save your streak!")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fontWeight(.medium)
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct QuickRecordCircularView: View {
+    let entry: QuickRecordEntry
+    
+    var body: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            
+            VStack(spacing: 2) {
+                Image(systemName: "mic.fill")
+                    .font(.title3)
+                Text("REC")
+                    .font(.caption2)
+                    .fontWeight(.bold)
+            }
+        }
+        .widgetURL(WidgetDeepLink.record)
+    }
+}
+
 // MARK: - Widget Bundle
 
 @main
@@ -882,8 +925,8 @@ struct LifeWrappedWidgetBundle: WidgetBundle {
     var body: some Widget {
         LifeWrappedWidget()
         StreakFocusWidget()
-        GoalsWidget()
         WeeklyStatsWidget()
+        QuickRecordWidget()
     }
 }
 
@@ -914,14 +957,20 @@ struct LifeWrappedWidgetBundle: WidgetBundle {
     LifeWrappedEntry.placeholder
 }
 
-#Preview("Goals Medium", as: .systemMedium) {
-    GoalsWidget()
-} timeline: {
-    LifeWrappedEntry.placeholder
-}
-
 #Preview("Weekly Large", as: .systemLarge) {
     WeeklyStatsWidget()
 } timeline: {
     LifeWrappedEntry.placeholder
+}
+
+#Preview("Quick Record Small", as: .systemSmall) {
+    QuickRecordWidget()
+} timeline: {
+    QuickRecordEntry.placeholder
+}
+
+#Preview("Quick Record Circular", as: .accessoryCircular) {
+    QuickRecordWidget()
+} timeline: {
+    QuickRecordEntry.placeholder
 }

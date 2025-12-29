@@ -12,7 +12,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
     public let todayWords: Int
     public let todayMinutes: Int
     public let todayEntries: Int
-    public let goalProgress: Double
     public let lastEntryTime: Date?
     public let isStreakAtRisk: Bool
     public let weeklyWords: Int
@@ -24,7 +23,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
         todayWords: Int = 0,
         todayMinutes: Int = 0,
         todayEntries: Int = 0,
-        goalProgress: Double = 0,
         lastEntryTime: Date? = nil,
         isStreakAtRisk: Bool = false,
         weeklyWords: Int = 0,
@@ -35,7 +33,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
         self.todayWords = todayWords
         self.todayMinutes = todayMinutes
         self.todayEntries = todayEntries
-        self.goalProgress = goalProgress
         self.lastEntryTime = lastEntryTime
         self.isStreakAtRisk = isStreakAtRisk
         self.weeklyWords = weeklyWords
@@ -50,7 +47,6 @@ public struct WidgetData: Codable, Sendable, Equatable {
         todayWords: 350,
         todayMinutes: 5,
         todayEntries: 2,
-        goalProgress: 0.7,
         lastEntryTime: Date().addingTimeInterval(-3600),
         isStreakAtRisk: false,
         weeklyWords: 2450,
@@ -69,15 +65,10 @@ extension WidgetData {
         todayWordCount: Int,
         todayDuration: TimeInterval,
         todayEntryCount: Int,
-        dailyWordGoal: Int,
         lastEntryDate: Date?,
         weeklyWordCount: Int,
         weeklyDuration: TimeInterval
     ) -> WidgetData {
-        let goalProgress = dailyWordGoal > 0 
-            ? min(1.0, Double(todayWordCount) / Double(dailyWordGoal))
-            : 0
-        
         // Check if streak is at risk (no entry today and it's past noon)
         let calendar = Calendar.current
         let now = Date()
@@ -90,7 +81,6 @@ extension WidgetData {
             todayWords: todayWordCount,
             todayMinutes: Int(todayDuration / 60),
             todayEntries: todayEntryCount,
-            goalProgress: goalProgress,
             lastEntryTime: lastEntryDate,
             isStreakAtRisk: isStreakAtRisk,
             weeklyWords: weeklyWordCount,

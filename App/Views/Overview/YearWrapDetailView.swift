@@ -4,9 +4,7 @@ import Storage
 
 // MARK: - ItemFilter Extensions for UI
 
-extension ItemFilter: Identifiable {
-    public var id: String { rawValue }
-    
+extension ItemFilter {
     var displayName: String {
         switch self {
         case .all: return "ALL"

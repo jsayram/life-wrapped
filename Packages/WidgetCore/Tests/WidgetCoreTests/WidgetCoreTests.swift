@@ -19,7 +19,6 @@ struct WidgetDataTests {
         #expect(data.todayWords == 0)
         #expect(data.todayMinutes == 0)
         #expect(data.todayEntries == 0)
-        #expect(data.goalProgress == 0)
         #expect(data.lastEntryTime == nil)
         #expect(data.isStreakAtRisk == false)
         #expect(data.weeklyWords == 0)
@@ -34,7 +33,6 @@ struct WidgetDataTests {
         #expect(data.todayWords == 350)
         #expect(data.todayMinutes == 5)
         #expect(data.todayEntries == 2)
-        #expect(data.goalProgress == 0.7)
         #expect(data.lastEntryTime != nil)
         #expect(data.isStreakAtRisk == false)
         #expect(data.weeklyWords == 2450)
@@ -49,7 +47,6 @@ struct WidgetDataTests {
             todayWords: 500,
             todayMinutes: 8,
             todayEntries: 3,
-            goalProgress: 0.85,
             lastEntryTime: lastEntry,
             isStreakAtRisk: true,
             weeklyWords: 3500,
@@ -60,7 +57,6 @@ struct WidgetDataTests {
         #expect(data.todayWords == 500)
         #expect(data.todayMinutes == 8)
         #expect(data.todayEntries == 3)
-        #expect(data.goalProgress == 0.85)
         #expect(data.lastEntryTime == lastEntry)
         #expect(data.isStreakAtRisk == true)
         #expect(data.weeklyWords == 3500)
@@ -80,57 +76,22 @@ struct WidgetDataTests {
         #expect(decoded.streakDays == original.streakDays)
         #expect(decoded.todayWords == original.todayWords)
         #expect(decoded.todayMinutes == original.todayMinutes)
-        #expect(decoded.goalProgress == original.goalProgress)
     }
     
-    @Test("Widget data from rollup calculates goal progress")
-    func fromRollupCalculatesGoalProgress() {
+    @Test("Widget data from rollup calculates minutes")
+    func fromRollupCalculatesMinutes() {
         let data = WidgetData.from(
             streakDays: 5,
             todayWordCount: 250,
             todayDuration: 300, // 5 minutes
             todayEntryCount: 1,
-            dailyWordGoal: 500,
             lastEntryDate: Date(),
             weeklyWordCount: 1500,
             weeklyDuration: 1800 // 30 minutes
         )
         
-        #expect(data.goalProgress == 0.5)
         #expect(data.todayMinutes == 5)
         #expect(data.weeklyMinutes == 30)
-    }
-    
-    @Test("Widget data caps goal progress at 100%")
-    func goalProgressCappedAt100Percent() {
-        let data = WidgetData.from(
-            streakDays: 5,
-            todayWordCount: 750,
-            todayDuration: 600,
-            todayEntryCount: 2,
-            dailyWordGoal: 500,
-            lastEntryDate: Date(),
-            weeklyWordCount: 2000,
-            weeklyDuration: 2400
-        )
-        
-        #expect(data.goalProgress == 1.0)
-    }
-    
-    @Test("Widget data handles zero goal gracefully")
-    func zeroGoalHandled() {
-        let data = WidgetData.from(
-            streakDays: 1,
-            todayWordCount: 100,
-            todayDuration: 120,
-            todayEntryCount: 1,
-            dailyWordGoal: 0,
-            lastEntryDate: Date(),
-            weeklyWordCount: 100,
-            weeklyDuration: 120
-        )
-        
-        #expect(data.goalProgress == 0)
     }
     
     @Test("Widget data is Equatable")
@@ -152,7 +113,6 @@ struct WidgetDataTests {
             todayWordCount: 100,
             todayDuration: 180, // 3 minutes
             todayEntryCount: 1,
-            dailyWordGoal: 200,
             lastEntryDate: Date(),
             weeklyWordCount: 500,
             weeklyDuration: 900 // 15 minutes
@@ -199,7 +159,6 @@ struct WidgetDataManagerTests {
             todayWords: 420,
             todayMinutes: 7,
             todayEntries: 2,
-            goalProgress: 0.84,
             lastEntryTime: Date(),
             isStreakAtRisk: false,
             weeklyWords: 2940,
@@ -213,7 +172,6 @@ struct WidgetDataManagerTests {
         #expect(read.streakDays == 15)
         #expect(read.todayWords == 420)
         #expect(read.todayMinutes == 7)
-        #expect(read.goalProgress == 0.84)
     }
     
     @Test("Manager updates widget data")
@@ -230,7 +188,6 @@ struct WidgetDataManagerTests {
                 todayWords: 100,
                 todayMinutes: 2,
                 todayEntries: 1,
-                goalProgress: 0.2,
                 lastEntryTime: Date(),
                 isStreakAtRisk: false,
                 weeklyWords: 100,
@@ -291,7 +248,6 @@ struct WidgetDisplayModeTests {
     func correctRawValues() {
         #expect(WidgetDisplayMode.overview.rawValue == "Overview")
         #expect(WidgetDisplayMode.streak.rawValue == "Streak Focus")
-        #expect(WidgetDisplayMode.goals.rawValue == "Goals")
         #expect(WidgetDisplayMode.weekly.rawValue == "Weekly Stats")
     }
     

@@ -60,6 +60,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("NavigateToOverviewTab"))) { _ in
             selectedTab = 2
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToTab"))) { notification in
+            if let tabIndex = notification.userInfo?["tabIndex"] as? Int {
+                selectedTab = tabIndex
+            }
+        }
         .overlay {
             if !coordinator.isInitialized && coordinator.initializationError == nil && !coordinator.needsPermissions {
                 LoadingOverlay()
