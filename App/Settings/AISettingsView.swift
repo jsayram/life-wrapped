@@ -21,6 +21,9 @@ struct AISettingsView: View {
     // Scroll proxy for programmatic scrolling
     @State private var scrollProxy: ScrollViewProxy?
     
+    // Purchase state
+    @State private var showPurchaseSheet = false
+    
     // External API state
     @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
     @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
@@ -94,12 +97,16 @@ struct AISettingsView: View {
                     onSelect: { selectEngine(.apple) }
                 )
                 
-                // Smartest (External API)
+                // Smartest (External API) - Requires Purchase
                 SummaryQualityCard(
                     emoji: "✨",
-                    title: "Smartest",
-                    subtitle: hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic",
-                    detail: hasValidAPIKey() ? "Best quality, requires internet" : "Tap to configure your API key",
+                    title: coordinator.storeManager.isSmartestAIUnlocked ? "Smartest" : "Smartest 🔒",
+                    subtitle: coordinator.storeManager.isSmartestAIUnlocked 
+                        ? (hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic")
+                        : "OpenAI or Anthropic",
+                    detail: coordinator.storeManager.isSmartestAIUnlocked 
+                        ? (hasValidAPIKey() ? "Best quality, requires internet" : "Tap to configure your API key")
+                        : "Tap to unlock • \(coordinator.storeManager.smartestAIProduct?.displayPrice ?? "Purchase required")",
                     tier: .external,
                     isSelected: activeEngine == .external,
                     isAvailable: true,
@@ -108,11 +115,11 @@ struct AISettingsView: View {
             } header: {
                 Text("Summary Quality")
             } footer: {
-                Text("Choose how you want your audio summaries generated. Smartest requires your own API key.")
+                Text("Choose how you want your audio summaries generated. Smartest requires purchase and your own API key.")
             }
             
-            // MARK: - Smartest Configuration
-            if activeEngine == .external {
+            // MARK: - Smartest Configuration (only show if purchased)
+            if activeEngine == .external && coordinator.storeManager.isSmartestAIUnlocked {
                 Section {
                     // Provider Selection
                     Picker("Provider", selection: $selectedProvider) {
@@ -218,6 +225,53 @@ struct AISettingsView: View {
                     } else {
                         Text("Add your own OpenAI or Anthropic API key to unlock the Smartest summaries. Keys are stored securely in your device's Keychain.")
                     }
+                }
+                .id("smartestConfig")
+            }
+            
+            // MARK: - Smartest Purchase Prompt (show if selected but not purchased)
+            if activeEngine == .external && !coordinator.storeManager.isSmartestAIUnlocked {
+                Section {
+                    VStack(spacing: 16) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(AppTheme.purple)
+                        
+                        Text("Purchase Required")
+                            .font(.headline)
+                        
+                        Text("Unlock Smartest AI to configure your OpenAI or Anthropic API keys.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Button {
+                            showPurchaseSheet = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "lock.open.fill")
+                                Text(coordinator.storeManager.smartestAIProduct?.displayPrice != nil 
+                                    ? "Unlock for \(coordinator.storeManager.smartestAIProduct!.displayPrice)" 
+                                    : "Unlock Smartest AI")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(.white)
+                            .background(
+                                LinearGradient(
+                                    colors: [AppTheme.magenta, AppTheme.purple],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                } header: {
+                    Text("Smartest Configuration")
                 }
                 .id("smartestConfig")
             }
@@ -340,6 +394,35 @@ struct AISettingsView: View {
             // Store proxy for scrolling
             scrollProxy = proxy
         }
+        .sheet(isPresented: $showPurchaseSheet) {
+            SmartestPurchaseSheet(
+                price: coordinator.storeManager.smartestAIProduct?.displayPrice,
+                isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
+                onPurchase: {
+                    Task {
+                        let success = await coordinator.storeManager.purchaseSmartestAI()
+                        if success {
+                            showPurchaseSheet = false
+                            coordinator.showSuccess("Smartest AI unlocked!")
+                            // Now show the API configuration
+                            activeEngine = .external
+                            showingSmartestConfig = true
+                            showAPIKeyField = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                withAnimation {
+                                    scrollProxy?.scrollTo("smartestConfig", anchor: .top)
+                                }
+                            }
+                        }
+                    }
+                },
+                onCancel: {
+                    showPurchaseSheet = false
+                }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         }
     }
     
@@ -420,6 +503,27 @@ struct AISettingsView: View {
         
         if tier == .apple && !availableEngines.contains(.apple) {
             coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
+            return
+        }
+        
+        // If selecting Smartest, check if purchase is required
+        if tier == .external && !coordinator.storeManager.isSmartestAIUnlocked {
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+            
+            // Set activeEngine so the purchase prompt section appears
+            activeEngine = .external
+            
+            // Show purchase sheet
+            showPurchaseSheet = true
+            
+            // Scroll to the section
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                    scrollProxy?.scrollTo("smartestConfig", anchor: .top)
+                }
+            }
             return
         }
         
@@ -559,6 +663,103 @@ struct AISettingsView: View {
         Task {
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
+        }
+    }
+}
+
+// MARK: - Smartest Purchase Sheet
+
+struct SmartestPurchaseSheet: View {
+    let price: String?
+    let isPurchasing: Bool
+    let onPurchase: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            // Header
+            VStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 48))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                Text("Unlock Smartest AI")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Text("Get the highest quality summaries with OpenAI or Anthropic")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.top, 16)
+            
+            Divider()
+            
+            // Features
+            VStack(alignment: .leading, spacing: 12) {
+                FeatureRow(icon: "sparkles", text: "Best quality AI summaries")
+                FeatureRow(icon: "key.fill", text: "Use your own API keys (BYOK)")
+                FeatureRow(icon: "arrow.clockwise", text: "One-time purchase, forever access")
+                FeatureRow(icon: "key.fill", text: "Your API keys stay private")
+            }
+            .padding(.horizontal)
+            
+            Spacer()
+            
+            // Purchase button
+            Button(action: onPurchase) {
+                HStack {
+                    if isPurchasing {
+                        ProgressView()
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "lock.open.fill")
+                        Text(price != nil ? "Unlock for \(price!)" : "Unlock Smartest AI")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .foregroundStyle(.white)
+                .background(
+                    LinearGradient(
+                        colors: [AppTheme.magenta, AppTheme.purple],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .disabled(isPurchasing)
+            .padding(.horizontal)
+            
+            // Cancel button
+            Button("Not Now", action: onCancel)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+        }
+        .padding()
+    }
+}
+
+struct FeatureRow: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(AppTheme.purple)
+                .frame(width: 24)
+            Text(text)
+                .font(.subheadline)
         }
     }
 }

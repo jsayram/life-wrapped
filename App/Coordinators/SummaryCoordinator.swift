@@ -449,12 +449,13 @@ public final class SummaryCoordinator {
     
     /// Update or create weekly summary by concatenating daily rollups
     public func updateWeeklySummary(date: Date, forceRegenerate: Bool = false) async {
-        let calendar = Calendar.current
-        var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        components.weekday = 2 // Monday
-        guard let startOfWeek = calendar.date(from: components) else { 
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2 // Monday is first day of week
+        
+        // Get the start of the week containing the given date
+        guard let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: date)?.start else {
             print("❌ [SummaryCoordinator] Failed to calculate start of week")
-            return 
+            return
         }
         guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) else { 
             print("❌ [SummaryCoordinator] Failed to calculate end of week")

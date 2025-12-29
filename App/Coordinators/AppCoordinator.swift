@@ -115,6 +115,9 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var isDownloadingLocalModel: Bool = false
     @Published public private(set) var yearWrapNewSessionCount: Int = 0
     
+    /// Store manager for in-app purchases
+    @Published public private(set) var storeManager = StoreManager()
+    
     // MARK: - Dependencies
     
     private var databaseManager: DatabaseManager?
