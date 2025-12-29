@@ -72,6 +72,37 @@ struct SettingsTab: View {
                     }
                 }
                 
+                // Purchases Section
+                Section {
+                    Button {
+                        Task {
+                            await coordinator.storeManager.restorePurchases()
+                        }
+                    } label: {
+                        Label {
+                            HStack {
+                                Text("Restore Purchases")
+                                Spacer()
+                                if coordinator.storeManager.purchaseState == .restoring {
+                                    ProgressView()
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundStyle(AppTheme.purple)
+                        }
+                    }
+                    .disabled(coordinator.storeManager.purchaseState == .restoring)
+                } header: {
+                    Text("Purchases")
+                } footer: {
+                    if coordinator.storeManager.isSmartestAIUnlocked {
+                        Text("Smartest AI Year Wrap is unlocked.")
+                    } else {
+                        Text("Restore previous purchases if you've reinstalled the app.")
+                    }
+                }
+                
                 // Privacy Policy Section
                 Section {
                     NavigationLink(destination: PrivacySettingsView()) {
