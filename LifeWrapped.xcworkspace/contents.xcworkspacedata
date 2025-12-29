@@ -2,6 +2,9 @@
 <Workspace
    version = "1.0">
    <FileRef
+      location = "group:Config/StoreKitConfiguration.storekit">
+   </FileRef>
+   <FileRef
       location = "group:LifeWrapped.xcodeproj">
    </FileRef>
    <FileRef

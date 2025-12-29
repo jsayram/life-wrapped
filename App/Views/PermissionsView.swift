@@ -114,8 +114,8 @@ struct PermissionsView: View {
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(12)
                         
-                        // AI Summary Information
-                        VStack(alignment: .leading, spacing: 12) {
+                        // AI Tiers Comparison
+                        VStack(alignment: .leading, spacing: 16) {
                             HStack(spacing: 12) {
                                 Image(systemName: "sparkles")
                                     .font(.title2)
@@ -127,51 +127,109 @@ struct PermissionsView: View {
                                 Spacer()
                             }
                             
-                            Text("Get intelligent summaries of your recordings and yearly insights using advanced AI.")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            
-                            // Feature badges
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "waveform")
+                            // Two-tier comparison cards
+                            HStack(spacing: 12) {
+                                // On-Device (Free) Card
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Image(systemName: "iphone")
+                                            .foregroundColor(.green)
+                                        Text("On-Device")
+                                            .font(.subheadline.bold())
+                                        Spacer()
+                                    }
+                                    
+                                    Text("FREE")
+                                        .font(.caption.bold())
                                         .foregroundColor(.green)
-                                    Text("Transcription: 100% on-device")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.green.opacity(0.2))
+                                        .cornerRadius(6)
+                                    
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        FeatureBullet(text: "Works offline", color: .green)
+                                        FeatureBullet(text: "100% private", color: .green)
+                                        FeatureBullet(text: "Good summaries", color: .green)
+                                        FeatureBullet(text: "Always available", color: .green)
+                                    }
+                                    .font(.caption2)
+                                    
+                                    Spacer()
+                                    
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Included")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.green)
+                                    }
                                 }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.green.opacity(0.08))
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                                )
                                 
-                                HStack(spacing: 8) {
-                                    Image(systemName: "wifi")
-                                        .foregroundColor(.blue)
-                                    Text("AI summaries: requires internet")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
+                                // Smartest AI (Premium) Card
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Image(systemName: "sparkles")
+                                            .foregroundColor(.purple)
+                                        Text("Smartest")
+                                            .font(.subheadline.bold())
+                                        Spacer()
+                                    }
+                                    
+                                    Text("PREMIUM")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.purple)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.purple.opacity(0.2))
+                                        .cornerRadius(6)
+                                    
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        FeatureBullet(text: "GPT-4 & Claude", color: .purple)
+                                        FeatureBullet(text: "Best quality", color: .purple)
+                                        FeatureBullet(text: "Deep insights", color: .purple)
+                                        FeatureBullet(text: "Detailed analysis", color: .purple)
+                                    }
+                                    .font(.caption2)
+                                    
+                                    Spacer()
+                                    
+                                    HStack {
+                                        Image(systemName: "lock.fill")
+                                            .foregroundColor(.secondary)
+                                        Text("Unlock in Settings")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
-                                
-                                HStack(spacing: 8) {
-                                    Image(systemName: "key.fill")
-                                        .foregroundColor(.secondary)
-                                    Text("Optional: bring your own API key")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.purple.opacity(0.08))
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                                )
                             }
-                            .padding(.top, 4)
+                            .fixedSize(horizontal: false, vertical: true)
                             
-                            Text("Configure AI settings after setup • OpenAI or Anthropic supported")
-                                .font(.caption2)
+                            // Reassurance text
+                            Text("✓ App is fully functional with On-Device AI")
+                                .font(.caption)
                                 .foregroundColor(.secondary)
-                                .padding(.top, 4)
+                                .frame(maxWidth: .infinity, alignment: .center)
                         }
                         .padding()
-                        .background(Color.purple.opacity(0.08))
+                        .background(Color(.systemGray6).opacity(0.5))
                         .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.purple.opacity(0.2), lineWidth: 1)
-                        )
                     }
                     .padding(.horizontal)
                     
@@ -585,6 +643,23 @@ struct PermissionCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}
+
+// MARK: - Feature Bullet
+
+private struct FeatureBullet: View {
+    let text: String
+    let color: Color
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark")
+                .font(.caption2.bold())
+                .foregroundColor(color)
+            Text(text)
+                .foregroundColor(.secondary)
+        }
     }
 }
 
