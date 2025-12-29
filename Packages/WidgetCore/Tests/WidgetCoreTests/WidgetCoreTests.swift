@@ -231,7 +231,6 @@ struct WidgetDisplayModeTests {
     
     @Test("All display modes have correct raw values")
     func correctRawValues() {
-        #expect(WidgetDisplayMode.today.rawValue == "Today")
         #expect(WidgetDisplayMode.record.rawValue == "Record")
         #expect(WidgetDisplayMode.sessions.rawValue == "Sessions")
     }
@@ -279,20 +278,11 @@ struct WidgetDisplayModeTests {
     
     @Test("Display modes are Sendable")
     func sendableDisplayMode() async {
-        let mode = WidgetDisplayMode.today
+        let mode = WidgetDisplayMode.record
         
         await Task {
-            #expect(mode.rawValue == "Today")
+            #expect(mode.rawValue == "Record")
         }.value
-    }
-    
-    @Test("Today mode properties")
-    func todayModeProperties() {
-        let mode = WidgetDisplayMode.today
-        
-        #expect(mode.displayName == "Today")
-        #expect(mode.description.contains("today"))
-        #expect(mode.icon == "calendar")
     }
     
     @Test("Record mode properties")
