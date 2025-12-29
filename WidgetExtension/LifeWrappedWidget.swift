@@ -124,36 +124,26 @@ struct TodaySmallView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Streak at top
-            HStack(spacing: 4) {
+        VStack(spacing: 12) {
+            // Streak
+            VStack(spacing: 4) {
                 Image(systemName: "flame.fill")
+                    .font(.system(size: 32))
                     .foregroundStyle(entry.streakDays > 0 ? .orange : .gray)
                 Text("\(entry.streakDays)")
-                    .font(.title3)
-                    .fontWeight(.bold)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
                 Text("day streak")
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
             
-            // Words count
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(entry.todayWords)")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                Text("words today")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            // Sessions and minutes
-            HStack(spacing: 12) {
-                Label("\(entry.todaySessions)", systemImage: "waveform")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Label("\(entry.todayMinutes)m", systemImage: "clock")
+            // Sessions count
+            VStack(spacing: 2) {
+                Text("\(entry.todaySessions)")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                Text("sessions today")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -201,52 +191,40 @@ struct TodayMediumView: View {
             
             Divider()
             
-            // Right side - Today's Stats
-            VStack(alignment: .leading, spacing: 10) {
-                StatRowView(icon: "text.word.spacing", value: "\(entry.todayWords)", label: "words", color: .blue)
-                StatRowView(icon: "waveform", value: "\(entry.todaySessions)", label: "sessions", color: .purple)
-                StatRowView(icon: "clock", value: "\(entry.todayMinutes)m", label: "speaking", color: .green)
+            // Center - Sessions count
+            VStack(spacing: 8) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.purple)
+                
+                Text("\(entry.todaySessions)")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("sessions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
             
-            // Record button
+            Divider()
+            
+            // Right side - Record button
             Link(destination: WidgetDeepLink.record) {
-                VStack(spacing: 4) {
+                VStack(spacing: 8) {
                     Image(systemName: "mic.circle.fill")
                         .font(.system(size: 36))
                         .foregroundStyle(.red)
                     Text("Record")
-                        .font(.caption2)
+                        .font(.caption)
                         .fontWeight(.medium)
                 }
             }
-            .frame(width: 60)
+            .frame(maxWidth: .infinity)
         }
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
         .widgetURL(WidgetDeepLink.home)
-    }
-}
-
-struct StatRowView: View {
-    let icon: String
-    let value: String
-    let label: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(color)
-                .frame(width: 16)
-            Text(value)
-                .font(.headline)
-                .fontWeight(.semibold)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }
 
@@ -279,7 +257,7 @@ struct TodayRectangularView: View {
             VStack(alignment: .leading) {
                 Text("\(entry.streakDays) day streak")
                     .font(.headline)
-                Text("\(entry.todayWords) words · \(entry.todaySessions) sessions")
+                Text("\(entry.todaySessions) sessions today")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -292,7 +270,7 @@ struct TodayInlineView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
-        Text("🔥 \(entry.streakDays)d · \(entry.todayWords) words")
+        Text("🔥 \(entry.streakDays)d · \(entry.todaySessions) sessions")
             .widgetURL(WidgetDeepLink.home)
     }
 }

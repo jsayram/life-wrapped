@@ -25,9 +25,9 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     public var displayName: String {
         switch self {
         case .basic: return "Basic"
-        case .local: return "Local AI (Phi-3.5)"
-        case .apple: return "Apple Intelligence"
-        case .external: return "Year Wrapped Pro AI"
+        case .local: return "Smart"
+        case .apple: return "Smarter"
+        case .external: return "Smartest"
         }
     }
     

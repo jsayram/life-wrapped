@@ -28,36 +28,25 @@ public final class WidgetCoordinator: Sendable {
     /// Update widget data with latest stats
     public func updateWidgetData() async {
         do {
-            // Get latest daily rollups
-            let dailyRollups = try await databaseManager.fetchRollups(bucketType: .day, limit: 365)
+            // Get all sessions for streak calculation (uses recording dates, not transcripts)
+            let allSessions = try await databaseManager.fetchSessions(limit: 365)
             
-            // Extract dates with activity
-            let activityDates = dailyRollups
-                .filter { $0.segmentCount > 0 }
-                .map { $0.bucketStart }
-            
+            // Extract dates from session start times for streak calculation
+            let activityDates = allSessions.map { $0.firstChunkTime }
             let streakInfo = StreakCalculator.calculateStreak(from: activityDates)
             
-            // Get today's stats
-            let today = Calendar.current.startOfDay(for: Date())
-            var todayWordCount = 0
-            var todayMinutes = 0.0
-            var todayEntries = 0
+            // Get today's actual session count
+            let today = Date()
+            let todaySessions = try await databaseManager.fetchSessionsByDate(date: today)
+            let todaySessionCount = todaySessions.count
             
-            if let todayRollup = dailyRollups.first,
-               Calendar.current.isDate(todayRollup.bucketStart, inSameDayAs: today) {
-                todayWordCount = todayRollup.wordCount
-                todayMinutes = todayRollup.speakingSeconds / 60.0
-                todayEntries = todayRollup.segmentCount
-            }
-            
-            // Create widget data
+            // Create widget data - simplified to just streak and sessions
             let widgetData = WidgetData(
                 streakDays: streakInfo.currentStreak,
-                todayWords: todayWordCount,
-                todayMinutes: Int(todayMinutes),
-                todayEntries: todayEntries,
-                lastEntryTime: activityDates.first,
+                todayWords: 0, // No longer displayed
+                todayMinutes: 0, // No longer displayed
+                todayEntries: todaySessionCount,
+                lastEntryTime: todaySessions.first?.startTime,
                 isStreakAtRisk: StreakCalculator.streakAtRisk(streakInfo),
                 lastUpdated: Date()
             )
@@ -67,7 +56,7 @@ public final class WidgetCoordinator: Sendable {
             // Tell WidgetKit to refresh all widget timelines immediately
             WidgetCenter.shared.reloadAllTimelines()
             
-            print("✅ [WidgetCoordinator] Updated widget data: streak=\(streakInfo.currentStreak), words=\(todayWordCount), sessions=\(todayEntries)")
+            print("✅ [WidgetCoordinator] Updated widget data: streak=\(streakInfo.currentStreak), sessions=\(todaySessionCount)")
             
         } catch {
             print("❌ [WidgetCoordinator] Failed to update widget data: \(error)")

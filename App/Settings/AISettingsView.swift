@@ -58,10 +58,10 @@ struct AISettingsView: View {
             List {
                 // MARK: - Summary Quality Picker
                 Section {
-                // Smart (Basic)
+                // Basic (Quick word-based)
                 SummaryQualityCard(
                     emoji: "⚡️",
-                    title: "Smart",
+                    title: "Basic",
                     subtitle: "Quick word-based summaries",
                     detail: "Always available, works offline",
                     tier: .basic,
@@ -70,10 +70,10 @@ struct AISettingsView: View {
                     onSelect: { selectEngine(.basic) }
                 )
                 
-                // Local AI (Phi-3.5)
+                // Smart (Local AI - Phi-3.5)
                 SummaryQualityCard(
                     emoji: "🤖",
-                    title: "Local AI",
+                    title: "Smart",
                     subtitle: coordinator.localModelDisplayName,
                     detail: localModelStatus,
                     tier: .local,
@@ -467,10 +467,10 @@ struct AISettingsView: View {
     
     private func tierDisplayName(_ tier: EngineTier) -> String {
         switch tier {
-        case .basic: return "Smart"
+        case .basic: return "Basic"
+        case .local: return "Smart"
         case .apple: return "Smarter"
         case .external: return "Smartest"
-        default: return tier.displayName
         }
     }
     

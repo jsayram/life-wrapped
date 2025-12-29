@@ -763,6 +763,9 @@ public final class AppCoordinator: ObservableObject {
         // Refresh local stats after rollup generation
         await refreshStreak()
         await refreshTodayStats()
+        
+        // Update widgets with new data
+        await updateWidgetData()
     }
     
     // MARK: - Stats & Data Loading
