@@ -518,7 +518,6 @@ public actor SummarizationCoordinator {
 
         // Select engine based on user choice
         let engine: any SummarizationEngine
-        let engineTier: String
         
         if useLocalAI {
             // Use Local AI (Phi-3.5 Mini)
@@ -526,7 +525,6 @@ public actor SummarizationCoordinator {
                 throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
             }
             engine = localEngine
-            engineTier = EngineTier.local.rawValue
             #if DEBUG
             print("🤖 [SummarizationCoordinator] Using Local AI for Year Wrap")
             #endif
@@ -539,7 +537,6 @@ public actor SummarizationCoordinator {
                 throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
             }
             engine = external
-            engineTier = EngineTier.external.rawValue
             #if DEBUG
             print("☁️ [SummarizationCoordinator] Using External API for Year Wrap")
             #endif
