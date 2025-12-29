@@ -120,6 +120,7 @@ public actor DataExporter {
         return markdown
     }
     
+    #if canImport(UIKit)
     // MARK: - PDF Export
     
     /// Export summaries to PDF format (summaries only, not full transcripts)
@@ -703,6 +704,7 @@ public actor DataExporter {
         
         return (sessionIds.count, totalDuration, totalWords)
     }
+    #endif // canImport(UIKit)
     
     // MARK: - Helper Methods
     
@@ -902,6 +904,7 @@ public struct StorageInfo: Sendable {
 
 // MARK: - Year Wrap Theme
 
+#if canImport(UIKit)
 private struct YearWrapTheme {
     static let vibrantOrange = "#FF6B35"
     static let hotPink = "#FF006E"
@@ -924,3 +927,4 @@ private struct YearWrapTheme {
         return UIColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1.0)
     }
 }
+#endif // canImport(UIKit)

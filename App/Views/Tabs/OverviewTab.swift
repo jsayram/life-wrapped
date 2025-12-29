@@ -15,6 +15,7 @@ struct OverviewTab: View {
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
+    @State private var showPurchaseSheet = false
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
@@ -334,8 +335,6 @@ struct OverviewTab: View {
             }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
-                    hasExternalAPI: hasExternalAPIConfigured(),
-                    provider: UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI",
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
                     smartestAIPrice: coordinator.storeManager.smartestAIProduct?.displayPrice,
                     isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
@@ -351,35 +350,42 @@ struct OverviewTab: View {
                             await wrapUpYear(forceRegenerate: true, useLocalAI: true)
                         }
                     },
-                    onSetupAPI: {
-                        showYearWrapConfirmation = false
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("NavigateToSmartestConfig"),
-                            object: nil
-                        )
-                    },
                     onPurchaseSmartestAI: {
-                        Task {
-                            let success = await coordinator.storeManager.purchaseSmartestAI()
-                            if success {
-                                coordinator.showSuccess("Smartest AI unlocked!")
-                            }
+                        // Close this sheet and show purchase sheet
+                        showYearWrapConfirmation = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showPurchaseSheet = true
                         }
                     },
                     onCancel: {
                         showYearWrapConfirmation = false
                     }
                 )
+                .environmentObject(coordinator)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showPurchaseSheet) {
+                SmartestPurchaseSheet(
+                    price: coordinator.storeManager.smartestAIProduct?.displayPrice,
+                    isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
+                    onPurchase: {
+                        Task {
+                            let success = await coordinator.storeManager.purchaseSmartestAI()
+                            if success {
+                                showPurchaseSheet = false
+                                coordinator.showSuccess("Smartest AI unlocked! Configure your API key in Settings.")
+                            }
+                        }
+                    },
+                    onCancel: {
+                        showPurchaseSheet = false
+                    }
+                )
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
             }
         }
-    }
-    
-    private func hasExternalAPIConfigured() -> Bool {
-        let openaiKey = KeychainHelper.load(key: "openai_api_key")
-        let anthropicKey = KeychainHelper.load(key: "anthropic_api_key")
-        return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
     }
     
     private func filterColor(for filter: ItemFilter) -> Color {
@@ -964,26 +970,44 @@ struct OverviewTab: View {
 // MARK: - Year Wrap Generation Sheet
 
 struct YearWrapGenerationSheet: View {
-    let hasExternalAPI: Bool
-    let provider: String
+    @EnvironmentObject var coordinator: AppCoordinator
     let isSmartestAIUnlocked: Bool
     let smartestAIPrice: String?
     let isPurchasing: Bool
     let onGenerateWithExternal: () -> Void
     let onGenerateWithLocal: () -> Void
-    let onSetupAPI: () -> Void
     let onPurchaseSmartestAI: () -> Void
     let onCancel: () -> Void
+    
+    private var hasExternalAPIConfigured: Bool {
+        let openaiKey = KeychainHelper.load(key: "openai_api_key")
+        let anthropicKey = KeychainHelper.load(key: "anthropic_api_key")
+        return (openaiKey != nil && !openaiKey!.isEmpty) || (anthropicKey != nil && !anthropicKey!.isEmpty)
+    }
+    
+    private var provider: String {
+        UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+    }
     
     var body: some View {
         VStack(spacing: 20) {
             // Header
             VStack(spacing: 8) {
-                Text("✨ Generate Year Wrap")
+                Image(systemName: "sparkles")
+                    .font(.system(size: 40))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [AppTheme.magenta, AppTheme.purple],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                
+                Text("Generate Year Wrap")
                     .font(.title2)
                     .fontWeight(.bold)
                 
-                Text("Create your personalized year in review")
+                Text("Choose your AI engine")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -993,219 +1017,87 @@ struct YearWrapGenerationSheet: View {
             
             // Options
             VStack(spacing: 12) {
-                if hasExternalAPI && isSmartestAIUnlocked {
-                    // External API is configured AND unlocked - show as primary (purple)
+                // Local AI - Always available as primary option
+                Button(action: onGenerateWithLocal) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "iphone")
+                            .font(.title2)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Smart (Local AI)")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            Text("Works completely offline")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
+                        
+                        Spacer()
+                        
+                        Text("Free")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.white.opacity(0.2))
+                            .clipShape(Capsule())
+                    }
+                    .foregroundStyle(.white)
+                    .padding()
+                    .background(
+                        LinearGradient(
+                            colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                
+                // Smartest AI - Purchase required
+                if isSmartestAIUnlocked && hasExternalAPIConfigured {
+                    // Unlocked AND API configured - can use directly
                     Button(action: onGenerateWithExternal) {
                         HStack(spacing: 12) {
                             Image(systemName: "sparkles")
                                 .font(.title2)
                             
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(provider) (Smartest)")
+                                Text("Smartest (\(provider))")
                                     .font(.headline)
-                                    .fontWeight(.semibold)
-                                Text("Best quality, most detailed insights")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.9))
-                            }
-                            
-                            Spacer()
-                            
-                            Text("Recommended")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.white.opacity(0.2))
-                                .clipShape(Capsule())
-                        }
-                        .foregroundStyle(.white)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Local AI as secondary option
-                    Button(action: onGenerateWithLocal) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "iphone")
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Local AI")
-                                    .font(.headline)
-                                Text("Works offline (~2.1GB model)")
+                                Text("Best quality, most detailed")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             
                             Spacer()
+                            
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
                         }
                         .padding()
                         .background(Color(.secondarySystemGroupedBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
-                    
-                } else if hasExternalAPI && !isSmartestAIUnlocked {
-                    // External API configured but not purchased - show purchase option
-                    Button(action: onPurchaseSmartestAI) {
+                } else if isSmartestAIUnlocked && !hasExternalAPIConfigured {
+                    // Unlocked but no API key - prompt to configure
+                    Button {
+                        onCancel()
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("NavigateToSmartestConfig"),
+                            object: nil
+                        )
+                    } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "sparkles")
                                 .font(.title2)
                             
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(provider) (Smartest)")
+                                Text("Smartest (External AI)")
                                     .font(.headline)
-                                    .fontWeight(.semibold)
-                                Text("Best quality, most detailed insights")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.9))
-                            }
-                            
-                            Spacer()
-                            
-                            if isPurchasing {
-                                ProgressView()
-                                    .tint(.white)
-                            } else if let price = smartestAIPrice {
-                                Text(price)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(.white.opacity(0.2))
-                                    .clipShape(Capsule())
-                            } else {
-                                Text("Unlock")
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(.white.opacity(0.2))
-                                    .clipShape(Capsule())
-                            }
-                        }
-                        .foregroundStyle(.white)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.7), AppTheme.purple.opacity(0.5)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(AppTheme.purple.opacity(0.5), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isPurchasing)
-                    
-                    // Local AI as primary since smartest not unlocked
-                    Button(action: onGenerateWithLocal) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Local AI (Phi-3.5)")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                Text("Works completely offline")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.9))
-                            }
-                            
-                            Spacer()
-                            
-                            Text("Best Available")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.white.opacity(0.2))
-                                .clipShape(Capsule())
-                        }
-                        .foregroundStyle(.white)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    
-                } else {
-                    // No External API - Local AI is primary (purple)
-                    Button(action: onGenerateWithLocal) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Local AI (Phi-3.5)")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                Text("Works completely offline")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.9))
-                            }
-                            
-                            Spacer()
-                            
-                            Text("Best Available")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.white.opacity(0.2))
-                                .clipShape(Capsule())
-                        }
-                        .foregroundStyle(.white)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Setup API suggestion - show purchase status
-                    Button(action: onSetupAPI) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "gearshape")
-                                .font(.title2)
-                                .foregroundStyle(AppTheme.purple)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text("Setup Smartest API")
-                                        .font(.headline)
-                                    if !isSmartestAIUnlocked {
-                                        Image(systemName: "lock.fill")
-                                            .font(.caption)
-                                            .foregroundStyle(AppTheme.purple)
-                                    }
-                                }
-                                Text(isSmartestAIUnlocked ? "OpenAI or Anthropic for better results" : "Requires purchase to unlock")
+                                Text("Configure API key to use")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -1213,7 +1105,6 @@ struct YearWrapGenerationSheet: View {
                             Spacer()
                             
                             Image(systemName: "chevron.right")
-                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         .padding()
@@ -1221,6 +1112,55 @@ struct YearWrapGenerationSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
+                } else {
+                    // Not unlocked - show purchase option
+                    Button(action: onPurchaseSmartestAI) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles")
+                                .font(.title2)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Text("Smartest (External AI)")
+                                        .font(.headline)
+                                    Image(systemName: "lock.fill")
+                                        .font(.caption)
+                                }
+                                Text("OpenAI or Anthropic • Best quality")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if isPurchasing {
+                                ProgressView()
+                            } else if let price = smartestAIPrice {
+                                Text(price)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(AppTheme.purple)
+                                    .clipShape(Capsule())
+                            } else {
+                                Text("Unlock")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(AppTheme.purple)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .padding()
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isPurchasing)
                 }
             }
             
