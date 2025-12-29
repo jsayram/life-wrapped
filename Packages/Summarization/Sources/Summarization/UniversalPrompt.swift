@@ -376,6 +376,7 @@ public struct SummarizationLogger {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let sessionStr = sessionId.map { $0.uuidString.prefix(8) } ?? "N/A"
         
+        #if DEBUG
         print("""
         📊 [Summarization Request]
            ├─ Timestamp: \(timestamp)
@@ -388,6 +389,7 @@ public struct SummarizationLogger {
            ├─ Input Size: \(inputSize)
            └─ Session: \(sessionStr)
         """)
+        #endif
     }
 }
 

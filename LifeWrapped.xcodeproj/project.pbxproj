@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -43,7 +43,6 @@
 		43D15B981E6F557671FD1C06 /* SettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E717E092B5343A4B1C28661 /* SettingsTab.swift */; };
 		440C0343FF74797745AB1A8B /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EC0935BF876BE76FB08416F /* Extensions.swift */; };
 		4542A997CBA0AE57206FA214 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47408049BA4C55795D819D9D /* ContentView.swift */; };
-		46C839BB2F032915005BE6B3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 46C839BA2F032915005BE6B3 /* Assets.xcassets */; };
 		496A257B51F3E7F413D2D67C /* DataSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65DDEA15CAE2EF3F4908AAE7 /* DataSettingsView.swift */; };
 		4F91042393542DD400A56D05 /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 550E33773C2017A99936C6DF /* LoadingView.swift */; };
 		5437ECCB1DC186982841531A /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 613E84EFCFA456951B21A317 /* RecordingDetailView.swift */; };
@@ -159,7 +158,6 @@
 		3C95B298DE0C9B26176BF5D8 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		41A525C5C2A6B8993B3979E6 /* StreakDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakDisplay.swift; sourceTree = "<group>"; };
 		45F56452C81B17084F3EEC88 /* StatCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatCard.swift; sourceTree = "<group>"; };
-		46C839BA2F032915005BE6B3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		47408049BA4C55795D819D9D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4BFA9A8C0292221E0BD75A6D /* InsightsRollup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = InsightsRollup; path = Packages/InsightsRollup; sourceTree = SOURCE_ROOT; };
 		4C9255CE1AB102B4DF974A24 /* Storage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Storage; path = Packages/Storage; sourceTree = SOURCE_ROOT; };
@@ -167,7 +165,7 @@
 		539D0BEC1A7BF60C7E20A555 /* ExcludedWordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExcludedWordsView.swift; sourceTree = "<group>"; };
 		550E33773C2017A99936C6DF /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		5C29DDCC0644E706A9376553 /* ContentView.swift.backup */ = {isa = PBXFileReference; lastKnownFileType = text; path = ContentView.swift.backup; sourceTree = "<group>"; };
+		5C29DDCC0644E706A9376553 /* ContentView.swift.backup */ = {isa = PBXFileReference; path = ContentView.swift.backup; sourceTree = "<group>"; };
 		5DFCF011CB0CA4E2B2A149CE /* ExternalAPISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalAPISettingsView.swift; sourceTree = "<group>"; };
 		5EC0935BF876BE76FB08416F /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		613E84EFCFA456951B21A317 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
@@ -217,7 +215,7 @@
 		EA6CE0D99907D534F30744E9 /* OnDeviceEnginesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceEnginesView.swift; sourceTree = "<group>"; };
 		F231C51760CC69888206DB11 /* SessionRowClean.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowClean.swift; sourceTree = "<group>"; };
 		F23A5E8033CBE146D40309F1 /* EngineRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineRow.swift; sourceTree = "<group>"; };
-		F315574532D9E785DD876700 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F315574532D9E785DD876700 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F512638BDE40F7643B9073AF /* DetailRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailRow.swift; sourceTree = "<group>"; };
 		F75199834B9D84B5F280BCBA /* InfoRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoRow.swift; sourceTree = "<group>"; };
 		F8F2549BD9F04D9AA744A9B0 /* PermissionsCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsCoordinator.swift; sourceTree = "<group>"; };
@@ -566,7 +564,6 @@
 		EEFEC05EA185B9B9A3D0A429 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				46C839BA2F032915005BE6B3 /* Assets.xcassets */,
 				BC7B84119E24CB9BFB92A171 /* Entitlements.entitlements */,
 				77C5EF04CEB54A1460DC0F2A /* Info.plist */,
 				F315574532D9E785DD876700 /* PrivacyInfo.xcprivacy */,
@@ -673,6 +670,7 @@
 				71015CF0937723FDBED548DF /* XCLocalSwiftPackageReference "Packages/Transcription" */,
 				D0F826A35D149D928EF0E855 /* XCLocalSwiftPackageReference "Packages/WidgetCore" */,
 			);
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -688,7 +686,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				E36A34C7F828D03C6E3D471E /* ContentView.swift.backup in Resources */,
-				46C839BB2F032915005BE6B3 /* Assets.xcassets in Resources */,
 				278ECF41590AC7E647B7A9F2 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -896,11 +893,7 @@
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
@@ -1001,11 +994,7 @@
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;

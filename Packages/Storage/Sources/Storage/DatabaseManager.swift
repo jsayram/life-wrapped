@@ -31,16 +31,22 @@ public actor DatabaseManager {
     // MARK: - Initialization
     
     public init(containerIdentifier: String = AppConstants.appGroupIdentifier) async throws {
+        #if DEBUG
         print("💾 [DatabaseManager] Looking for App Group: \(containerIdentifier)")
+        #endif
         
         // Initialize connection
         self.connection = try await DatabaseConnection(containerIdentifier: containerIdentifier)
+        #if DEBUG
         print("✅ [DatabaseManager] Connection established")
+        #endif
         
         // Initialize schema manager and run migrations
         self.schemaManager = SchemaManager(connection: connection)
         try await schemaManager.migrate()
+        #if DEBUG
         print("✅ [DatabaseManager] Migrations complete")
+        #endif
         
         // Initialize repositories
         self.audioChunkRepository = AudioChunkRepository(connection: connection)
@@ -50,7 +56,9 @@ public actor DatabaseManager {
         self.insightsRepository = InsightsRepository(connection: connection)
         self.controlEventRepository = ControlEventRepository(connection: connection)
         
+        #if DEBUG
         print("✅ [DatabaseManager] All repositories initialized")
+        #endif
     }
     
     /// Close the database connection

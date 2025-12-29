@@ -76,19 +76,29 @@ public actor TranscriptionManager {
         maxRetries: Int = 2,
         retryDelay: TimeInterval = 1.0
     ) async throws -> [TranscriptSegment] {
+        #if DEBUG
         print("🎯 [TranscriptionManager] transcribe() called for chunk: \(chunk.id)")
+        #endif
+        #if DEBUG
         print("🎯 [TranscriptionManager] File URL: \(chunk.fileURL)")
+        #endif
+        #if DEBUG
         print("🎯 [TranscriptionManager] Locale: \(locale.identifier)")
+        #endif
         
         var lastError: Error?
         let startTime = Date()
         
         // Retry loop
         for attempt in 0...maxRetries {
+            #if DEBUG
             print("🔄 [TranscriptionManager] Attempt \(attempt + 1)/\(maxRetries + 1)")
+            #endif
             do {
                 let segments = try await performTranscription(chunk: chunk, locale: locale)
+                #if DEBUG
                 print("✅ [TranscriptionManager] Transcription successful! Got \(segments.count) segments")
+                #endif
                 
                 // Record success
                 let duration = Date().timeIntervalSince(startTime)
@@ -96,7 +106,9 @@ public actor TranscriptionManager {
                 
                 return segments
             } catch {
+                #if DEBUG
                 print("❌ [TranscriptionManager] Transcription attempt \(attempt + 1) failed: \(error)")
+                #endif
                 lastError = error
                 
                 // Don't retry for certain errors
@@ -127,31 +139,49 @@ public actor TranscriptionManager {
         chunk: AudioChunk,
         locale: Locale
     ) async throws -> [TranscriptSegment] {
+        #if DEBUG
         print("🎤 [TranscriptionManager] performTranscription() starting")
+        #endif
         
         // Verify file exists
         guard FileManager.default.fileExists(atPath: chunk.fileURL.path) else {
+            #if DEBUG
             print("❌ [TranscriptionManager] Audio file not found: \(chunk.fileURL.path)")
+            #endif
             throw TranscriptionError.audioFileNotFound(chunk.fileURL)
         }
+        #if DEBUG
         print("✅ [TranscriptionManager] Audio file exists")
+        #endif
         
         // Create recognizer
+        #if DEBUG
         print("🗣️ [TranscriptionManager] Creating SFSpeechRecognizer for locale: \(locale.identifier)")
+        #endif
         guard let recognizer = SFSpeechRecognizer(locale: locale) else {
+            #if DEBUG
             print("❌ [TranscriptionManager] SFSpeechRecognizer not available for locale")
+            #endif
             throw TranscriptionError.notAvailable
         }
+        #if DEBUG
         print("✅ [TranscriptionManager] SFSpeechRecognizer created")
+        #endif
         
         guard recognizer.isAvailable else {
+            #if DEBUG
             print("❌ [TranscriptionManager] SFSpeechRecognizer not available on this device")
+            #endif
             throw TranscriptionError.notAvailable
         }
+        #if DEBUG
         print("✅ [TranscriptionManager] SFSpeechRecognizer is available")
+        #endif
         
         // Create recognition request
+        #if DEBUG
         print("📄 [TranscriptionManager] Creating recognition request")
+        #endif
         let request = SFSpeechURLRecognitionRequest(url: chunk.fileURL)
         request.shouldReportPartialResults = true // Enable partial results to get more complete transcription
         request.requiresOnDeviceRecognition = true // Privacy: on-device only
@@ -161,7 +191,9 @@ public actor TranscriptionManager {
             request.addsPunctuation = true
         }
         
+        #if DEBUG
         print("✅ [TranscriptionManager] Recognition request created (on-device only)")
+        #endif
         
         // Capture values needed by the callback (to avoid actor isolation issues)
         let chunkID = chunk.id
@@ -183,10 +215,14 @@ public actor TranscriptionManager {
                     
                     if let error = error {
                         // Recognition ended with error - use what we have
+                        #if DEBUG
                         print("⚠️ [TranscriptionManager] Recognition ended: \(error.localizedDescription)")
+                        #endif
                         let finalText = state.fullText
                         if !finalText.isEmpty {
+                            #if DEBUG
                             print("✅ [TranscriptionManager] Using accumulated: \(finalText.split(separator: " ").count) words total")
+                            #endif
                             state.hasResumed = true
                             continuation.resume(returning: finalText)
                         } else {
@@ -204,9 +240,13 @@ public actor TranscriptionManager {
                     // Detect abandoned utterance: if new text is shorter than current,
                     // Speech Recognition has abandoned the previous utterance without marking it final
                     if !state.currentUtterance.isEmpty && newWordCount < currentWordCount {
+                        #if DEBUG
                         print("🔄 [TranscriptionManager] Abandoned utterance detected (was \(currentWordCount) words, now \(newWordCount) words)")
+                        #endif
                         state.allUtterances.append(state.currentUtterance)
+                        #if DEBUG
                         print("💾 [TranscriptionManager] Saved abandoned utterance #\(state.allUtterances.count): '\(state.currentUtterance.prefix(50))...' (\(currentWordCount) words)")
+                        #endif
                         state.currentUtterance = ""
                     }
                     
@@ -215,14 +255,18 @@ public actor TranscriptionManager {
                         state.finalCount += 1
                         if !text.isEmpty && !state.allUtterances.contains(text) {
                             state.allUtterances.append(text)
+                            #if DEBUG
                             print("✅ [TranscriptionManager] Final #\(state.finalCount): '\(text.prefix(50))...' (\(text.split(separator: " ").count) words) - Total: \(state.fullText.split(separator: " ").count) words")
+                            #endif
                         }
                         state.currentUtterance = ""
                         // Continue listening for more utterances after the pause
                     } else {
                         // Partial result - update current utterance
                         state.currentUtterance = text
+                        #if DEBUG
                         print("⏳ [TranscriptionManager] Partial: '\(text.prefix(30))...' (\(newWordCount) words) - Total: \(state.fullText.split(separator: " ").count) words")
+                        #endif
                     }
                 }
             }
@@ -251,7 +295,9 @@ public actor TranscriptionManager {
                         // If stable for threshold checks and we have at least one final result, we're done
                         if stableCount >= stableThreshold && state.finalCount > 0 {
                             let finalText = state.fullText
+                            #if DEBUG
                             print("✅ [TranscriptionManager] Early completion - stable at \(currentWordCount) words, \(state.finalCount) utterances")
+                            #endif
                             state.hasResumed = true
                             continuation.resume(returning: finalText)
                             return
@@ -265,16 +311,22 @@ public actor TranscriptionManager {
                 // Timeout reached - use what we have
                 guard !state.hasResumed else { return }
                 let finalText = state.fullText
+                #if DEBUG
                 print("⏱️ [TranscriptionManager] Timeout reached - \(state.finalCount) utterances, \(finalText.split(separator: " ").count) total words")
+                #endif
                 state.hasResumed = true
                 continuation.resume(returning: finalText)
             }
         }
+        #if DEBUG
         print("🔄 [TranscriptionManager] Recognition complete, converting to segments...")
+        #endif
         
         // Convert to segments after continuation completes (back on actor)
         let segments = convertToSegmentsFromText(transcribedText, audioChunkID: chunkID, locale: Locale(identifier: localeIdentifier), duration: duration)
+        #if DEBUG
         print("✅ [TranscriptionManager] Converted to \(segments.count) segments")
+        #endif
         return segments
     }
     

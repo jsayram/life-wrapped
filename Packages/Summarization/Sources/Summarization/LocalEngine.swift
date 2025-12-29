@@ -83,13 +83,17 @@ public actor LocalEngine: SummarizationEngine {
         if let cachedHash = chunkHashes[chunkId],
            cachedHash == textHash,
            let cachedSummary = chunkSummaries[chunkId] {
+            #if DEBUG
             print("✅ [LocalEngine] Using cached summary for chunk \(chunkId) (text unchanged)")
+            #endif
             return cachedSummary
         }
         
         // Ensure model is loaded
         if !(await llamaContext.isReady()) {
+            #if DEBUG
             print("📥 [LocalEngine] Model not loaded, loading now...")
+            #endif
             try await loadModel()
         }
         
@@ -105,10 +109,16 @@ public actor LocalEngine: SummarizationEngine {
             // Post-process: aggressively strip any meta-commentary patterns
             summary = cleanupMetaCommentary(rawSummary)
             
+            #if DEBUG
             print("✅ [LocalEngine] Chunk \(chunkId) summarized: \(summary.prefix(60))...")
+            #endif
         } catch {
+            #if DEBUG
             print("⚠️ [LocalEngine] MLX generation failed: \(error)")
+            #endif
+            #if DEBUG
             print("🔄 [LocalEngine] Falling back to extractive summary")
+            #endif
             summary = extractiveSummary(from: transcriptText)
         }
         
@@ -215,9 +225,15 @@ public actor LocalEngine: SummarizationEngine {
         
         // Debug logging if cleanup occurred
         if cleaned != text {
+            #if DEBUG
             print("🧹 [LocalEngine] Stripped meta-commentary:")
+            #endif
+            #if DEBUG
             print("   Before: \(text.prefix(150))...")
+            #endif
+            #if DEBUG
             print("   After: \(cleaned.prefix(150))...")
+            #endif
         }
         
         return cleaned
@@ -226,7 +242,9 @@ public actor LocalEngine: SummarizationEngine {
     /// Clear cached chunk summaries for a session (old method - clears all)
 
     public func clearChunkSummaries(for chunkIds: [UUID]) {
+        #if DEBUG
         print("🗑️ [LocalEngine] Clearing ALL \(chunkIds.count) cached chunk summaries")
+        #endif
         for id in chunkIds {
             chunkSummaries.removeValue(forKey: id)
             chunkHashes.removeValue(forKey: id)
@@ -245,21 +263,29 @@ public actor LocalEngine: SummarizationEngine {
             if let existingHash = chunkHashes[chunk.id] {
                 if existingHash != newHash {
                     // Text changed - clear cache
+                    #if DEBUG
                     print("🔄 [LocalEngine] Chunk \(chunk.id) text changed, clearing cache")
+                    #endif
                     chunkSummaries.removeValue(forKey: chunk.id)
                     chunkHashes.removeValue(forKey: chunk.id)
                     changedChunkIds.append(chunk.id)
                 } else {
+                    #if DEBUG
                     print("✅ [LocalEngine] Chunk \(chunk.id) text unchanged, keeping cached summary")
+                    #endif
                 }
             } else {
                 // New chunk - needs processing
+                #if DEBUG
                 print("🆕 [LocalEngine] Chunk \(chunk.id) is new, needs processing")
+                #endif
                 changedChunkIds.append(chunk.id)
             }
         }
         
+        #if DEBUG
         print("📊 [LocalEngine] Smart clear: \(changedChunkIds.count) of \(chunks.count) chunks need reprocessing")
+        #endif
         return changedChunkIds
     }
     
@@ -328,21 +354,33 @@ public actor LocalEngine: SummarizationEngine {
         
         if shouldUseCache {
             // Combine cached chunk summaries into final summary with deduplication
+            #if DEBUG
             print("✅ [LocalEngine] Using \(aggregatedSummaries.count) cached chunk summaries (all cached, skipping re-chunking)")
+            #endif
             finalSummary = aggregateSummaries(aggregatedSummaries)
         } else {
             // No cached summaries - intelligently chunk the transcript and process each
+            #if DEBUG
             print("🔄 [LocalEngine] No cached summaries found - intelligently chunking transcript for processing")
+            #endif
+            #if DEBUG
             print("📊 [LocalEngine] Total words: \(wordCount), will chunk into ~120-word segments")
+            #endif
             
             // Ensure model is loaded before processing
             if !(await llamaContext.isReady()) {
+                #if DEBUG
                 print("📥 [LocalEngine] Model not loaded, loading now...")
+                #endif
                 do {
                     try await llamaContext.loadModel(.phi35)
+                    #if DEBUG
                     print("✅ [LocalEngine] Model loaded successfully")
+                    #endif
                 } catch {
+                    #if DEBUG
                     print("❌ [LocalEngine] Failed to load model: \(error), using extractive fallback")
+                    #endif
                     finalSummary = extractiveSummary(from: transcriptText)
                     // Continue with the rest of the method...
                     let topics = extractTopics(from: finalSummary)
@@ -380,7 +418,9 @@ public actor LocalEngine: SummarizationEngine {
                 let chunkWords = words[currentIndex..<endIndex]
                 let chunkText = chunkWords.joined(separator: " ")
                 
+                #if DEBUG
                 print("🧩 [LocalEngine] Processing chunk \(chunkNumber): words \(currentIndex+1)-\(endIndex) of \(words.count)")
+                #endif
                 
                 // Generate summary with error handling
                 let chunkSummary: String
@@ -392,10 +432,16 @@ public actor LocalEngine: SummarizationEngine {
                     // Post-process: aggressively strip any meta-commentary patterns
                     chunkSummary = cleanupMetaCommentary(rawSummary)
                     
+                    #if DEBUG
                     print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
+                    #endif
                 } catch {
+                    #if DEBUG
                     print("⚠️ [LocalEngine] MLX generation failed for chunk \(chunkNumber): \(error)")
+                    #endif
+                    #if DEBUG
                     print("🔄 [LocalEngine] Falling back to extractive summary for chunk")
+                    #endif
                     chunkSummary = extractiveSummary(from: chunkText)
                 }
                 chunkSummaries.append(chunkSummary)
@@ -405,7 +451,9 @@ public actor LocalEngine: SummarizationEngine {
             }
             
             // Aggregate all chunk summaries
+            #if DEBUG
             print("🔗 [LocalEngine] Aggregating \(chunkSummaries.count) chunk summaries")
+            #endif
             finalSummary = aggregateSummaries(chunkSummaries)
         }
         
@@ -523,7 +571,9 @@ public actor LocalEngine: SummarizationEngine {
         
         // Ensure model is loaded
         if !(await llamaContext.isReady()) {
+            #if DEBUG
             print("📥 [LocalEngine] Model not loaded, loading for Year Wrap...")
+            #endif
             try await loadModel()
         }
         
@@ -536,7 +586,9 @@ public actor LocalEngine: SummarizationEngine {
             categoryLabel: categoryLabel
         )
         
+        #if DEBUG
         print("🤖 [LocalEngine] Generating \(categoryLabel) Year Wrap with LLM...")
+        #endif
         
         do {
             // Generate with higher token limit for Year Wrap
@@ -544,7 +596,9 @@ public actor LocalEngine: SummarizationEngine {
             
             // Try to parse as JSON
             if let jsonSummary = parseYearWrapJSON(rawOutput) {
+                #if DEBUG
                 print("✅ [LocalEngine] Year Wrap JSON parsed successfully")
+                #endif
                 return PeriodIntelligence(
                     periodType: periodType,
                     periodStart: periodStart,
@@ -560,7 +614,9 @@ public actor LocalEngine: SummarizationEngine {
                 )
             } else {
                 // LLM didn't produce valid JSON - wrap plain text in JSON structure
+                #if DEBUG
                 print("⚠️ [LocalEngine] LLM output not valid JSON, wrapping in structure")
+                #endif
                 let cleanedOutput = cleanupMetaCommentary(rawOutput)
                 let wrappedJSON = wrapPlainTextAsYearWrapJSON(
                     text: cleanedOutput,
@@ -582,7 +638,9 @@ public actor LocalEngine: SummarizationEngine {
                 )
             }
         } catch {
+            #if DEBUG
             print("❌ [LocalEngine] LLM generation failed: \(error)")
+            #endif
             // Fall back to aggregation wrapped in JSON
             let fallbackJSON = buildFallbackYearWrapJSON(
                 sessionSummaries: sessionSummaries,

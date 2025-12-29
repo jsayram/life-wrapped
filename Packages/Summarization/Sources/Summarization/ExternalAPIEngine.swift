@@ -409,17 +409,27 @@ public actor ExternalAPIEngine: SummarizationEngine {
         }
         
         // Parse JSON content
+        #if DEBUG
         print("🔍 [ExternalAPIEngine] Raw API response content:")
+        #endif
+        #if DEBUG
         print("📄 [ExternalAPIEngine] \(contentText.prefix(500))...")
+        #endif
         
         guard let jsonData = contentText.data(using: .utf8) else {
+            #if DEBUG
             print("❌ [ExternalAPIEngine] Failed to convert content to UTF-8 data")
+            #endif
             throw SummarizationError.decodingFailed("Failed to convert content to UTF-8 data")
         }
         
         guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            #if DEBUG
             print("❌ [ExternalAPIEngine] Content is not valid JSON - using as plain text summary")
+            #endif
+            #if DEBUG
             print("📝 [ExternalAPIEngine] Falling back to plain text: \(contentText.prefix(200))...")
+            #endif
             
             // If not JSON, use the plain text as the summary
             return SessionIntelligence(
@@ -435,7 +445,9 @@ public actor ExternalAPIEngine: SummarizationEngine {
             )
         }
         
+        #if DEBUG
         print("✅ [ExternalAPIEngine] Successfully parsed JSON response")
+        #endif
         
         // Extract summary based on schema structure
         // Session schema has: title, key_insights[], main_themes[], thought_process, etc.
@@ -478,7 +490,9 @@ public actor ExternalAPIEngine: SummarizationEngine {
                 ?? "No summary available"
         }
         
+        #if DEBUG
         print("📝 [ExternalAPIEngine] Extracted summary (\(summary.count) chars): \(summary.prefix(100))...")
+        #endif
         
         // Extract topics from main_themes or topics field
         let topics = (json["main_themes"] as? [String]) ?? (json["topics"] as? [String]) ?? []
@@ -561,16 +575,24 @@ public actor ExternalAPIEngine: SummarizationEngine {
         }
         
         // Parse JSON content
+        #if DEBUG
         print("🔍 [ExternalAPIEngine] Raw period API response content:")
+        #endif
+        #if DEBUG
         print("📄 [ExternalAPIEngine] \(contentText.prefix(500))...")
+        #endif
         
         guard let jsonData = contentText.data(using: .utf8),
               let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             throw SummarizationError.decodingFailed("Failed to parse content as JSON")
         }
         
+        #if DEBUG
         print("✅ [ExternalAPIEngine] Successfully parsed period JSON response")
+        #endif
+        #if DEBUG
         print("🔑 [ExternalAPIEngine] Available keys: \(Array(json.keys))")
+        #endif
         
         // For Year Wrap, preserve the entire JSON structure
         let summary: String
@@ -578,7 +600,9 @@ public actor ExternalAPIEngine: SummarizationEngine {
             // Store the complete JSON as the summary text for Year Wrap
             let jsonData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
             summary = String(data: jsonData, encoding: .utf8) ?? "No summary available"
+            #if DEBUG
             print("📊 [ExternalAPIEngine] Year Wrap: Preserving full JSON structure (\(summary.count) chars)")
+            #endif
         } else {
             // For other period types, extract just the summary field
             // Try multiple field names for summary (API might use different conventions)
@@ -609,7 +633,9 @@ public actor ExternalAPIEngine: SummarizationEngine {
             } else {
                 summary = "No summary available"
             }
+            #if DEBUG
             print("📝 [ExternalAPIEngine] Extracted period summary (\(summary.count) chars): \(summary.prefix(100))...")
+            #endif
         }
         
         let topics = json["topics"] as? [String] ?? []
@@ -801,12 +827,24 @@ public actor ExternalAPIEngine: SummarizationEngine {
     
     public func logPerformanceMetrics() async {
         let stats = await getStatistics()
+        #if DEBUG
         print("📊 [ExternalAPIEngine] Performance Metrics:")
+        #endif
+        #if DEBUG
         print("   - Provider: \(selectedProvider.displayName) (\(selectedModel))")
+        #endif
+        #if DEBUG
         print("   - Summaries Generated: \(stats.summariesGenerated)")
+        #endif
+        #if DEBUG
         print("   - Average Processing Time: \(String(format: "%.2f", stats.averageTime))s")
+        #endif
+        #if DEBUG
         print("   - Total Processing Time: \(String(format: "%.2f", stats.totalTime))s")
+        #endif
+        #if DEBUG
         print("   - Total Tokens Used: \(stats.totalTokens)")
+        #endif
     }
 }
 
