@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Wrapped - Privacy-First Audio Journaling</title>
+    <meta name="description" content="Privacy-first audio journaling app for iOS and watchOS. All transcription happens on-device.">
+    <style>
+        :root {
+            --primary: #007AFF;
+            --dark: #1a1a1a;
+            --light: #f5f5f7;
+            --gray: #86868b;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background: var(--light);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 80px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .hero .tagline {
+            font-size: 1.5rem;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+        
+        .hero .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.8;
+            margin-bottom: 30px;
+        }
+        
+        .app-store-badge {
+            height: 50px;
+            transition: transform 0.2s;
+        }
+        
+        .app-store-badge:hover {
+            transform: scale(1.05);
+        }
+        
+        /* Screenshots Section */
+        .screenshots {
+            padding: 60px 20px;
+            background: white;
+        }
+        
+        .screenshots h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 40px;
+            color: var(--dark);
+        }
+        
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .screenshot-grid img {
+            width: 100%;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            transition: transform 0.3s;
+        }
+        
+        .screenshot-grid img:hover {
+            transform: translateY(-5px);
+        }
+        
+        /* Features Section */
+        .features {
+            padding: 60px 20px;
+            background: var(--light);
+        }
+        
+        .features h2 {
+            text-align: center;
+            font-size: 2rem;
+            margin-bottom: 40px;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .feature-card {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        
+        .feature-card .icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            color: var(--dark);
+        }
+        
+        .feature-card p {
+            color: var(--gray);
+            font-size: 0.95rem;
+        }
+        
+        /* Privacy Section */
+        .privacy {
+            padding: 60px 20px;
+            background: var(--dark);
+            color: white;
+            text-align: center;
+        }
+        
+        .privacy h2 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+        }
+        
+        .privacy p {
+            max-width: 600px;
+            margin: 0 auto 30px;
+            opacity: 0.9;
+        }
+        
+        .privacy-badges {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .privacy-badge {
+            background: rgba(255,255,255,0.1);
+            padding: 15px 25px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .privacy-badge .icon {
+            font-size: 1.5rem;
+        }
+        
+        /* Links Section */
+        .links {
+            padding: 60px 20px;
+            background: white;
+            text-align: center;
+        }
+        
+        .links h2 {
+            font-size: 2rem;
+            margin-bottom: 30px;
+        }
+        
+        .link-grid {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .link-card {
+            background: var(--light);
+            padding: 20px 40px;
+            border-radius: 12px;
+            text-decoration: none;
+            color: var(--dark);
+            transition: all 0.2s;
+        }
+        
+        .link-card:hover {
+            background: var(--primary);
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        /* Footer */
+        footer {
+            padding: 40px 20px;
+            background: var(--light);
+            text-align: center;
+            color: var(--gray);
+        }
+        
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .hero .tagline {
+                font-size: 1.2rem;
+            }
+            
+            .screenshot-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero -->
+    <section class="hero">
+        <div class="container">
+            <h1>🎙️ Life Wrapped</h1>
+            <p class="tagline">Privacy-First Audio Journaling</p>
+            <p class="subtitle">Your words. Your device. Your privacy.</p>
+            <a href="https://apps.apple.com/app/life-wrapped">
+                <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" 
+                     alt="Download on the App Store" 
+                     class="app-store-badge">
+            </a>
+        </div>
+    </section>
+
+    <!-- Screenshots -->
+    <section class="screenshots">
+        <div class="container">
+            <h2>📱 See It In Action</h2>
+            <div class="screenshot-grid">
+                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image1.png" alt="Life Wrapped Screenshot 1">
+                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image2.png" alt="Life Wrapped Screenshot 2">
+                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image3.png" alt="Life Wrapped Screenshot 3">
+                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image4.png" alt="Life Wrapped Screenshot 4">
+                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image5.png" alt="Life Wrapped Screenshot 5">
+                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image6.png" alt="Life Wrapped Screenshot 6">
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="container">
+            <h2>✨ Features</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="icon">🎙️</div>
+                    <h3>Auto-Chunking Recording</h3>
+                    <p>Automatically splits recordings into manageable segments for efficient processing.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🗣️</div>
+                    <h3>On-Device Transcription</h3>
+                    <p>All speech-to-text happens locally on your device — never sent to the cloud.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🤖</div>
+                    <h3>AI-Powered Summaries</h3>
+                    <p>Get intelligent insights and summaries from your recordings automatically.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">📊</div>
+                    <h3>Rich Insights</h3>
+                    <p>Track topics, sentiment, and patterns over time with beautiful analytics.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">⌚</div>
+                    <h3>Apple Watch Support</h3>
+                    <p>Record and control your journal from your wrist with watchOS integration.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🔒</div>
+                    <h3>Privacy-First</h3>
+                    <p>Your data never leaves your device. We don't collect, transmit, or store anything.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Privacy -->
+    <section class="privacy">
+        <div class="container">
+            <h2>🔒 Privacy by Design</h2>
+            <p>Life Wrapped is built with privacy as a core principle. All transcription happens on-device using Apple's Speech framework.</p>
+            <div class="privacy-badges">
+                <div class="privacy-badge">
+                    <span class="icon">📱</span>
+                    <span>100% On-Device</span>
+                </div>
+                <div class="privacy-badge">
+                    <span class="icon">🚫</span>
+                    <span>No Data Collection</span>
+                </div>
+                <div class="privacy-badge">
+                    <span class="icon">🔐</span>
+                    <span>Encrypted Storage</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Links -->
+    <section class="links">
+        <div class="container">
+            <h2>📄 Documentation</h2>
+            <div class="link-grid">
+                <a href="privacy" class="link-card">Privacy Policy</a>
+                <a href="support" class="link-card">Support</a>
+                <a href="terms" class="link-card">Terms of Service</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p>© 2025 Jose Ramirez-Villa - Life Wrapped</p>
+        <p>Made with ❤️ for your privacy</p>
+    </footer>
+</body>
+</html>
