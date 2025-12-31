@@ -59,7 +59,9 @@ public actor SummarizationCoordinator {
         if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
            let tier = EngineTier(rawValue: savedPreference) {
             self.preferredTier = tier
+            #if DEBUG
             print("📝 [SummarizationCoordinator] Loaded saved preference: \(tier.displayName)")
+            #endif
         }
     }
     
@@ -70,21 +72,29 @@ public actor SummarizationCoordinator {
         if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
            let tier = EngineTier(rawValue: savedPreference) {
             preferredTier = tier
+            #if DEBUG
             print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
+            #endif
         } else {
             // No saved preference - default to External if API key exists, else Basic
             if let external = externalEngine, await external.isAvailable() {
                 preferredTier = .external
                 UserDefaults.standard.set(EngineTier.external.rawValue, forKey: Self.preferredEngineKey)
+                #if DEBUG
                 print("🧠 [SummarizationCoordinator] No preference set - defaulting to External AI")
+                #endif
             } else {
                 preferredTier = .basic
+                #if DEBUG
                 print("🧠 [SummarizationCoordinator] No preference set - defaulting to Basic")
+                #endif
             }
         }
         
         await selectBestAvailableEngine()
+        #if DEBUG
         print("✅ [SummarizationCoordinator] Active engine: \(activeEngine.tier.displayName)")
+        #endif
     }
     
     // MARK: - Engine Management
@@ -141,13 +151,19 @@ public actor SummarizationCoordinator {
         // Only persist if available, otherwise fallback without persisting
         if isAvailable {
             UserDefaults.standard.set(tier.rawValue, forKey: Self.preferredEngineKey)
+            #if DEBUG
             print("💾 [SummarizationCoordinator] Saved engine preference: \(tier.displayName)")
+            #endif
         } else {
+            #if DEBUG
             print("⚠️ [SummarizationCoordinator] Engine \(tier.displayName) not available, falling back without persisting")
+            #endif
             // Find highest available engine to persist instead
             let fallbackTier = await determineFallbackEngine()
             UserDefaults.standard.set(fallbackTier.rawValue, forKey: Self.preferredEngineKey)
+            #if DEBUG
             print("💾 [SummarizationCoordinator] Persisting fallback: \(fallbackTier.displayName)")
+            #endif
         }
         
         await selectBestAvailableEngine()
@@ -266,7 +282,9 @@ public actor SummarizationCoordinator {
         
         // Check if preferred engine is available
         if activeEngine.tier != preferredTier {
+            #if DEBUG
             print("⚠️ [SummarizationCoordinator] Preferred engine (\(preferredTier.displayName)) unavailable, using \(activeEngine.tier.displayName)")
+            #endif
             
             // If user selected external but it's not available, throw clear error
             if preferredTier == .external {
@@ -326,7 +344,9 @@ public actor SummarizationCoordinator {
             // Check if engine is available
             let isAvailable = await engineToTry.isAvailable()
             if !isAvailable {
+                #if DEBUG
                 print("⚠️ [SummarizationCoordinator] \(tier.displayName) unavailable, trying next engine...")
+                #endif
                 triedEngines.append(tier)
                 continue
             }
@@ -334,7 +354,9 @@ public actor SummarizationCoordinator {
             triedEngines.append(tier)
             
             do {
+                #if DEBUG
                 print("🧠 [SummarizationCoordinator] Attempting summarization with \(tier.displayName)...")
+                #endif
                 
                 // Generate intelligence using this engine
                 let intelligence = try await engineToTry.summarizeSession(
@@ -345,16 +367,22 @@ public actor SummarizationCoordinator {
                 )
                 
                 // Success! Convert to Summary and return
+                #if DEBUG
                 print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
+                #endif
                 return try convertToSummary(intelligence: intelligence)
                 
             } catch {
+                #if DEBUG
                 print("❌ [SummarizationCoordinator] \(tier.displayName) failed: \(error.localizedDescription)")
+                #endif
                 lastError = error
                 
                 // If this is External API and failed, try fallback immediately
                 if tier == .external {
+                    #if DEBUG
                     print("🔄 [SummarizationCoordinator] Network error detected, falling back to on-device engines...")
+                    #endif
                     continue
                 }
                 
@@ -490,7 +518,6 @@ public actor SummarizationCoordinator {
 
         // Select engine based on user choice
         let engine: any SummarizationEngine
-        let engineTier: String
         
         if useLocalAI {
             // Use Local AI (Phi-3.5 Mini)
@@ -498,8 +525,9 @@ public actor SummarizationCoordinator {
                 throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
             }
             engine = localEngine
-            engineTier = EngineTier.local.rawValue
+            #if DEBUG
             print("🤖 [SummarizationCoordinator] Using Local AI for Year Wrap")
+            #endif
         } else {
             // Use External API (OpenAI/Anthropic)
             guard let external = externalEngine else {
@@ -509,8 +537,9 @@ public actor SummarizationCoordinator {
                 throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
             }
             engine = external
-            engineTier = EngineTier.external.rawValue
+            #if DEBUG
             print("☁️ [SummarizationCoordinator] Using External API for Year Wrap")
+            #endif
         }
 
         let previousEngine = activeEngine

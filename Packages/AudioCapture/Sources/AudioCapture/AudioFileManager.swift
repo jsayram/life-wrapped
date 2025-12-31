@@ -33,7 +33,9 @@ public actor AudioFileManager {
 
             return audioDirectory
         } else {
+            #if DEBUG
             print("⚠️ [AudioFileManager] App Group container not found; falling back to temporary directory")
+            #endif
             let audioDirectory = fileManager.temporaryDirectory.appendingPathComponent("Audio", isDirectory: true)
             if !fileManager.fileExists(atPath: audioDirectory.path) {
                 try fileManager.createDirectory(at: audioDirectory, withIntermediateDirectories: true)

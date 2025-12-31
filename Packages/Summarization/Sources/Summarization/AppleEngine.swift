@@ -175,10 +175,18 @@ public actor AppleEngine: SummarizationEngine {
     
     public func logPerformanceMetrics() async {
         let stats = await getStatistics()
+        #if DEBUG
         print("📊 [AppleEngine] Performance Metrics:")
+        #endif
+        #if DEBUG
         print("   - Summaries Generated: \(stats.summariesGenerated)")
+        #endif
+        #if DEBUG
         print("   - Average Processing Time: \(String(format: "%.2f", stats.averageTime))s")
+        #endif
+        #if DEBUG
         print("   - Total Processing Time: \(String(format: "%.2f", stats.totalTime))s")
+        #endif
     }
     
     // MARK: - Placeholder Implementations

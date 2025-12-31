@@ -228,7 +228,7 @@ struct ExternalAPISettingsView: View {
                 }
             }
             
-            // Warning
+            // Warning & BYOK Disclaimer
             Section {
                 Label {
                     Text("Data will be sent to \(selectedProvider) servers for processing.")
@@ -238,6 +238,23 @@ struct ExternalAPISettingsView: View {
                 }
             } header: {
                 Text("Privacy Notice")
+            } footer: {
+                Text("By using External API, you are solely responsible for any API costs and the personal data you send to \(selectedProvider). We are not responsible for how third-party providers handle your data. Review \(selectedProvider)'s privacy policy before use.")
+            }
+            
+            // BYOK Responsibility Notice
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Your Key, Your Responsibility", systemImage: "key.fill")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    
+                    Text("• You pay \(selectedProvider) directly for API usage\n• Your transcripts are sent to \(selectedProvider) servers\n• We have no access to or control over your data once sent\n• For 100% local processing, use Local AI or Basic instead")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Important")
             }
         }
         .navigationTitle("External API")

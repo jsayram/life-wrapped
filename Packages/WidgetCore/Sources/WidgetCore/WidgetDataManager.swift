@@ -31,14 +31,18 @@ public final class WidgetDataManager: @unchecked Sendable {
     public init(userDefaults: UserDefaults? = nil, disableAppGroup: Bool = false) {
         // If disableAppGroup is true, explicitly set userDefaults to nil
         if disableAppGroup {
+            #if DEBUG
             print("⚠️ [WidgetDataManager] App Group disabled for testing")
+            #endif
             self.userDefaults = nil
             return
         }
         
         // If userDefaults provided explicitly (for testing), use it
         if let providedDefaults = userDefaults {
+            #if DEBUG
             print("✅ [WidgetDataManager] Using provided UserDefaults")
+            #endif
             self.userDefaults = providedDefaults
             return
         }
@@ -47,10 +51,14 @@ public final class WidgetDataManager: @unchecked Sendable {
         // This prevents CFPrefs warnings when the container is not available
         if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier) != nil,
            let appGroupDefaults = UserDefaults(suiteName: Self.appGroupIdentifier) {
+            #if DEBUG
             print("✅ [WidgetDataManager] Using App Group UserDefaults")
+            #endif
             self.userDefaults = appGroupDefaults
         } else {
+            #if DEBUG
             print("⚠️ [WidgetDataManager] App Group not available")
+            #endif
             self.userDefaults = nil
         }
     }

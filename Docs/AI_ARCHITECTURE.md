@@ -1226,46 +1226,76 @@ OTHER_LDFLAGS = $(inherited) -framework Metal -framework MetalKit -framework Acc
 
 ---
 
-## Local AI Setup (Phi-3.5 via llama.cpp)
+## Local AI Setup (Phi-3.5 via MLX)
 
-### Supported Models
+> **Note:** The current implementation uses **Phi-3.5 Mini via Apple's MLX framework** (4-bit quantized, ~2.1 GB). This is different from llama.cpp/GGUF models. MLX provides native optimization for Apple Silicon with unified memory architecture.
 
-| Model                     | Size    | RAM Required | Quality  | Speed    | Best For                  |
-| ------------------------- | ------- | ------------ | -------- | -------- | ------------------------- |
-| **Phi-3.5 Mini Instruct** | ~770 MB | 4GB+         | ⭐⭐⭐⭐ | ⭐⭐⭐   | Best quality, recommended |
-| **Llama 3.2 1B Instruct** | ~670 MB | 3GB+         | ⭐⭐⭐   | ⭐⭐⭐⭐ | Faster, lower RAM devices |
+### Currently Implemented Model
 
-### Model Configuration Matrix
+| Model                     | Size    | Framework | RAM Required | Quality  | Speed    | Status                   |
+| ------------------------- | ------- | --------- | ------------ | -------- | -------- | ------------------------ |
+| **Phi-3.5 Mini Instruct** | ~2.1 GB | MLX       | 4GB+         | ⭐⭐⭐⭐ | ⭐⭐⭐   | ✅ **Implemented**       |
+| **Llama 3.2 1B Instruct** | ~670 MB | llama.cpp | 3GB+         | ⭐⭐⭐   | ⭐⭐⭐⭐ | 🔮 Potential alternative |
 
-| Property         | Phi-3.5 Mini                        | Llama 3.2 1B                        |
-| ---------------- | ----------------------------------- | ----------------------------------- | ---- | ---- | ------ | ---- |
-| GGUF File        | `Phi-3.5-mini-instruct-Q4_K_M.gguf` | `Llama-3.2-1B-Instruct-Q4_K_M.gguf` |
-| File Size        | ~770-810 MB                         | ~670-720 MB                         |
-| Prompt Type      | `.phi`                              | `.llama3`                           |
-| Stop Tokens      | `["<                                | end                                 | >"]` | `["< | eot_id | >"]` |
-| Context Window   | 128K (use 1024-4096)                | 128K (use 1024-4096)                |
-| Recommended nCTX | 1024                                | 1024                                |
-| Recommended Temp | 0.2                                 | 0.3                                 |
+### Why MLX + Phi-3.5?
+
+- **MLX** is Apple's machine learning framework optimized for Apple Silicon
+- **Unified Memory** - GPU and CPU share memory, reducing overhead
+- **Native Swift** - Direct integration via `swift-transformers` and `mlx-swift`
+- **4-bit Quantization** - Efficient memory usage while maintaining quality
+- **HuggingFace Hub** - Model downloaded from `mlx-community/Phi-3.5-mini-instruct-4bit`
+
+### Llama 3.2 as Alternative (Not Implemented)
+
+Llama 3.2 1B could be added as a lighter alternative via llama.cpp/SwiftLlama:
+
+- Smaller model size (~670 MB vs ~2.1 GB)
+- Lower RAM requirements (3GB+ vs 4GB+)
+- Faster inference on resource-constrained devices
+- Would require adding llama.cpp/GGUF support alongside MLX
+
+### Model Configuration (Current: Phi-3.5 via MLX)
+
+| Property         | Phi-3.5 Mini (MLX) ✅ Implemented          | Llama 3.2 1B (llama.cpp) 🔮 Future     |
+| ---------------- | ------------------------------------------ | -------------------------------------- |
+| **Framework**    | MLX (Apple)                                | llama.cpp/SwiftLlama                   |
+| **Format**       | HuggingFace (safetensors)                  | GGUF                                   |
+| **Repository**   | `mlx-community/Phi-3.5-mini-instruct-4bit` | `bartowski/Llama-3.2-1B-Instruct-GGUF` |
+| File Size        | ~2.1 GB                                    | ~670-720 MB                            |
+| Quantization     | 4-bit MLX                                  | Q4_K_M                                 |
+| Context Window   | 2048 (configurable)                        | 128K (use 1024-4096)                   |
+| Recommended Temp | 0.2                                        | 0.3                                    |
 
 ---
 
-### Step 1: Download the Models
+### Model Download (Automatic via App)
 
-#### Phi-3.5 Mini Instruct (Recommended)
+#### Phi-3.5 Mini Instruct (Current Implementation)
 
-```bash
-# From Hugging Face - Phi-3.5 Mini Instruct Q4_K_M
-curl -L -o Phi-3.5-mini-instruct-Q4_K_M.gguf \
-  "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf"
+The app automatically downloads the model from HuggingFace Hub using `swift-transformers`:
 
-# Verify file size (~770-810 MB)
-ls -lh Phi-3.5-mini-instruct-Q4_K_M.gguf
+```swift
+// From LocalModelType.swift
+public var huggingFaceRepo: String {
+    switch self {
+    case .phi35: return "mlx-community/Phi-3.5-mini-instruct-4bit"
+    }
+}
 ```
 
-#### Llama 3.2 1B Instruct (Lightweight Alternative)
+**Download Details:**
+
+- **Source**: `mlx-community/Phi-3.5-mini-instruct-4bit`
+- **Size**: ~2.1 GB (4-bit MLX quantization)
+- **Contents**: `config.json`, `tokenizer.json`, `model.safetensors` (sharded)
+- **Location**: App's Documents directory
+
+#### Llama 3.2 1B (Potential Future Alternative)
+
+If llama.cpp support is added, the model would be:
 
 ```bash
-# From Hugging Face - Llama 3.2 1B Instruct Q4_K_M
+# From Hugging Face - Llama 3.2 1B Instruct Q4_K_M (GGUF format)
 curl -L -o Llama-3.2-1B-Instruct-Q4_K_M.gguf \
   "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
 
@@ -1275,47 +1305,67 @@ ls -lh Llama-3.2-1B-Instruct-Q4_K_M.gguf
 
 ---
 
-### Step 2: Model Enum & Configuration
+### Model Enum & Configuration (Actual Implementation)
+
+The actual implementation in your codebase uses MLX with only Phi-3.5:
 
 ```swift
-// ModelType.swift
+// LocalModelType.swift (actual code)
 import Foundation
 
 public enum LocalModelType: String, Codable, CaseIterable, Sendable {
-    case phi35 = "phi-3.5"
-    case llama32 = "llama-3.2"
+    case phi35 = "phi-3.5"  // Only Phi-3.5 is implemented
 
     public var displayName: String {
         switch self {
         case .phi35: return "Phi-3.5 Mini"
-        case .llama32: return "Llama 3.2 1B"
         }
     }
 
-    public var filename: String {
+    public var huggingFaceRepo: String {
         switch self {
-        case .phi35: return "Phi-3.5-mini-instruct-Q4_K_M.gguf"
-        case .llama32: return "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-        }
-    }
-
-    public var downloadURL: URL {
-        switch self {
-        case .phi35:
-            return URL(string: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf")!
-        case .llama32:
-            return URL(string: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf")!
+        case .phi35: return "mlx-community/Phi-3.5-mini-instruct-4bit"
         }
     }
 
     public var expectedSizeMB: ClosedRange<Int64> {
         switch self {
-        case .phi35: return 700...900   // ~770 MB
-        case .llama32: return 600...800 // ~670 MB
+        case .phi35: return 2000...2500   // ~2.1 GB (4-bit MLX quantization)
         }
     }
 
-    /// CRITICAL: Prompt type must match model family
+    public var temperature: Float { 0.2 } // Conservative for factual summaries
+}
+```
+
+### Future: Adding Llama 3.2 Support
+
+To add Llama 3.2 as an alternative, you would need to:
+
+1. Add llama.cpp/SwiftLlama dependency
+2. Extend `LocalModelType` enum:
+
+```swift
+// Potential future extension
+public enum LocalModelType: String, Codable, CaseIterable, Sendable {
+    case phi35 = "phi-3.5"     // MLX
+    case llama32 = "llama-3.2" // llama.cpp
+
+    public var framework: ModelFramework {
+        switch self {
+        case .phi35: return .mlx
+        case .llama32: return .llamaCpp
+        }
+    }
+
+    public var filename: String {
+        switch self {
+        case .phi35: return "" // MLX uses directory, not single file
+        case .llama32: return "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        }
+    }
+
+    /// CRITICAL: Prompt type must match model family (for llama.cpp)
     public var promptType: Prompt.`Type` {
         switch self {
         case .phi35: return .phi      // <|user|>...<|end|><|assistant|>
@@ -1329,14 +1379,8 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
         case .phi35: return StopToken.phi      // ["<|end|>"]
         case .llama32: return StopToken.llama3 // ["<|eot_id|>"]
         }
-    }
-
-    public var recommendedConfig: (nCTX: Int32, batch: Int32, maxTokens: Int32, temp: Float) {
-        switch self {
-        case .phi35:
-            return (nCTX: 1024, batch: 128, maxTokens: 512, temp: 0.2)
-        case .llama32:
-            return (nCTX: 1024, batch: 128, maxTokens: 512, temp: 0.3)
+        case .phi35: return .phi      // <|user|>...<|end|><|assistant|>
+        case .llama32: return .llama3 // <|start_header_id|>...<|eot_id|>
         }
     }
 }
@@ -1344,9 +1388,11 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
 
 ---
 
-### Step 3: Prompt Formats (CRITICAL - Model Family Specific)
+### Prompt Formats Reference
 
-#### Phi-3/3.5 Prompt Format
+> **Note:** The current MLX implementation handles prompt formatting internally via the tokenizer's chat template. The formats below are for reference if adding llama.cpp support.
+
+#### Phi-3/3.5 Prompt Format (Current - handled by MLX)
 
 ```
 <system prompt here>
@@ -1356,23 +1402,9 @@ public enum LocalModelType: String, Codable, CaseIterable, Sendable {
 <|assistant|>
 ```
 
-**SwiftLlama Implementation:**
+**MLX Implementation:** The model's `tokenizer_config.json` includes the chat template, so you just pass messages and MLX formats them correctly.
 
-```swift
-// Prompt.swift - encodePhiPrompt()
-private func encodePhiPrompt() -> String {
-    """
-    \(systemPrompt)
-    \(history.suffix(Configuration.historySize).map { $0.phiPrompt }.joined())
-    <|user|>
-    \(userMessage)
-    <|end|>
-    <|assistant|>
-    """
-}
-```
-
-#### Llama 3/3.1/3.2 Prompt Format
+#### Llama 3/3.1/3.2 Prompt Format (Future - if adding llama.cpp)
 
 ```
 <|begin_of_text|><|start_header_id|>system<|end_header_id|>

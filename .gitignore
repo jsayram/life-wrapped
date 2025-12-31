@@ -181,3 +181,6 @@ fastlane/test_output
 # -----------------------------------------------------------------------------
 .gitleaks.toml.local
 security-scan-results/
+Images/Iphone/Life-Wrapped-APp.zip
+.gitignore
+Images/IPad/Untitled Project.zip

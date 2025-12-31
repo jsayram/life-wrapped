@@ -97,3 +97,18 @@ targets:
       - package: WidgetCore
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
+schemes:
+  LifeWrapped:
+    build:
+      targets:
+        LifeWrapped: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

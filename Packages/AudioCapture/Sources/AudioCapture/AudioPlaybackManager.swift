@@ -85,7 +85,9 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         // Start progress timer
         startProgressTimer()
         
+        #if DEBUG
         print("▶️ [AudioPlaybackManager] Started playing: \(url.lastPathComponent)")
+        #endif
     }
     
     /// Pause the current playback
@@ -93,7 +95,9 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         audioPlayer?.pause()
         isPlaying = false
         stopProgressTimer()
+        #if DEBUG
         print("⏸️ [AudioPlaybackManager] Paused")
+        #endif
     }
     
     /// Resume paused playback
@@ -101,7 +105,9 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         audioPlayer?.play()
         isPlaying = true
         startProgressTimer()
+        #if DEBUG
         print("▶️ [AudioPlaybackManager] Resumed")
+        #endif
     }
     
     /// Toggle play/pause
@@ -128,7 +134,9 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
         currentQueueIndex = 0
         onQueueComplete = nil
         
+        #if DEBUG
         print("⏹️ [AudioPlaybackManager] Stopped")
+        #endif
     }
     
     /// Seek to a specific time
@@ -143,7 +151,9 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
     private func playNextInQueue() {
         guard currentQueueIndex < playQueue.count else {
             // Queue complete
+            #if DEBUG
             print("✅ [AudioPlaybackManager] Queue complete")
+            #endif
             playQueue = []
             currentQueueIndex = 0
             onQueueComplete?()
@@ -155,7 +165,9 @@ public final class AudioPlaybackManager: NSObject, ObservableObject {
             do {
                 try await playInternal(url: playQueue[currentQueueIndex])
             } catch {
+                #if DEBUG
                 print("❌ [AudioPlaybackManager] Failed to play next in queue: \(error)")
+                #endif
                 currentQueueIndex += 1
                 playNextInQueue()
             }
@@ -200,7 +212,9 @@ extension AudioPlaybackManager: AVAudioPlayerDelegate {
                 self.currentQueueIndex += 1
                 self.playNextInQueue()
             } else {
+                #if DEBUG
                 print("✅ [AudioPlaybackManager] Finished playing")
+                #endif
             }
         }
     }
@@ -209,7 +223,9 @@ extension AudioPlaybackManager: AVAudioPlayerDelegate {
         Task { @MainActor in
             self.stop()
             if let error = error {
+                #if DEBUG
                 print("❌ [AudioPlaybackManager] Decode error: \(error)")
+                #endif
             }
         }
     }

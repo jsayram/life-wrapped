@@ -27,43 +27,63 @@ public actor DatabaseConnection {
     
     /// Initialize with App Group container identifier (auto-creates path)
     public init(containerIdentifier: String) async throws {
+        #if DEBUG
         print("💾 [DatabaseConnection] Looking for App Group: \(containerIdentifier)")
+        #endif
         let containerURL: URL
         if let appGroupURL = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: containerIdentifier
         ) {
             containerURL = appGroupURL
+            #if DEBUG
             print("✅ [DatabaseConnection] App Group found: \(containerURL.path)")
+            #endif
         } else {
             // Fallback to Documents directory for simulator/development
+            #if DEBUG
             print("⚠️ [DatabaseConnection] App Group not available, using Documents directory as fallback")
+            #endif
             guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                #if DEBUG
                 print("❌ [DatabaseConnection] Documents directory not available")
+                #endif
                 throw StorageError.appGroupContainerNotFound(containerIdentifier)
             }
             containerURL = documentsURL
+            #if DEBUG
             print("✅ [DatabaseConnection] Using Documents directory: \(containerURL.path)")
+            #endif
         }
         
         // Create database directory if needed
         let databaseDirectory = containerURL.appendingPathComponent("Database", isDirectory: true)
+        #if DEBUG
         print("💾 [DatabaseConnection] Creating database directory...")
+        #endif
         try fileManager.createDirectory(
             at: databaseDirectory,
             withIntermediateDirectories: true,
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         )
+        #if DEBUG
         print("✅ [DatabaseConnection] Database directory created")
+        #endif
         
         self.databaseURL = databaseDirectory.appendingPathComponent(AppConstants.databaseFilename)
         
         logger.info("Database path: \(self.databaseURL.path)")
+        #if DEBUG
         print("💾 [DatabaseConnection] Database path: \(self.databaseURL.path)")
+        #endif
         
         // Open database connection
+        #if DEBUG
         print("💾 [DatabaseConnection] Opening database connection...")
+        #endif
         try open()
+        #if DEBUG
         print("✅ [DatabaseConnection] Database opened")
+        #endif
     }
     
     /// Execute a block with safe access to the database pointer

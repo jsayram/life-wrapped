@@ -73,9 +73,13 @@ struct PrivacySettingsView: View {
                 NavigationLink(destination: PrivacyPolicyView()) {
                     Label("Privacy Policy", systemImage: "doc.text")
                 }
+                
+                NavigationLink(destination: TermsOfServiceView()) {
+                    Label("Terms of Service", systemImage: "doc.plaintext")
+                }
             }
         }
-        .navigationTitle("Privacy Policy")
+        .navigationTitle("Privacy & Terms")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

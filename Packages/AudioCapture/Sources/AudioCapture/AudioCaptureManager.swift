@@ -91,72 +91,108 @@ public final class AudioCaptureManager: ObservableObject {
         currentState = .idle
         isRecording = false
         
+        #if DEBUG
         print("🧹 [AudioCaptureManager] Cleanup complete")
+        #endif
     }
     
     // MARK: - Public API
     
     /// Start recording audio
     public func startRecording(mode: ListeningMode = .active) async throws {
+        #if DEBUG
         print("🎧 [AudioCaptureManager] startRecording() called")
+        #endif
 
         guard currentState == .idle else {
+            #if DEBUG
             print("❌ [AudioCaptureManager] invalid state: \(currentState)")
+            #endif
             throw AudioCaptureError.invalidState("Cannot start recording from state: \(currentState)")
         }
 
         // Request microphone permission
+        #if DEBUG
         print("🎧 [AudioCaptureManager] requesting microphone permission...")
+        #endif
         let authorized = await requestMicrophonePermission()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] microphone permission granted: \(authorized)")
+        #endif
         guard authorized else {
+            #if DEBUG
             print("❌ [AudioCaptureManager] microphone permission denied")
+            #endif
             throw AudioCaptureError.notAuthorized
         }
 
         // Setup audio session
+        #if DEBUG
         print("🎧 [AudioCaptureManager] setting up audio session...")
+        #endif
         try setupAudioSession()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] audio session configured")
+        #endif
 
         // Initialize session tracking (first chunk of new session)
         let sessionId = UUID()
         currentSessionId = sessionId
         currentChunkIndex = 0
         let sessionStartTime = Date()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] new session started: \(sessionId) at \(sessionStartTime)")
+        #endif
 
         // Create first chunk
         try await startNewChunk(mode: mode)
         
         // Start auto-chunk timer
         startAutoChunkTimer()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] auto-chunk timer started at \(Date()), will fire at \(Date().addingTimeInterval(autoChunkDuration))")
+        #endif
     }
     
     /// Start a new chunk within the current session
     private func startNewChunk(mode: ListeningMode = .active) async throws {
         let chunkID = UUID()
         let startTime = Date()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] generating file URL for chunk: \(chunkID)")
+        #endif
         let fileURL = try generateFileURL(for: chunkID)
+        #if DEBUG
         print("🎧 [AudioCaptureManager] file URL: \(fileURL.path)")
+        #endif
 
         // Setup audio file for recording
+        #if DEBUG
         print("🎧 [AudioCaptureManager] setting up audio file...")
+        #endif
         try setupAudioFile(at: fileURL)
+        #if DEBUG
         print("🎧 [AudioCaptureManager] audio file ready")
+        #endif
 
         // Setup audio engine tap (update or create)
+        #if DEBUG
         print("🎧 [AudioCaptureManager] installing audio engine tap...")
+        #endif
         try setupAudioEngineTap()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] audio engine tap installed")
+        #endif
 
         // Start the engine if not already running
         if !audioEngine.isRunning {
+            #if DEBUG
             print("🎧 [AudioCaptureManager] starting audio engine...")
+            #endif
             try startAudioEngine()
+            #if DEBUG
             print("🎧 [AudioCaptureManager] audio engine started")
+            #endif
         }
 
         // Update state
@@ -165,12 +201,16 @@ public final class AudioCaptureManager: ObservableObject {
         currentFileURL = fileURL
         currentState = .listening(mode: mode)
         isRecording = true
+        #if DEBUG
         print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) started in session \(currentSessionId?.uuidString ?? "unknown")")
+        #endif
     }
     
     /// Stop recording and save the current chunk
     public func stopRecording() async throws {
+        #if DEBUG
         print("🎧 [AudioCaptureManager] stopRecording() called")
+        #endif
         
         guard currentState.canStop else {
             throw AudioCaptureError.invalidState("Cannot stop recording from state: \(currentState)")
@@ -179,14 +219,18 @@ public final class AudioCaptureManager: ObservableObject {
         // Stop auto-chunk timer
         autoChunkTimer?.invalidate()
         autoChunkTimer = nil
+        #if DEBUG
         print("🎧 [AudioCaptureManager] auto-chunk timer stopped")
+        #endif
         
         // Finalize current chunk
         await finalizeCurrentChunk()
         
         // Stop the engine
         stopAudioEngine()
+        #if DEBUG
         print("🎧 [AudioCaptureManager] audio engine stopped")
+        #endif
         
         // Clean up FFT resources
         if let setup = fftSetup {
@@ -200,7 +244,9 @@ public final class AudioCaptureManager: ObservableObject {
         currentChunkIndex = 0
         currentState = .idle
         isRecording = false
+        #if DEBUG
         print("🎧 [AudioCaptureManager] recording stopped, session ended")
+        #endif
     }
     
     /// Finalize the current chunk and emit it via callback
@@ -209,7 +255,9 @@ public final class AudioCaptureManager: ObservableObject {
               let startTime = currentChunkStartTime,
               let fileURL = currentFileURL,
               let sessionId = currentSessionId else {
+            #if DEBUG
             print("⚠️ [AudioCaptureManager] finalizeCurrentChunk called but no chunk data available")
+            #endif
             return
         }
         
@@ -226,11 +274,15 @@ public final class AudioCaptureManager: ObservableObject {
             chunkIndex: currentChunkIndex
         )
         
+        #if DEBUG
         print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) finalized at \(endTime): \(chunk.duration)s (session: \(sessionId))")
+        #endif
         
         // Notify via callback (caller handles storage and transcription)
         await onChunkCompleted?(chunk)
+        #if DEBUG
         print("🎧 [AudioCaptureManager] chunk \(currentChunkIndex) callback completed")
+        #endif
         
         // Clear current chunk state
         currentChunkID = nil
@@ -241,22 +293,32 @@ public final class AudioCaptureManager: ObservableObject {
     
     /// Automatically start a new chunk while recording continues
     private func autoFinalizeAndContinue() async {
+        #if DEBUG
         print("⏰ [AudioCaptureManager] AUTO-CHUNK TIMER FIRED at \(Date())")
+        #endif
+        #if DEBUG
         print("🎧 [AudioCaptureManager] Current chunk index: \(currentChunkIndex), session: \(currentSessionId?.uuidString ?? "none")")
+        #endif
         
         // Finalize current chunk
         await finalizeCurrentChunk()
         
         // Increment chunk index
         currentChunkIndex += 1
+        #if DEBUG
         print("🎧 [AudioCaptureManager] Starting next chunk with index: \(currentChunkIndex)")
+        #endif
         
         // Start next chunk in same session
         do {
             try await startNewChunk(mode: currentState.mode ?? .active)
+            #if DEBUG
             print("✅ [AudioCaptureManager] auto-chunk continuation successful - now recording chunk \(currentChunkIndex)")
+            #endif
         } catch {
+            #if DEBUG
             print("❌ [AudioCaptureManager] failed to start next chunk: \(error)")
+            #endif
             onError?(AudioCaptureError.recordingFailed("Failed to continue recording: \(error.localizedDescription)"))
             
             // Stop recording on error
@@ -284,7 +346,9 @@ public final class AudioCaptureManager: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         autoChunkTimer = timer
         
+        #if DEBUG
         print("⏰ [AudioCaptureManager] Auto-chunk timer scheduled for \(autoChunkDuration)s intervals")
+        #endif
     }
     
     /// Pause recording (keep engine running but don't write to file)
@@ -361,13 +425,17 @@ public final class AudioCaptureManager: ObservableObject {
                 object: session
             )
             
+            #if DEBUG
             print("🎙️ [AudioCaptureManager] Audio session configured for background recording")
+            #endif
         } catch {
             throw AudioCaptureError.audioSessionSetupFailed(error.localizedDescription)
         }
         #elseif os(macOS)
         // macOS doesn't use AVAudioSession
+        #if DEBUG
         print("🎙️ [AudioCaptureManager] Audio session setup not needed on macOS")
+        #endif
         #endif
     }
     
@@ -379,7 +447,9 @@ public final class AudioCaptureManager: ObservableObject {
             return
         }
         
+        #if DEBUG
         print("🎙️ [AudioCaptureManager] Audio interruption: \(type == .began ? "began" : "ended")")
+        #endif
         
         switch type {
         case .began:
@@ -387,9 +457,13 @@ public final class AudioCaptureManager: ObservableObject {
             if currentState.isListening {
                 do {
                     try pauseRecording(reason: .systemInterruption)
+                    #if DEBUG
                     print("⏸️ [AudioCaptureManager] Recording paused due to interruption")
+                    #endif
                 } catch {
+                    #if DEBUG
                     print("❌ [AudioCaptureManager] Failed to pause on interruption: \(error)")
+                    #endif
                 }
             }
             
@@ -400,15 +474,21 @@ public final class AudioCaptureManager: ObservableObject {
                 if options.contains(.shouldResume) && currentState.isPaused {
                     do {
                         try resumeRecording()
+                        #if DEBUG
                         print("▶️ [AudioCaptureManager] Recording resumed after interruption")
+                        #endif
                     } catch {
+                        #if DEBUG
                         print("❌ [AudioCaptureManager] Failed to resume after interruption: \(error)")
+                        #endif
                     }
                 }
             }
             
         @unknown default:
+            #if DEBUG
             print("⚠️ [AudioCaptureManager] Unknown interruption type")
+            #endif
         }
     }
     #endif
@@ -431,7 +511,9 @@ public final class AudioCaptureManager: ObservableObject {
             return audioDirectory.appendingPathComponent("\(chunkID.uuidString).m4a")
         } else {
             // App Group container not available — log and use a safe fallback
+            #if DEBUG
             print("⚠️ [AudioCaptureManager] App Group container not found; falling back to temporary directory")
+            #endif
             let audioDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("Audio", isDirectory: true)
             if !FileManager.default.fileExists(atPath: audioDirectory.path) {
                 try FileManager.default.createDirectory(at: audioDirectory, withIntermediateDirectories: true)
