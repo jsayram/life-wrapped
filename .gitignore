@@ -17,9 +17,9 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
-## Xcode SPM cache
-*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
-*.xcworkspace/xcshareddata/swiftpm/
+## Xcode SPM cache - but KEEP Package.resolved for Xcode Cloud
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/xc*
+*.xcworkspace/xcshareddata/swiftpm/xc*
 
 ## Index store
 IndexStoreDB/
@@ -29,10 +29,10 @@ IndexStoreDB/
 # -----------------------------------------------------------------------------
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved - KEEP for reproducible builds and Xcode Cloud
 
-# Keep Package.resolved for apps (reproducible builds) — uncomment if desired:
-# !Package.resolved
+# Keep Package.resolved for apps (reproducible builds)
+!**/Package.resolved
 
 # -----------------------------------------------------------------------------
 # CocoaPods (if ever used)
