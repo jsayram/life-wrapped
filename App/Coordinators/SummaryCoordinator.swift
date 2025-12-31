@@ -732,7 +732,7 @@ public final class SummaryCoordinator {
             // Fetch all session summaries for the year
             let allSessionSummaries = try await databaseManager.fetchSummaries(periodType: .session)
                 .filter { summary in
-                    guard let sessionId = summary.sessionId else { return false }
+                    guard summary.sessionId != nil else { return false }
                     return summary.periodStart >= startOfYear && summary.periodStart < endOfYear
                 }
                 .sorted { $0.periodStart < $1.periodStart }
