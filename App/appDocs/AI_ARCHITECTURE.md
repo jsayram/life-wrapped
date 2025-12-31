@@ -241,6 +241,7 @@ public actor BasicEngine: SummarizationEngine {
    ├─ Use NLTagger for named entities
    ├─ Extract person names, places, organizations
    └─ Deduplicate and return
+
 ```
 
 ### Performance Characteristics
