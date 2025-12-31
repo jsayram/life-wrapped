@@ -69,34 +69,125 @@
         
         /* Screenshots Section */
         .screenshots {
-            padding: 60px 20px;
-            background: white;
+            padding: 80px 20px;
+            background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%);
+            overflow: hidden;
         }
         
         .screenshots h2 {
             text-align: center;
-            font-size: 2rem;
-            margin-bottom: 40px;
-            color: var(--dark);
+            font-size: 2.5rem;
+            margin-bottom: 50px;
+            color: white;
         }
         
-        .screenshot-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 20px;
-            max-width: 1000px;
+        /* Carousel */
+        .carousel-container {
+            position: relative;
+            max-width: 100%;
             margin: 0 auto;
+            padding: 0 60px;
         }
         
-        .screenshot-grid img {
+        .carousel {
+            display: flex;
+            gap: 30px;
+            overflow-x: auto;
+            scroll-behavior: smooth;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+            padding: 20px 0 40px;
+            scrollbar-width: none;
+        }
+        
+        .carousel::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .carousel-slide {
+            flex: 0 0 auto;
+            scroll-snap-align: center;
+            width: 320px;
+            transition: transform 0.3s, opacity 0.3s;
+        }
+        
+        .carousel-slide img {
             width: 100%;
-            border-radius: 20px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-            transition: transform 0.3s;
+            height: auto;
+            border-radius: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            transition: transform 0.3s, box-shadow 0.3s;
         }
         
-        .screenshot-grid img:hover {
-            transform: translateY(-5px);
+        .carousel-slide:hover img {
+            transform: scale(1.05);
+            box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+        }
+        
+        .carousel-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            transition: background 0.3s;
+            z-index: 10;
+            backdrop-filter: blur(10px);
+        }
+        
+        .carousel-btn:hover {
+            background: rgba(255,255,255,0.4);
+        }
+        
+        .carousel-btn.prev {
+            left: 10px;
+        }
+        
+        .carousel-btn.next {
+            right: 10px;
+        }
+        
+        .carousel-dots {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        .carousel-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+        }
+        
+        .carousel-dot.active,
+        .carousel-dot:hover {
+            background: white;
+            transform: scale(1.2);
+        }
+        
+        @media (max-width: 768px) {
+            .carousel-slide {
+                width: 280px;
+            }
+            .carousel-btn {
+                width: 40px;
+                height: 40px;
+                font-size: 18px;
+            }
+            .carousel-container {
+                padding: 0 40px;
+            }
         }
         
         /* Features Section */
@@ -263,14 +354,31 @@
     <section class="screenshots">
         <div class="container">
             <h2>📱 See It In Action</h2>
-            <div class="screenshot-grid">
-                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image1.png" alt="Life Wrapped Screenshot 1">
-                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image2.png" alt="Life Wrapped Screenshot 2">
-                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image3.png" alt="Life Wrapped Screenshot 3">
-                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image4.png" alt="Life Wrapped Screenshot 4">
-                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image5.png" alt="Life Wrapped Screenshot 5">
-                <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image6.png" alt="Life Wrapped Screenshot 6">
+            <div class="carousel-container">
+                <button class="carousel-btn prev" onclick="scrollCarousel(-1)">‹</button>
+                <div class="carousel" id="carousel">
+                    <div class="carousel-slide">
+                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image1.png" alt="Smarter Transcripts - Never miss a thought">
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image2.png" alt="Overview - Your daily insights">
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image3.png" alt="100% Private - On-device AI">
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image4.png" alt="Choose your AI - Connect your favorite engine">
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image5.png" alt="Apple Intelligence Ready">
+                    </div>
+                    <div class="carousel-slide">
+                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image6.png" alt="Export Your Data - You are in control">
+                    </div>
+                </div>
+                <button class="carousel-btn next" onclick="scrollCarousel(1)">›</button>
             </div>
+            <div class="carousel-dots" id="carouselDots"></div>
         </div>
     </section>
 
@@ -347,5 +455,55 @@
         <p>© 2025 Jose Ramirez-Villa - Life Wrapped</p>
         <p>Made with ❤️ for your privacy</p>
     </footer>
+
+    <!-- Carousel JavaScript -->
+    <script>
+        const carousel = document.getElementById('carousel');
+        const dotsContainer = document.getElementById('carouselDots');
+        const slides = document.querySelectorAll('.carousel-slide');
+        let currentSlide = 0;
+
+        // Create dots
+        slides.forEach((_, index) => {
+            const dot = document.createElement('button');
+            dot.className = 'carousel-dot' + (index === 0 ? ' active' : '');
+            dot.onclick = () => goToSlide(index);
+            dotsContainer.appendChild(dot);
+        });
+
+        function updateDots() {
+            const dots = document.querySelectorAll('.carousel-dot');
+            dots.forEach((dot, index) => {
+                dot.classList.toggle('active', index === currentSlide);
+            });
+        }
+
+        function scrollCarousel(direction) {
+            currentSlide += direction;
+            if (currentSlide < 0) currentSlide = slides.length - 1;
+            if (currentSlide >= slides.length) currentSlide = 0;
+            goToSlide(currentSlide);
+        }
+
+        function goToSlide(index) {
+            currentSlide = index;
+            const slide = slides[index];
+            slide.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            updateDots();
+        }
+
+        // Update dots on scroll
+        carousel.addEventListener('scroll', () => {
+            const scrollLeft = carousel.scrollLeft;
+            const slideWidth = slides[0].offsetWidth + 30; // including gap
+            currentSlide = Math.round(scrollLeft / slideWidth);
+            updateDots();
+        });
+
+        // Auto-scroll every 4 seconds
+        setInterval(() => {
+            scrollCarousel(1);
+        }, 4000);
+    </script>
 </body>
 </html>
