@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** December 31, 2025  
 **Developer:** Jose Ramirez-Villa  
-**Contact:** jsayram@Gmail.com  
+**Contact:** jsayram@Gmail.com
 
 ---
 
@@ -24,26 +24,30 @@ This app does **not require user authentication**. Users can immediately start r
 ## Core Features to Test
 
 ### 1. Recording Audio
+
 - Tap the **microphone button** to start recording
 - Tap again to stop
 - Recordings are automatically chunked for efficient processing
 
 ### 2. On-Device Transcription
+
 - After recording, transcription begins automatically
 - Uses Apple Speech framework with `requiresOnDeviceRecognition = true`
 - **No internet required** for transcription
 
 ### 3. AI Summaries (Multiple Options)
+
 The app offers 4 AI summarization engines:
 
-| Engine | Internet Required | Notes |
-|--------|-------------------|-------|
-| **Basic** | No | Built-in NLP, always works |
-| **Local AI** | Download only | Phi-3.5 model (~2.1GB one-time download) |
-| **Apple Intelligence** | No | iOS 18.1+, A17 Pro/M1+ devices |
-| **External API** | Yes | User provides their own API keys |
+| Engine                 | Internet Required | Notes                                    |
+| ---------------------- | ----------------- | ---------------------------------------- |
+| **Basic**              | No                | Built-in NLP, always works               |
+| **Local AI**           | Download only     | Phi-3.5 model (~2.1GB one-time download) |
+| **Apple Intelligence** | No                | iOS 18.1+, A17 Pro/M1+ devices           |
+| **External API**       | Yes               | User provides their own API keys         |
 
 ### 4. History & Insights
+
 - View all past recordings in the History tab
 - See daily/weekly/monthly insights
 - Search through transcripts
@@ -52,10 +56,10 @@ The app offers 4 AI summarization engines:
 
 ## Permissions Requested
 
-| Permission | Purpose | When Requested |
-|------------|---------|----------------|
-| **Microphone** | Record audio | First recording attempt |
-| **Speech Recognition** | On-device transcription | First transcription |
+| Permission             | Purpose                 | When Requested          |
+| ---------------------- | ----------------------- | ----------------------- |
+| **Microphone**         | Record audio            | First recording attempt |
+| **Speech Recognition** | On-device transcription | First transcription     |
 
 **Note:** All speech recognition is configured for on-device only. No audio is sent to Apple's servers.
 
@@ -65,11 +69,11 @@ The app offers 4 AI summarization engines:
 
 **This app uses only exempt encryption.**
 
-| Encryption Type | Usage |
-|-----------------|-------|
-| **HTTPS/TLS** | Standard encryption for optional external API calls (OpenAI/Anthropic) |
-| **iOS Keychain** | Secure storage of user-provided API keys |
-| **SQLite File Protection** | Apple's built-in file encryption |
+| Encryption Type            | Usage                                                                  |
+| -------------------------- | ---------------------------------------------------------------------- |
+| **HTTPS/TLS**              | Standard encryption for optional external API calls (OpenAI/Anthropic) |
+| **iOS Keychain**           | Secure storage of user-provided API keys                               |
+| **SQLite File Protection** | Apple's built-in file encryption                                       |
 
 - ✅ `ITSAppUsesNonExemptEncryption = NO` is set in Info.plist
 - ✅ No proprietary encryption algorithms
@@ -85,12 +89,14 @@ The app offers 4 AI summarization engines:
 These features are optional and only work if the user chooses to enable them:
 
 ### External AI API (Bring Your Own Key)
+
 - Users can optionally add their own OpenAI or Anthropic API keys
 - Keys are stored securely in the iOS Keychain
 - This is the **only feature** that sends data to external servers
 - Users must explicitly configure this in Settings
 
 ### Local AI Model Download
+
 - Users can download a local AI model (~2.1GB) for on-device summarization
 - One-time download from HuggingFace
 - After download, works completely offline
@@ -125,6 +131,7 @@ These features are optional and only work if the user chooses to enable them:
 ## Testing Recommendations
 
 ### Quick Test (5 minutes)
+
 1. Open app
 2. Record a 30-second voice memo
 3. Wait for transcription (10-20 seconds)
@@ -132,6 +139,7 @@ These features are optional and only work if the user chooses to enable them:
 5. Check History tab
 
 ### Full Test (15 minutes)
+
 1. Record 2-3 voice memos
 2. Test search in History
 3. Try editing a transcript
@@ -144,12 +152,12 @@ These features are optional and only work if the user chooses to enable them:
 
 ## Known Behaviors (Not Bugs)
 
-| Behavior | Explanation |
-|----------|-------------|
-| First transcription is slower | Speech model downloads on first use |
-| "Processing" shows for a few seconds | Normal transcription time |
-| Local AI download is large | ~2.1GB model file, optional feature |
-| Some features grayed out | Depend on iOS version or device capability |
+| Behavior                             | Explanation                                |
+| ------------------------------------ | ------------------------------------------ |
+| First transcription is slower        | Speech model downloads on first use        |
+| "Processing" shows for a few seconds | Normal transcription time                  |
+| Local AI download is large           | ~2.1GB model file, optional feature        |
+| Some features grayed out             | Depend on iOS version or device capability |
 
 ---
 
@@ -181,4 +189,4 @@ Thank you for reviewing Life Wrapped! Please reach out if you have any questions
 
 ---
 
-*Document prepared for Apple App Review Team*
+_Document prepared for Apple App Review Team_
