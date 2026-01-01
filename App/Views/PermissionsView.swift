@@ -541,17 +541,10 @@ struct PermissionsView: View {
     private func finishSetup() {
         print("🚀 [PermissionsView] Finishing setup...")
         Task {
-            do {
-                // Initialize coordinator (this may take a moment)
-                print("🔧 [PermissionsView] Calling coordinator.permissionsGranted()...")
-                await coordinator.permissionsGranted()
-                print("✅ [PermissionsView] Setup complete, permissions sheet should close")
-            } catch {
-                print("❌ [PermissionsView] Setup failed with error: \(error)")
-                await MainActor.run {
-                    downloadError = "Setup failed: \(error.localizedDescription)"
-                }
-            }
+            // Initialize coordinator (this may take a moment)
+            print("🔧 [PermissionsView] Calling coordinator.permissionsGranted()...")
+            await coordinator.permissionsGranted()
+            print("✅ [PermissionsView] Setup complete, permissions sheet should close")
         }
     }
 }
