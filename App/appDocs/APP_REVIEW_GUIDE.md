@@ -61,6 +61,25 @@ The app offers 4 AI summarization engines:
 
 ---
 
+## Export Compliance / Encryption
+
+**This app uses only exempt encryption.**
+
+| Encryption Type | Usage |
+|-----------------|-------|
+| **HTTPS/TLS** | Standard encryption for optional external API calls (OpenAI/Anthropic) |
+| **iOS Keychain** | Secure storage of user-provided API keys |
+| **SQLite File Protection** | Apple's built-in file encryption |
+
+- ✅ `ITSAppUsesNonExemptEncryption = NO` is set in Info.plist
+- ✅ No proprietary encryption algorithms
+- ✅ No custom cryptographic implementations
+- ✅ All encryption uses Apple's standard frameworks or HTTPS
+
+**Classification:** Standard encryption exempt from export regulations.
+
+---
+
 ## Optional Features (Internet Required)
 
 These features are optional and only work if the user chooses to enable them:
