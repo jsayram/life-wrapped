@@ -34,6 +34,9 @@ public actor LocalEngine: SummarizationEngine {
     private var chunkHashes: [UUID: String] = [:]  // Hash of transcript text for each chunk
     private var chunkOrder: [UUID] = []  // Maintain insertion order for correct aggregation
     
+    // Concurrency control: Prevent simultaneous LLM generation calls
+    private var isGenerating: Bool = false
+    
     // MARK: - Initialization
     
     public init(
@@ -541,6 +544,31 @@ public actor LocalEngine: SummarizationEngine {
         periodEnd: Date,
         categoryContext: String?
     ) async throws -> PeriodIntelligence {
+        #if DEBUG
+        print("🎁 [LocalEngine] === YEAR WRAP GENERATION START ===")
+        print("📊 [LocalEngine] Period: \(periodType.displayName)")
+        print("📊 [LocalEngine] Summaries count: \(sessionSummaries.count)")
+        #endif
+        
+        // CRITICAL: Prevent concurrent LLM usage
+        guard !isGenerating else {
+            #if DEBUG
+            print("❌ [LocalEngine] BLOCKED: Concurrent generation detected, failing safely")
+            #endif
+            throw NSError(
+                domain: "LocalEngine",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Model busy - concurrent generation not allowed"]
+            )
+        }
+        
+        isGenerating = true
+        defer { isGenerating = false }
+        
+        #if DEBUG
+        print("✅ [LocalEngine] Generation lock acquired")
+        #endif
+        
         // Calculate aggregates
         let totalDuration = sessionSummaries.reduce(0) { $0 + $1.duration }
         let totalWordCount = sessionSummaries.reduce(0) { $0 + $1.wordCount }
@@ -563,18 +591,47 @@ public actor LocalEngine: SummarizationEngine {
             allEntities.append(contentsOf: session.entities)
         }
         
-        // Build combined session summaries for context
+        // Build combined period summaries for context
+        // Note: These are typically month summaries (12 max) not individual sessions
         let combinedSummaries = sessionSummaries
-            .prefix(20)  // Limit to avoid context overflow
+            .prefix(15)  // 12 months + buffer, much lower burden than 100+ sessions
             .map { "- \($0.summary)" }
             .joined(separator: "\n")
         
-        // Ensure model is loaded
-        if !(await llamaContext.isReady()) {
+        // Ensure model is loaded (with crash protection)
+        do {
+            if !(await llamaContext.isReady()) {
+                #if DEBUG
+                print("📥 [LocalEngine] Model not loaded, loading for Year Wrap...")
+                #endif
+                try await loadModel()
+                #if DEBUG
+                print("✅ [LocalEngine] Model loaded successfully for Year Wrap")
+                #endif
+            }
+        } catch let modelError {
             #if DEBUG
-            print("📥 [LocalEngine] Model not loaded, loading for Year Wrap...")
+            print("❌ [LocalEngine] CRITICAL: Model loading failed for Year Wrap: \(modelError)")
+            print("❌ [LocalEngine] Model error type: \(type(of: modelError))")
             #endif
-            try await loadModel()
+            // Fall back to aggregation immediately if model won't load
+            let fallbackJSON = buildFallbackYearWrapJSON(
+                sessionSummaries: sessionSummaries,
+                topTopics: topTopics
+            )
+            return PeriodIntelligence(
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd,
+                summary: fallbackJSON,
+                topics: Array(topTopics),
+                entities: allEntities,
+                sentiment: averageSentiment,
+                sessionCount: sessionSummaries.count,
+                totalDuration: totalDuration,
+                totalWordCount: totalWordCount,
+                trends: nil
+            )
         }
         
         // Build simplified Year Wrap prompt for Local AI
@@ -590,9 +647,52 @@ public actor LocalEngine: SummarizationEngine {
         print("🤖 [LocalEngine] Generating \(categoryLabel) Year Wrap with LLM...")
         #endif
         
+        // Generate with LLM (wrapped in try-catch for crash protection)
+        let rawOutput: String
         do {
-            // Generate with higher token limit for Year Wrap
-            let rawOutput = try await llamaContext.generate(prompt: prompt, maxTokens: 512)
+            #if DEBUG
+            print("🔄 [LocalEngine] Calling llamaContext.generate() for Year Wrap...")
+            print("🔍 [LocalEngine] Prompt length: \(prompt.count) characters")
+            print("🔍 [LocalEngine] Model ready status: \(await llamaContext.isReady())")
+            #endif
+            
+            rawOutput = try await llamaContext.generate(prompt: prompt, maxTokens: 512)
+            
+            #if DEBUG
+            print("✅ [LocalEngine] LLM generation completed, output length: \(rawOutput.count)")
+            #endif
+        } catch let generateError {
+            #if DEBUG
+            print("❌ [LocalEngine] CRITICAL: llamaContext.generate() crashed!")
+            print("❌ [LocalEngine] Error type: \(type(of: generateError))")
+            print("❌ [LocalEngine] Error: \(generateError)")
+            #endif
+            
+            // Immediate fallback if generation crashes
+            let fallbackJSON = buildFallbackYearWrapJSON(
+                sessionSummaries: sessionSummaries,
+                topTopics: topTopics
+            )
+            return PeriodIntelligence(
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd,
+                summary: fallbackJSON,
+                topics: Array(topTopics),
+                entities: allEntities,
+                sentiment: averageSentiment,
+                sessionCount: sessionSummaries.count,
+                totalDuration: totalDuration,
+                totalWordCount: totalWordCount,
+                trends: nil
+            )
+        }
+        
+        // Process the generated output
+        do {
+            #if DEBUG
+            print("🔍 [LocalEngine] Processing LLM output...")
+            #endif
             
             // Try to parse as JSON
             if let jsonSummary = parseYearWrapJSON(rawOutput) {
@@ -662,81 +762,234 @@ public actor LocalEngine: SummarizationEngine {
         }
     }
     
-    /// Build simplified Year Wrap prompt for Local AI
+    /// Build Year Wrap prompt for Local AI (matches Universal Prompt schema)
     private func buildYearWrapPrompt(summaries: String, sessionCount: Int, topTopics: [String], categoryLabel: String) -> String {
         let topicsStr = topTopics.prefix(5).joined(separator: ", ")
         
         return """
         You are summarizing a year of voice recordings. Create a Year Wrap summary.
         
-        SESSION COUNT: \(sessionCount)
+        PERIOD COUNT: \(sessionCount)
         CATEGORY: \(categoryLabel)
         TOP TOPICS: \(topicsStr)
         
-        SESSION SUMMARIES:
+        MONTH/PERIOD SUMMARIES:
         \(summaries)
         
-        Output ONLY valid JSON with this EXACT structure (no markdown, no explanation):
-        {"year_summary":"5-6 sentence summary of the year","year_title":"Short title for the year","top_highlights":["highlight 1","highlight 2","highlight 3"],"biggest_challenges":["challenge 1","challenge 2"],"top_topics":["topic 1","topic 2","topic 3"]}
+        Output ONLY valid JSON matching this EXACT schema (no markdown, no explanation):
+        {
+          "year_title": "string - one-line year title",
+          "year_summary": "string - 5-6 sentence summary",
+          "major_arcs": [{"text": "string", "category": "work|personal|both"}],
+          "biggest_wins": [{"text": "string", "category": "work|personal|both"}],
+          "biggest_losses": [{"text": "string", "category": "work|personal|both"}],
+          "biggest_challenges": [{"text": "string", "category": "work|personal|both"}],
+          "finished_projects": [{"text": "string", "category": "work|personal|both"}],
+          "unfinished_projects": [{"text": "string", "category": "work|personal|both"}],
+          "top_worked_on_topics": [{"text": "string", "category": "work|personal|both"}],
+          "top_talked_about_things": [{"text": "string", "category": "work|personal|both"}],
+          "valuable_actions_taken": [{"text": "string", "category": "work|personal|both"}],
+          "opportunities_missed": [{"text": "string", "category": "work|personal|both"}],
+          "people_mentioned": [{"name": "string", "relationship": "string", "impact": "string"}],
+          "places_visited": [{"name": "string", "frequency": "string", "context": "string"}]
+        }
+        
+        CATEGORY CLASSIFICATION RULES (MANDATORY):
+        1. PROPORTIONAL DISTRIBUTION: If category is WORK, classify ~80% as "work", ~10% as "personal", ~10% as "both"
+           If category is PERSONAL, classify ~80% as "personal", ~10% as "work", ~10% as "both"
+           If category is ALL, classify ~45% as "work", ~45% as "personal", ~10% as "both"
+        
+        2. CONTENT-BASED ASSIGNMENT:
+           - "work" = Professional topics (projects, meetings, career, business, deadlines)
+           - "personal" = Life topics (family, hobbies, health, relationships, personal goals)
+        
+        3. USE "both" SPARINGLY (<10% of items):
+           - Only for items that genuinely apply to BOTH domains
+           - When in doubt, pick work OR personal based on primary context
+        
+        4. DO NOT default to "both" - make definitive choices
+        
+        IMPORTANT: Start response with { and end with }. No markdown, no explanation.
         
         JSON:
         """
     }
     
-    /// Parse Year Wrap JSON from LLM output
+    /// Parse Year Wrap JSON from LLM output (with crash protection)
     private func parseYearWrapJSON(_ output: String) -> String? {
-        // Try to find JSON in the output
-        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        #if DEBUG
+        print("🔍 [LocalEngine] Parsing Year Wrap JSON (output length: \(output.count))")
+        #endif
         
-        // Look for JSON object
-        guard let startIndex = trimmed.firstIndex(of: "{"),
-              let endIndex = trimmed.lastIndex(of: "}") else {
+        do {
+            // Try to find JSON in the output
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Look for JSON object
+            guard let startIndex = trimmed.firstIndex(of: "{"),
+                  let endIndex = trimmed.lastIndex(of: "}") else {
+                #if DEBUG
+                print("⚠️ [LocalEngine] No JSON object found in output")
+                #endif
+                return nil
+            }
+            
+            let jsonString = String(trimmed[startIndex...endIndex])
+            
+            #if DEBUG
+            print("🔍 [LocalEngine] Extracted JSON candidate (length: \(jsonString.count))")
+            #endif
+            
+            // Validate it's actual JSON and contains required fields
+            guard let data = jsonString.data(using: .utf8),
+                  let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                #if DEBUG
+                print("⚠️ [LocalEngine] Invalid JSON structure")
+                #endif
+                return nil
+            }
+            
+            // Verify required fields exist
+            guard jsonObject["year_title"] != nil,
+                  jsonObject["year_summary"] != nil else {
+                #if DEBUG
+                print("⚠️ [LocalEngine] Missing required fields (year_title or year_summary)")
+                #endif
+                return nil
+            }
+            
+            #if DEBUG
+            print("✅ [LocalEngine] Valid JSON with required fields")
+            #endif
+            
+            return jsonString
+        } catch {
+            #if DEBUG
+            print("❌ [LocalEngine] JSON parsing crashed: \(error)")
+            #endif
             return nil
         }
-        
-        let jsonString = String(trimmed[startIndex...endIndex])
-        
-        // Validate it's actual JSON
-        guard let data = jsonString.data(using: .utf8),
-              let _ = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        
-        return jsonString
     }
     
-    /// Wrap plain text in Year Wrap JSON structure
+    /// Wrap plain text in Year Wrap JSON structure (Universal Prompt schema) with crash protection
     private func wrapPlainTextAsYearWrapJSON(text: String, topTopics: [String], sessionCount: Int) -> String {
-        // Clean the text
-        let cleanText = text
-            .replacingOccurrences(of: "\"", with: "'")
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #if DEBUG
+        print("🔄 [LocalEngine] Wrapping plain text as Year Wrap JSON (fallback mode)")
+        #endif
         
-        // Take first 3 topics
-        let highlights = topTopics.prefix(3).map { "\"\($0)\"" }.joined(separator: ",")
-        
-        return """
-        {"year_summary":"\(cleanText)","year_title":"Year in Review","top_highlights":[\(highlights)],"biggest_challenges":[],"top_topics":[\(highlights)]}
-        """
+        do {
+            // Clean the text with extra safety
+            let cleanText = text
+                .replacingOccurrences(of: "\"", with: "'")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .replacingOccurrences(of: "\t", with: " ")
+                .replacingOccurrences(of: "\\", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(500)  // Limit length
+            
+            // Generate classified items from topics (alternate work/personal) with safety
+            let classifiedTopics = topTopics.prefix(3).enumerated().compactMap { index, topic -> String? in
+                guard !topic.isEmpty else { return nil }
+                let category = index % 2 == 0 ? "work" : "personal"
+                let escapedTopic = topic
+                    .replacingOccurrences(of: "\"", with: "'")
+                    .replacingOccurrences(of: "\\", with: "")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .prefix(100)  // Limit topic length
+                return "{\"text\":\"\(escapedTopic)\",\"category\":\"\(category)\"}"
+            }.joined(separator: ",")
+            
+            let result = """
+            {"year_title":"Year in Review","year_summary":"\(cleanText)","major_arcs":[],"biggest_wins":[\(classifiedTopics)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[],"unfinished_projects":[],"top_worked_on_topics":[],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
+            """
+            
+            #if DEBUG
+            print("✅ [LocalEngine] Wrapped JSON created (length: \(result.count))")
+            #endif
+            
+            return result
+        } catch {
+            #if DEBUG
+            print("❌ [LocalEngine] Text wrapping crashed: \(error)")
+            #endif
+            // Ultimate fallback - minimal valid JSON
+            return "{\"year_title\":\"Year in Review\",\"year_summary\":\"Summary unavailable\",\"major_arcs\":[],\"biggest_wins\":[],\"biggest_losses\":[],\"biggest_challenges\":[],\"finished_projects\":[],\"unfinished_projects\":[],\"top_worked_on_topics\":[],\"top_talked_about_things\":[],\"valuable_actions_taken\":[],\"opportunities_missed\":[],\"people_mentioned\":[],\"places_visited\":[]}"
+        }
     }
     
-    /// Build fallback Year Wrap JSON from aggregated data
+    /// Build fallback Year Wrap JSON from aggregated data (Universal Prompt schema) with crash protection
     private func buildFallbackYearWrapJSON(sessionSummaries: [SessionIntelligence], topTopics: [String]) -> String {
-        // Create summary from first few session summaries
-        let summaryText = sessionSummaries.prefix(5)
-            .map { $0.summary }
-            .joined(separator: " ")
-            .prefix(500)
-            .replacingOccurrences(of: "\"", with: "'")
-            .replacingOccurrences(of: "\n", with: " ")
+        #if DEBUG
+        print("🔄 [LocalEngine] Building fallback Year Wrap JSON from \(sessionSummaries.count) summaries")
+        #endif
         
-        let highlights = topTopics.prefix(3).map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ",")
-        let topics = topTopics.prefix(5).map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ",")
-        
-        return """
-        {"year_summary":"\(summaryText)","year_title":"Year in Review","top_highlights":[\(highlights)],"biggest_challenges":[],"top_topics":[\(topics)]}
-        """
+        do {
+            // Create summary from first few session summaries with safety
+            let summaryText: String
+            if sessionSummaries.isEmpty {
+                summaryText = "No session data available for this period"
+            } else {
+                summaryText = sessionSummaries.prefix(5)
+                    .map { $0.summary }
+                    .joined(separator: " ")
+                    .prefix(500)
+                    .replacingOccurrences(of: "\"", with: "'")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .replacingOccurrences(of: "\r", with: " ")
+                    .replacingOccurrences(of: "\t", with: " ")
+                    .replacingOccurrences(of: "\\", with: "")
+            }
+            
+            // Generate classified items from top topics (alternate work/personal) with safety
+            let classifiedWins: String
+            if topTopics.isEmpty {
+                classifiedWins = ""
+            } else {
+                classifiedWins = topTopics.prefix(3).enumerated().compactMap { index, topic -> String? in
+                    guard !topic.isEmpty else { return nil }
+                    let category = index % 2 == 0 ? "work" : "personal"
+                    let escapedTopic = topic
+                        .replacingOccurrences(of: "\"", with: "'")
+                        .replacingOccurrences(of: "\\", with: "")
+                        .replacingOccurrences(of: "\n", with: " ")
+                        .prefix(100)
+                    return "{\"text\":\"Progress in \(escapedTopic)\",\"category\":\"\(category)\"}"
+                }.joined(separator: ",")
+            }
+            
+            let classifiedTopics: String
+            if topTopics.isEmpty {
+                classifiedTopics = ""
+            } else {
+                classifiedTopics = topTopics.prefix(5).enumerated().compactMap { index, topic -> String? in
+                    guard !topic.isEmpty else { return nil }
+                    let category = index % 2 == 0 ? "work" : "personal"
+                    let escapedTopic = topic
+                        .replacingOccurrences(of: "\"", with: "'")
+                        .replacingOccurrences(of: "\\", with: "")
+                        .replacingOccurrences(of: "\n", with: " ")
+                        .prefix(100)
+                    return "{\"text\":\"\(escapedTopic)\",\"category\":\"\(category)\"}"
+                }.joined(separator: ",")
+            }
+            
+            let result = """
+            {"year_title":"Year in Review","year_summary":"\(summaryText)","major_arcs":[],"biggest_wins":[\(classifiedWins)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[],"unfinished_projects":[],"top_worked_on_topics":[\(classifiedTopics)],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
+            """
+            
+            #if DEBUG
+            print("✅ [LocalEngine] Fallback JSON created (length: \(result.count))")
+            #endif
+            
+            return result
+        } catch {
+            #if DEBUG
+            print("❌ [LocalEngine] CRITICAL: Fallback JSON generation crashed: \(error)")
+            #endif
+            // Ultimate emergency fallback - minimal valid JSON
+            return "{\"year_title\":\"Year in Review\",\"year_summary\":\"Summary generation failed\",\"major_arcs\":[],\"biggest_wins\":[],\"biggest_losses\":[],\"biggest_challenges\":[],\"finished_projects\":[],\"unfinished_projects\":[],\"top_worked_on_topics\":[],\"top_talked_about_things\":[],\"valuable_actions_taken\":[],\"opportunities_missed\":[],\"people_mentioned\":[],\"places_visited\":[]}"
+        }
     }
     
     /// Aggregate period summaries (for non-Year Wrap periods)

@@ -1,5 +1,137 @@
 import SwiftUI
 import SharedModels
+
+/// Full-screen loading overlay for Year Wrap generation with animated progress indicator
+fileprivate struct YearWrapLoadingOverlay: View {
+    let statusMessage: String
+    
+    @State private var animationRotation: Double = 0
+    @State private var pulseScale: CGFloat = 1.0
+    
+    var body: some View {
+        ZStack {
+            // Blurred background
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Animated year wrap icon
+                ZStack {
+                    // Outer pulsing ring
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 4
+                        )
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(pulseScale)
+                        .animation(
+                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
+                            value: pulseScale
+                        )
+                    
+                    // Rotating gradient ring
+                    Circle()
+                        .trim(from: 0, to: 0.75)
+                        .stroke(
+                            AngularGradient(
+                                gradient: Gradient(colors: [
+                                    AppTheme.purple,
+                                    .blue,
+                                    .cyan,
+                                    AppTheme.purple
+                                ]),
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360)
+                            ),
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                        )
+                        .frame(width: 100, height: 100)
+                        .rotationEffect(.degrees(animationRotation))
+                        .animation(
+                            .linear(duration: 2).repeatForever(autoreverses: false),
+                            value: animationRotation
+                        )
+                    
+                    // Center icon
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 70, height: 70)
+                        
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 32, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [AppTheme.purple, .cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .symbolEffect(.pulse.byLayer)
+                    }
+                }
+                .frame(width: 120, height: 120)
+                
+                VStack(spacing: 12) {
+                    // Title
+                    Text("Generating Year Wrap")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    
+                    // Status message
+                    Text(statusMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .animation(.easeInOut, value: statusMessage)
+                    
+                    // Progress indicator text
+                    HStack(spacing: 4) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(Color.white.opacity(0.6))
+                                .frame(width: 6, height: 6)
+                                .scaleEffect(pulseScale)
+                                .animation(
+                                    .easeInOut(duration: 0.6)
+                                        .repeatForever(autoreverses: true)
+                                        .delay(Double(index) * 0.2),
+                                    value: pulseScale
+                                )
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+            }
+            .padding(40)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 30, x: 0, y: 10)
+            )
+            .padding(.horizontal, 40)
+        }
+        .onAppear {
+            animationRotation = 360
+            pulseScale = 1.2
+        }
+    }
+}
+
 struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.colorScheme) var colorScheme
@@ -11,6 +143,7 @@ struct OverviewTab: View {
     @State private var yearWrapPersonalSummary: Summary?
     @State private var yearWrapFilter: ItemFilter = .all
     @State private var isWrappingUpYear = false
+    @State private var yearWrapGenerationStatus: String = ""
     @State private var isRegeneratingPeriodSummary = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
@@ -386,6 +519,11 @@ struct OverviewTab: View {
                 .presentationDragIndicator(.visible)
             }
         }
+        .overlay {
+            if isWrappingUpYear {
+                YearWrapLoadingOverlay(statusMessage: yearWrapGenerationStatus)
+            }
+        }
     }
     
     private func filterColor(for filter: ItemFilter) -> Color {
@@ -569,18 +707,50 @@ struct OverviewTab: View {
 
     private func wrapUpYear(forceRegenerate: Bool, useLocalAI: Bool) async {
         guard !isWrappingUpYear else { return }
+        
+        // Update UI state on MainActor
         isWrappingUpYear = true
+        yearWrapGenerationStatus = "Preparing Year Wrap..."
+        
         let dateForGeneration = Date()
 
-        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
-
+        do {
+            print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
+            
+            // Update status to show AI processing
+            yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\nThis may take a minute" : "Analyzing with External AI...\nProcessing your year"
+            
+            await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
+            print("✅ [OverviewTab] Year Wrap generation completed successfully")
+            
+            // Update status to show fetching results
+            yearWrapGenerationStatus = "Finalizing results..."
+        } catch {
+            print("❌ [OverviewTab] CRITICAL ERROR during Year Wrap generation: \(error)")
+            print("❌ [OverviewTab] Error type: \(type(of: error))")
+            print("❌ [OverviewTab] Error details: \(error.localizedDescription)")
+            
+            coordinator.showError("Failed to generate Year Wrap: \(error.localizedDescription)")
+            isWrappingUpYear = false
+            yearWrapGenerationStatus = ""
+            return
+        }
+        
         // Wait briefly for database transaction to complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
-        // Fetch all Year Wrap summaries
-        yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
-        yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
-        yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
+        // Update status before fetching
+        yearWrapGenerationStatus = "Loading Year Wrap..."
+        
+        // Fetch all Year Wrap summaries (with error handling)
+        do {
+            yearWrapSummary = try await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+            yearWrapWorkSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
+            yearWrapPersonalSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
+        } catch {
+            print("⚠️ [OverviewTab] Failed to fetch Year Wrap summaries: \(error)")
+            // Non-fatal - just log it
+        }
         
         // Check for staleness after fetching Year Wrap
         if let yearWrap = yearWrapSummary {
@@ -590,19 +760,19 @@ struct OverviewTab: View {
             print("🔍 [OverviewTab] Year Wrap fetched with createdAt: \(yearWrap.createdAt)")
             
             if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                await MainActor.run {
-                    coordinator.updateYearWrapNewSessionCount(newCount)
-                }
+                coordinator.updateYearWrapNewSessionCount(newCount)
                 print("📊 [OverviewTab] Updated staleness count to \(newCount)")
             }
         } else {
             // Reset count if no Year Wrap found
-            await MainActor.run {
-                coordinator.updateYearWrapNewSessionCount(0)
-            }
+            coordinator.updateYearWrapNewSessionCount(0)
         }
         
+        // Success - clear state
         isWrappingUpYear = false
+        yearWrapGenerationStatus = ""
+        coordinator.showSuccess("Year Wrap generated successfully!")
+        print("✨ [OverviewTab] Year Wrap UI update completed")
     }
     
     private func formatHour(_ hour: Int) -> String {
