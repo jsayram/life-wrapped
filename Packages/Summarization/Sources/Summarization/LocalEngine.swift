@@ -1080,40 +1080,55 @@ public actor LocalEngine: SummarizationEngine {
     private func buildTitleSummaryPrompt(summaries: String, topTopics: [String], categoryLabel: String) -> String {
         let topicsStr = topTopics.prefix(2).joined(separator: ", ")
         return """
-        Summarize this year in 2-3 sentences based ONLY on the summaries below.
+        Write a personal reflection summarizing this year in 2-3 sentences based ONLY on the summaries below.
         CATEGORY: \(categoryLabel)
         TOPICS: \(topicsStr)
         
         SUMMARIES:
         \(summaries)
         
-        CRITICAL: Only mention what's actually in the summaries. Do not make up or infer content.
+        CRITICAL: 
+        - Write in FIRST PERSON (I/my/me) as a personal reflection
+        - Only mention what's actually in the summaries above
+        - Do not make up or infer content
+        
+        Example style: "I experienced...", "My work on...", "I struggled with..."
         """
     }
     
     /// Build focused prompt for wins and challenges (Step 2/5)
     private func buildWinsChallengesPrompt(summaries: String, categoryLabel: String) -> String {
         return """
-        List biggest wins and challenges found in the summaries below (2-3 each, or fewer if not enough data).
+        List biggest wins and challenges from the summaries below (2-3 each, or fewer if not enough data).
         CATEGORY: \(categoryLabel)
         
         SUMMARIES:
         \(summaries)
         
-        CRITICAL: Only list what's explicitly mentioned. If no wins/challenges found, output "None found".
+        CRITICAL: 
+        - Write in FIRST PERSON (I/my) for personal reflection
+        - Only list what's explicitly mentioned
+        - If no wins/challenges found, output "None found"
+        
+        Example: "Completed my app redesign", "Struggled with crashes"
         """
     }
     
     /// Build focused prompt for projects (Step 3/5)
     private func buildProjectsPrompt(summaries: String, categoryLabel: String) -> String {
         return """
-        List projects found in the summaries below (2-3 each: finished and unfinished, or fewer if not enough data).
+        List projects from the summaries below (2-3 each: finished and unfinished, or fewer if not enough data).
         CATEGORY: \(categoryLabel)
         
         SUMMARIES:
         \(summaries)
         
-        CRITICAL: Only list projects explicitly mentioned. If none found, output "None found".
+        CRITICAL:
+        - Write in FIRST PERSON (I/my) for personal reflection  
+        - Only list projects explicitly mentioned
+        - If none found, output "None found"
+        
+        Example: "Built my portfolio site", "Started learning Swift"
         """
     }
     
@@ -1126,11 +1141,11 @@ public actor LocalEngine: SummarizationEngine {
         SUMMARY:
         \(summaries.prefix(400))
         
-        Output format: Simple bullet list like:
-        - Topic 1
-        - Topic 2
+        Output format: Simple bullet list in FIRST PERSON like:
+        - Working on app stability
+        - Debugging crash issues
         
-        CRITICAL: Extract only actual topics/themes from the summary. If nothing clear, output "None".
+        CRITICAL: Extract only actual topics/themes. Write as personal activities (I/my). If nothing clear, output "None".
         """
     }
     
