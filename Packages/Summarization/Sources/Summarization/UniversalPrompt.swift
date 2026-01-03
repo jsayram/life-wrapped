@@ -44,6 +44,7 @@ public enum SummaryLevel: String, Codable, Sendable, CaseIterable {
         case .day: return .day
         case .week: return .week
         case .month: return .month
+        case .quarter: return .month  // Treat quarter as month level for prompt purposes
         case .year: return .year
         case .yearWrap: return .yearWrap
         case .yearWrapWork: return .yearWrapWork

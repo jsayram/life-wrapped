@@ -37,6 +37,22 @@ public actor LocalEngine: SummarizationEngine {
     // Concurrency control: Prevent simultaneous LLM generation calls
     private var isGenerating: Bool = false
     
+    // MARK: - Token Estimation Constants
+    
+    // Phi-3.5 Mini token limits and safety margins
+    private let MAX_CONTEXT_TOKENS = 2048          // Phi-3.5 Mini context window
+    private let FIXED_OVERHEAD_TOKENS = 700        // System prompt + schema + rules
+    private let AVAILABLE_INPUT_TOKENS = 1200      // Safe room for input summaries
+    private let SAFETY_BUFFER_TOKENS = 148         // Extra margin for safety
+    private let INTERMEDIATE_OUTPUT_TOKENS = 128   // For quarterly/intermediate summaries
+    private let FINAL_OUTPUT_TOKENS = 256          // For final Year Wrap JSON
+    private let MAX_RECURSION_DEPTH = 12           // Safety limit for pathological cases
+    
+    // Performance tracking for Year Wrap generation
+    private var totalLLMCalls = 0
+    private var maxDepthReached = 0
+    private var generationStartTime: Date?
+    
     // MARK: - Initialization
     
     public init(
@@ -45,6 +61,214 @@ public actor LocalEngine: SummarizationEngine {
         self.configuration = configuration ?? EngineConfiguration(tier: .local)
         self.llamaContext = LlamaContext()
         self.modelFileManager = ModelFileManager()
+        
+        #if DEBUG
+        print("ℹ️ [LocalEngine] Using character-based token estimation (conservative) - MLX tokenizer not available. Formula: chars ÷ 3.5")
+        #endif
+    }
+    
+    // MARK: - Token Estimation Utilities
+    
+    /// Estimate token count for text using conservative character-based formula
+    /// Over-estimates to trigger more chunking, ensuring safety within token limits
+    /// Note: MLX/llama.cpp does not expose tokenizer API, so we use approximation
+    private func estimateTokenCount(_ text: String) -> Int {
+        // Conservative estimate: 1 token ≈ 3.5 characters for English text
+        // Over-estimating is safer than under-estimating (triggers more chunking)
+        return Int(Double(text.count) / 3.5)
+    }
+    
+    /// Calculate total estimated token count for array of texts
+    private func totalTokenCount(_ texts: [String]) -> Int {
+        return texts.reduce(0) { $0 + estimateTokenCount($1) }
+    }
+    
+    // MARK: - Recursive Chunking Engine
+    
+    /// Recursively chunk summaries into groups that fit within token limit
+    /// Returns array of chunks where each chunk's total tokens ≤ maxTokens
+    private func recursiveChunk(
+        summaries: [SessionIntelligence],
+        maxTokens: Int,
+        level: Int
+    ) async -> [[SessionIntelligence]] {
+        var chunks: [[SessionIntelligence]] = []
+        var currentChunk: [SessionIntelligence] = []
+        var currentTokenCount = 0
+        
+        for summary in summaries {
+            let summaryTokens = estimateTokenCount(summary.summary)
+            
+            // If adding this summary exceeds limit, start new chunk
+            if currentTokenCount + summaryTokens > maxTokens && !currentChunk.isEmpty {
+                chunks.append(currentChunk)
+                currentChunk = []
+                currentTokenCount = 0
+            }
+            
+            currentChunk.append(summary)
+            currentTokenCount += summaryTokens
+        }
+        
+        // Add final chunk if not empty
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
+        
+        // Log chunking details
+        #if DEBUG
+        let chunkTokens = chunks.map { chunk in
+            chunk.reduce(0) { $0 + estimateTokenCount($1.summary) }
+        }
+        let totalChars = summaries.reduce(0) { $0 + $1.summary.count }
+        let totalTokens = summaries.reduce(0) { $0 + estimateTokenCount($1.summary) }
+        print("🔍 [LocalEngine] Level \(level): Total \(totalTokens)t (\(totalChars)c) → \(chunks.count) chunks: \(chunkTokens.map { "\($0)t" }.joined(separator: ", "))")
+        #endif
+        
+        return chunks
+    }
+    
+    /// Recursively synthesize summaries with unlimited depth chunking
+    /// Ensures ALL data is processed regardless of size by sub-chunking as needed
+    /// ARC cleanup: Intermediate summaries released at await boundaries between recursion levels
+    private func synthesizeWithRecursiveChunking(
+        summaries: [SessionIntelligence],
+        label: String,
+        level: Int,
+        categoryLabel: String
+    ) async throws -> String {
+        // Safety check: Prevent pathological infinite recursion
+        guard level <= MAX_RECURSION_DEPTH else {
+            #if DEBUG
+            print("❌ [LocalEngine] EMERGENCY BAILOUT: Recursion depth \(level) exceeds safety limit (\(MAX_RECURSION_DEPTH)). Switching to basic fallback.")
+            #endif
+            throw NSError(
+                domain: "LocalEngine",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "Recursion depth exceeded safety limit"]
+            )
+        }
+        
+        // Track maximum depth reached
+        maxDepthReached = max(maxDepthReached, level)
+        
+        // Log depth warning at level 5
+        if level == 5 {
+            #if DEBUG
+            print("⚠️ [LocalEngine] Recursion depth \(level) reached for \(label) - this is unusually deep (not an error, diagnostic only)")
+            #endif
+        }
+        
+        // Calculate total token count for all summaries
+        let summaryTexts = summaries.map { $0.summary }
+        let totalTokens = totalTokenCount(summaryTexts)
+        
+        #if DEBUG
+        print("📊 [LocalEngine] \(label) Level \(level): Processing \(summaries.count) summaries (\(totalTokens)t)")
+        #endif
+        
+        // Base case: If all summaries fit in one generation, generate directly
+        if totalTokens <= AVAILABLE_INPUT_TOKENS {
+            #if DEBUG
+            print("✅ [LocalEngine] \(label) Level \(level): Fits in context, generating directly")
+            #endif
+            
+            // Build combined summaries text
+            let combinedText = summaryTexts
+                .map { "- \($0)" }
+                .joined(separator: "\n")
+            
+            // Build simplified prompt for intermediate synthesis
+            let prompt = buildQuarterlySummaryPrompt(
+                summaries: combinedText,
+                quarterLabel: label,
+                categoryLabel: categoryLabel
+            )
+            
+            // Generate with LLM
+            let output = try await llamaContext.generate(prompt: prompt, maxTokens: Int32(INTERMEDIATE_OUTPUT_TOKENS))
+            totalLLMCalls += 1
+            
+            // Cooldown after generation to prevent CPU/memory exhaustion
+            try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            
+            #if DEBUG
+            print("✅ [LocalEngine] \(label) Level \(level): Generated \(estimateTokenCount(output))t output")
+            #endif
+            
+            return output.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        }
+        
+        // Recursive case: Chunk and recursively synthesize
+        #if DEBUG
+        print("🔄 [LocalEngine] \(label) Level \(level): Exceeds limit, chunking required")
+        #endif
+        
+        let chunks = await recursiveChunk(
+            summaries: summaries,
+            maxTokens: AVAILABLE_INPUT_TOKENS,
+            level: level
+        )
+        
+        #if DEBUG
+        print("📊 [LocalEngine] \(label) Level \(level): Processing \(chunks.count) sub-groups")
+        #endif
+        
+        // Recursively synthesize each chunk (ARC cleans up originals at await boundaries)
+        var intermediates: [String] = []
+        for (index, chunk) in chunks.enumerated() {
+            let subLabel = "\(label)-\(index + 1)"
+            
+            // Convert chunk back to SessionIntelligence array for recursion
+            let intermediate = try await synthesizeWithRecursiveChunking(
+                summaries: chunk,
+                label: subLabel,
+                level: level + 1,
+                categoryLabel: categoryLabel
+            )
+            
+            intermediates.append(intermediate)
+            
+            // Unload model between recursive chunks to free memory (if more chunks remaining)
+            if index < chunks.count - 1 {
+                #if DEBUG
+                print("🧹 [LocalEngine] \(label) Level \(level): Unloading model between chunks \(index + 1)/\(chunks.count)...")
+                #endif
+                await llamaContext.unloadModel()
+                await Task.yield()
+                
+                // Brief cooldown between recursive chunks (500ms)
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+        
+        // Combine intermediates into final summary
+        #if DEBUG
+        let intermediateTokens = totalTokenCount(intermediates)
+        print("✅ [LocalEngine] \(label) Level \(level): Combining \(intermediates.count) intermediates (\(intermediateTokens)t)")
+        #endif
+        
+        let combinedIntermediates = intermediates
+            .map { "- \($0)" }
+            .joined(separator: "\n")
+        
+        let combinePrompt = buildQuarterlySummaryPrompt(
+            summaries: combinedIntermediates,
+            quarterLabel: label,
+            categoryLabel: categoryLabel
+        )
+        
+        let finalOutput = try await llamaContext.generate(prompt: combinePrompt, maxTokens: Int32(INTERMEDIATE_OUTPUT_TOKENS))
+        totalLLMCalls += 1
+        
+        // Cooldown after generation
+        try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        
+        #if DEBUG
+        print("✅ [LocalEngine] \(label) Level \(level): Final synthesis complete (\(estimateTokenCount(finalOutput))t)")
+        #endif
+        
+        return finalOutput.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     }
     
     // MARK: - SummarizationEngine Protocol
@@ -563,11 +787,26 @@ public actor LocalEngine: SummarizationEngine {
         }
         
         isGenerating = true
-        defer { isGenerating = false }
+        defer {
+            isGenerating = false
+            
+            // CRITICAL: Unload model at the end of each Year Wrap variant to free memory
+            Task {
+                await llamaContext.unloadModel()
+                #if DEBUG
+                print("🧹 [LocalEngine] Model unloaded at end of Year Wrap generation (cleanup)")
+                #endif
+            }
+        }
         
         #if DEBUG
         print("✅ [LocalEngine] Generation lock acquired")
         #endif
+        
+        // Start performance tracking
+        generationStartTime = Date()
+        totalLLMCalls = 0
+        maxDepthReached = 0
         
         // Calculate aggregates
         let totalDuration = sessionSummaries.reduce(0) { $0 + $1.duration }
@@ -591,14 +830,6 @@ public actor LocalEngine: SummarizationEngine {
             allEntities.append(contentsOf: session.entities)
         }
         
-        // Build combined period summaries for context
-        // Note: These are typically month summaries (12 max) not individual sessions
-        // Reduced to 8 to prevent memory exhaustion on device
-        let combinedSummaries = sessionSummaries
-            .prefix(8)  // Reduced from 15 to prevent CPU/memory exhaustion
-            .map { "- \($0.summary)" }
-            .joined(separator: "\n")
-        
         // Ensure model is loaded (with crash protection)
         do {
             if !(await llamaContext.isReady()) {
@@ -618,7 +849,8 @@ public actor LocalEngine: SummarizationEngine {
             // Fall back to aggregation immediately if model won't load
             let fallbackJSON = buildFallbackYearWrapJSON(
                 sessionSummaries: sessionSummaries,
-                topTopics: topTopics
+                topTopics: topTopics,
+                categoryLabel: periodType == .yearWrapWork ? "WORK" : (periodType == .yearWrapPersonal ? "PERSONAL" : "ALL")
             )
             return PeriodIntelligence(
                 periodType: periodType,
@@ -635,124 +867,196 @@ public actor LocalEngine: SummarizationEngine {
             )
         }
         
-        // Build simplified Year Wrap prompt for Local AI
-        let categoryLabel = periodType == .yearWrapWork ? "WORK" : (periodType == .yearWrapPersonal ? "PERSONAL" : "ALL")
-        let prompt = buildYearWrapPrompt(
-            summaries: combinedSummaries,
-            sessionCount: sessionSummaries.count,
-            topTopics: topTopics,
-            categoryLabel: categoryLabel
-        )
-        
+        // Group month summaries into quarters (every 3 summaries = 1 quarter, or less for partial years)
         #if DEBUG
-        print("🤖 [LocalEngine] Generating \(categoryLabel) Year Wrap with LLM...")
+        print("📅 [LocalEngine] Grouping \(sessionSummaries.count) month summaries into quarters")
         #endif
         
-        // Generate with LLM (wrapped in try-catch for crash protection)
-        let rawOutput: String
+        var quarterGroups: [[SessionIntelligence]] = []
+        var currentQuarter: [SessionIntelligence] = []
+        
+        for (index, summary) in sessionSummaries.enumerated() {
+            currentQuarter.append(summary)
+            
+            // Every 3 months or at the end, complete the quarter
+            if currentQuarter.count == 3 || index == sessionSummaries.count - 1 {
+                quarterGroups.append(currentQuarter)
+                currentQuarter = []
+            }
+        }
+        
+        #if DEBUG
+        print("📊 [LocalEngine] Created \(quarterGroups.count) quarters with \(quarterGroups.map { String($0.count) }.joined(separator: ", ")) months each")
+        #endif
+        
+        // Generate quarterly summaries using recursive chunking
+        var quarterlySummaries: [String] = []
+        let categoryLabel = periodType == .yearWrapWork ? "WORK" : (periodType == .yearWrapPersonal ? "PERSONAL" : "ALL")
+        
+        for (index, monthsInQuarter) in quarterGroups.enumerated() {
+            let quarter = index + 1
+            
+            #if DEBUG
+            print("🔄 [LocalEngine] Processing Q\(quarter) with \(monthsInQuarter.count) months")
+            #endif
+            
+            do {
+                let quarterlySummary = try await synthesizeWithRecursiveChunking(
+                    summaries: monthsInQuarter,
+                    label: "Q\(quarter)",
+                    level: 1,
+                    categoryLabel: categoryLabel
+                )
+                
+                quarterlySummaries.append("Q\(quarter): \(quarterlySummary)")
+                
+                #if DEBUG
+                print("✅ [LocalEngine] Q\(quarter) synthesis complete")
+                #endif
+                
+                // Unload model between quarters to free memory (if more quarters remaining)
+                if quarter < quarterGroups.count {
+                    #if DEBUG
+                    print("🧹 [LocalEngine] Unloading model between Q\(quarter) and Q\(quarter + 1)...")
+                    #endif
+                    await llamaContext.unloadModel()
+                    await Task.yield()
+                    
+                    // Add longer cooldown between quarters (2s instead of 1s)
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+            } catch {
+                #if DEBUG
+                print("⚠️ [LocalEngine] Q\(quarter) synthesis failed: \(error), using fallback")
+                #endif
+                // Fallback: Use first month summary as representative
+                let fallbackText = monthsInQuarter.first?.summary ?? "No data"
+                quarterlySummaries.append("Q\(quarter): \(fallbackText)")
+            }
+        }
+        
+        #if DEBUG
+        print("✅ [LocalEngine] All quarterly summaries generated (\(quarterlySummaries.count) quarters)")
+        #endif
+        
+        // REMOVED: Don't unload model here - keep it loaded to avoid reload memory spike
+        // The defer block will unload at the end of the function
+        
+        // Brief cooldown before final generation (1s instead of 3s + reload)
+        #if DEBUG
+        print("⏳ [LocalEngine] Brief cooldown before final Year Wrap generation...")
+        #endif
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        await Task.yield()
+        
+        // Build combined quarterly summaries for final Year Wrap
+        let combinedQuarterlySummaries = quarterlySummaries
+            .map { "- \($0)" }
+            .joined(separator: "\n")
+        
+        // Model already loaded from quarterly synthesis - no reload needed
+        // This avoids the memory spike from unload + reload cycle
+        
+        #if DEBUG
+        print("🤖 [LocalEngine] Generating \(categoryLabel) Year Wrap with multi-prompt approach...")
+        print("🔄 [LocalEngine] Model already loaded, using existing instance")
+        #endif
+        
+        // MULTI-PROMPT STRATEGY: Generate different aspects separately to stay within memory limits
+        // Each prompt is small (~400-600 chars) and focused on one aspect
+        var yearWrapComponents: [String: Any] = [:]
+        
         do {
+            // 1. Generate title + summary (most important)
             #if DEBUG
-            print("🔄 [LocalEngine] Calling llamaContext.generate() for Year Wrap...")
-            print("🔍 [LocalEngine] Prompt length: \(prompt.count) characters")
-            print("🔍 [LocalEngine] Model ready status: \(await llamaContext.isReady())")
+            print("📝 [LocalEngine] Step 1/5: Generating title and summary...")
+            #endif
+            let titleSummaryPrompt = buildTitleSummaryPrompt(summaries: combinedQuarterlySummaries, topTopics: topTopics, categoryLabel: categoryLabel)
+            let titleSummary = try await llamaContext.generate(prompt: titleSummaryPrompt, maxTokens: 128)  // Doubled for scaling
+            totalLLMCalls += 1
+            try await Task.sleep(nanoseconds: 500_000_000)
+            
+            // 2. Generate wins and challenges
+            #if DEBUG
+            print("📝 [LocalEngine] Step 2/5: Generating wins and challenges...")
+            #endif
+            let winsPrompt = buildWinsChallengesPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
+            let wins = try await llamaContext.generate(prompt: winsPrompt, maxTokens: 64)
+            totalLLMCalls += 1
+            try await Task.sleep(nanoseconds: 500_000_000)
+            
+            // 3. Generate projects
+            #if DEBUG
+            print("📝 [LocalEngine] Step 3/5: Generating projects...")
+            #endif
+            let projectsPrompt = buildProjectsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
+            let projects = try await llamaContext.generate(prompt: projectsPrompt, maxTokens: 64)
+            totalLLMCalls += 1
+            try await Task.sleep(nanoseconds: 500_000_000)
+            
+            // 4. Generate topics and actions
+            #if DEBUG
+            print("📝 [LocalEngine] Step 4/5: Generating topics and actions...")
+            #endif
+            let topicsPrompt = buildTopicsActionsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
+            let topics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: 64)
+            totalLLMCalls += 1
+            try await Task.sleep(nanoseconds: 500_000_000)
+            
+            // 5. Generate people and places (if mentioned)
+            #if DEBUG
+            print("📝 [LocalEngine] Step 5/5: Generating people and places...")
+            #endif
+            let peoplePrompt = buildPeoplePrompt(summaries: combinedQuarterlySummaries)
+            let people = try await llamaContext.generate(prompt: peoplePrompt, maxTokens: 32)
+            totalLLMCalls += 1
+            
+            // Combine all components into final JSON
+            #if DEBUG
+            print("🔗 [LocalEngine] Combining \(totalLLMCalls) prompts into Year Wrap JSON...")
             #endif
             
-            // Yield to prevent CPU starvation before heavy operation
-            await Task.yield()
+            let wrappedJSON = assembleYearWrapFromComponents(
+                titleSummary: titleSummary,
+                wins: wins,
+                projects: projects,
+                topics: topics,
+                people: people,
+                topTopics: topTopics,
+                categoryLabel: categoryLabel
+            )
             
-            // Reduced token count to prevent memory/CPU exhaustion (256 instead of 512)
-            rawOutput = try await llamaContext.generate(prompt: prompt, maxTokens: 256)
+            // Log performance metrics
+            if let startTime = generationStartTime {
+                let duration = Date().timeIntervalSince(startTime)
+                #if DEBUG
+                print("⏱️ [LocalEngine] Year Wrap generation completed in \(String(format: "%.1f", duration))s with \(totalLLMCalls) LLM calls at max depth \(maxDepthReached)")
+                #endif
+            }
             
-            // Yield after generation to allow system memory cleanup
-            await Task.yield()
-            
-            #if DEBUG
-            print("✅ [LocalEngine] LLM generation completed, output length: \(rawOutput.count)")
-            #endif
+            return PeriodIntelligence(
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd,
+                summary: wrappedJSON,
+                topics: Array(topTopics),
+                entities: allEntities,
+                sentiment: averageSentiment,
+                sessionCount: sessionSummaries.count,
+                totalDuration: totalDuration,
+                totalWordCount: totalWordCount,
+                trends: nil
+            )
         } catch let generateError {
             #if DEBUG
-            print("❌ [LocalEngine] CRITICAL: llamaContext.generate() crashed!")
-            print("❌ [LocalEngine] Error type: \(type(of: generateError))")
-            print("❌ [LocalEngine] Error: \(generateError)")
+            print("❌ [LocalEngine] Multi-prompt generation failed: \(generateError)")
             #endif
             
             // Immediate fallback if generation crashes
             let fallbackJSON = buildFallbackYearWrapJSON(
                 sessionSummaries: sessionSummaries,
-                topTopics: topTopics
-            )
-            return PeriodIntelligence(
-                periodType: periodType,
-                periodStart: periodStart,
-                periodEnd: periodEnd,
-                summary: fallbackJSON,
-                topics: Array(topTopics),
-                entities: allEntities,
-                sentiment: averageSentiment,
-                sessionCount: sessionSummaries.count,
-                totalDuration: totalDuration,
-                totalWordCount: totalWordCount,
-                trends: nil
-            )
-        }
-        
-        // Process the generated output
-        do {
-            #if DEBUG
-            print("🔍 [LocalEngine] Processing LLM output...")
-            #endif
-            
-            // Try to parse as JSON
-            if let jsonSummary = parseYearWrapJSON(rawOutput) {
-                #if DEBUG
-                print("✅ [LocalEngine] Year Wrap JSON parsed successfully")
-                #endif
-                return PeriodIntelligence(
-                    periodType: periodType,
-                    periodStart: periodStart,
-                    periodEnd: periodEnd,
-                    summary: jsonSummary,
-                    topics: Array(topTopics),
-                    entities: allEntities,
-                    sentiment: averageSentiment,
-                    sessionCount: sessionSummaries.count,
-                    totalDuration: totalDuration,
-                    totalWordCount: totalWordCount,
-                    trends: nil
-                )
-            } else {
-                // LLM didn't produce valid JSON - wrap plain text in JSON structure
-                #if DEBUG
-                print("⚠️ [LocalEngine] LLM output not valid JSON, wrapping in structure")
-                #endif
-                let cleanedOutput = cleanupMetaCommentary(rawOutput)
-                let wrappedJSON = wrapPlainTextAsYearWrapJSON(
-                    text: cleanedOutput,
-                    topTopics: topTopics,
-                    sessionCount: sessionSummaries.count
-                )
-                return PeriodIntelligence(
-                    periodType: periodType,
-                    periodStart: periodStart,
-                    periodEnd: periodEnd,
-                    summary: wrappedJSON,
-                    topics: Array(topTopics),
-                    entities: allEntities,
-                    sentiment: averageSentiment,
-                    sessionCount: sessionSummaries.count,
-                    totalDuration: totalDuration,
-                    totalWordCount: totalWordCount,
-                    trends: nil
-                )
-            }
-        } catch {
-            #if DEBUG
-            print("❌ [LocalEngine] LLM generation failed: \(error)")
-            #endif
-            // Fall back to aggregation wrapped in JSON
-            let fallbackJSON = buildFallbackYearWrapJSON(
-                sessionSummaries: sessionSummaries,
-                topTopics: topTopics
+                topTopics: topTopics,
+                categoryLabel: categoryLabel
             )
             return PeriodIntelligence(
                 periodType: periodType,
@@ -770,58 +1074,178 @@ public actor LocalEngine: SummarizationEngine {
         }
     }
     
-    /// Build Year Wrap prompt for Local AI (matches Universal Prompt schema)
-    private func buildYearWrapPrompt(summaries: String, sessionCount: Int, topTopics: [String], categoryLabel: String) -> String {
-        let topicsStr = topTopics.prefix(5).joined(separator: ", ")
-        
+    // MARK: - Multi-Prompt Helper Functions for Local AI
+    
+    /// Build focused prompt for title and summary (Step 1/5)
+    private func buildTitleSummaryPrompt(summaries: String, topTopics: [String], categoryLabel: String) -> String {
+        let topicsStr = topTopics.prefix(2).joined(separator: ", ")
         return """
-        You are summarizing a year of voice recordings. Create a Year Wrap summary.
-        
-        PERIOD COUNT: \(sessionCount)
+        Summarize this year in 2-3 sentences based ONLY on the summaries below.
         CATEGORY: \(categoryLabel)
-        TOP TOPICS: \(topicsStr)
+        TOPICS: \(topicsStr)
         
-        MONTH/PERIOD SUMMARIES:
+        SUMMARIES:
         \(summaries)
         
-        Output ONLY valid JSON matching this EXACT schema (no markdown, no explanation):
-        {
-          "year_title": "string - one-line year title",
-          "year_summary": "string - 5-6 sentence summary",
-          "major_arcs": [{"text": "string", "category": "work|personal|both"}],
-          "biggest_wins": [{"text": "string", "category": "work|personal|both"}],
-          "biggest_losses": [{"text": "string", "category": "work|personal|both"}],
-          "biggest_challenges": [{"text": "string", "category": "work|personal|both"}],
-          "finished_projects": [{"text": "string", "category": "work|personal|both"}],
-          "unfinished_projects": [{"text": "string", "category": "work|personal|both"}],
-          "top_worked_on_topics": [{"text": "string", "category": "work|personal|both"}],
-          "top_talked_about_things": [{"text": "string", "category": "work|personal|both"}],
-          "valuable_actions_taken": [{"text": "string", "category": "work|personal|both"}],
-          "opportunities_missed": [{"text": "string", "category": "work|personal|both"}],
-          "people_mentioned": [{"name": "string", "relationship": "string", "impact": "string"}],
-          "places_visited": [{"name": "string", "frequency": "string", "context": "string"}]
-        }
-        
-        CATEGORY CLASSIFICATION RULES (MANDATORY):
-        1. PROPORTIONAL DISTRIBUTION: If category is WORK, classify ~80% as "work", ~10% as "personal", ~10% as "both"
-           If category is PERSONAL, classify ~80% as "personal", ~10% as "work", ~10% as "both"
-           If category is ALL, classify ~45% as "work", ~45% as "personal", ~10% as "both"
-        
-        2. CONTENT-BASED ASSIGNMENT:
-           - "work" = Professional topics (projects, meetings, career, business, deadlines)
-           - "personal" = Life topics (family, hobbies, health, relationships, personal goals)
-        
-        3. USE "both" SPARINGLY (<10% of items):
-           - Only for items that genuinely apply to BOTH domains
-           - When in doubt, pick work OR personal based on primary context
-        
-        4. DO NOT default to "both" - make definitive choices
-        
-        IMPORTANT: Start response with { and end with }. No markdown, no explanation.
-        
-        JSON:
+        CRITICAL: Only mention what's actually in the summaries. Do not make up or infer content.
         """
     }
+    
+    /// Build focused prompt for wins and challenges (Step 2/5)
+    private func buildWinsChallengesPrompt(summaries: String, categoryLabel: String) -> String {
+        return """
+        List biggest wins and challenges found in the summaries below (2-3 each, or fewer if not enough data).
+        CATEGORY: \(categoryLabel)
+        
+        SUMMARIES:
+        \(summaries)
+        
+        CRITICAL: Only list what's explicitly mentioned. If no wins/challenges found, output "None found".
+        """
+    }
+    
+    /// Build focused prompt for projects (Step 3/5)
+    private func buildProjectsPrompt(summaries: String, categoryLabel: String) -> String {
+        return """
+        List projects found in the summaries below (2-3 each: finished and unfinished, or fewer if not enough data).
+        CATEGORY: \(categoryLabel)
+        
+        SUMMARIES:
+        \(summaries)
+        
+        CRITICAL: Only list projects explicitly mentioned. If none found, output "None found".
+        """
+    }
+    
+    /// Build focused prompt for topics and actions (Step 4/5)
+    private func buildTopicsActionsPrompt(summaries: String, categoryLabel: String) -> String {
+        return """
+        Extract main topics from the summary below. List only what's explicitly mentioned (2-3 items).
+        CATEGORY: \(categoryLabel)
+        
+        SUMMARY:
+        \(summaries.prefix(400))
+        
+        Output format: Simple bullet list like:
+        - Topic 1
+        - Topic 2
+        
+        CRITICAL: Extract only actual topics/themes from the summary. If nothing clear, output "None".
+        """
+    }
+    
+    /// Build focused prompt for people (Step 5/5)
+    private func buildPeoplePrompt(summaries: String) -> String {
+        return """
+        List people mentioned in the summaries below (1-2, or fewer if not enough data).
+        
+        SUMMARIES:
+        \(summaries.prefix(200))
+        
+        CRITICAL: Only list people explicitly mentioned by name. If none found, output "None found".
+        """
+    }
+    
+    /// Assemble Year Wrap JSON from multiple prompt outputs
+    private func assembleYearWrapFromComponents(
+        titleSummary: String,
+        wins: String,
+        projects: String,
+        topics: String,
+        people: String,
+        topTopics: [String],
+        categoryLabel: String
+    ) -> String {
+        // Determine primary category
+        let primaryCategory = categoryLabel == "PERSONAL" ? "personal" : "work"
+        let secondaryCategory = categoryLabel == "PERSONAL" ? "work" : "personal"
+        
+        // Parse outputs and create classified items
+        let winsItems = parseItemsFromText(wins, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
+        let projectsItems = parseItemsFromText(projects, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
+        let topicsItems = parseItemsFromText(topics, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
+        
+        // Build JSON - increased summary limit to 800 chars to match 128 token output (~400-500 chars)
+        let cleanSummary = titleSummary.replacingOccurrences(of: "\"", with: "'").prefix(800)
+        
+        return """
+        {"year_title":"Year in Review","year_summary":"\(cleanSummary)","major_arcs":[],"biggest_wins":[\(winsItems)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[\(projectsItems)],"unfinished_projects":[],"top_worked_on_topics":[\(topicsItems)],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
+        """
+    }
+    
+    /// Parse items from text and create classified JSON items
+    private func parseItemsFromText(_ text: String, count: Int, primaryCategory: String, secondaryCategory: String, isAll: Bool) -> String {
+        // Check if AI returned "None found" or similar empty signals
+        let lowercased = text.lowercased()
+        if lowercased.contains("none found") || lowercased.contains("no data") || lowercased.contains("not enough") {
+            return ""  // Return empty string to avoid fabricated items
+        }
+        
+        // Split by common delimiters
+        let lines = text.components(separatedBy: CharacterSet(charactersIn: ".\n-•"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { line in
+                // Filter out common fabrication patterns and prompt echoes
+                let lower = line.lowercased()
+                return !line.isEmpty 
+                    && line.count > 5 
+                    && !lower.contains("none found")
+                    && !lower.contains("no data")
+                    && !lower.contains("for the given")
+                    && !lower.contains("here are")
+                    && !lower.contains("instruction")
+                    && !lower.contains("provided topics")
+                    && !lower.contains("under the")
+                    && !lower.contains("related to")
+                    && !lower.hasPrefix("**")  // Skip markdown headers
+                    && !lower.contains("description:")  // Skip meta descriptions
+                    && !lower.contains("topic:")
+                    && !lower.contains("action:")
+            }
+            .prefix(count)
+        
+        // If no valid lines after filtering, return empty
+        if lines.isEmpty {
+            return ""
+        }
+        
+        return lines.enumerated().map { index, line in
+            let category: String
+            if isAll {
+                category = index % 2 == 0 ? primaryCategory : secondaryCategory
+            } else {
+                category = index < 2 ? primaryCategory : secondaryCategory
+            }
+            let escaped = line.replacingOccurrences(of: "\"", with: "'").prefix(100)
+            return "{\"text\":\"\(escaped)\",\"category\":\"\(category)\"}"
+        }.joined(separator: ",")
+    }
+    
+    // MARK: - Quarterly Summary Prompt
+    
+    /// Build simplified quarterly summary prompt for intermediate synthesis
+    /// Concise format optimized for recursive chunking - no JSON, just plain text
+    private func buildQuarterlySummaryPrompt(summaries: String, quarterLabel: String, categoryLabel: String) -> String {
+        return """
+        Summarize these month summaries into a concise overview (3-5 sentences).
+        
+        PERIOD: \(quarterLabel)
+        CATEGORY: \(categoryLabel)
+        
+        SUMMARIES:
+        \(summaries)
+        
+        Output plain text covering what's actually mentioned:
+        - Main themes and topics
+        - Notable achievements
+        - Challenges faced
+        - People/entities named
+        
+        CRITICAL: Only write about what's in the summaries above. Output plain text only.
+        """
+    }
+    
+    // MARK: - JSON Parsing and Fallbacks
     
     /// Parse Year Wrap JSON from LLM output (with crash protection)
     private func parseYearWrapJSON(_ output: String) -> String? {
@@ -880,7 +1304,7 @@ public actor LocalEngine: SummarizationEngine {
     }
     
     /// Wrap plain text in Year Wrap JSON structure (Universal Prompt schema) with crash protection
-    private func wrapPlainTextAsYearWrapJSON(text: String, topTopics: [String], sessionCount: Int) -> String {
+    private func wrapPlainTextAsYearWrapJSON(text: String, topTopics: [String], sessionCount: Int, categoryLabel: String) -> String {
         #if DEBUG
         print("🔄 [LocalEngine] Wrapping plain text as Year Wrap JSON (fallback mode)")
         #endif
@@ -896,10 +1320,32 @@ public actor LocalEngine: SummarizationEngine {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .prefix(500)  // Limit length
             
-            // Generate classified items from topics (alternate work/personal) with safety
+            // Generate classified items from topics based on categoryLabel
+            // ALL: mix of work/personal, WORK: mostly work, PERSONAL: mostly personal
+            let primaryCategory: String
+            let secondaryCategory: String
+            if categoryLabel == "WORK" {
+                primaryCategory = "work"
+                secondaryCategory = "personal"
+            } else if categoryLabel == "PERSONAL" {
+                primaryCategory = "personal"
+                secondaryCategory = "work"
+            } else {
+                // ALL: balanced mix
+                primaryCategory = "work"
+                secondaryCategory = "personal"
+            }
+            
             let classifiedTopics = topTopics.prefix(3).enumerated().compactMap { index, topic -> String? in
                 guard !topic.isEmpty else { return nil }
-                let category = index % 2 == 0 ? "work" : "personal"
+                // For ALL: alternate, for WORK/PERSONAL: mostly primary category
+                let category: String
+                if categoryLabel == "ALL" {
+                    category = index % 2 == 0 ? primaryCategory : secondaryCategory
+                } else {
+                    // 80% primary category (index 0,1), 20% secondary (index 2)
+                    category = index < 2 ? primaryCategory : secondaryCategory
+                }
                 let escapedTopic = topic
                     .replacingOccurrences(of: "\"", with: "'")
                     .replacingOccurrences(of: "\\", with: "")
@@ -927,7 +1373,7 @@ public actor LocalEngine: SummarizationEngine {
     }
     
     /// Build fallback Year Wrap JSON from aggregated data (Universal Prompt schema) with crash protection
-    private func buildFallbackYearWrapJSON(sessionSummaries: [SessionIntelligence], topTopics: [String]) -> String {
+    private func buildFallbackYearWrapJSON(sessionSummaries: [SessionIntelligence], topTopics: [String], categoryLabel: String) -> String {
         #if DEBUG
         print("🔄 [LocalEngine] Building fallback Year Wrap JSON from \(sessionSummaries.count) summaries")
         #endif
@@ -949,14 +1395,23 @@ public actor LocalEngine: SummarizationEngine {
                     .replacingOccurrences(of: "\\", with: "")
             }
             
-            // Generate classified items from top topics (alternate work/personal) with safety
+            // Determine primary category based on variant
+            let primaryCategory = categoryLabel == "PERSONAL" ? "personal" : "work"
+            let secondaryCategory = categoryLabel == "PERSONAL" ? "work" : "personal"
+            
+            // Generate classified items from top topics with category awareness
             let classifiedWins: String
             if topTopics.isEmpty {
                 classifiedWins = ""
             } else {
                 classifiedWins = topTopics.prefix(3).enumerated().compactMap { index, topic -> String? in
                     guard !topic.isEmpty else { return nil }
-                    let category = index % 2 == 0 ? "work" : "personal"
+                    let category: String
+                    if categoryLabel == "ALL" {
+                        category = index % 2 == 0 ? "work" : "personal"
+                    } else {
+                        category = index < 2 ? primaryCategory : secondaryCategory
+                    }
                     let escapedTopic = topic
                         .replacingOccurrences(of: "\"", with: "'")
                         .replacingOccurrences(of: "\\", with: "")
@@ -972,7 +1427,12 @@ public actor LocalEngine: SummarizationEngine {
             } else {
                 classifiedTopics = topTopics.prefix(5).enumerated().compactMap { index, topic -> String? in
                     guard !topic.isEmpty else { return nil }
-                    let category = index % 2 == 0 ? "work" : "personal"
+                    let category: String
+                    if categoryLabel == "ALL" {
+                        category = index % 2 == 0 ? "work" : "personal"
+                    } else {
+                        category = index < 3 ? primaryCategory : secondaryCategory
+                    }
                     let escapedTopic = topic
                         .replacingOccurrences(of: "\"", with: "'")
                         .replacingOccurrences(of: "\\", with: "")

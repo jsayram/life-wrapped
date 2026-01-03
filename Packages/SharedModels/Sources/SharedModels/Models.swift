@@ -277,6 +277,7 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case day
     case week
     case month
+    case quarter  // Quarterly summary (3 months)
     case year
     case yearWrap
     case yearWrapWork
@@ -294,6 +295,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Week"
         case .month:
             return "Month"
+        case .quarter:
+            return "Quarter"
         case .year:
             return "Year"
         case .yearWrap:
@@ -303,6 +306,33 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
         case .yearWrapPersonal:
             return "Year Wrap (Personal)"
         }
+    }
+    
+    /// Get quarter number (1-4) from date
+    public static func quarterNumber(from date: Date) -> Int {
+        let month = Calendar.current.component(.month, from: date)
+        return (month - 1) / 3 + 1
+    }
+    
+    /// Get start and end dates for a specific quarter of a year
+    public static func quarterDateRange(year: Int, quarter: Int) -> (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let startMonth = (quarter - 1) * 3 + 1
+        
+        var startComponents = DateComponents()
+        startComponents.year = year
+        startComponents.month = startMonth
+        startComponents.day = 1
+        
+        let startDate = calendar.date(from: startComponents)!
+        
+        var endComponents = DateComponents()
+        endComponents.month = 3
+        endComponents.day = -1  // Last day of 3 months later
+        
+        let endDate = calendar.date(byAdding: endComponents, to: startDate)!
+        
+        return (start: startDate, end: endDate)
     }
 }
 
