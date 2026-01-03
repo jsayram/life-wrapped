@@ -24,6 +24,7 @@ public enum AppCoordinatorError: Error, Sendable {
     case notInitialized
     case recordingInProgress
     case noActiveRecording
+    case permissionDenied
     case transcriptionFailed(Error)
     case storageFailed(Error)
     case summarizationFailed(Error)
@@ -37,6 +38,8 @@ public enum AppCoordinatorError: Error, Sendable {
             return "A recording is already in progress"
         case .noActiveRecording:
             return "No active recording to stop"
+        case .permissionDenied:
+            return "Required permission was denied"
         case .transcriptionFailed(let error):
             return "Transcription failed: \(error.localizedDescription)"
         case .storageFailed(let error):
@@ -635,14 +638,172 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Recording
     
     /// Start a new recording session
+    /// Requests microphone permission just-in-time if needed
     @MainActor
     public func startRecording() async throws {
+        print("\n╔════════════════════════════════════════════════════════╗")
+        print("║ [AppCoordinator] START RECORDING CALLED                ║")
+        print("╚════════════════════════════════════════════════════════╝")
+        print("📍 [AppCoordinator] isInitialized: \(isInitialized)")
+        print("📍 [AppCoordinator] recordingState: \(recordingState)\n")
+        
         guard isInitialized else {
+            print("❌ [AppCoordinator] NOT INITIALIZED")
             throw AppCoordinatorError.notInitialized
         }
         
+        // Request microphone permission just-in-time
+        print("🎤 [AppCoordinator] Requesting microphone permission...")
+        let hasPermission = await requestMicrophonePermission()
+        
+        print("\n🎤 [AppCoordinator] *** BACK FROM MICROPHONE PERMISSION ***")
+        print("🎤 [AppCoordinator] Permission granted: \(hasPermission)\n")
+        
+        guard hasPermission else {
+            print("❌ [AppCoordinator] Microphone permission DENIED")
+            throw AppCoordinatorError.permissionDenied
+        }
+        
+        // Request speech recognition permission just-in-time
+        print("🗣️ [AppCoordinator] Requesting speech recognition permission...")
+        let hasSpeechPermission = await requestSpeechRecognitionPermission()
+        
+        print("\n🗣️ [AppCoordinator] *** BACK FROM SPEECH PERMISSION ***")
+        print("🗣️ [AppCoordinator] Permission granted: \(hasSpeechPermission)")
+        
+        if !hasSpeechPermission {
+            print("⚠️ [AppCoordinator] Speech recognition DENIED - recording will continue without transcription")
+            // Don't block recording, just warn the user
+            await MainActor.run {
+                showError("Speech recognition denied. Recording will continue, but transcription won't be available.")
+            }
+        }
+        
+        print("✅ [AppCoordinator] Starting recording...\n")
+        
         // Delegate to RecordingCoordinator
         try await recordingCoordinator?.startRecording()
+        
+        print("\n╔════════════════════════════════════════════════════════╗")
+        print("║ [AppCoordinator] START RECORDING COMPLETED             ║")
+        print("╚════════════════════════════════════════════════════════╝\n")
+    }
+    
+    /// Request microphone permission
+    /// NOT @MainActor - runs on background to avoid deadlock
+    private func requestMicrophonePermission() async -> Bool {
+        print("\n════════════════════════════════════════════════════════")
+        print("🎤 [AppCoordinator] REQUEST MICROPHONE PERMISSION")
+        print("🎤 [AppCoordinator] Running OFF MainActor to avoid deadlock")
+        print("════════════════════════════════════════════════════════\n")
+        
+        let currentStatus = AVAudioApplication.shared.recordPermission
+        print("🎤 [AppCoordinator] Current microphone status: \(currentStatus)")
+        
+        if currentStatus == .granted {
+            print("✅ [AppCoordinator] Microphone already granted")
+            return true
+        }
+        
+        if currentStatus == .undetermined {
+            print("🎤 [AppCoordinator] Requesting authorization...")
+            print("🎤 [AppCoordinator] About to call AVAudioApplication.requestRecordPermission()...")
+            
+            // Call from background context to avoid MainActor deadlock
+            let granted = await AVAudioApplication.requestRecordPermission()
+            
+            print("\n🎤 [AppCoordinator] *** PERMISSION CALLBACK RECEIVED ***")
+            print("🎤 [AppCoordinator] Permission granted: \(granted)")
+            print("🎤 [AppCoordinator] Verifying permission status...")
+            
+            // Re-check status to be absolutely sure
+            let verifyStatus = AVAudioApplication.shared.recordPermission
+            print("🎤 [AppCoordinator] Verified status: \(verifyStatus)")
+            
+            if !granted || verifyStatus != .granted {
+                print("❌ [AppCoordinator] Microphone permission DENIED")
+                await MainActor.run {
+                    showError("Microphone access is required for recording.")
+                }
+                return false
+            }
+            
+            print("✅ [AppCoordinator] Microphone permission GRANTED AND VERIFIED!")
+            
+            // Small delay to ensure system state is stable
+            print("⏳ [AppCoordinator] Waiting 200ms for system state to stabilize...")
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            print("✅ [AppCoordinator] System state should be stable now")
+            
+            return true
+        }
+        
+        // Denied
+        print("❌ [AppCoordinator] Microphone permission DENIED (previously)")
+        await MainActor.run {
+            showError("Microphone access is required. Please enable it in Settings.")
+        }
+        return false
+    }
+    
+    /// Request speech recognition permission
+    /// Uses Task.detached to completely break from MainActor context and avoid deadlock
+    private func requestSpeechRecognitionPermission() async -> Bool {
+        print("\n════════════════════════════════════════════════════════")
+        print("🗣️ [AppCoordinator] REQUEST SPEECH RECOGNITION PERMISSION")
+        print("🗣️ [AppCoordinator] Using Task.detached to avoid MainActor deadlock")
+        print("════════════════════════════════════════════════════════\n")
+        
+        // Use Task.detached to completely break from MainActor context
+        return await Task.detached {
+            let currentStatus = SFSpeechRecognizer.authorizationStatus()
+            print("🗣️ [AppCoordinator] Current speech status: \(currentStatus)")
+            
+            if currentStatus == .authorized {
+                print("✅ [AppCoordinator] Speech recognition already authorized")
+                return true
+            }
+            
+            if currentStatus == .notDetermined {
+                print("🗣️ [AppCoordinator] Requesting authorization...")
+                print("🗣️ [AppCoordinator] About to call SFSpeechRecognizer.requestAuthorization()...")
+                
+                // No withCheckedContinuation wrapper needed - just call directly
+                let status: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { continuation in
+                    SFSpeechRecognizer.requestAuthorization { status in
+                        print("🗣️ [CALLBACK] Speech recognition response: \(status)")
+                        // Resume directly - we're already detached from MainActor
+                        continuation.resume(returning: status)
+                    }
+                }
+                
+                print("\n🗣️ [AppCoordinator] *** PERMISSION CALLBACK RECEIVED ***")
+                print("🗣️ [AppCoordinator] Permission status: \(status)")
+                print("🗣️ [AppCoordinator] Verifying permission status...")
+                
+                // Re-check status to be absolutely sure
+                let verifyStatus = SFSpeechRecognizer.authorizationStatus()
+                print("🗣️ [AppCoordinator] Verified status: \(verifyStatus)")
+                
+                if status != .authorized || verifyStatus != .authorized {
+                    print("⚠️ [AppCoordinator] Speech recognition NOT authorized: \(status)")
+                    return false
+                }
+                
+                print("✅ [AppCoordinator] Speech recognition AUTHORIZED AND VERIFIED!")
+                
+                // Small delay to ensure system state is stable
+                print("⏳ [AppCoordinator] Waiting 300ms for system state to stabilize...")
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                print("✅ [AppCoordinator] System state should be stable now")
+                
+                return true
+            }
+            
+            // Denied or restricted
+            print("⚠️ [AppCoordinator] Speech recognition DENIED/RESTRICTED (previously): \(currentStatus)")
+            return false
+        }.value
     }
     
     /// Stop the current recording and process it through the pipeline
