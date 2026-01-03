@@ -118,6 +118,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var isDownloadingLocalModel: Bool = false
     @Published public private(set) var yearWrapNewSessionCount: Int = 0
     @Published public var yearWrapProgress: String = ""
+    @Published public var isGeneratingYearWrap: Bool = false
     
     /// Store manager for in-app purchases
     @Published public private(set) var storeManager = StoreManager()

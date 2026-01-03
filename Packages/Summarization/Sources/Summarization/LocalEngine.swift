@@ -968,28 +968,31 @@ public actor LocalEngine: SummarizationEngine {
         do {
             // 1. Generate title + summary (most important)
             #if DEBUG
-            print("📝 [LocalEngine] Step 1/5: Generating title and summary...")
+            print("📝 [LocalEngine] Step 1/6: Generating title and summary...")
             #endif
             let titleSummaryPrompt = buildTitleSummaryPrompt(summaries: combinedQuarterlySummaries, topTopics: topTopics, categoryLabel: categoryLabel)
-            let titleSummary = try await llamaContext.generate(prompt: titleSummaryPrompt, maxTokens: 128)  // Doubled for scaling
+            let rawTitleSummary = try await llamaContext.generate(prompt: titleSummaryPrompt, maxTokens: 128)
+            let titleSummary = validateAndCleanOutput(rawTitleSummary, step: "Title/Summary")
             totalLLMCalls += 1
-            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms (reduced from 500ms)
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
             // 2. Generate wins and challenges
             #if DEBUG
-            print("📝 [LocalEngine] Step 2/5: Generating wins and challenges...")
+            print("📝 [LocalEngine] Step 2/6: Generating wins and challenges...")
             #endif
             let winsPrompt = buildWinsChallengesPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-            let wins = try await llamaContext.generate(prompt: winsPrompt, maxTokens: 64)
+            let rawWins = try await llamaContext.generate(prompt: winsPrompt, maxTokens: 64)
+            let wins = validateAndCleanOutput(rawWins, step: "Wins/Challenges")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
             // 3. Generate projects
             #if DEBUG
-            print("📝 [LocalEngine] Step 3/5: Generating projects...")
+            print("📝 [LocalEngine] Step 3/6: Generating projects...")
             #endif
             let projectsPrompt = buildProjectsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-            let projects = try await llamaContext.generate(prompt: projectsPrompt, maxTokens: 64)
+            let rawProjects = try await llamaContext.generate(prompt: projectsPrompt, maxTokens: 64)
+            let projects = validateAndCleanOutput(rawProjects, step: "Projects")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
@@ -1006,9 +1009,10 @@ public actor LocalEngine: SummarizationEngine {
             #if DEBUG
             print("✅ [LocalEngine] Step 5/6: Validating topics against source...")
             #endif
-            let topicsText = rawTopics
-            let validationPrompt = buildValidationPrompt(extractedTopics: topicsText, sourceSummaries: combinedQuarterlySummaries)
-            let topics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: 64)
+            let cleanedRawTopics = validateAndCleanOutput(rawTopics, step: "Extracted Topics")
+            let validationPrompt = buildValidationPrompt(extractedTopics: cleanedRawTopics, sourceSummaries: combinedQuarterlySummaries)
+            let rawValidatedTopics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: 64)
+            let topics = validateAndCleanOutput(rawValidatedTopics, step: "Validated Topics")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
@@ -1100,6 +1104,8 @@ public actor LocalEngine: SummarizationEngine {
         - Write in FIRST PERSON (I/my/me) as a personal reflection
         - Only mention what's actually in the SUMMARIES above
         - DO NOT make up, infer, or imagine any content
+        - DO NOT echo these rules or add confirmation text
+        - Output ONLY the reflection text, nothing else
         - Every statement must have evidence in the summaries
         - If you can't find something in the summaries, don't mention it
         
@@ -1120,6 +1126,8 @@ public actor LocalEngine: SummarizationEngine {
         - Write in FIRST PERSON (I/my) for personal reflection
         - Only list what's explicitly mentioned in the SUMMARIES
         - DO NOT invent or imagine wins/challenges
+        - DO NOT include section headers like "Biggest Wins:", "Biggest Challenges:"
+        - Output ONLY the actual content items, not category labels
         - If no wins/challenges found, output "None found"
         - Every item must have clear evidence in the summaries
         
@@ -1140,6 +1148,8 @@ public actor LocalEngine: SummarizationEngine {
         - Write in FIRST PERSON (I/my) for personal reflection
         - Only list projects explicitly mentioned in the SUMMARIES
         - DO NOT invent or imagine projects
+        - DO NOT include section headers like "Finished Projects:", "Unfinished Projects:"
+        - Output ONLY the actual content items, not category labels
         - If none found, output "None found"
         - Every project must be clearly stated in the summaries
         
@@ -1160,7 +1170,12 @@ public actor LocalEngine: SummarizationEngine {
         - Working on app stability
         - Debugging crash issues
         
-        CRITICAL: Extract only actual topics/themes from the SUMMARY above. Write as personal activities (I/my). If nothing clear, output "None".
+        CRITICAL RULES:
+        - Extract only actual topics/themes from the SUMMARY above
+        - Write as personal activities (I/my)
+        - DO NOT include section headers like "Top Topics:", "Actions Taken:", "Topics:"
+        - Output ONLY the actual content items, not category labels
+        - If nothing clear, output "None"
         """
     }
     
@@ -1178,7 +1193,11 @@ public actor LocalEngine: SummarizationEngine {
         TASK: For each topic, check if it's actually mentioned in the source. Remove any fabricated topics.
         Output only verified topics that exist in the source. If none are real, output "None".
         
-        CRITICAL: Be strict. Only keep topics with clear evidence in the source summaries.
+        CRITICAL RULES:
+        - Be strict. Only keep topics with clear evidence in the source summaries.
+        - Do NOT include section headers like "Biggest Wins:", "Challenges:", "Topics:", etc.
+        - Do NOT include prompt instructions or labels
+        - Output ONLY the actual content items, not category names
         """
     }
     
@@ -1192,6 +1211,73 @@ public actor LocalEngine: SummarizationEngine {
         
         CRITICAL: Only list people explicitly mentioned by name. If none found, output "None found".
         """
+    }
+    
+    /// Clean AI output by removing prompt echoes, validation text, and other noise
+    private func cleanAIOutput(_ text: String) -> String {
+        var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Remove common AI validation/confirmation patterns
+        let removalPatterns = [
+            "Critical rules were followed:",
+            "Following the critical rules:",
+            "The reflection is in the first person",
+            "Only mentioned",
+            "As requested",
+            "Here are",
+            "Here is",
+            "Based on the summaries",
+            "From the summaries",
+            "According to"
+        ]
+        
+        for pattern in removalPatterns {
+            if let range = cleaned.range(of: pattern, options: .caseInsensitive) {
+                // Remove the pattern and everything before it
+                cleaned = String(cleaned[range.upperBound...])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ":-"))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        
+        // Remove bullet points at the start
+        while cleaned.hasPrefix("-") || cleaned.hasPrefix("•") || cleaned.hasPrefix("*") {
+            cleaned = String(cleaned.dropFirst())
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        // Remove JSON structure echoes (e.g., "major_arcs":[],"biggest_wins":")
+        if cleaned.contains("{\"text\":") || cleaned.contains("major_arcs") {
+            // This is malformed JSON structure being echoed - extract actual content before it
+            if let jsonStart = cleaned.range(of: "{\"text\":")?.lowerBound ?? cleaned.range(of: "major_arcs")?.lowerBound {
+                cleaned = String(cleaned[..<jsonStart])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        
+        return cleaned
+    }
+    
+    /// Validate and clean AI output with error handling
+    private func validateAndCleanOutput(_ rawOutput: String, step: String) -> String {
+        let cleaned = cleanAIOutput(rawOutput)
+        
+        #if DEBUG
+        if rawOutput != cleaned {
+            print("🧹 [LocalEngine] Cleaned \(step):")
+            print("   Raw: \(rawOutput.prefix(100))...")
+            print("   Clean: \(cleaned.prefix(100))...")
+        }
+        #endif
+        
+        // Validate we got meaningful content
+        if cleaned.isEmpty || cleaned.count < 10 {
+            print("⚠️ [LocalEngine] Warning: \(step) produced minimal output: '\(cleaned)'")
+            return "None found"  // Safe fallback
+        }
+        
+        return cleaned
     }
     
     /// Assemble Year Wrap JSON from multiple prompt outputs
@@ -1208,16 +1294,22 @@ public actor LocalEngine: SummarizationEngine {
         let primaryCategory = categoryLabel == "PERSONAL" ? "personal" : "work"
         let secondaryCategory = categoryLabel == "PERSONAL" ? "work" : "personal"
         
+        // Clean all inputs before parsing
+        let cleanedWins = validateAndCleanOutput(wins, step: "Wins Assembly")
+        let cleanedProjects = validateAndCleanOutput(projects, step: "Projects Assembly")
+        let cleanedTopics = validateAndCleanOutput(topics, step: "Topics Assembly")
+        let cleanedSummary = validateAndCleanOutput(titleSummary, step: "Summary Assembly")
+        
         // Parse outputs and create classified items
-        let winsItems = parseItemsFromText(wins, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
-        let projectsItems = parseItemsFromText(projects, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
-        let topicsItems = parseItemsFromText(topics, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
+        let winsItems = parseItemsFromText(cleanedWins, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
+        let projectsItems = parseItemsFromText(cleanedProjects, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
+        let topicsItems = parseItemsFromText(cleanedTopics, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
         
         // Build JSON - increased summary limit to 800 chars to match 128 token output (~400-500 chars)
-        let cleanSummary = titleSummary.replacingOccurrences(of: "\"", with: "'").prefix(800)
+        let finalSummary = cleanedSummary.replacingOccurrences(of: "\"", with: "'").prefix(800)
         
         return """
-        {"year_title":"Year in Review","year_summary":"\(cleanSummary)","major_arcs":[],"biggest_wins":[\(winsItems)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[\(projectsItems)],"unfinished_projects":[],"top_worked_on_topics":[\(topicsItems)],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
+        {"year_title":"Year in Review","year_summary":"\(finalSummary)","major_arcs":[],"biggest_wins":[\(winsItems)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[\(projectsItems)],"unfinished_projects":[],"top_worked_on_topics":[\(topicsItems)],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
         """
     }
     
@@ -1229,14 +1321,31 @@ public actor LocalEngine: SummarizationEngine {
             return ""  // Return empty string to avoid fabricated items
         }
         
-        // Split by common delimiters
-        let lines = text.components(separatedBy: CharacterSet(charactersIn: ".\n-•"))
+        // Section headers that should be filtered out
+        let sectionHeaders = [
+            "biggest wins:", "biggest challenges:", "biggest losses:",
+            "finished projects:", "unfinished projects:",
+            "top worked on topics:", "top talked about things:",
+            "valuable actions:", "valuable actions taken:",
+            "people mentioned:", "places visited:",
+            "opportunities missed:", "major arcs:"
+        ]
+        
+        // Split by common delimiters (newlines, bullets, dashes - but NOT periods to preserve sentences)
+        let lines = text.components(separatedBy: CharacterSet(charactersIn: "\n-•"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { line in
                 // Filter out common fabrication patterns and prompt echoes
                 let lower = line.lowercased()
+                
+                // Check if line is a section header
+                let isHeader = sectionHeaders.contains { header in
+                    lower == header || lower.hasPrefix(header) || lower.hasSuffix(header)
+                }
+                
                 return !line.isEmpty 
                     && line.count > 5 
+                    && !isHeader  // Filter section headers
                     && !lower.contains("none found")
                     && !lower.contains("no data")
                     && !lower.contains("for the given")
@@ -1264,7 +1373,8 @@ public actor LocalEngine: SummarizationEngine {
             } else {
                 category = index < 2 ? primaryCategory : secondaryCategory
             }
-            let escaped = line.replacingOccurrences(of: "\"", with: "'").prefix(100)
+            // Increased from 100 to 250 characters to prevent truncation
+            let escaped = line.replacingOccurrences(of: "\"", with: "'").prefix(250)
             return "{\"text\":\"\(escaped)\",\"category\":\"\(category)\"}"
         }.joined(separator: ",")
     }

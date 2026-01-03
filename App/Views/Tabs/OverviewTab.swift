@@ -184,6 +184,14 @@ struct OverviewTab: View {
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     @State private var showPurchaseSheet = false
+    @State private var showLocalAIConfirmation = false
+    @State private var showExternalAIConfirmation = false
+    @State private var pendingAIEngine: AIEngine?
+    
+    enum AIEngine {
+        case local
+        case external
+    }
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
@@ -501,6 +509,26 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
+            .alert("Generate Year Wrap?", isPresented: $showLocalAIConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Generate", role: .destructive) {
+                    Task {
+                        await wrapUpYear(forceRegenerate: true, useLocalAI: true)
+                    }
+                }
+            } message: {
+                Text("⚠️ This will take 2-3 minutes and cannot be stopped once started.\n\n‼️ IMPORTANT: Keep the app open and screen unlocked during generation. Don't minimize or switch apps.\n\nAre you sure you want to continue?")
+            }
+            .alert("Generate Year Wrap with External AI?", isPresented: $showExternalAIConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Generate", role: .destructive) {
+                    Task {
+                        await wrapUpYear(forceRegenerate: true, useLocalAI: false)
+                    }
+                }
+            } message: {
+                Text("⚠️ This will take 1-2 minutes and cannot be stopped once started.\n\nYour transcript will be sent to your configured AI provider for processing.\n\nAre you sure you want to continue?")
+            }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
@@ -527,7 +555,9 @@ struct OverviewTab: View {
                     },
                     onCancel: {
                         showYearWrapConfirmation = false
-                    }
+                    },
+                    showLocalAIConfirmation: $showLocalAIConfirmation,
+                    showExternalAIConfirmation: $showExternalAIConfirmation
                 )
                 .environmentObject(coordinator)
                 .presentationDetents([.medium])
@@ -745,6 +775,7 @@ struct OverviewTab: View {
         
         // Update UI state on MainActor
         isWrappingUpYear = true
+        coordinator.isGeneratingYearWrap = true
         yearWrapGenerationStatus = "Preparing Year Wrap..."
         
         let dateForGeneration = Date()
@@ -752,7 +783,7 @@ struct OverviewTab: View {
         print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
         
         // Update status to show AI processing
-        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\nGenerating 3 wraps with cooldown periods\nThis may take 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
+        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\n\n⚠️ IMPORTANT: Keep this app open\nDon't minimize or lock screen\n\nThis takes 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
         
         await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
         print("✅ [OverviewTab] Year Wrap generation completed successfully")
@@ -794,6 +825,7 @@ struct OverviewTab: View {
         
         // Success - clear state
         isWrappingUpYear = false
+        coordinator.isGeneratingYearWrap = false
         yearWrapGenerationStatus = ""
         coordinator.showSuccess("Year Wrap generated successfully!")
         print("✨ [OverviewTab] Year Wrap UI update completed")
@@ -1172,6 +1204,8 @@ struct YearWrapGenerationSheet: View {
     let onGenerateWithLocal: () -> Void
     let onPurchaseSmartestAI: () -> Void
     let onCancel: () -> Void
+    @Binding var showLocalAIConfirmation: Bool
+    @Binding var showExternalAIConfirmation: Bool
     
     private var hasExternalAPIConfigured: Bool {
         let openaiKey = KeychainHelper.load(key: "openai_api_key")
@@ -1212,7 +1246,12 @@ struct YearWrapGenerationSheet: View {
             // Options
             VStack(spacing: 12) {
                 // Local AI - Always available as primary option
-                Button(action: onGenerateWithLocal) {
+                Button(action: {
+                    onCancel()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showLocalAIConfirmation = true
+                    }
+                }) {
                     HStack(spacing: 12) {
                         Image(systemName: "iphone")
                             .font(.title2)
@@ -1221,20 +1260,25 @@ struct YearWrapGenerationSheet: View {
                             Text("Smart (Local AI)")
                                 .font(.headline)
                                 .fontWeight(.semibold)
-                            Text("Works completely offline")
+                            Text("Privacy-first • No internet needed")
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.9))
                         }
                         
                         Spacer()
                         
-                        Text("Free")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.white.opacity(0.2))
-                            .clipShape(Capsule())
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Free")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.2))
+                                .clipShape(Capsule())
+                            Text("2-3 min")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
                     }
                     .foregroundStyle(.white)
                     .padding()
@@ -1246,13 +1290,19 @@ struct YearWrapGenerationSheet: View {
                         )
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 8, y: 4)
                 }
                 .buttonStyle(.plain)
                 
                 // Smartest AI - Purchase required
                 if isSmartestAIUnlocked && hasExternalAPIConfigured {
                     // Unlocked AND API configured - can use directly
-                    Button(action: onGenerateWithExternal) {
+                    Button(action: {
+                        onCancel()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showExternalAIConfirmation = true
+                        }
+                    }) {
                         HStack(spacing: 12) {
                             Image(systemName: "sparkles")
                                 .font(.title2)
