@@ -117,6 +117,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public var currentToast: Toast?
     @Published public private(set) var isDownloadingLocalModel: Bool = false
     @Published public private(set) var yearWrapNewSessionCount: Int = 0
+    @Published public var yearWrapProgress: String = ""
     
     /// Store manager for in-app purchases
     @Published public private(set) var storeManager = StoreManager()
@@ -330,6 +331,11 @@ public final class AppCoordinator: ObservableObject {
             )
             summaryCoord.onPeriodSummariesUpdated = { [weak self] in
                 await self?.updateWidgetData()
+            }
+            summaryCoord.onYearWrapProgressUpdate = { [weak self] progress in
+                Task { @MainActor in
+                    self?.yearWrapProgress = progress
+                }
             }
             self.summaryCoordinator = summaryCoord
             print("✅ [AppCoordinator] SummaryCoordinator initialized")

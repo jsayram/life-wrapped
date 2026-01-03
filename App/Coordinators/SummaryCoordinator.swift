@@ -24,6 +24,9 @@ public final class SummaryCoordinator {
     /// Called when period summaries are updated (for widget refresh, etc.)
     public var onPeriodSummariesUpdated: (() async -> Void)?
     
+    /// Called to update Year Wrap generation progress
+    public var onYearWrapProgressUpdate: ((String) -> Void)?
+    
     // MARK: - Constants
     
     private let expectedLocalModelSizeMB: Double = 3800
@@ -813,6 +816,7 @@ public final class SummaryCoordinator {
     ) async {
         // Generate Combined Year Wrap (all summaries)
         print("🔄 [SummaryCoordinator] 1/3 Generating COMBINED Year Wrap...")
+        onYearWrapProgressUpdate?("Step 1 of 3: Combined Year Wrap\nProcessing all sessions...")
         await generateSingleYearWrap(
             periodType: .yearWrap,
             sourceSummaries: allSummaries,
@@ -823,15 +827,12 @@ public final class SummaryCoordinator {
             label: "Combined"
         )
         
-        // Delay to prevent CPU/memory exhaustion when using Local AI
-        if useLocalAI {
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-            print("⏸️ [SummaryCoordinator] Cooldown period after Combined Year Wrap")
-        }
+        // No cooldown needed - model stays loaded for next variant
 
         // Generate Work-Only Year Wrap
         if !workSummaries.isEmpty {
             print("🔄 [SummaryCoordinator] 2/3 Generating WORK Year Wrap...")
+            onYearWrapProgressUpdate?("Step 2 of 3: Work Year Wrap\nProcessing work sessions...")
             await generateSingleYearWrap(
                 periodType: .yearWrapWork,
                 sourceSummaries: workSummaries,
@@ -845,15 +846,12 @@ public final class SummaryCoordinator {
             print("⏭️ [SummaryCoordinator] 2/3 Skipping WORK Year Wrap (no work sessions)")
         }
         
-        // Delay to prevent CPU/memory exhaustion when using Local AI
-        if useLocalAI {
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-            print("⏸️ [SummaryCoordinator] Cooldown period after Work Year Wrap")
-        }
+        // No cooldown needed - model stays loaded for final variant
 
         // Generate Personal-Only Year Wrap
         if !personalSummaries.isEmpty {
             print("🔄 [SummaryCoordinator] 3/3 Generating PERSONAL Year Wrap...")
+            onYearWrapProgressUpdate?("Step 3 of 3: Personal Year Wrap\nProcessing personal sessions...")
             await generateSingleYearWrap(
                 periodType: .yearWrapPersonal,
                 sourceSummaries: personalSummaries,

@@ -91,15 +91,33 @@ fileprivate struct YearWrapLoadingOverlay: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                     
-                    // Status message
-                    Text(statusMessage)
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                        .animation(.easeInOut, value: statusMessage)
+                    // Status message with detailed steps
+                    VStack(spacing: 8) {
+                        Text(statusMessage)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                            .animation(.easeInOut, value: statusMessage)
+                        
+                        // Progress indicators
+                        if statusMessage.contains("Step") {
+                            HStack(spacing: 8) {
+                                ForEach(1...3, id: \.self) { step in
+                                    Circle()
+                                        .fill(getStepColor(for: step, current: statusMessage))
+                                        .frame(width: 10, height: 10)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                        )
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+                    }
                     
-                    // Progress indicator text
+                    // Animated progress dots
                     HStack(spacing: 4) {
                         ForEach(0..<3, id: \.self) { index in
                             Circle()
@@ -129,6 +147,23 @@ fileprivate struct YearWrapLoadingOverlay: View {
             animationRotation = 360
             pulseScale = 1.2
         }
+    }
+    
+    /// Determines the color for step progress indicators
+    private func getStepColor(for step: Int, current statusMessage: String) -> Color {
+        // Extract step number from message like "Step 1 of 3: Combined Year Wrap"
+        if let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
+           let currentStepString = statusMessage[range].split(separator: " ").last,
+           let currentStep = Int(currentStepString) {
+            if step < currentStep {
+                return AppTheme.emerald // Completed
+            } else if step == currentStep {
+                return AppTheme.purple // In progress
+            } else {
+                return Color.white.opacity(0.3) // Pending
+            }
+        }
+        return Color.white.opacity(0.3) // Default
     }
 }
 
@@ -521,7 +556,7 @@ struct OverviewTab: View {
         }
         .overlay {
             if isWrappingUpYear {
-                YearWrapLoadingOverlay(statusMessage: yearWrapGenerationStatus)
+                YearWrapLoadingOverlay(statusMessage: coordinator.yearWrapProgress.isEmpty ? yearWrapGenerationStatus : coordinator.yearWrapProgress)
             }
         }
     }

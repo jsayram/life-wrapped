@@ -974,7 +974,7 @@ public actor LocalEngine: SummarizationEngine {
             let titleSummaryPrompt = buildTitleSummaryPrompt(summaries: combinedQuarterlySummaries, topTopics: topTopics, categoryLabel: categoryLabel)
             let titleSummary = try await llamaContext.generate(prompt: titleSummaryPrompt, maxTokens: 128)  // Doubled for scaling
             totalLLMCalls += 1
-            try await Task.sleep(nanoseconds: 500_000_000)
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms (reduced from 500ms)
             
             // 2. Generate wins and challenges
             #if DEBUG
@@ -983,7 +983,7 @@ public actor LocalEngine: SummarizationEngine {
             let winsPrompt = buildWinsChallengesPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
             let wins = try await llamaContext.generate(prompt: winsPrompt, maxTokens: 64)
             totalLLMCalls += 1
-            try await Task.sleep(nanoseconds: 500_000_000)
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
             // 3. Generate projects
             #if DEBUG
@@ -992,20 +992,30 @@ public actor LocalEngine: SummarizationEngine {
             let projectsPrompt = buildProjectsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
             let projects = try await llamaContext.generate(prompt: projectsPrompt, maxTokens: 64)
             totalLLMCalls += 1
-            try await Task.sleep(nanoseconds: 500_000_000)
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
             // 4. Generate topics and actions
             #if DEBUG
-            print("📝 [LocalEngine] Step 4/5: Generating topics and actions...")
+            print("📝 [LocalEngine] Step 4/6: Extracting topics and actions...")
             #endif
             let topicsPrompt = buildTopicsActionsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-            let topics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: 64)
+            let rawTopics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: 64)
             totalLLMCalls += 1
-            try await Task.sleep(nanoseconds: 500_000_000)
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
-            // 5. Generate people and places (if mentioned)
+            // 5. Validate topics against source to prevent hallucination
             #if DEBUG
-            print("📝 [LocalEngine] Step 5/5: Generating people and places...")
+            print("✅ [LocalEngine] Step 5/6: Validating topics against source...")
+            #endif
+            let topicsText = rawTopics
+            let validationPrompt = buildValidationPrompt(extractedTopics: topicsText, sourceSummaries: combinedQuarterlySummaries)
+            let topics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: 64)
+            totalLLMCalls += 1
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+            
+            // 6. Generate people and places (if mentioned)
+            #if DEBUG
+            print("📝 [LocalEngine] Step 6/6: Generating people and places...")
             #endif
             let peoplePrompt = buildPeoplePrompt(summaries: combinedQuarterlySummaries)
             let people = try await llamaContext.generate(prompt: peoplePrompt, maxTokens: 32)
@@ -1087,10 +1097,12 @@ public actor LocalEngine: SummarizationEngine {
         SUMMARIES:
         \(summaries)
         
-        CRITICAL: 
+        CRITICAL RULES:
         - Write in FIRST PERSON (I/my/me) as a personal reflection
-        - Only mention what's actually in the summaries above
-        - Do not make up or infer content
+        - Only mention what's actually in the SUMMARIES above
+        - DO NOT make up, infer, or imagine any content
+        - Every statement must have evidence in the summaries
+        - If you can't find something in the summaries, don't mention it
         
         Example style: "I experienced...", "My work on...", "I struggled with..."
         """
@@ -1105,10 +1117,12 @@ public actor LocalEngine: SummarizationEngine {
         SUMMARIES:
         \(summaries)
         
-        CRITICAL: 
+        CRITICAL RULES:
         - Write in FIRST PERSON (I/my) for personal reflection
-        - Only list what's explicitly mentioned
+        - Only list what's explicitly mentioned in the SUMMARIES
+        - DO NOT invent or imagine wins/challenges
         - If no wins/challenges found, output "None found"
+        - Every item must have clear evidence in the summaries
         
         Example: "Completed my app redesign", "Struggled with crashes"
         """
@@ -1123,16 +1137,18 @@ public actor LocalEngine: SummarizationEngine {
         SUMMARIES:
         \(summaries)
         
-        CRITICAL:
-        - Write in FIRST PERSON (I/my) for personal reflection  
-        - Only list projects explicitly mentioned
+        CRITICAL RULES:
+        - Write in FIRST PERSON (I/my) for personal reflection
+        - Only list projects explicitly mentioned in the SUMMARIES
+        - DO NOT invent or imagine projects
         - If none found, output "None found"
+        - Every project must be clearly stated in the summaries
         
         Example: "Built my portfolio site", "Started learning Swift"
         """
     }
     
-    /// Build focused prompt for topics and actions (Step 4/5)
+    /// Build focused prompt for topics and actions (Step 4/6)
     private func buildTopicsActionsPrompt(summaries: String, categoryLabel: String) -> String {
         return """
         Extract main topics from the summary below. List only what's explicitly mentioned (2-3 items).
@@ -1145,7 +1161,25 @@ public actor LocalEngine: SummarizationEngine {
         - Working on app stability
         - Debugging crash issues
         
-        CRITICAL: Extract only actual topics/themes. Write as personal activities (I/my). If nothing clear, output "None".
+        CRITICAL: Extract only actual topics/themes from the SUMMARY above. Write as personal activities (I/my). If nothing clear, output "None".
+        """
+    }
+    
+    /// Validate extracted topics against source summaries to prevent hallucination (Step 5/6)
+    private func buildValidationPrompt(extractedTopics: String, sourceSummaries: String) -> String {
+        return """
+        Review these extracted topics and verify each one appears in the source summaries.
+        
+        EXTRACTED TOPICS:
+        \(extractedTopics)
+        
+        SOURCE SUMMARIES:
+        \(sourceSummaries.prefix(600))
+        
+        TASK: For each topic, check if it's actually mentioned in the source. Remove any fabricated topics.
+        Output only verified topics that exist in the source. If none are real, output "None".
+        
+        CRITICAL: Be strict. Only keep topics with clear evidence in the source summaries.
         """
     }
     
