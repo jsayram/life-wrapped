@@ -99,7 +99,8 @@ struct YearWrappedCard: View {
                 HStack(spacing: 12) {
                     // Copy button
                     Button {
-                        UIPasteboard.general.string = summary.text
+                        let summaryText = extractYearSummary(from: summary.text)
+                        UIPasteboard.general.string = summaryText
                         coordinator.showSuccess("Year Wrapped summary copied")
                     } label: {
                         Image(systemName: "doc.on.doc")

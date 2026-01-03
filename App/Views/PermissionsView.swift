@@ -12,7 +12,6 @@ struct PermissionsView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var microphoneStatus: PermissionStatus = .notDetermined
-    @State private var speechStatus: PermissionStatus = .notDetermined
     @State private var isRequestingPermissions = false
     
     // Model download state
@@ -89,12 +88,37 @@ struct PermissionsView: View {
                             status: microphoneStatus
                         )
                         
-                        PermissionCard(
-                            icon: "waveform",
-                            title: "Speech Recognition",
-                            description: "Transcribe your audio recordings into text, privately on your device",
-                            status: speechStatus
-                        )
+                        // Info card about speech recognition (requested later)
+                        HStack(spacing: 16) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.blue.opacity(0.1))
+                                    .frame(width: 50, height: 50)
+                                
+                                Image(systemName: "waveform")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Speech Recognition")
+                                    .font(.headline)
+                                
+                                Text("Requested when you start recording")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "clock.fill")
+                                .font(.title2)
+                                .foregroundColor(.orange)
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                         
                         // Privacy Note
                         HStack(alignment: .top, spacing: 12) {
@@ -397,11 +421,11 @@ struct PermissionsView: View {
     // MARK: - Computed Properties
     
     private var allPermissionsGranted: Bool {
-        microphoneStatus == .authorized && speechStatus == .authorized
+        microphoneStatus == .authorized
     }
     
     private var hasAnyDeniedPermissions: Bool {
-        microphoneStatus == .denied || speechStatus == .denied
+        microphoneStatus == .denied
     }
     
     // MARK: - Setup Flow Methods
@@ -468,36 +492,28 @@ struct PermissionsView: View {
             microphoneStatus = PermissionStatus(from: micStatus)
         }
         
-        // Check speech recognition permission
-        let speechAuthStatus = SFSpeechRecognizer.authorizationStatus()
-        await MainActor.run {
-            speechStatus = PermissionStatus(from: speechAuthStatus)
-        }
-        
-        print("🔐 [PermissionsView] Mic: \(microphoneStatus), Speech: \(speechStatus)")
+        print("🔐 [PermissionsView] Mic: \(microphoneStatus) (Speech will be requested when recording)")
     }
     
     private func requestPermissions() {
         isRequestingPermissions = true
         
         Task {
-            // Request microphone permission
+            // Request microphone permission only
             await requestMicrophonePermission()
-            
-            // Request speech recognition permission
-            await requestSpeechRecognitionPermission()
             
             // Recheck status
             await checkPermissions()
             
             await MainActor.run {
                 isRequestingPermissions = false
-                print("✅ [PermissionsView] Permissions requested, status updated")
-                print("🔐 [PermissionsView] Mic: \(microphoneStatus), Speech: \(speechStatus)")
+                print("✅ [PermissionsView] Microphone permission requested")
+                print("🔐 [PermissionsView] Mic: \(microphoneStatus)")
                 
-                // If both permissions granted, finish setup
+                // If microphone granted, finish setup
                 if allPermissionsGranted {
-                    print("🎉 [PermissionsView] All permissions granted, finishing setup")
+                    print("🎉 [PermissionsView] Microphone granted, finishing setup")
+                    print("ℹ️ [PermissionsView] Speech recognition will be requested when user starts recording")
                     finishSetup()
                 }
             }
@@ -515,21 +531,6 @@ struct PermissionsView: View {
             microphoneStatus = granted ? .authorized : .denied
             print("🎤 [PermissionsView] Microphone permission: \(granted ? "granted" : "denied")")
         }
-    }
-    
-    @MainActor
-    private func requestSpeechRecognitionPermission() async {
-        let status = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                // Resume on the main actor to satisfy Speech API main-thread expectations.
-                Task { @MainActor in
-                    continuation.resume(returning: status)
-                }
-            }
-        }
-        
-        speechStatus = PermissionStatus(from: status)
-        print("🗣️ [PermissionsView] Speech recognition permission: \(status)")
     }
     
     private func openSettings() {

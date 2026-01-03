@@ -12,54 +12,83 @@ struct GenerateYearWrapCard: View {
         Button {
             onGenerate()
         } label: {
-            VStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 48))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.magenta, AppTheme.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            VStack(spacing: 20) {
+                // Animated sparkles icon
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.magenta.opacity(0.2), AppTheme.purple.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
+                        .frame(width: 80, height: 80)
+                    
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [AppTheme.magenta, AppTheme.purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .symbolEffect(.pulse.byLayer, options: .repeating)
+                }
                 
-                VStack(spacing: 8) {
+                VStack(spacing: 12) {
                     Text("Generate Year Wrapped")
-                        .font(.title3)
+                        .font(.title2)
                         .fontWeight(.bold)
                     
-                    Text("Create an AI-powered summary of your entire year")
+                    Text("Create an AI-powered summary of your entire year with insights, highlights, and trends")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 
                 if isGenerating {
-                    ProgressView()
-                        .tint(AppTheme.purple)
-                        .scaleEffect(1.2)
-                        .padding(.top, 8)
-                } else {
-                    HStack {
-                        Image(systemName: "wand.and.stars")
-                        Text("Generate with AI")
-                            .fontWeight(.semibold)
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .tint(AppTheme.purple)
+                            .scaleEffect(1.2)
+                        Text("Generating...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(
-                            colors: [AppTheme.magenta, AppTheme.purple],
-                            startPoint: .leading,
-                            endPoint: .trailing
+                    .padding(.top, 8)
+                } else {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.title3)
+                            Text("Generate with AI")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            LinearGradient(
+                                colors: [AppTheme.magenta, AppTheme.purple],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
-                    )
-                    .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: AppTheme.purple.opacity(0.4), radius: 12, y: 6)
+                        
+                        Text("Takes 2-3 minutes • Cannot be stopped")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(24)
+            .padding(28)
             .background(
                 LinearGradient(
                     colors: [

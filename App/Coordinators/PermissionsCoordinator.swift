@@ -11,15 +11,18 @@ public final class PermissionsCoordinator: Sendable {
     
     // MARK: - Permission Checks
     
-    /// Check if all required permissions are granted
+    /// Check if required permissions for app launch are granted
+    /// NOTE: Only checks microphone - speech recognition is requested when user starts recording
     public func checkPermissions() async -> Bool {
         let micPermission = await checkMicrophonePermission()
         let speechPermission = await checkSpeechRecognitionPermission()
         
-        let hasAll = micPermission && speechPermission
+        // Only microphone is required for initial setup
+        // Speech recognition will be requested just-in-time when recording starts
         print("🔐 [PermissionsCoordinator] Permissions - Mic: \(micPermission), Speech: \(speechPermission)")
+        print("ℹ️ [PermissionsCoordinator] Only microphone required for setup (speech requested when recording)")
         
-        return hasAll
+        return micPermission
     }
     
     /// Check microphone permission status

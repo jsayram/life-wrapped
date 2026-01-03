@@ -1,5 +1,172 @@
 import SwiftUI
 import SharedModels
+
+/// Full-screen loading overlay for Year Wrap generation with animated progress indicator
+fileprivate struct YearWrapLoadingOverlay: View {
+    let statusMessage: String
+    
+    @State private var animationRotation: Double = 0
+    @State private var pulseScale: CGFloat = 1.0
+    
+    var body: some View {
+        ZStack {
+            // Blurred background
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Animated year wrap icon
+                ZStack {
+                    // Outer pulsing ring
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 4
+                        )
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(pulseScale)
+                        .animation(
+                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
+                            value: pulseScale
+                        )
+                    
+                    // Rotating gradient ring
+                    Circle()
+                        .trim(from: 0, to: 0.75)
+                        .stroke(
+                            AngularGradient(
+                                gradient: Gradient(colors: [
+                                    AppTheme.purple,
+                                    .blue,
+                                    .cyan,
+                                    AppTheme.purple
+                                ]),
+                                center: .center,
+                                startAngle: .degrees(0),
+                                endAngle: .degrees(360)
+                            ),
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                        )
+                        .frame(width: 100, height: 100)
+                        .rotationEffect(.degrees(animationRotation))
+                        .animation(
+                            .linear(duration: 2).repeatForever(autoreverses: false),
+                            value: animationRotation
+                        )
+                    
+                    // Center icon
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 70, height: 70)
+                        
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 32, weight: .medium))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [AppTheme.purple, .cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .symbolEffect(.pulse.byLayer)
+                    }
+                }
+                .frame(width: 120, height: 120)
+                
+                VStack(spacing: 12) {
+                    // Title
+                    Text("Generating Year Wrap")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                    
+                    // Status message with detailed steps
+                    VStack(spacing: 8) {
+                        Text(statusMessage)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                            .animation(.easeInOut, value: statusMessage)
+                        
+                        // Progress indicators
+                        if statusMessage.contains("Step") {
+                            HStack(spacing: 8) {
+                                ForEach(1...3, id: \.self) { step in
+                                    Circle()
+                                        .fill(getStepColor(for: step, current: statusMessage))
+                                        .frame(width: 10, height: 10)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                        )
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+                    }
+                    
+                    // Animated progress dots
+                    HStack(spacing: 4) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(Color.white.opacity(0.6))
+                                .frame(width: 6, height: 6)
+                                .scaleEffect(pulseScale)
+                                .animation(
+                                    .easeInOut(duration: 0.6)
+                                        .repeatForever(autoreverses: true)
+                                        .delay(Double(index) * 0.2),
+                                    value: pulseScale
+                                )
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+            }
+            .padding(40)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(.ultraThinMaterial)
+                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 30, x: 0, y: 10)
+            )
+            .padding(.horizontal, 40)
+        }
+        .onAppear {
+            animationRotation = 360
+            pulseScale = 1.2
+        }
+    }
+    
+    /// Determines the color for step progress indicators
+    private func getStepColor(for step: Int, current statusMessage: String) -> Color {
+        // Extract step number from message like "Step 1 of 3: Combined Year Wrap"
+        if let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
+           let currentStepString = statusMessage[range].split(separator: " ").last,
+           let currentStep = Int(currentStepString) {
+            if step < currentStep {
+                return AppTheme.emerald // Completed
+            } else if step == currentStep {
+                return AppTheme.purple // In progress
+            } else {
+                return Color.white.opacity(0.3) // Pending
+            }
+        }
+        return Color.white.opacity(0.3) // Default
+    }
+}
+
 struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.colorScheme) var colorScheme
@@ -11,11 +178,20 @@ struct OverviewTab: View {
     @State private var yearWrapPersonalSummary: Summary?
     @State private var yearWrapFilter: ItemFilter = .all
     @State private var isWrappingUpYear = false
+    @State private var yearWrapGenerationStatus: String = ""
     @State private var isRegeneratingPeriodSummary = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     @State private var showPurchaseSheet = false
+    @State private var showLocalAIConfirmation = false
+    @State private var showExternalAIConfirmation = false
+    @State private var pendingAIEngine: AIEngine?
+    
+    enum AIEngine {
+        case local
+        case external
+    }
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
@@ -333,6 +509,26 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
+            .alert("Generate Year Wrap?", isPresented: $showLocalAIConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Generate", role: .destructive) {
+                    Task {
+                        await wrapUpYear(forceRegenerate: true, useLocalAI: true)
+                    }
+                }
+            } message: {
+                Text("⚠️ This will take 2-3 minutes and cannot be stopped once started.\n\n‼️ IMPORTANT: Keep the app open and screen unlocked during generation. Don't minimize or switch apps.\n\nAre you sure you want to continue?")
+            }
+            .alert("Generate Year Wrap with External AI?", isPresented: $showExternalAIConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Generate", role: .destructive) {
+                    Task {
+                        await wrapUpYear(forceRegenerate: true, useLocalAI: false)
+                    }
+                }
+            } message: {
+                Text("⚠️ This will take 1-2 minutes and cannot be stopped once started.\n\nYour transcript will be sent to your configured AI provider for processing.\n\nAre you sure you want to continue?")
+            }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
@@ -359,7 +555,9 @@ struct OverviewTab: View {
                     },
                     onCancel: {
                         showYearWrapConfirmation = false
-                    }
+                    },
+                    showLocalAIConfirmation: $showLocalAIConfirmation,
+                    showExternalAIConfirmation: $showExternalAIConfirmation
                 )
                 .environmentObject(coordinator)
                 .presentationDetents([.medium])
@@ -384,6 +582,11 @@ struct OverviewTab: View {
                 )
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+            }
+        }
+        .overlay {
+            if isWrappingUpYear {
+                YearWrapLoadingOverlay(statusMessage: coordinator.yearWrapProgress.isEmpty ? yearWrapGenerationStatus : coordinator.yearWrapProgress)
             }
         }
     }
@@ -569,18 +772,40 @@ struct OverviewTab: View {
 
     private func wrapUpYear(forceRegenerate: Bool, useLocalAI: Bool) async {
         guard !isWrappingUpYear else { return }
+        
+        // Update UI state on MainActor
         isWrappingUpYear = true
+        coordinator.isGeneratingYearWrap = true
+        yearWrapGenerationStatus = "Preparing Year Wrap..."
+        
         let dateForGeneration = Date()
 
+        print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
+        
+        // Update status to show AI processing
+        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\n\n⚠️ IMPORTANT: Keep this app open\nDon't minimize or lock screen\n\nThis takes 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
+        
         await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
-
+        print("✅ [OverviewTab] Year Wrap generation completed successfully")
+        
+        // Update status to show fetching results
+        yearWrapGenerationStatus = "Finalizing results..."
+        
         // Wait briefly for database transaction to complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         
-        // Fetch all Year Wrap summaries
-        yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
-        yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
-        yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
+        // Update status before fetching
+        yearWrapGenerationStatus = "Loading Year Wrap..."
+        
+        // Fetch all Year Wrap summaries (with error handling)
+        do {
+            yearWrapSummary = try await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
+            yearWrapWorkSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
+            yearWrapPersonalSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
+        } catch {
+            print("⚠️ [OverviewTab] Failed to fetch Year Wrap summaries: \(error)")
+            // Non-fatal - just log it
+        }
         
         // Check for staleness after fetching Year Wrap
         if let yearWrap = yearWrapSummary {
@@ -590,19 +815,20 @@ struct OverviewTab: View {
             print("🔍 [OverviewTab] Year Wrap fetched with createdAt: \(yearWrap.createdAt)")
             
             if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                await MainActor.run {
-                    coordinator.updateYearWrapNewSessionCount(newCount)
-                }
+                coordinator.updateYearWrapNewSessionCount(newCount)
                 print("📊 [OverviewTab] Updated staleness count to \(newCount)")
             }
         } else {
             // Reset count if no Year Wrap found
-            await MainActor.run {
-                coordinator.updateYearWrapNewSessionCount(0)
-            }
+            coordinator.updateYearWrapNewSessionCount(0)
         }
         
+        // Success - clear state
         isWrappingUpYear = false
+        coordinator.isGeneratingYearWrap = false
+        yearWrapGenerationStatus = ""
+        coordinator.showSuccess("Year Wrap generated successfully!")
+        print("✨ [OverviewTab] Year Wrap UI update completed")
     }
     
     private func formatHour(_ hour: Int) -> String {
@@ -978,6 +1204,8 @@ struct YearWrapGenerationSheet: View {
     let onGenerateWithLocal: () -> Void
     let onPurchaseSmartestAI: () -> Void
     let onCancel: () -> Void
+    @Binding var showLocalAIConfirmation: Bool
+    @Binding var showExternalAIConfirmation: Bool
     
     private var hasExternalAPIConfigured: Bool {
         let openaiKey = KeychainHelper.load(key: "openai_api_key")
@@ -1018,7 +1246,12 @@ struct YearWrapGenerationSheet: View {
             // Options
             VStack(spacing: 12) {
                 // Local AI - Always available as primary option
-                Button(action: onGenerateWithLocal) {
+                Button(action: {
+                    onCancel()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showLocalAIConfirmation = true
+                    }
+                }) {
                     HStack(spacing: 12) {
                         Image(systemName: "iphone")
                             .font(.title2)
@@ -1027,20 +1260,25 @@ struct YearWrapGenerationSheet: View {
                             Text("Smart (Local AI)")
                                 .font(.headline)
                                 .fontWeight(.semibold)
-                            Text("Works completely offline")
+                            Text("Privacy-first • No internet needed")
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.9))
                         }
                         
                         Spacer()
                         
-                        Text("Free")
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.white.opacity(0.2))
-                            .clipShape(Capsule())
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Free")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.white.opacity(0.2))
+                                .clipShape(Capsule())
+                            Text("2-3 min")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
                     }
                     .foregroundStyle(.white)
                     .padding()
@@ -1052,13 +1290,19 @@ struct YearWrapGenerationSheet: View {
                         )
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 8, y: 4)
                 }
                 .buttonStyle(.plain)
                 
                 // Smartest AI - Purchase required
                 if isSmartestAIUnlocked && hasExternalAPIConfigured {
                     // Unlocked AND API configured - can use directly
-                    Button(action: onGenerateWithExternal) {
+                    Button(action: {
+                        onCancel()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showExternalAIConfirmation = true
+                        }
+                    }) {
                         HStack(spacing: 12) {
                             Image(systemName: "sparkles")
                                 .font(.title2)
