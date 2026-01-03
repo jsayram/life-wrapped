@@ -822,6 +822,12 @@ public final class SummaryCoordinator {
             useLocalAI: useLocalAI,
             label: "Combined"
         )
+        
+        // Delay to prevent CPU/memory exhaustion when using Local AI
+        if useLocalAI {
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            print("⏸️ [SummaryCoordinator] Cooldown period after Combined Year Wrap")
+        }
 
         // Generate Work-Only Year Wrap
         if !workSummaries.isEmpty {
@@ -837,6 +843,12 @@ public final class SummaryCoordinator {
             )
         } else {
             print("⏭️ [SummaryCoordinator] 2/3 Skipping WORK Year Wrap (no work sessions)")
+        }
+        
+        // Delay to prevent CPU/memory exhaustion when using Local AI
+        if useLocalAI {
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+            print("⏸️ [SummaryCoordinator] Cooldown period after Work Year Wrap")
         }
 
         // Generate Personal-Only Year Wrap

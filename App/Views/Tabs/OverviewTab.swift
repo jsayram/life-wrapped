@@ -718,7 +718,7 @@ struct OverviewTab: View {
             print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
             
             // Update status to show AI processing
-            yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\nThis may take a minute" : "Analyzing with External AI...\nProcessing your year"
+            yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\nGenerating 3 wraps with cooldown periods\nThis may take 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
             
             await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
             print("✅ [OverviewTab] Year Wrap generation completed successfully")

@@ -593,8 +593,9 @@ public actor LocalEngine: SummarizationEngine {
         
         // Build combined period summaries for context
         // Note: These are typically month summaries (12 max) not individual sessions
+        // Reduced to 8 to prevent memory exhaustion on device
         let combinedSummaries = sessionSummaries
-            .prefix(15)  // 12 months + buffer, much lower burden than 100+ sessions
+            .prefix(8)  // Reduced from 15 to prevent CPU/memory exhaustion
             .map { "- \($0.summary)" }
             .joined(separator: "\n")
         
@@ -656,7 +657,14 @@ public actor LocalEngine: SummarizationEngine {
             print("🔍 [LocalEngine] Model ready status: \(await llamaContext.isReady())")
             #endif
             
-            rawOutput = try await llamaContext.generate(prompt: prompt, maxTokens: 512)
+            // Yield to prevent CPU starvation before heavy operation
+            await Task.yield()
+            
+            // Reduced token count to prevent memory/CPU exhaustion (256 instead of 512)
+            rawOutput = try await llamaContext.generate(prompt: prompt, maxTokens: 256)
+            
+            // Yield after generation to allow system memory cleanup
+            await Task.yield()
             
             #if DEBUG
             print("✅ [LocalEngine] LLM generation completed, output length: \(rawOutput.count)")
