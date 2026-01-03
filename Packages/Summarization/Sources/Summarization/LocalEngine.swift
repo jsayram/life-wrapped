@@ -604,7 +604,7 @@ public actor LocalEngine: SummarizationEngine {
                     #if DEBUG
                     print("✅ [LocalEngine] Model loaded successfully")
                     #endif
-                } catch {
+                } catch let error {
                     #if DEBUG
                     print("❌ [LocalEngine] Failed to load model: \(error), using extractive fallback")
                     #endif
@@ -662,7 +662,7 @@ public actor LocalEngine: SummarizationEngine {
                     #if DEBUG
                     print("✅ [LocalEngine] Chunk \(chunkNumber) summarized: \(chunkSummary.prefix(60))...")
                     #endif
-                } catch {
+                } catch let error {
                     #if DEBUG
                     print("⚠️ [LocalEngine] MLX generation failed for chunk \(chunkNumber): \(error)")
                     #endif
@@ -925,7 +925,7 @@ public actor LocalEngine: SummarizationEngine {
                     // Add longer cooldown between quarters (2s instead of 1s)
                     try await Task.sleep(nanoseconds: 2_000_000_000)
                 }
-            } catch {
+            } catch let error {
                 #if DEBUG
                 print("⚠️ [LocalEngine] Q\(quarter) synthesis failed: \(error), using fallback")
                 #endif
@@ -964,7 +964,6 @@ public actor LocalEngine: SummarizationEngine {
         
         // MULTI-PROMPT STRATEGY: Generate different aspects separately to stay within memory limits
         // Each prompt is small (~400-600 chars) and focused on one aspect
-        var yearWrapComponents: [String: Any] = [:]
         
         do {
             // 1. Generate title + summary (most important)
@@ -1302,54 +1301,47 @@ public actor LocalEngine: SummarizationEngine {
         print("🔍 [LocalEngine] Parsing Year Wrap JSON (output length: \(output.count))")
         #endif
         
-        do {
-            // Try to find JSON in the output
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Look for JSON object
-            guard let startIndex = trimmed.firstIndex(of: "{"),
-                  let endIndex = trimmed.lastIndex(of: "}") else {
-                #if DEBUG
-                print("⚠️ [LocalEngine] No JSON object found in output")
-                #endif
-                return nil
-            }
-            
-            let jsonString = String(trimmed[startIndex...endIndex])
-            
+        // Try to find JSON in the output
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Look for JSON object
+        guard let startIndex = trimmed.firstIndex(of: "{"),
+              let endIndex = trimmed.lastIndex(of: "}") else {
             #if DEBUG
-            print("🔍 [LocalEngine] Extracted JSON candidate (length: \(jsonString.count))")
-            #endif
-            
-            // Validate it's actual JSON and contains required fields
-            guard let data = jsonString.data(using: .utf8),
-                  let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                #if DEBUG
-                print("⚠️ [LocalEngine] Invalid JSON structure")
-                #endif
-                return nil
-            }
-            
-            // Verify required fields exist
-            guard jsonObject["year_title"] != nil,
-                  jsonObject["year_summary"] != nil else {
-                #if DEBUG
-                print("⚠️ [LocalEngine] Missing required fields (year_title or year_summary)")
-                #endif
-                return nil
-            }
-            
-            #if DEBUG
-            print("✅ [LocalEngine] Valid JSON with required fields")
-            #endif
-            
-            return jsonString
-        } catch {
-            #if DEBUG
-            print("❌ [LocalEngine] JSON parsing crashed: \(error)")
+            print("⚠️ [LocalEngine] No JSON object found in output")
             #endif
             return nil
         }
+        
+        let jsonString = String(trimmed[startIndex...endIndex])
+        
+        #if DEBUG
+        print("🔍 [LocalEngine] Extracted JSON candidate (length: \(jsonString.count))")
+        #endif
+        
+        // Validate it's actual JSON and contains required fields
+        guard let data = jsonString.data(using: .utf8),
+              let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            #if DEBUG
+            print("⚠️ [LocalEngine] Invalid JSON structure")
+            #endif
+            return nil
+        }
+        
+        // Verify required fields exist
+        guard jsonObject["year_title"] != nil,
+              jsonObject["year_summary"] != nil else {
+            #if DEBUG
+            print("⚠️ [LocalEngine] Missing required fields (year_title or year_summary)")
+            #endif
+            return nil
+        }
+        
+        #if DEBUG
+        print("✅ [LocalEngine] Valid JSON with required fields")
+        #endif
+        
+        return jsonString
     }
     
     /// Wrap plain text in Year Wrap JSON structure (Universal Prompt schema) with crash protection
@@ -1412,12 +1404,6 @@ public actor LocalEngine: SummarizationEngine {
             #endif
             
             return result
-        } catch {
-            #if DEBUG
-            print("❌ [LocalEngine] Text wrapping crashed: \(error)")
-            #endif
-            // Ultimate fallback - minimal valid JSON
-            return "{\"year_title\":\"Year in Review\",\"year_summary\":\"Summary unavailable\",\"major_arcs\":[],\"biggest_wins\":[],\"biggest_losses\":[],\"biggest_challenges\":[],\"finished_projects\":[],\"unfinished_projects\":[],\"top_worked_on_topics\":[],\"top_talked_about_things\":[],\"valuable_actions_taken\":[],\"opportunities_missed\":[],\"people_mentioned\":[],\"places_visited\":[]}"
         }
     }
     
@@ -1427,86 +1413,78 @@ public actor LocalEngine: SummarizationEngine {
         print("🔄 [LocalEngine] Building fallback Year Wrap JSON from \(sessionSummaries.count) summaries")
         #endif
         
-        do {
-            // Create summary from first few session summaries with safety
-            let summaryText: String
-            if sessionSummaries.isEmpty {
-                summaryText = "No session data available for this period"
-            } else {
-                summaryText = sessionSummaries.prefix(5)
-                    .map { $0.summary }
-                    .joined(separator: " ")
-                    .prefix(500)
-                    .replacingOccurrences(of: "\"", with: "'")
-                    .replacingOccurrences(of: "\n", with: " ")
-                    .replacingOccurrences(of: "\r", with: " ")
-                    .replacingOccurrences(of: "\t", with: " ")
-                    .replacingOccurrences(of: "\\", with: "")
-            }
-            
-            // Determine primary category based on variant
-            let primaryCategory = categoryLabel == "PERSONAL" ? "personal" : "work"
-            let secondaryCategory = categoryLabel == "PERSONAL" ? "work" : "personal"
-            
-            // Generate classified items from top topics with category awareness
-            let classifiedWins: String
-            if topTopics.isEmpty {
-                classifiedWins = ""
-            } else {
-                classifiedWins = topTopics.prefix(3).enumerated().compactMap { index, topic -> String? in
-                    guard !topic.isEmpty else { return nil }
-                    let category: String
-                    if categoryLabel == "ALL" {
-                        category = index % 2 == 0 ? "work" : "personal"
-                    } else {
-                        category = index < 2 ? primaryCategory : secondaryCategory
-                    }
-                    let escapedTopic = topic
-                        .replacingOccurrences(of: "\"", with: "'")
-                        .replacingOccurrences(of: "\\", with: "")
-                        .replacingOccurrences(of: "\n", with: " ")
-                        .prefix(100)
-                    return "{\"text\":\"Progress in \(escapedTopic)\",\"category\":\"\(category)\"}"
-                }.joined(separator: ",")
-            }
-            
-            let classifiedTopics: String
-            if topTopics.isEmpty {
-                classifiedTopics = ""
-            } else {
-                classifiedTopics = topTopics.prefix(5).enumerated().compactMap { index, topic -> String? in
-                    guard !topic.isEmpty else { return nil }
-                    let category: String
-                    if categoryLabel == "ALL" {
-                        category = index % 2 == 0 ? "work" : "personal"
-                    } else {
-                        category = index < 3 ? primaryCategory : secondaryCategory
-                    }
-                    let escapedTopic = topic
-                        .replacingOccurrences(of: "\"", with: "'")
-                        .replacingOccurrences(of: "\\", with: "")
-                        .replacingOccurrences(of: "\n", with: " ")
-                        .prefix(100)
-                    return "{\"text\":\"\(escapedTopic)\",\"category\":\"\(category)\"}"
-                }.joined(separator: ",")
-            }
-            
-            let result = """
-            {"year_title":"Year in Review","year_summary":"\(summaryText)","major_arcs":[],"biggest_wins":[\(classifiedWins)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[],"unfinished_projects":[],"top_worked_on_topics":[\(classifiedTopics)],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
-            """
-            
-            #if DEBUG
-            print("✅ [LocalEngine] Fallback JSON created (length: \(result.count))")
-            #endif
-            
-            return result
-        } catch {
-            #if DEBUG
-            print("❌ [LocalEngine] CRITICAL: Fallback JSON generation crashed: \(error)")
-            #endif
-            // Ultimate emergency fallback - minimal valid JSON
-            return "{\"year_title\":\"Year in Review\",\"year_summary\":\"Summary generation failed\",\"major_arcs\":[],\"biggest_wins\":[],\"biggest_losses\":[],\"biggest_challenges\":[],\"finished_projects\":[],\"unfinished_projects\":[],\"top_worked_on_topics\":[],\"top_talked_about_things\":[],\"valuable_actions_taken\":[],\"opportunities_missed\":[],\"people_mentioned\":[],\"places_visited\":[]}"
+        // Create summary from first few session summaries with safety
+        let summaryText: String
+        if sessionSummaries.isEmpty {
+            summaryText = "No session data available for this period"
+        } else {
+            summaryText = sessionSummaries.prefix(5)
+                .map { $0.summary }
+                .joined(separator: " ")
+                .prefix(500)
+                .replacingOccurrences(of: "\"", with: "'")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .replacingOccurrences(of: "\t", with: " ")
+                .replacingOccurrences(of: "\\", with: "")
         }
+        
+        // Determine primary category based on variant
+        let primaryCategory = categoryLabel == "PERSONAL" ? "personal" : "work"
+        let secondaryCategory = categoryLabel == "PERSONAL" ? "work" : "personal"
+        
+        // Generate classified items from top topics with category awareness
+        let classifiedWins: String
+        if topTopics.isEmpty {
+            classifiedWins = ""
+        } else {
+            classifiedWins = topTopics.prefix(3).enumerated().compactMap { index, topic -> String? in
+                guard !topic.isEmpty else { return nil }
+                let category: String
+                if categoryLabel == "ALL" {
+                    category = index % 2 == 0 ? "work" : "personal"
+                } else {
+                    category = index < 2 ? primaryCategory : secondaryCategory
+                }
+                let escapedTopic = topic
+                    .replacingOccurrences(of: "\"", with: "'")
+                    .replacingOccurrences(of: "\\", with: "")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .prefix(100)
+                return "{\"text\":\"Progress in \(escapedTopic)\",\"category\":\"\(category)\"}"
+            }.joined(separator: ",")
+        }
+        
+        let classifiedTopics: String
+        if topTopics.isEmpty {
+            classifiedTopics = ""
+        } else {
+            classifiedTopics = topTopics.prefix(5).enumerated().compactMap { index, topic -> String? in
+                guard !topic.isEmpty else { return nil }
+                let category: String
+                if categoryLabel == "ALL" {
+                    category = index % 2 == 0 ? "work" : "personal"
+                } else {
+                    category = index < 3 ? primaryCategory : secondaryCategory
+                }
+                let escapedTopic = topic
+                    .replacingOccurrences(of: "\"", with: "'")
+                    .replacingOccurrences(of: "\\", with: "")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .prefix(100)
+                return "{\"text\":\"\(escapedTopic)\",\"category\":\"\(category)\"}"
+            }.joined(separator: ",")
+        }
+        
+        let result = """
+        {"year_title":"Year in Review","year_summary":"\(summaryText)","major_arcs":[],"biggest_wins":[\(classifiedWins)],"biggest_losses":[],"biggest_challenges":[],"finished_projects":[],"unfinished_projects":[],"top_worked_on_topics":[\(classifiedTopics)],"top_talked_about_things":[],"valuable_actions_taken":[],"opportunities_missed":[],"people_mentioned":[],"places_visited":[]}
+        """
+        
+        #if DEBUG
+        print("✅ [LocalEngine] Fallback JSON created (length: \(result.count))")
+        #endif
+        
+        return result
     }
     
     /// Aggregate period summaries (for non-Year Wrap periods)

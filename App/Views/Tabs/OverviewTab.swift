@@ -749,27 +749,16 @@ struct OverviewTab: View {
         
         let dateForGeneration = Date()
 
-        do {
-            print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
-            
-            // Update status to show AI processing
-            yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\nGenerating 3 wraps with cooldown periods\nThis may take 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
-            
-            await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
-            print("✅ [OverviewTab] Year Wrap generation completed successfully")
-            
-            // Update status to show fetching results
-            yearWrapGenerationStatus = "Finalizing results..."
-        } catch {
-            print("❌ [OverviewTab] CRITICAL ERROR during Year Wrap generation: \(error)")
-            print("❌ [OverviewTab] Error type: \(type(of: error))")
-            print("❌ [OverviewTab] Error details: \(error.localizedDescription)")
-            
-            coordinator.showError("Failed to generate Year Wrap: \(error.localizedDescription)")
-            isWrappingUpYear = false
-            yearWrapGenerationStatus = ""
-            return
-        }
+        print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
+        
+        // Update status to show AI processing
+        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\nGenerating 3 wraps with cooldown periods\nThis may take 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
+        
+        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
+        print("✅ [OverviewTab] Year Wrap generation completed successfully")
+        
+        // Update status to show fetching results
+        yearWrapGenerationStatus = "Finalizing results..."
         
         // Wait briefly for database transaction to complete
         try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
