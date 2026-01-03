@@ -1,7 +1,9 @@
 # Year Wrap Topic Validation System
 
 ## Problem
+
 Local AI (Phi-3.5 Mini) was fabricating topics not present in the source summaries. Example:
+
 ```
 ❌ "The summarization tool functioned without crashing"
 ❌ "The summarization tool failed during personal summaries"
@@ -10,6 +12,7 @@ Local AI (Phi-3.5 Mini) was fabricating topics not present in the source summari
 These topics were completely invented by the AI, not extracted from actual recording summaries.
 
 ## Root Cause
+
 - **Prompt Hallucination**: Even with "CRITICAL: Only mention what's in summaries" instructions, small LLMs can hallucinate
 - **No Verification**: Single-pass extraction had no validation against source material
 - **Inference Over Facts**: AI was inferring/imagining content rather than strictly extracting
@@ -17,6 +20,7 @@ These topics were completely invented by the AI, not extracted from actual recor
 ## Solution: Two-Pass Validation System
 
 ### Architecture
+
 ```
 Month Summaries → Extract Topics → Validate Topics → Verified Output
      (Step 1)         (Step 4)        (Step 5)        (Final)
@@ -25,34 +29,36 @@ Month Summaries → Extract Topics → Validate Topics → Verified Output
 ### Implementation
 
 **Step 4: Topic Extraction** (64 tokens)
+
 ```swift
 private func buildTopicsActionsPrompt(summaries: String, categoryLabel: String) -> String {
     return """
     Extract main topics from the summary below. List only what's explicitly mentioned (2-3 items).
-    
+
     SUMMARY:
     \(summaries.prefix(400))
-    
+
     CRITICAL: Extract only actual topics/themes from the SUMMARY above.
     """
 }
 ```
 
 **Step 5: Topic Validation** (64 tokens) - NEW!
+
 ```swift
 private func buildValidationPrompt(extractedTopics: String, sourceSummaries: String) -> String {
     return """
     Review these extracted topics and verify each one appears in the source summaries.
-    
+
     EXTRACTED TOPICS:
     \(extractedTopics)
-    
+
     SOURCE SUMMARIES:
     \(sourceSummaries.prefix(600))
-    
+
     TASK: For each topic, check if it's actually mentioned in the source.
     Remove any fabricated topics.
-    
+
     CRITICAL: Be strict. Only keep topics with clear evidence in the source.
     """
 }
@@ -61,6 +67,7 @@ private func buildValidationPrompt(extractedTopics: String, sourceSummaries: Str
 ### Generation Flow
 
 **Before (5 Steps):**
+
 1. Title & Summary (128 tokens)
 2. Wins & Challenges (64 tokens)
 3. Projects (64 tokens)
@@ -68,6 +75,7 @@ private func buildValidationPrompt(extractedTopics: String, sourceSummaries: Str
 5. People (32 tokens)
 
 **After (6 Steps):**
+
 1. Title & Summary (128 tokens)
 2. Wins & Challenges (64 tokens)
 3. Projects (64 tokens)
@@ -97,6 +105,7 @@ totalLLMCalls += 1
 All prompts now include explicit "DO NOT FABRICATE" instructions:
 
 **Title & Summary:**
+
 ```
 CRITICAL RULES:
 - Write in FIRST PERSON (I/my/me)
@@ -107,6 +116,7 @@ CRITICAL RULES:
 ```
 
 **Wins & Challenges:**
+
 ```
 CRITICAL RULES:
 - Only list what's explicitly mentioned in the SUMMARIES
@@ -116,6 +126,7 @@ CRITICAL RULES:
 ```
 
 **Projects:**
+
 ```
 CRITICAL RULES:
 - Only list projects explicitly mentioned in the SUMMARIES
@@ -127,16 +138,19 @@ CRITICAL RULES:
 ## Performance Impact
 
 ### Token Cost
+
 - **Added**: 64 tokens per validation step
 - **Total**: 352 tokens → 416 tokens (18% increase)
 - **Time**: ~5-7 seconds added per variant (extraction + validation)
 
 ### Total Generation Time
+
 - **Before**: ~120 seconds (3 variants × 40s each)
 - **After**: ~140 seconds (3 variants × ~47s each)
 - **Trade-off**: +20 seconds for accuracy ✅
 
 ### Memory
+
 - No additional memory overhead
 - Still within 2.1GB GPU limit on iPhone
 - Validation uses same model, no reload needed
@@ -144,6 +158,7 @@ CRITICAL RULES:
 ## Validation Logic
 
 The validation prompt instructs the AI to:
+
 1. **Read extracted topics** from Step 4 output
 2. **Search source summaries** for evidence of each topic
 3. **Remove fabricated items** that have no evidence
@@ -152,6 +167,7 @@ The validation prompt instructs the AI to:
 **Example:**
 
 **Input (Step 4 output):**
+
 ```
 - Working on summarization tool
 - Debugging app crashes
@@ -159,6 +175,7 @@ The validation prompt instructs the AI to:
 ```
 
 **Validation (Step 5):**
+
 ```
 Source contains: "Working on summarization", "Debugging crashes"
 No evidence for: "Learning Swift concurrency" ← Remove
@@ -171,16 +188,19 @@ Verified output:
 ## Testing Strategy
 
 ### Unit Tests
+
 - Mock summaries with known topics
 - Verify extracted topics exist in source
 - Confirm fabricated topics are removed
 
 ### Integration Tests
+
 - Generate Year Wrap with real recordings
 - Manual review of topics against transcripts
 - Verify no hallucinated content
 
 ### Edge Cases
+
 - **Empty summaries**: Should output "None found"
 - **Vague summaries**: Should extract conservative topics only
 - **Multiple interpretations**: Should choose most explicit one
@@ -188,15 +208,19 @@ Verified output:
 ## Future Enhancements
 
 ### Three-Pass System (If Needed)
+
 ```
 Extract → Validate → Re-extract
 ```
+
 1. First extraction (broad)
 2. Validation (strict filtering)
 3. Second extraction (refine survivors)
 
 ### Semantic Matching
+
 Use embeddings to verify topic similarity:
+
 ```swift
 func validateTopicWithEmbeddings(topic: String, source: String) -> Bool {
     let topicEmbedding = nlModel.embedding(for: topic)
@@ -207,7 +231,9 @@ func validateTopicWithEmbeddings(topic: String, source: String) -> Bool {
 ```
 
 ### Confidence Scores
+
 Add confidence metadata to each topic:
+
 ```json
 {
   "topic": "Working on app stability",
@@ -217,11 +243,13 @@ Add confidence metadata to each topic:
 ```
 
 ## Related Documentation
+
 - [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Phi-3.5 Mini implementation
 - [Year Wrap Progress Tracking](YEAR_WRAP_PROGRESS_TRACKING.md) - UI feedback
 - [AI Architecture](AI_ARCHITECTURE.md) - Multi-tier system overview
 
 ## Changelog
+
 - **2024-01-03**: Initial two-pass validation system
 - Added Step 5: Topic validation against source summaries
 - Strengthened all prompts with "DO NOT FABRICATE" rules
