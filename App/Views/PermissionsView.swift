@@ -51,11 +51,8 @@ struct PermissionsView: View {
                 return
             }
             
-            print("✅ [PermissionsView] Ready to download, starting AI download...")
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
-            await MainActor.run {
-                startModelDownload()
-            }
+            // Ready to download - wait for user confirmation (App Store requirement)
+            print("✅ [PermissionsView] Ready for download, waiting for user confirmation...")
         }
     }
     
@@ -281,7 +278,7 @@ struct PermissionsView: View {
                                     ProgressView()
                                         .tint(.white)
                                 } else {
-                                    Text("Grant Permissions")
+                                    Text("Continue")
                                         .font(.headline)
                                 }
                             }
@@ -404,12 +401,35 @@ struct PermissionsView: View {
                     }
                     .padding(.horizontal)
                 } else {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                        Text("Preparing download...")
+                    // Explicit download confirmation (App Store Guideline 4.2.3)
+                    VStack(spacing: 16) {
+                        Text("Download AI Model")
+                            .font(.headline)
+                        
+                        Text("This will download the Phi-3.5 Mini model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Button {
+                            startModelDownload()
+                        } label: {
+                            Text("Download (\(coordinator.expectedLocalModelSizeMB))")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.purple)
+                                .cornerRadius(12)
+                        }
+                        
+                        Button {
+                            skipModelDownload()
+                        } label: {
+                            Text("Skip for Now")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .padding(.horizontal)
                 }
@@ -447,6 +467,11 @@ struct PermissionsView: View {
                 }
             }
         }
+    }
+    
+    private func skipModelDownload() {
+        print("⏭️ [PermissionsView] User skipped model download, proceeding to permissions")
+        proceedToPermissions()
     }
     
     private func startModelDownload() {

@@ -567,6 +567,7 @@ struct OverviewTab: View {
                 SmartestPurchaseSheet(
                     price: coordinator.storeManager.smartestAIProduct?.displayPrice,
                     isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
+                    isRestoring: coordinator.storeManager.purchaseState == .restoring,
                     onPurchase: {
                         Task {
                             let success = await coordinator.storeManager.purchaseSmartestAI()
@@ -576,11 +577,20 @@ struct OverviewTab: View {
                             }
                         }
                     },
+                    onRestore: {
+                        Task {
+                            await coordinator.storeManager.restorePurchases()
+                            if coordinator.storeManager.isSmartestAIUnlocked {
+                                showPurchaseSheet = false
+                                coordinator.showSuccess("Purchases restored!")
+                            }
+                        }
+                    },
                     onCancel: {
                         showPurchaseSheet = false
                     }
                 )
-                .presentationDetents([.medium])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
         }
