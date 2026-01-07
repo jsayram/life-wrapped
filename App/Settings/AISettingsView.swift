@@ -398,6 +398,7 @@ struct AISettingsView: View {
             SmartestPurchaseSheet(
                 price: coordinator.storeManager.smartestAIProduct?.displayPrice,
                 isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
+                isRestoring: coordinator.storeManager.purchaseState == .restoring,
                 onPurchase: {
                     Task {
                         let success = await coordinator.storeManager.purchaseSmartestAI()
@@ -416,11 +417,20 @@ struct AISettingsView: View {
                         }
                     }
                 },
+                onRestore: {
+                    Task {
+                        await coordinator.storeManager.restorePurchases()
+                        if coordinator.storeManager.isSmartestAIUnlocked {
+                            showPurchaseSheet = false
+                            coordinator.showSuccess("Purchases restored!")
+                        }
+                    }
+                },
                 onCancel: {
                     showPurchaseSheet = false
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         }
@@ -672,15 +682,17 @@ struct AISettingsView: View {
 struct SmartestPurchaseSheet: View {
     let price: String?
     let isPurchasing: Bool
+    let isRestoring: Bool
     let onPurchase: () -> Void
+    let onRestore: () -> Void
     let onCancel: () -> Void
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             // Header
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 48))
+                    .font(.system(size: 44))
                     .foregroundStyle(
                         LinearGradient(
                             colors: [AppTheme.magenta, AppTheme.purple],
@@ -698,20 +710,18 @@ struct SmartestPurchaseSheet: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            .padding(.top, 16)
+            .padding(.top, 12)
             
             Divider()
             
             // Features
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 FeatureRow(icon: "sparkles", text: "Best quality AI summaries")
                 FeatureRow(icon: "key.fill", text: "Use your own API keys (BYOK)")
                 FeatureRow(icon: "arrow.clockwise", text: "One-time purchase, forever access")
                 FeatureRow(icon: "key.fill", text: "Your API keys stay private")
             }
             .padding(.horizontal)
-            
-            Spacer()
             
             // Purchase disclaimer
             Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")
@@ -750,7 +760,21 @@ struct SmartestPurchaseSheet: View {
             // Cancel button
             Button("Not Now", action: onCancel)
                 .foregroundStyle(.secondary)
-                .padding(.bottom, 8)
+                .padding(.top, 4)
+            
+            // Restore Purchases button (App Store Guideline 3.1.1)
+            Button(action: onRestore) {
+                HStack(spacing: 4) {
+                    if isRestoring {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    }
+                    Text("Restore Purchases")
+                }
+            }
+            .foregroundStyle(.secondary)
+            .font(.footnote)
+            .padding(.bottom, 16)
         }
         .padding()
     }
