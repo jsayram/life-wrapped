@@ -488,8 +488,16 @@
         function goToSlide(index) {
             currentSlide = index;
             const slide = slides[index];
-            slide.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+            const slideWidth = slide.offsetWidth + 30; // including gap
+            // Scroll within the carousel only, don't affect page scroll
+            carousel.scrollTo({ left: slideWidth * index, behavior: 'smooth' });
             updateDots();
+        }
+
+        // Check if carousel is visible in viewport
+        function isCarouselVisible() {
+            const rect = carousel.getBoundingClientRect();
+            return rect.top < window.innerHeight && rect.bottom > 0;
         }
 
         // Update dots on scroll
@@ -500,9 +508,11 @@
             updateDots();
         });
 
-        // Auto-scroll every 4 seconds
+        // Auto-scroll every 4 seconds, only if carousel is visible
         setInterval(() => {
-            scrollCarousel(1);
+            if (isCarouselVisible()) {
+                scrollCarousel(1);
+            }
         }, 4000);
     </script>
 </body>
