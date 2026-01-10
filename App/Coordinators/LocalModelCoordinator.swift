@@ -55,9 +55,47 @@ public final class LocalModelCoordinator: ObservableObject {
     }
     
     // MARK: - Model Download
+    // =========================================================================
+    // ⚠️ APP STORE GUIDELINE 4.2.3 COMPLIANCE ⚠️
+    // =========================================================================
+    //
+    // Guideline 4.2.3 (Official Text):
+    // (i)  Your app should work on its own without requiring installation
+    //      of another app to function.
+    // (ii) If your app needs to download additional resources in order to
+    //      function on initial launch, disclose the size of the download
+    //      and prompt users before doing so.
+    //
+    // ✅ COMPLIANCE VERIFICATION:
+    //
+    // Part (i) - App works without downloads:
+    //   • BasicEngine (NaturalLanguage framework) is ALWAYS available
+    //   • All core features (recording, transcription, basic summaries) work
+    //     immediately on first launch without ANY downloads
+    //   • Local AI model is OPTIONAL enhancement, not required for functionality
+    //
+    // Part (ii) - Size disclosure and user prompt:
+    //   • Download size (~2.3 GB) is clearly displayed on ALL download buttons
+    //   • User must explicitly tap a button to initiate download
+    //   • Skip/Cancel options available at every download prompt
+    //   • Wi-Fi recommendation shown before download
+    //   • NO auto-downloads in .task, .onAppear, or init()
+    //
+    // Download trigger points (all require explicit button tap):
+    //   • PermissionsView: "Download Model (~2.3 GB)" button + "Skip for Now"
+    //   • SetupView: "Download Model (~2.3 GB)" button + "Skip for Now"
+    //   • AISettingsView: "Download Model (~2.3 GB)" button
+    //   • HomeTab: "Download" button with "~2.3 GB" in description
+    //
+    // =========================================================================
     
     /// Download the local AI model in the background
     /// Download continues even if user navigates away from Settings
+    /// 
+    /// **App Store Compliance (4.2.3):**
+    /// - This method requires explicit user action (button tap)
+    /// - Never call from .task, .onAppear, or init()
+    /// - Download size must be shown to user before calling
     public func startLocalModelDownload() {
         guard !isDownloadingLocalModel else { return }
         
@@ -88,6 +126,11 @@ public final class LocalModelCoordinator: ObservableObject {
     
     /// Download the local AI model with progress tracking (for setup flow)
     /// - Parameter progress: Closure called with download progress (0.0-1.0)
+    ///
+    /// **App Store Compliance (4.2.3):**
+    /// - This method requires explicit user action (button tap)
+    /// - Never call from .task, .onAppear, or init()
+    /// - Download size must be shown to user before calling
     public func downloadLocalModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
         isDownloadingLocalModel = true
         defer { isDownloadingLocalModel = false }
