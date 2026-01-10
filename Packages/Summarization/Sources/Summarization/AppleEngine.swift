@@ -22,6 +22,7 @@ import FoundationModels
 ///
 /// This engine uses Apple's on-device large language model to generate
 /// summaries, extract topics/entities, and analyze sentiment.
+/// It uses the same UniversalPrompt system as ExternalAPIEngine for consistency.
 @available(iOS 26.0, macOS 26.0, *)
 public actor AppleEngine: SummarizationEngine {
     
@@ -98,57 +99,40 @@ public actor AppleEngine: SummarizationEngine {
         // Calculate word count
         let wordCount = transcriptText.split(separator: " ").count
         
-        // Generate summary using Foundation Models
-        let summaryPrompt = """
-        Summarize the following transcript in 2-3 concise sentences. Focus on the main topics and key points discussed.
-        
-        Transcript:
-        \(transcriptText.prefix(4000))
-        """
-        
-        let summaryResponse = try await session.respond(to: summaryPrompt)
-        let summary = String(summaryResponse.content)
-        
-        // Extract topics
-        let topicsPrompt = """
-        Extract 3-5 main topics from this transcript. Return only the topic names, one per line.
-        
-        Transcript:
-        \(transcriptText.prefix(2000))
-        """
-        
-        let topicsResponse = try await session.respond(to: topicsPrompt)
-        let topics = String(topicsResponse.content)
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .prefix(5)
-            .map { String($0) }
-        
-        // Analyze sentiment (simple approach)
-        let sentimentPrompt = """
-        Rate the overall sentiment of this text on a scale from -1.0 (very negative) to 1.0 (very positive). 
-        Return ONLY a decimal number, nothing else.
-        
-        Text:
-        \(transcriptText.prefix(1000))
-        """
-        
-        let sentimentResponse = try await session.respond(to: sentimentPrompt)
-        let sentimentString = String(sentimentResponse.content).trimmingCharacters(in: .whitespacesAndNewlines)
-        let sentiment = Double(sentimentString) ?? 0.0
-        
-        return SessionIntelligence(
-            sessionId: sessionId,
-            summary: summary,
-            topics: topics,
-            entities: [], // Entity extraction can be added later
-            sentiment: sentiment,
-            duration: duration,
-            wordCount: wordCount,
-            languageCodes: languageCodes,
-            keyMoments: nil
+        // Use UniversalPrompt for consistency with External API
+        let messages = UniversalPrompt.buildMessages(
+            level: .session,
+            input: transcriptText,
+            metadata: [
+                "duration": "\(Int(duration))s",
+                "wordCount": wordCount
+            ]
         )
+        
+        // Combine system and user message for Foundation Models
+        // Apple's Foundation Models doesn't have separate system/user - we combine them
+        let fullPrompt = """
+        \(messages.system)
+        
+        \(messages.user)
+        """
+        
+        #if DEBUG
+        print("🍎 [AppleEngine] Sending session summarization request")
+        print("   └─ Input length: \(transcriptText.count) chars, \(wordCount) words")
+        #endif
+        
+        let response = try await session.respond(to: fullPrompt)
+        let responseText = String(response.content)
+        
+        #if DEBUG
+        print("🍎 [AppleEngine] Response received: \(responseText.prefix(200))...")
+        #endif
+        
+        // Parse JSON response (same format as External API)
+        let parsed = parseSessionResponse(responseText, sessionId: sessionId, duration: duration, wordCount: wordCount, languageCodes: languageCodes)
+        return parsed
+        
         #else
         // Fallback for older iOS - use basic extractive summary
         let wordCount = transcriptText.split(separator: " ").count
@@ -198,61 +182,63 @@ public actor AppleEngine: SummarizationEngine {
             throw SummarizationError.summarizationFailed("Failed to create language model session")
         }
         
-        // Combine session summaries for context
+        // Build input from session summaries (same as External API)
         let combinedSummaries = sessionSummaries
-            .prefix(20) // Limit to avoid token overflow
-            .map { "• \($0.summary)" }
-            .joined(separator: "\n")
+            .prefix(30) // Limit to avoid token overflow (Apple model has smaller context)
+            .enumerated()
+            .map { index, session in
+                """
+                Session \(index + 1):
+                - Summary: \(session.summary)
+                - Topics: \(session.topics.joined(separator: ", "))
+                - Duration: \(Int(session.duration))s
+                """
+            }
+            .joined(separator: "\n\n")
         
-        // Generate period summary
-        let periodPrompt = """
-        Create a brief summary (2-3 sentences) of the following \(periodType.displayName.lowercased())'s activities based on these session summaries:
+        // Use UniversalPrompt for consistency
+        let level = SummaryLevel.from(periodType: periodType)
+        let messages = UniversalPrompt.buildMessages(
+            level: level,
+            input: combinedSummaries,
+            metadata: [
+                "sessionCount": sessionSummaries.count,
+                "periodType": periodType.displayName,
+                "periodStart": ISO8601DateFormatter().string(from: periodStart),
+                "periodEnd": ISO8601DateFormatter().string(from: periodEnd)
+            ],
+            categoryContext: categoryContext
+        )
         
-        \(combinedSummaries)
+        // Combine system and user message
+        let fullPrompt = """
+        \(messages.system)
         
-        Focus on overarching themes and patterns.
+        \(messages.user)
         """
         
-        let summaryResponse = try await session.respond(to: periodPrompt)
-        let summary = String(summaryResponse.content)
+        #if DEBUG
+        print("🍎 [AppleEngine] Sending \(periodType.displayName) summarization request")
+        print("   └─ Sessions: \(sessionSummaries.count), Level: \(level.rawValue)")
+        #endif
         
-        // Aggregate topics from all sessions
-        var topicCounts: [String: Int] = [:]
-        var entityMap: [String: Entity] = [:]
+        let response = try await session.respond(to: fullPrompt)
+        let responseText = String(response.content)
         
-        for session in sessionSummaries {
-            for topic in session.topics {
-                topicCounts[topic.lowercased(), default: 0] += 1
-            }
-            for entity in session.entities {
-                entityMap[entity.name] = entity
-            }
-        }
+        #if DEBUG
+        print("🍎 [AppleEngine] Response received: \(responseText.prefix(200))...")
+        #endif
         
-        // Top topics by frequency
-        let topTopics = topicCounts.sorted { $0.value > $1.value }
-            .prefix(10)
-            .map { $0.key.capitalized }
-        
-        // Calculate average sentiment
-        let avgSentiment = sessionSummaries.map { $0.sentiment }.reduce(0, +) / Double(sessionSummaries.count)
-        
-        // Sum totals
-        let totalDuration = sessionSummaries.reduce(0) { $0 + $1.duration }
-        let totalWords = sessionSummaries.reduce(0) { $0 + $1.wordCount }
-        
-        return PeriodIntelligence(
+        // Parse JSON response
+        let parsed = parsePeriodResponse(
+            responseText,
             periodType: periodType,
             periodStart: periodStart,
             periodEnd: periodEnd,
-            summary: summary,
-            topics: Array(topTopics),
-            entities: Array(entityMap.values),
-            sentiment: avgSentiment,
-            sessionCount: sessionSummaries.count,
-            totalDuration: totalDuration,
-            totalWordCount: totalWords
+            sessionSummaries: sessionSummaries
         )
+        return parsed
+        
         #else
         // Fallback aggregation for older iOS
         let aggregatedSummary = sessionSummaries.map { $0.summary }.joined(separator: " ")
@@ -292,6 +278,119 @@ public actor AppleEngine: SummarizationEngine {
             totalWordCount: totalWords
         )
         #endif
+    }
+    
+    // MARK: - JSON Parsing (same as External API)
+    
+    private func parseSessionResponse(
+        _ responseText: String,
+        sessionId: UUID,
+        duration: TimeInterval,
+        wordCount: Int,
+        languageCodes: [String]
+    ) -> SessionIntelligence {
+        // Try to parse JSON response
+        guard let jsonData = responseText.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            // Fallback: use response as plain text summary
+            return SessionIntelligence(
+                sessionId: sessionId,
+                summary: responseText.trimmingCharacters(in: .whitespacesAndNewlines),
+                topics: [],
+                entities: [],
+                sentiment: 0.0,
+                duration: duration,
+                wordCount: wordCount,
+                languageCodes: languageCodes,
+                keyMoments: nil
+            )
+        }
+        
+        // Extract fields from JSON (matching UniversalPrompt session schema)
+        let title = json["title"] as? String ?? ""
+        let summary = json["summary"] as? String ?? responseText
+        let keyPoints = json["key_points"] as? [String] ?? []
+        
+        // Use key_points as topics if available
+        let topics = keyPoints.isEmpty ? extractBasicTopics(text: summary) : keyPoints
+        
+        return SessionIntelligence(
+            sessionId: sessionId,
+            summary: title.isEmpty ? summary : "[\(title)] \(summary)",
+            topics: topics,
+            entities: [],
+            sentiment: 0.0,
+            duration: duration,
+            wordCount: wordCount,
+            languageCodes: languageCodes,
+            keyMoments: nil
+        )
+    }
+    
+    private func parsePeriodResponse(
+        _ responseText: String,
+        periodType: PeriodType,
+        periodStart: Date,
+        periodEnd: Date,
+        sessionSummaries: [SessionIntelligence]
+    ) -> PeriodIntelligence {
+        // Calculate totals
+        let avgSentiment = sessionSummaries.map { $0.sentiment }.reduce(0, +) / Double(max(sessionSummaries.count, 1))
+        let totalDuration = sessionSummaries.reduce(0) { $0 + $1.duration }
+        let totalWords = sessionSummaries.reduce(0) { $0 + $1.wordCount }
+        
+        // Try to parse JSON response
+        guard let jsonData = responseText.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+            // Fallback: use response as plain text summary
+            return PeriodIntelligence(
+                periodType: periodType,
+                periodStart: periodStart,
+                periodEnd: periodEnd,
+                summary: responseText.trimmingCharacters(in: .whitespacesAndNewlines),
+                topics: [],
+                entities: [],
+                sentiment: avgSentiment,
+                sessionCount: sessionSummaries.count,
+                totalDuration: totalDuration,
+                totalWordCount: totalWords
+            )
+        }
+        
+        // Extract fields based on period type (matching UniversalPrompt schemas)
+        let summary: String
+        let topics: [String]
+        
+        switch periodType {
+        case .day:
+            summary = json["daily_summary"] as? String ?? responseText
+            topics = json["top_topics"] as? [String] ?? []
+        case .week:
+            summary = json["weekly_summary"] as? String ?? responseText
+            topics = json["top_patterns"] as? [String] ?? []
+        case .month:
+            summary = json["month_summary"] as? String ?? responseText
+            topics = json["recurring_themes"] as? [String] ?? []
+        case .year, .yearWrap, .yearWrapWork, .yearWrapPersonal:
+            summary = json["year_summary"] as? String ?? responseText
+            topics = json["major_arcs"] as? [String] ?? (json["top_worked_on_topics"] as? [[String: String]])?.compactMap { $0["text"] } ?? []
+        default:
+            summary = responseText
+            topics = []
+        }
+        
+        return PeriodIntelligence(
+            periodType: periodType,
+            periodStart: periodStart,
+            periodEnd: periodEnd,
+            summary: summary,
+            topics: topics,
+            entities: [],
+            sentiment: avgSentiment,
+            sessionCount: sessionSummaries.count,
+            totalDuration: totalDuration,
+            totalWordCount: totalWords
+        )
     }
     
     // MARK: - Performance Monitoring
