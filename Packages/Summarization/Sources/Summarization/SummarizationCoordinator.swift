@@ -47,9 +47,13 @@ public actor SummarizationCoordinator {
         // Initialize local LLM engine (Phi-3.5)
         self.localEngine = LocalEngine()
         
-        // Initialize Apple Intelligence engine (Phase 2B - iOS 18.1+)
-        if #available(iOS 18.1, *) {
+        // Initialize Apple Intelligence engine
+        // iOS 26.0+ has Foundation Models API for programmatic access
+        // iOS 18.1-25.x has Apple Intelligence but no public API
+        if #available(iOS 26.0, macOS 26.0, *) {
             self.appleEngine = AppleEngine(storage: storage)
+        } else if #available(iOS 18.1, *) {
+            self.appleEngine = AppleEngineLegacy(storage: storage)
         }
         
         // Initialize external API engine (Phase 2C)

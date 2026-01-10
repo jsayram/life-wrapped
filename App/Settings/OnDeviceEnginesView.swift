@@ -80,7 +80,7 @@ struct OnDeviceEnginesView: View {
         case .local:
             return "Download the local AI model to use on-device intelligence."
         case .apple:
-            return "Apple Intelligence requires iOS 18.1+ and compatible hardware."
+            return "Apple Intelligence requires iOS 26+ and compatible hardware (A17 Pro / M1+)."
         case .external:
             return "Configure your API key to use external AI services."
         }

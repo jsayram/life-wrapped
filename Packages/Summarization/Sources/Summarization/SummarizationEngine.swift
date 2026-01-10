@@ -14,7 +14,7 @@ import SharedModels
 public enum EngineTier: String, Codable, Sendable, CaseIterable {
     case basic      // Simple extractive + keyword extraction
     case local      // Local LLM (Phi-3.5 via llama.cpp)
-    case apple      // Apple Intelligence / Foundation Models (iOS 18.1+)
+    case apple      // Apple Intelligence / Foundation Models (iOS 26+)
     case external   // External API (OpenAI, Anthropic with user keys)
     
     /// Private/on-device tiers only (excludes external)
@@ -35,7 +35,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         switch self {
         case .basic: return "Fast, simple summarization"
         case .local: return "On-device LLM processing"
-        case .apple: return "Apple's on-device AI (iOS 18.1+)"
+        case .apple: return "Apple's on-device AI (iOS 26+)"
         case .external: return "OpenAI, Anthropic with your API keys"
         }
     }
@@ -56,7 +56,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .local:
             return "On-device LLM (Phi-3.5 Mini) for smart chunk-by-chunk processing. Each audio chunk is summarized by local AI, then aggregated. Works offline."
         case .apple:
-            return "Advanced AI using Apple's on-device Foundation Models (iOS 18.1+, Apple Intelligence enabled). Works offline."
+            return "Advanced AI using Apple's on-device Foundation Models (iOS 26+, Apple Intelligence enabled). Works offline."
         case .external:
             return "Premium AI using external services (OpenAI or Anthropic). Requires your API key and internet connection. Automatically falls back to Basic when offline."
         }

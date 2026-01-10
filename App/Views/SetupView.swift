@@ -31,7 +31,7 @@ struct SetupView: View {
                     Text("Setting Up Life Wrapped")
                         .font(.title.bold())
                     
-                    Text("Downloading on-device AI...")
+                    Text("On-device AI for private summaries")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -133,13 +133,37 @@ struct SetupView: View {
                         }
                         .padding(.horizontal)
                     } else {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                            Text("Preparing...")
+                        // Explicit download confirmation (App Store Guideline 4.2.3)
+                        VStack(spacing: 16) {
+                            Text("Download AI Model")
+                                .font(.headline)
+                            
+                            Text("This will download the Phi-3.5 Mini model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            
+                            Button {
+                                startDownload()
+                            } label: {
+                                Text("Download (\(coordinator.expectedLocalModelSizeMB))")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.purple)
+                                    .cornerRadius(12)
+                            }
+                            
+                            Button {
+                                skipDownload()
+                            } label: {
+                                Text("Skip for Now")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
                         }
+                        .padding(.horizontal)
                     }
                 }
                 .padding(.bottom, 32)
@@ -164,12 +188,8 @@ struct SetupView: View {
             return
         }
         
-        // Small delay for UI
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        
-        await MainActor.run {
-            startDownload()
-        }
+        // Ready for user to confirm download (App Store requirement - no auto-download)
+        print("✅ [SetupView] Ready for download, waiting for user confirmation...")
     }
     
     private func startDownload() {
@@ -211,6 +231,11 @@ struct SetupView: View {
                 }
             }
         }
+    }
+    
+    private func skipDownload() {
+        print("⏭️ [SetupView] User skipped model download")
+        finishSetup()
     }
     
     private func finishSetup() {
