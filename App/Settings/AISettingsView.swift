@@ -65,8 +65,8 @@ struct AISettingsView: View {
                 SummaryQualityCard(
                     emoji: "⚡️",
                     title: "Basic",
-                    subtitle: "Quick word-based summaries",
-                    detail: "Always available, works offline",
+                    subtitle: "Functional, extractive only",
+                    detail: "Always available • Works offline • Free",
                     tier: .basic,
                     isSelected: activeEngine == .basic,
                     isAvailable: true,
@@ -77,7 +77,7 @@ struct AISettingsView: View {
                 SummaryQualityCard(
                     emoji: "🤖",
                     title: "Smart",
-                    subtitle: coordinator.localModelDisplayName,
+                    subtitle: "Decent quality • 100% private",
                     detail: localModelStatus,
                     tier: .local,
                     isSelected: activeEngine == .local,
@@ -89,8 +89,8 @@ struct AISettingsView: View {
                 SummaryQualityCard(
                     emoji: "🧠",
                     title: "Smarter",
-                    subtitle: "Apple Intelligence",
-                    detail: availableEngines.contains(.apple) ? "On-device AI, works offline" : "Requires iOS 18.1+ and compatible device",
+                    subtitle: "Good quality • 100% private • Free",
+                    detail: availableEngines.contains(.apple) ? "Apple Intelligence • Works offline" : "Requires iOS 26+ and compatible device",
                     tier: .apple,
                     isSelected: activeEngine == .apple,
                     isAvailable: availableEngines.contains(.apple),
@@ -102,10 +102,10 @@ struct AISettingsView: View {
                     emoji: "✨",
                     title: coordinator.storeManager.isSmartestAIUnlocked ? "Smartest" : "Smartest 🔒",
                     subtitle: coordinator.storeManager.isSmartestAIUnlocked 
-                        ? (hasValidAPIKey() ? "\(selectedProvider) • \(selectedModel)" : "OpenAI or Anthropic")
-                        : "OpenAI or Anthropic",
+                        ? (hasValidAPIKey() ? "Best quality • \(selectedProvider)" : "Best quality • Cloud")
+                        : "Best quality • Cloud",
                     detail: coordinator.storeManager.isSmartestAIUnlocked 
-                        ? (hasValidAPIKey() ? "Best quality, requires internet" : "Tap to configure your API key")
+                        ? (hasValidAPIKey() ? "\(selectedModel) • Requires internet" : "Tap to configure your API key")
                         : "Tap to unlock • \(coordinator.storeManager.smartestAIProduct?.displayPrice ?? "Purchase required")",
                     tier: .external,
                     isSelected: activeEngine == .external,
@@ -115,7 +115,7 @@ struct AISettingsView: View {
             } header: {
                 Text("Summary Quality")
             } footer: {
-                Text("Choose how you want your audio summaries generated. Smartest requires purchase and your own API key.")
+                Text("Higher tiers provide better understanding, nuance, and JSON formatting. Basic and Smart work fully offline. Smartest uses GPT-4.1 or Claude 3.5 Sonnet with your API key.")
             }
             
             // MARK: - Smartest Configuration (only show if purchased)
