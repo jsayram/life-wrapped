@@ -493,8 +493,13 @@ struct PermissionsView: View {
     private func cancelDownload() {
         print("⏹️ [PermissionsView] User cancelled download")
         coordinator.getLocalModelCoordinator()?.cancelDownload()
-        isDownloading = false
-        downloadProgress = 0.0
+        
+        // Reset state to show Download/Skip buttons again
+        withAnimation {
+            isDownloading = false
+            downloadProgress = 0.0
+            downloadError = nil  // Clear any error so Download/Skip shows
+        }
     }
     
     private func startModelDownload() {
