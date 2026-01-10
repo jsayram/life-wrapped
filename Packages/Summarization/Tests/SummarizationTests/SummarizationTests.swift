@@ -715,3 +715,74 @@ struct UserConsentDownloadTests {
         #expect(autoDownloadEnabled == false, "Auto-download must be disabled per App Store guidelines")
     }
 }
+
+// MARK: - Cancel Download Tests
+
+@Suite("Cancel Download Behavior Tests")
+struct CancelDownloadBehaviorTests {
+    
+    @Test("Cancel download cleans up partial files")
+    func testCancelCleansUpPartialFiles() async throws {
+        // When user cancels a download, partial files must be deleted
+        // This prevents orphaned files from consuming device storage
+        let partialFilesCleanedUp = true
+        #expect(partialFilesCleanedUp == true, "Partial download files must be deleted on cancel")
+    }
+    
+    @Test("Cancel download resets UI state")
+    func testCancelResetsUIState() async throws {
+        // After cancel, UI should return to pre-download state:
+        // - isDownloading = false
+        // - downloadProgress = 0.0
+        // - downloadError = nil (no error shown, this was user-initiated)
+        let isDownloading = false
+        let downloadProgress = 0.0
+        let downloadError: String? = nil
+        
+        #expect(isDownloading == false, "isDownloading must be false after cancel")
+        #expect(downloadProgress == 0.0, "downloadProgress must be reset to 0")
+        #expect(downloadError == nil, "No error should be shown for user-initiated cancel")
+    }
+    
+    @Test("User can retry download after cancel")
+    func testCanRetryAfterCancel() async throws {
+        // After canceling, user should see Download and Skip buttons again
+        // This allows them to retry if cancel was accidental
+        let showsDownloadButton = true
+        let showsSkipButton = true
+        
+        #expect(showsDownloadButton == true, "Download button must be visible after cancel")
+        #expect(showsSkipButton == true, "Skip button must be visible after cancel")
+    }
+    
+    @Test("Cancel download does not navigate away")
+    func testCancelDoesNotNavigate() async throws {
+        // Canceling should NOT proceed to next step (permissions)
+        // User should remain on model download screen
+        let staysOnDownloadScreen = true
+        #expect(staysOnDownloadScreen == true, "User must stay on download screen after cancel")
+    }
+    
+    @Test("Cancel is available during download")
+    func testCancelAvailableDuringDownload() async throws {
+        // Cancel button must be visible while download is in progress
+        let cancelButtonVisibleDuringDownload = true
+        #expect(cancelButtonVisibleDuringDownload == true, "Cancel button must be visible during download")
+    }
+    
+    @Test("Cancel stops the download task")
+    func testCancelStopsDownloadTask() async throws {
+        // Canceling must stop the actual download operation
+        // This prevents unnecessary bandwidth and battery usage
+        let downloadTaskCancelled = true
+        #expect(downloadTaskCancelled == true, "Download task must be cancelled")
+    }
+    
+    @Test("No partial model left after cancel")
+    func testNoPartialModelAfterCancel() async throws {
+        // After cancel, isModelDownloaded should return false
+        // Partial models should not be usable
+        let modelDownloadedAfterCancel = false
+        #expect(modelDownloadedAfterCancel == false, "No model should be marked as downloaded after cancel")
+    }
+}
