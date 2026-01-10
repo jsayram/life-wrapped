@@ -377,6 +377,22 @@ struct PermissionsView: View {
                         Text("Phi-3.5 Mini • \(coordinator.expectedLocalModelSizeMB)")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        
+                        // Cancel Download button
+                        Button {
+                            cancelDownload()
+                        } label: {
+                            Text("Cancel Download")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.red)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 24)
+                                .background(
+                                    Capsule()
+                                        .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
+                                )
+                        }
+                        .padding(.top, 8)
                     }
                     .padding(.horizontal)
                 } else if let error = downloadError {
@@ -472,6 +488,18 @@ struct PermissionsView: View {
     private func skipModelDownload() {
         print("⏭️ [PermissionsView] User skipped model download, proceeding to permissions")
         proceedToPermissions()
+    }
+    
+    private func cancelDownload() {
+        print("⏹️ [PermissionsView] User cancelled download")
+        coordinator.getLocalModelCoordinator()?.cancelDownload()
+        
+        // Reset state to show Download/Skip buttons again
+        withAnimation {
+            isDownloading = false
+            downloadProgress = 0.0
+            downloadError = nil  // Clear any error so Download/Skip shows
+        }
     }
     
     private func startModelDownload() {

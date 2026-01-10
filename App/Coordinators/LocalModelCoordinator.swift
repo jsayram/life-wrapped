@@ -145,6 +145,29 @@ public final class LocalModelCoordinator: ObservableObject {
         NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
     }
     
+    // MARK: - Cancel Download
+    
+    /// Cancel an ongoing model download and clean up partial files
+    /// Call this when user taps "Cancel" during download
+    public func cancelDownload() {
+        guard isDownloadingLocalModel else { return }
+        
+        print("⏹️ [LocalModelCoordinator] User cancelled download")
+        localModelDownloadTask?.cancel()
+        localModelDownloadTask = nil
+        isDownloadingLocalModel = false
+        
+        // Clean up any partially downloaded files
+        Task {
+            do {
+                try await summarizationCoordinator.getLocalEngine().deleteModel()
+                print("🧹 [LocalModelCoordinator] Cleaned up partial download files")
+            } catch {
+                print("⚠️ [LocalModelCoordinator] Failed to clean up partial files: \(error)")
+            }
+        }
+    }
+    
     // MARK: - Model Deletion
     
     /// Delete the local AI model and switch to Basic tier if needed

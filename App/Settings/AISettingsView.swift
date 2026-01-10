@@ -280,21 +280,7 @@ struct AISettingsView: View {
             if activeEngine == .local {
                 Section {
                     if coordinator.isDownloadingLocalModel {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            
-                            Text("Downloading \(coordinator.localModelDisplayName)...")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            
-                            Text("You can leave this screen. We'll notify you when the download is complete.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        downloadingModelView
                     } else if isLocalModelDownloaded {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
@@ -370,7 +356,7 @@ struct AISettingsView: View {
                     deleteLocalModel()
                 }
             } message: {
-                Text("This will remove the \\(coordinator.expectedLocalModelSizeMB) model from your device. You can re-download it anytime.")
+                Text("This will remove the \(coordinator.expectedLocalModelSizeMB) model from your device. You can re-download it anytime.")
             }
             .id("localAIConfig")
             } // End of if activeEngine == .local
@@ -454,6 +440,43 @@ struct AISettingsView: View {
         }
     }
     
+    // MARK: - Subviews
+    
+    /// View shown while model is downloading - extracted to reduce body complexity
+    @ViewBuilder
+    private var downloadingModelView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .scaleEffect(1.2)
+            
+            Text("Downloading \(coordinator.localModelDisplayName)...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            
+            Text("You can leave this screen. We'll notify you when the download is complete.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            
+            Button {
+                cancelDownload()
+            } label: {
+                Text("Cancel Download")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.red)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 24)
+                    .background(
+                        Capsule()
+                            .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
+                    )
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+    
     // MARK: - Helper Methods
     
     private func loadEngineStatus() async {
@@ -473,6 +496,10 @@ struct AISettingsView: View {
         // Use coordinator's background download method
         // Download state persists in coordinator even if view navigates away
         coordinator.startLocalModelDownload()
+    }
+    
+    private func cancelDownload() {
+        coordinator.getLocalModelCoordinator()?.cancelDownload()
     }
     
     private func deleteLocalModel() {
