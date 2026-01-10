@@ -14,6 +14,10 @@ import Hub
 
 /// Main context for MLX-based LLM inference
 /// Handles model loading, tokenization, and text generation using Apple's MLX framework
+///
+/// ⚠️ **Simulator Note:** MLX requires Metal GPU support which is only available on
+/// physical Apple Silicon devices. This actor will gracefully handle simulator environments
+/// by returning `isRunningOnSimulator = true` and preventing Metal operations.
 public actor LlamaContext {
     
     // MARK: - Properties
@@ -23,22 +27,44 @@ public actor LlamaContext {
     
     private var isModelLoaded = false
     
+    /// Check if running on iOS Simulator (MLX/Metal not supported)
+    private let isRunningOnSimulator: Bool = {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }()
+    
     // MARK: - Initialization
     
     public init() {
+        // Only initialize Metal/GPU on real devices - simulators don't support MLX
+        #if !targetEnvironment(simulator)
         // Set reasonable memory limits for iOS
         MLX.GPU.set(cacheLimit: 256 * 1024 * 1024) // 256 MB cache
+        #else
+        print("⚠️ [LlamaContext] Running on simulator - MLX/Metal disabled")
+        #endif
     }
     
     // MARK: - Model Management
     
     /// Check if model is loaded and ready
     public func isReady() -> Bool {
+        #if targetEnvironment(simulator)
+        return false // MLX not available on simulator
+        #else
         return isModelLoaded
+        #endif
     }
     
     /// Load a model into memory
     public func loadModel(_ modelType: LocalModelType) async throws {
+        #if targetEnvironment(simulator)
+        print("⚠️ [LlamaContext] Cannot load model on simulator - MLX requires Metal GPU")
+        throw LlamaError.metalNotAvailable
+        #else
         // Unload existing model if any
         if isModelLoaded {
             unloadModel()
@@ -76,6 +102,7 @@ public actor LlamaContext {
         
         let config = modelType.recommendedConfig
         print("📊 [LlamaContext] Context size: \(config.nCTX) tokens, Temperature: \(config.temp)")
+        #endif
     }
     
     /// Unload the model from memory
@@ -94,6 +121,9 @@ public actor LlamaContext {
     /// - Returns: Generated text
     /// - Throws: LlamaError if generation fails
     public func generate(prompt: String, maxTokens: Int32? = nil) async throws -> String {
+        #if targetEnvironment(simulator)
+        throw LlamaError.metalNotAvailable
+        #else
         guard isModelLoaded, let container = modelContainer, let modelType = modelType else {
             throw LlamaError.modelNotLoaded
         }
@@ -175,6 +205,7 @@ public actor LlamaContext {
             print("❌ [LlamaContext] Generation failed: \(error)")
             throw LlamaError.generationFailed(underlying: error)
         }
+        #endif
     }
     
     // MARK: - Helpers
@@ -201,6 +232,7 @@ public enum LlamaError: Error, LocalizedError {
     case documentsDirectoryNotFound
     case notImplemented
     case generationFailed(underlying: Error)
+    case metalNotAvailable  // MLX requires Metal GPU (not available on simulator)
     
     public var errorDescription: String? {
         switch self {
@@ -226,6 +258,8 @@ public enum LlamaError: Error, LocalizedError {
             return "Feature not yet implemented"
         case .generationFailed(let error):
             return "Text generation failed: \(error.localizedDescription)"
+        case .metalNotAvailable:
+            return "Local AI requires a physical device with Apple Silicon. Simulators are not supported."
         }
     }
 }

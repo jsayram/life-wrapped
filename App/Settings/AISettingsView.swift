@@ -315,20 +315,38 @@ struct AISettingsView: View {
                         .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
                     }
                 } else {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(coordinator.localModelDisplayName)
-                                .font(.subheadline)
-                            Text("Not Downloaded • \(coordinator.expectedLocalModelSizeMB)")
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(coordinator.localModelDisplayName)
+                                    .font(.subheadline)
+                                Text("Not Downloaded")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        
+                        // Download size info
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.secondary)
+                            Text("Size: \(coordinator.expectedLocalModelSizeMB) • Wi-Fi recommended")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Spacer()
+                        
+                        // Explicit download button with size
                         Button {
                             downloadLocalModel()
                         } label: {
-                            Label("Download", systemImage: "arrow.down.circle")
-                                .font(.caption)
+                            HStack {
+                                Image(systemName: "arrow.down.circle.fill")
+                                Text("Download Model (\(coordinator.expectedLocalModelSizeMB))")
+                            }
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)

@@ -1309,12 +1309,40 @@ public final class AppCoordinator: ObservableObject {
         return await localModel.isLocalModelDownloaded()
     }
     
+    // =========================================================================
+    // ⚠️ APP STORE GUIDELINE 4.2.3 COMPLIANCE ⚠️
+    // =========================================================================
+    //
+    // Guideline 4.2.3 (Official Text from Apple):
+    // (i)  Your app should work on its own without requiring installation
+    //      of another app to function.
+    // (ii) If your app needs to download additional resources in order to
+    //      function on initial launch, disclose the size of the download
+    //      and prompt users before doing so.
+    //
+    // ✅ PART (i) - App Works Without Downloads:
+    //   • BasicEngine (uses Apple's NaturalLanguage framework) is ALWAYS available
+    //   • Recording, transcription, playback, and basic summaries work immediately
+    //   • Local AI model is an OPTIONAL enhancement for better quality summaries
+    //   • The app is fully functional on first launch with zero downloads
+    //
+    // ✅ PART (ii) - Size Disclosure & User Prompt:
+    //   • All download buttons display size: "Download Model (~2.3 GB)"
+    //   • User must explicitly tap button to start download (never automatic)
+    //   • Skip/Cancel options shown at every download prompt
+    //   • "Wi-Fi recommended" note displayed before download
+    //   • NO downloads triggered in .task, .onAppear, or init() lifecycle methods
+    //
+    // =========================================================================
+    
     /// Download the local AI model in the background
+    /// **App Store Compliance (4.2.3):** Requires explicit user action
     public func startLocalModelDownload() {
         localModelCoordinator?.startLocalModelDownload()
     }
     
     /// Download the local AI model with progress tracking (for setup flow)
+    /// **App Store Compliance (4.2.3):** Requires explicit user action
     public func downloadLocalModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
         guard let localModel = localModelCoordinator else {
             throw AppCoordinatorError.notInitialized
@@ -1328,6 +1356,25 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         try await localModel.deleteLocalModel()
+    }
+    
+    /// Get the current active AI engine tier
+    public func getActiveEngineTier() async -> EngineTier {
+        guard let summCoord = summarizationCoordinator else { return .basic }
+        return await summCoord.getActiveEngine()
+    }
+    
+    /// Check if should show Local AI download prompt
+    /// Returns true only if user is on Basic tier and Local AI is not downloaded
+    public func shouldShowLocalAIDownloadPrompt() async -> Bool {
+        let activeEngine = await getActiveEngineTier()
+        
+        // Don't show if user has External AI, Apple Intelligence, or Local AI selected
+        guard activeEngine == .basic else { return false }
+        
+        // Only show if local model is not downloaded
+        let isDownloaded = await isLocalModelDownloaded()
+        return !isDownloaded
     }
     
     /// Get formatted model size string

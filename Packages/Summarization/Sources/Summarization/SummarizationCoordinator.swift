@@ -47,9 +47,13 @@ public actor SummarizationCoordinator {
         // Initialize local LLM engine (Phi-3.5)
         self.localEngine = LocalEngine()
         
-        // Initialize Apple Intelligence engine (Phase 2B - iOS 18.1+)
-        if #available(iOS 18.1, *) {
+        // Initialize Apple Intelligence engine
+        // iOS 26.0+ has Foundation Models API for programmatic access
+        // iOS 18.1-25.x has Apple Intelligence but no public API
+        if #available(iOS 26.0, macOS 26.0, *) {
             self.appleEngine = AppleEngine(storage: storage)
+        } else if #available(iOS 18.1, *) {
+            self.appleEngine = AppleEngineLegacy(storage: storage)
         }
         
         // Initialize external API engine (Phase 2C)
@@ -76,12 +80,25 @@ public actor SummarizationCoordinator {
             print("📝 [SummarizationCoordinator] Restoring saved preference: \(tier.displayName)")
             #endif
         } else {
-            // No saved preference - default to External if API key exists, else Basic
+            // No saved preference - select best available default
+            // Priority: External (user configured) > Apple Intelligence > Local AI > Basic
             if let external = externalEngine, await external.isAvailable() {
                 preferredTier = .external
                 UserDefaults.standard.set(EngineTier.external.rawValue, forKey: Self.preferredEngineKey)
                 #if DEBUG
-                print("🧠 [SummarizationCoordinator] No preference set - defaulting to External AI")
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to External AI (user configured)")
+                #endif
+            } else if let apple = appleEngine, await apple.isAvailable() {
+                preferredTier = .apple
+                UserDefaults.standard.set(EngineTier.apple.rawValue, forKey: Self.preferredEngineKey)
+                #if DEBUG
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Apple Intelligence (on-device)")
+                #endif
+            } else if await localEngine.isAvailable() {
+                preferredTier = .local
+                UserDefaults.standard.set(EngineTier.local.rawValue, forKey: Self.preferredEngineKey)
+                #if DEBUG
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Local AI (downloaded)")
                 #endif
             } else {
                 preferredTier = .basic
@@ -186,11 +203,13 @@ public actor SummarizationCoordinator {
     }
     
     /// Determine the highest available fallback engine
+    /// Priority: Apple Intelligence > Local AI > Basic
+    /// Note: External is not included as fallback since it requires user configuration
     private func determineFallbackEngine() async -> EngineTier {
-        if await localEngine.isAvailable() {
-            return .local
-        } else if let apple = appleEngine, await apple.isAvailable() {
+        if let apple = appleEngine, await apple.isAvailable() {
             return .apple
+        } else if await localEngine.isAvailable() {
+            return .local
         } else {
             return .basic
         }

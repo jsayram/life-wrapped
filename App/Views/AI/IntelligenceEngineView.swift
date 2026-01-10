@@ -115,7 +115,7 @@ struct IntelligenceEngineView: View {
         case .local:
             return "Local AI model needs to be downloaded. Go to Settings to download Phi-3.5."
         case .apple:
-            return "Apple Intelligence requires iOS 18.1+ and compatible hardware. Your device or OS version doesn't support it yet."
+            return "Apple Intelligence requires iOS 26+ and compatible hardware (A17 Pro / M1 or later). Enable Apple Intelligence in Settings to use this engine."
         case .external:
             return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
         }

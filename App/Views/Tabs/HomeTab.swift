@@ -1,9 +1,10 @@
 import SwiftUI
 import SharedModels
+import Summarization
 
 struct HomeTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
-    @State private var isLocalModelDownloaded: Bool = true  // Default true to hide initially
+    @State private var shouldShowDownloadPrompt: Bool = false  // Controlled by engine tier + download status
     @State private var showDownloadCompleteBanner: Bool = false
     
     var body: some View {
@@ -84,14 +85,14 @@ struct HomeTab: View {
                     // Recording Button
                     RecordingButton()
                     
-                    // Subtle Local AI reminder (only shows when model not downloaded)
-                    if !isLocalModelDownloaded && !coordinator.isDownloadingLocalModel {
+                    // Subtle Local AI reminder (only shows when on Basic tier and model not downloaded)
+                    if shouldShowDownloadPrompt && !coordinator.isDownloadingLocalModel {
                         VStack(spacing: 6) {
                             Text("Transcription works! Summaries use basic mode.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             
-                            Text("Download AI model for smarter summaries.")
+                            Text("Download AI model (\(coordinator.expectedLocalModelSizeMB)) for smarter summaries.")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                             
@@ -110,17 +111,19 @@ struct HomeTab: View {
                 .padding()
             }
             .task {
-                // Check if local model is downloaded
-                isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
+                // Check if should show Local AI download prompt
+                // Only shows when on Basic tier and Local AI not downloaded
+                shouldShowDownloadPrompt = await coordinator.shouldShowLocalAIDownloadPrompt()
             }
             .onChange(of: coordinator.isDownloadingLocalModel) { wasDownloading, isDownloading in
                 // Show completion banner when download finishes
                 if wasDownloading && !isDownloading {
                     Task {
-                        let downloaded = await coordinator.isLocalModelDownloaded()
-                        if downloaded {
+                        // Re-check if we should show the prompt
+                        let shouldShow = await coordinator.shouldShowLocalAIDownloadPrompt()
+                        if !shouldShow {
                             withAnimation {
-                                isLocalModelDownloaded = true
+                                shouldShowDownloadPrompt = false
                                 showDownloadCompleteBanner = true
                             }
                             // Auto-hide after 3 seconds
