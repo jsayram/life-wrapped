@@ -586,6 +586,15 @@ struct OverviewTab: View {
                             }
                         }
                     },
+                    onRedeem: {
+                        Task {
+                            await coordinator.storeManager.presentRedeemCode()
+                            if coordinator.storeManager.isSmartestAIUnlocked {
+                                showPurchaseSheet = false
+                                coordinator.showSuccess("Code redeemed!")
+                            }
+                        }
+                    },
                     onCancel: {
                         showPurchaseSheet = false
                     }

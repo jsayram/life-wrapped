@@ -1,5 +1,8 @@
 import Foundation
 import StoreKit
+#if os(iOS)
+import UIKit
+#endif
 
 // MARK: - Store Products
 
@@ -167,6 +170,32 @@ public final class StoreManager: ObservableObject {
             errorMessage = "Failed to restore purchases: \(error.localizedDescription)"
             print("❌ [StoreManager] Restore failed: \(error)")
         }
+    }
+    
+    // MARK: - Redeem Code
+    
+    /// Present the App Store offer code redemption sheet
+    /// Users can enter promo codes here to unlock features
+    public func presentRedeemCode() async {
+        #if os(iOS)
+        guard let windowScene = await UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first else {
+            errorMessage = "Could not find window scene"
+            print("❌ [StoreManager] No window scene available")
+            return
+        }
+        
+        do {
+            try await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
+            // After redemption, check entitlements
+            await checkEntitlements()
+            print("✅ [StoreManager] Offer code redemption sheet presented")
+        } catch {
+            errorMessage = "Failed to present redeem sheet: \(error.localizedDescription)"
+            print("❌ [StoreManager] Failed to present redeem sheet: \(error)")
+        }
+        #endif
     }
     
     // MARK: - Entitlements

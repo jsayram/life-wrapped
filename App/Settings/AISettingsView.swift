@@ -430,6 +430,15 @@ struct AISettingsView: View {
                         }
                     }
                 },
+                onRedeem: {
+                    Task {
+                        await coordinator.storeManager.presentRedeemCode()
+                        if coordinator.storeManager.isSmartestAIUnlocked {
+                            showPurchaseSheet = false
+                            coordinator.showSuccess("Code redeemed!")
+                        }
+                    }
+                },
                 onCancel: {
                     showPurchaseSheet = false
                 }
@@ -730,6 +739,7 @@ struct SmartestPurchaseSheet: View {
     let isRestoring: Bool
     let onPurchase: () -> Void
     let onRestore: () -> Void
+    let onRedeem: () -> Void
     let onCancel: () -> Void
     
     var body: some View {
@@ -816,6 +826,13 @@ struct SmartestPurchaseSheet: View {
                     }
                     Text("Restore Purchases")
                 }
+            }
+            .foregroundStyle(.secondary)
+            .font(.footnote)
+            
+            // Redeem Code button
+            Button(action: onRedeem) {
+                Text("Redeem Code")
             }
             .foregroundStyle(.secondary)
             .font(.footnote)
