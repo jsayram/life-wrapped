@@ -154,445 +154,153 @@ public actor DataExporter {
     }
     
     // MARK: - Standard PDF Rendering
-    
+
     private func renderStandardPDF(summaries: [Summary], year: Int?) -> Data {
-        // Create PDF
-        let pdfMetaData = [
-            kCGPDFContextCreator: "Life Wrapped",
-            kCGPDFContextTitle: year != nil ? "Life Wrapped Export \(year!)" : "Life Wrapped Export All"
-        ]
-        let format = UIGraphicsPDFRendererFormat()
-        format.documentInfo = pdfMetaData as [String: Any]
-        
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
-        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
-        
-        let data = renderer.pdfData { context in
-            var yOffset: CGFloat = 50
-            
-            // Add disclaimer on first page
-            context.beginPage()
-            let disclaimerText = "This PDF contains summaries only, not full transcripts."
-            let disclaimerAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.italicSystemFont(ofSize: 12),
-                .foregroundColor: UIColor.gray
-            ]
-            let disclaimerSize = disclaimerText.size(withAttributes: disclaimerAttributes)
-            disclaimerText.draw(at: CGPoint(x: 50, y: yOffset), withAttributes: disclaimerAttributes)
-            yOffset += disclaimerSize.height + 30
-            
+        let title = year != nil ? "Life Wrapped Export \(year!)" : "Life Wrapped Export All"
+        let writer = GraphitePDFWriter(title: title)
+
+        return writer.render { page in
+            page.beginPage()
+
+            // Header
+            page.drawOverline("LIFE WRAPPED")
+            page.drawSerif(year != nil ? "Summaries \(year!)" : "All summaries", size: 34)
+            page.y += 6
+            let exported = DateFormatter.localizedString(from: Date(), dateStyle: .long, timeStyle: .none)
+            page.drawBody("Exported \(exported). This PDF contains summaries only, not full transcripts.", size: 11, color: GraphitePDFWriter.ink2)
+            page.y += 24
+
+            if summaries.isEmpty {
+                page.drawBody("No summaries yet.", size: 12, color: GraphitePDFWriter.ink2)
+                return
+            }
+
             // Group summaries by period type
+            // Largest periods first: Year Wraps, then years down to single sessions
+            let order: [PeriodType] = [.yearWrap, .yearWrapWork, .yearWrapPersonal, .year, .quarter, .month, .week, .day, .hour, .session]
             let groupedSummaries = Dictionary(grouping: summaries) { $0.periodType }
-            let sortedGroups = groupedSummaries.sorted { $0.key.rawValue < $1.key.rawValue }
-            
-            for (periodType, summaries) in sortedGroups {
-                // Add section header
-                let headerText = "\(periodType.displayName) Summaries"
-                let headerAttributes: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.boldSystemFont(ofSize: 18),
-                    .foregroundColor: UIColor.black
-                ]
-                let headerSize = headerText.size(withAttributes: headerAttributes)
-                
-                if yOffset + headerSize.height > pageRect.height - 50 {
-                    context.beginPage()
-                    yOffset = 50
+            let sortedGroups = groupedSummaries.sorted {
+                (order.firstIndex(of: $0.key) ?? order.count) < (order.firstIndex(of: $1.key) ?? order.count)
+            }
+
+            for (periodType, group) in sortedGroups {
+                page.ensureSpace(80)
+                page.drawSectionHeader("\(periodType.displayName) summaries", icon: nil, trailing: group.count == 1 ? "1 summary" : "\(group.count) summaries")
+
+                for summary in group.sorted(by: { $0.periodStart > $1.periodStart }) {
+                    let heading = formatPeriod(summary.periodType, start: summary.periodStart, end: summary.periodEnd)
+                    // Year Wraps are stored as JSON; show their written summary instead
+                    let isWrap = [.yearWrap, .yearWrapWork, .yearWrapPersonal].contains(summary.periodType)
+                    let body = isWrap ? (parseYearWrapJSON(from: summary.text)?.yearSummary ?? summary.text) : summary.text
+                    page.drawCard(heading: heading, body: body)
                 }
-                
-                headerText.draw(at: CGPoint(x: 50, y: yOffset), withAttributes: headerAttributes)
-                yOffset += headerSize.height + 20
-                
-                // Add each summary
-                for summary in summaries.sorted(by: { $0.periodStart > $1.periodStart }) {
-                    let titleText = formatPeriod(summary.periodType, start: summary.periodStart, end: summary.periodEnd)
-                    let titleAttributes: [NSAttributedString.Key: Any] = [
-                        .font: UIFont.boldSystemFont(ofSize: 14),
-                        .foregroundColor: UIColor.black
-                    ]
-                    
-                    let bodyAttributes: [NSAttributedString.Key: Any] = [
-                        .font: UIFont.systemFont(ofSize: 12),
-                        .foregroundColor: UIColor.darkGray
-                    ]
-                    
-                    let titleSize = titleText.boundingRect(
-                        with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
-                        options: [.usesLineFragmentOrigin],
-                        attributes: titleAttributes,
-                        context: nil
-                    ).size
-                    
-                    let bodySize = summary.text.boundingRect(
-                        with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
-                        options: [.usesLineFragmentOrigin],
-                        attributes: bodyAttributes,
-                        context: nil
-                    ).size
-                    
-                    // Check if we need a new page
-                    if yOffset + titleSize.height + bodySize.height + 40 > pageRect.height - 50 {
-                        context.beginPage()
-                        yOffset = 50
-                    }
-                    
-                    // Draw title
-                    titleText.draw(
-                        with: CGRect(x: 50, y: yOffset, width: pageRect.width - 100, height: titleSize.height),
-                        options: [.usesLineFragmentOrigin],
-                        attributes: titleAttributes,
-                        context: nil
-                    )
-                    yOffset += titleSize.height + 10
-                    
-                    // Draw body
-                    summary.text.draw(
-                        with: CGRect(x: 50, y: yOffset, width: pageRect.width - 100, height: bodySize.height),
-                        options: [.usesLineFragmentOrigin],
-                        attributes: bodyAttributes,
-                        context: nil
-                    )
-                    yOffset += bodySize.height + 30
-                }
-                
-                yOffset += 20 // Extra space between sections
+                page.y += 12
             }
         }
-        
-        return data
     }
-    
+
     // MARK: - Year Wrap PDF Rendering
-    
+
     private func renderYearWrapPDF(yearWrap: Summary, year: Int, redactPeople: Bool, redactPlaces: Bool, filter: ItemFilter) async throws -> Data {
         guard let parsedData = parseYearWrapJSON(from: yearWrap.text) else {
             // Fallback to standard PDF if parsing fails
             return renderStandardPDF(summaries: [yearWrap], year: year)
         }
-        
+
         // Fetch session stats for the year
         let stats = try await fetchYearStats(year: year)
-        
-        let pdfMetaData = [
-            kCGPDFContextCreator: "Life Wrapped",
-            kCGPDFContextTitle: "Year Wrap \(year)"
-        ]
-        let format = UIGraphicsPDFRendererFormat()
-        format.documentInfo = pdfMetaData as [String: Any]
-        
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
-        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
-        
-        let data = renderer.pdfData { context in
-            var yOffset: CGFloat = 0
-            
-            // Page 1: Hero Section
-            context.beginPage()
-            renderHeroPage(context: context, pageRect: pageRect, data: parsedData, year: year)
-            
-            // Page 2: Stats
-            context.beginPage()
-            yOffset = 50
-            yOffset = renderStatsSection(context: context, pageRect: pageRect, yOffset: yOffset, stats: stats)
-            
-            // Insights Sections
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Major Arcs", emoji: "🌟", items: parsedData.majorArcs, color: YearWrapTheme.sectionColors[0], requireNewPage: false, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Wins", emoji: "🏆", items: parsedData.biggestWins, color: YearWrapTheme.sectionColors[1], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Losses", emoji: "💔", items: parsedData.biggestLosses, color: YearWrapTheme.sectionColors[2], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Biggest Challenges", emoji: "⚡", items: parsedData.biggestChallenges, color: YearWrapTheme.sectionColors[3], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Finished Projects", emoji: "✅", items: parsedData.finishedProjects, color: YearWrapTheme.sectionColors[4], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Unfinished Projects", emoji: "🚧", items: parsedData.unfinishedProjects, color: YearWrapTheme.sectionColors[5], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Worked On", emoji: "💼", items: parsedData.topWorkedOnTopics, color: YearWrapTheme.sectionColors[6], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Top Talked About", emoji: "💬", items: parsedData.topTalkedAboutThings, color: YearWrapTheme.sectionColors[7], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Valuable Actions", emoji: "🎯", items: parsedData.valuableActionsTaken, color: YearWrapTheme.sectionColors[8], requireNewPage: true, filter: filter)
-            yOffset = renderInsightSection(context: context, pageRect: pageRect, yOffset: yOffset, title: "Opportunities Missed", emoji: "🤔", items: parsedData.opportunitiesMissed, color: YearWrapTheme.sectionColors[9], requireNewPage: true, filter: filter)
-            
+        let writer = GraphitePDFWriter(title: "Year Wrap \(year)")
+
+        return writer.render { page in
+            // Page 1: black cover, like the Year Wrapped card in the app
+            page.beginCoverPage()
+            page.drawCover(year: year, title: parsedData.yearTitle, summary: parsedData.yearSummary, filterLabel: filter == .workOnly ? "Work" : (filter == .personalOnly ? "Personal" : nil))
+
+            // Page 2: numbers, then the insight sections flowing across pages
+            page.beginPage()
+            page.drawOverline("YEAR WRAPPED \(year)")
+            page.drawSerif("Your year in numbers", size: 28)
+            page.y += 16
+            page.drawStatTiles([
+                ("mic", "\(stats.sessions)", "entries"),
+                ("clock", String(format: "%.1fh", stats.duration / 3600), "recorded"),
+                ("text.alignleft", stats.words.formatted(), "words")
+            ])
+            page.y += 28
+
+            let sections: [(String, String, [ClassifiedItem])] = [
+                ("Major arcs", "book", parsedData.majorArcs),
+                ("Biggest wins", "trophy", parsedData.biggestWins),
+                ("Biggest losses", "heart.slash", parsedData.biggestLosses),
+                ("Biggest challenges", "bolt", parsedData.biggestChallenges),
+                ("Finished projects", "checkmark.circle", parsedData.finishedProjects),
+                ("Unfinished projects", "pause.circle", parsedData.unfinishedProjects),
+                ("Top worked-on topics", "hammer", parsedData.topWorkedOnTopics),
+                ("Top talked-about things", "bubble.left", parsedData.topTalkedAboutThings),
+                ("Valuable actions taken", "diamond", parsedData.valuableActionsTaken),
+                ("Opportunities missed", "scope", parsedData.opportunitiesMissed)
+            ]
+
+            for (title, icon, items) in sections {
+                let filtered = filterItems(items, by: filter)
+                guard !filtered.isEmpty else { continue }
+                let lines = filtered.map { item -> (text: String, detail: String?) in
+                    (item.text, filter == .all ? categoryLabel(item.category) : nil)
+                }
+                page.drawListSection(title: title, icon: icon, items: lines)
+            }
+
             // People & Places
-            yOffset = renderPeopleSection(context: context, pageRect: pageRect, yOffset: yOffset, people: parsedData.peopleMentioned, redact: redactPeople)
-            yOffset = renderPlacesSection(context: context, pageRect: pageRect, yOffset: yOffset, places: parsedData.placesVisited, redact: redactPlaces)
-            
-            // Footer with redaction note if needed
+            if !parsedData.peopleMentioned.isEmpty {
+                let lines = parsedData.peopleMentioned.map { person -> (text: String, detail: String?) in
+                    let name = redactPeople ? "[Person]" : person.name
+                    return (name, redactPeople ? nil : person.relationship)
+                }
+                page.drawListSection(title: "People mentioned", icon: "person.2", items: lines)
+            }
+            if !parsedData.placesVisited.isEmpty {
+                let lines = parsedData.placesVisited.map { place -> (text: String, detail: String?) in
+                    let name = redactPlaces ? "[Location]" : place.name
+                    return (name, redactPlaces ? nil : place.frequency)
+                }
+                page.drawListSection(title: "Places visited", icon: "mappin.and.ellipse", items: lines)
+            }
+
+            // Redaction note
             if redactPeople || redactPlaces {
-                context.beginPage()
-                renderPrivacyFooter(context: context, pageRect: pageRect, redactPeople: redactPeople, redactPlaces: redactPlaces)
+                let details: String
+                if redactPeople && redactPlaces {
+                    details = "All people and location names have been redacted in this export."
+                } else if redactPeople {
+                    details = "All people names have been redacted in this export."
+                } else {
+                    details = "All location names have been redacted in this export."
+                }
+                page.ensureSpace(40)
+                page.drawBody("Privacy note: \(details)", size: 10, color: GraphitePDFWriter.ink2)
             }
         }
-        
-        return data
     }
-    
-    private func renderHeroPage(context: UIGraphicsPDFRendererContext, pageRect: CGRect, data: YearWrapData, year: Int) {
-        let ctx = context.cgContext
-        
-        // Background gradient (purple)
-        let colors = [
-            YearWrapTheme.uiColor(YearWrapTheme.electricPurple).cgColor,
-            YearWrapTheme.uiColor(YearWrapTheme.hotPink).cgColor
-        ]
-        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0.0, 1.0])!
-        ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: pageRect.height), options: [])
-        
-        // Year title
-        let yearTitle = "\(year)"
-        let yearAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 72),
-            .foregroundColor: UIColor.white
-        ]
-        let yearSize = yearTitle.size(withAttributes: yearAttributes)
-        yearTitle.draw(at: CGPoint(x: (pageRect.width - yearSize.width) / 2, y: 250), withAttributes: yearAttributes)
-        
-        // Year summary
-        let summaryText = data.yearSummary
-        let summaryAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 16),
-            .foregroundColor: UIColor.white
-        ]
-        let summaryRect = CGRect(x: 50, y: 380, width: pageRect.width - 100, height: 300)
-        summaryText.draw(with: summaryRect, options: [.usesLineFragmentOrigin], attributes: summaryAttributes, context: nil)
-    }
-    
-    private func renderStatsSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, stats: (sessions: Int, duration: TimeInterval, words: Int)) -> CGFloat {
-        var y = yOffset
-        
-        let headerText = "Your Year in Numbers"
-        let headerAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 24),
-            .foregroundColor: UIColor.black
-        ]
-        let headerSize = headerText.size(withAttributes: headerAttributes)
-        headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
-        y += headerSize.height + 30
-        
-        // Stats cards
-        let statWidth: CGFloat = 150
-        let statHeight: CGFloat = 120
-        let spacing: CGFloat = 20
-        let startX: CGFloat = (pageRect.width - (statWidth * 3 + spacing * 2)) / 2
-        
-        let statsData = [
-            ("🎙️", "\(stats.sessions)", "Sessions", YearWrapTheme.vibrantOrange),
-            ("⏱️", String(format: "%.1f", stats.duration / 3600), "Hours", YearWrapTheme.hotPink),
-            ("💬", "\(stats.words)", "Words", YearWrapTheme.spotifyGreen)
-        ]
-        
-        for (index, (emoji, value, label, colorHex)) in statsData.enumerated() {
-            let x = startX + CGFloat(index) * (statWidth + spacing)
-            let rect = CGRect(x: x, y: y, width: statWidth, height: statHeight)
-            
-            // Background
-            context.cgContext.setFillColor(YearWrapTheme.uiColor(colorHex).withAlphaComponent(0.15).cgColor)
-            context.cgContext.fillEllipse(in: rect.insetBy(dx: 10, dy: 10))
-            
-            // Emoji
-            let emojiAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 32)]
-            let emojiSize = emoji.size(withAttributes: emojiAttributes)
-            emoji.draw(at: CGPoint(x: rect.midX - emojiSize.width / 2, y: rect.minY + 15), withAttributes: emojiAttributes)
-            
-            // Value
-            let valueAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.boldSystemFont(ofSize: 28),
-                .foregroundColor: YearWrapTheme.uiColor(colorHex)
-            ]
-            let valueSize = value.size(withAttributes: valueAttributes)
-            value.draw(at: CGPoint(x: rect.midX - valueSize.width / 2, y: rect.midY), withAttributes: valueAttributes)
-            
-            // Label
-            let labelAttributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 14),
-                .foregroundColor: UIColor.gray
-            ]
-            let labelSize = label.size(withAttributes: labelAttributes)
-            label.draw(at: CGPoint(x: rect.midX - labelSize.width / 2, y: rect.maxY - 25), withAttributes: labelAttributes)
-        }
-        
-        return y + statHeight + 40
-    }
-    
-    @discardableResult
-    private func renderInsightSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, title: String, emoji: String, items: [ClassifiedItem], color: String, requireNewPage: Bool, filter: ItemFilter) -> CGFloat {
-        // Apply filter
-        let filteredItems: [ClassifiedItem]
+
+    private func filterItems(_ items: [ClassifiedItem], by filter: ItemFilter) -> [ClassifiedItem] {
         switch filter {
         case .all:
-            filteredItems = items
+            return items
         case .workOnly:
-            filteredItems = items.filter { $0.category == .work || $0.category == .both }
+            return items.filter { $0.category == .work || $0.category == .both }
         case .personalOnly:
-            filteredItems = items.filter { $0.category == .personal || $0.category == .both }
+            return items.filter { $0.category == .personal || $0.category == .both }
         }
-        
-        if filteredItems.isEmpty {
-            return yOffset
-        }
-        
-        if requireNewPage {
-            context.beginPage()
-        }
-        
-        var y: CGFloat = requireNewPage ? 50 : yOffset
-        
-        // Section header with emoji
-        let headerText = "\(emoji) \(title)"
-        let headerAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 20),
-            .foregroundColor: YearWrapTheme.uiColor(color)
-        ]
-        let headerSize = headerText.size(withAttributes: headerAttributes)
-        headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
-        y += headerSize.height + 20
-        
-        // Items as bullets with category indicators (only for "All" filter)
-        let bulletAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 14),
-            .foregroundColor: UIColor.darkGray
-        ]
-        
-        for item in filteredItems {
-            // Add category prefix only when showing all items
-            let categoryPrefix = filter == .all ? getCategoryPrefix(item.category) : ""
-            let bulletText = "• \(categoryPrefix)\(item.text)"
-            let bulletSize = bulletText.boundingRect(
-                with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin],
-                attributes: bulletAttributes,
-                context: nil
-            ).size
-            
-            if y + bulletSize.height > pageRect.height - 50 {
-                context.beginPage()
-                y = 50
-            }
-            
-            bulletText.draw(with: CGRect(x: 60, y: y, width: pageRect.width - 110, height: bulletSize.height), options: [.usesLineFragmentOrigin], attributes: bulletAttributes, context: nil)
-            y += bulletSize.height + 8
-        }
-        
-        return y + 30
     }
-    
-    private func getCategoryPrefix(_ category: ItemCategory) -> String {
+
+    private func categoryLabel(_ category: ItemCategory) -> String {
         switch category {
-        case .work: return "💼 "
-        case .personal: return "🏠 "
-        case .both: return "🔀 "
+        case .work: return "Work"
+        case .personal: return "Personal"
+        case .both: return "Work and personal"
         }
     }
-    
-    private func renderPeopleSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, people: [PersonMention], redact: Bool) -> CGFloat {
-        if people.isEmpty {
-            return yOffset
-        }
-        
-        context.beginPage()
-        var y: CGFloat = 50
-        
-        let headerText = "👥 People Mentioned"
-        let headerAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 20),
-            .foregroundColor: YearWrapTheme.uiColor(YearWrapTheme.hotPink)
-        ]
-        let headerSize = headerText.size(withAttributes: headerAttributes)
-        headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
-        y += headerSize.height + 20
-        
-        let itemAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 14),
-            .foregroundColor: UIColor.darkGray
-        ]
-        
-        for person in people {
-            let name = redact ? "[Person]" : person.name
-            var itemText = "• \(name)"
-            if let relationship = person.relationship, !redact {
-                itemText += " — \(relationship)"
-            }
-            
-            let itemSize = itemText.boundingRect(
-                with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin],
-                attributes: itemAttributes,
-                context: nil
-            ).size
-            
-            if y + itemSize.height > pageRect.height - 50 {
-                context.beginPage()
-                y = 50
-            }
-            
-            itemText.draw(with: CGRect(x: 60, y: y, width: pageRect.width - 110, height: itemSize.height), options: [.usesLineFragmentOrigin], attributes: itemAttributes, context: nil)
-            y += itemSize.height + 8
-        }
-        
-        return y + 30
-    }
-    
-    private func renderPlacesSection(context: UIGraphicsPDFRendererContext, pageRect: CGRect, yOffset: CGFloat, places: [PlaceVisit], redact: Bool) -> CGFloat {
-        if places.isEmpty {
-            return yOffset
-        }
-        
-        context.beginPage()
-        var y: CGFloat = 50
-        
-        let headerText = "📍 Places Visited"
-        let headerAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 20),
-            .foregroundColor: YearWrapTheme.uiColor(YearWrapTheme.electricPurple)
-        ]
-        let headerSize = headerText.size(withAttributes: headerAttributes)
-        headerText.draw(at: CGPoint(x: 50, y: y), withAttributes: headerAttributes)
-        y += headerSize.height + 20
-        
-        let itemAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 14),
-            .foregroundColor: UIColor.darkGray
-        ]
-        
-        for place in places {
-            let name = redact ? "[Location]" : place.name
-            var itemText = "• \(name)"
-            if let frequency = place.frequency, !redact {
-                itemText += " — \(frequency)"
-            }
-            
-            let itemSize = itemText.boundingRect(
-                with: CGSize(width: pageRect.width - 100, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin],
-                attributes: itemAttributes,
-                context: nil
-            ).size
-            
-            if y + itemSize.height > pageRect.height - 50 {
-                context.beginPage()
-                y = 50
-            }
-            
-            itemText.draw(with: CGRect(x: 60, y: y, width: pageRect.width - 110, height: itemSize.height), options: [.usesLineFragmentOrigin], attributes: itemAttributes, context: nil)
-            y += itemSize.height + 8
-        }
-        
-        return y + 30
-    }
-    
-    private func renderPrivacyFooter(context: UIGraphicsPDFRendererContext, pageRect: CGRect, redactPeople: Bool, redactPlaces: Bool) {
-        let footerText = "Privacy Note: "
-        let detailsText: String
-        if redactPeople && redactPlaces {
-            detailsText = "All people and location names have been redacted in this export."
-        } else if redactPeople {
-            detailsText = "All people names have been redacted in this export."
-        } else {
-            detailsText = "All location names have been redacted in this export."
-        }
-        
-        let fullText = footerText + detailsText
-        let footerAttributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.italicSystemFont(ofSize: 12),
-            .foregroundColor: UIColor.gray
-        ]
-        
-        fullText.draw(with: CGRect(x: 50, y: 50, width: pageRect.width - 100, height: 100), options: [.usesLineFragmentOrigin], attributes: footerAttributes, context: nil)
-    }
-    
+
     // MARK: - Helpers
     
     private func parseYearWrapJSON(from text: String) -> YearWrapData? {
@@ -906,29 +614,314 @@ public struct StorageInfo: Sendable {
     }
 }
 
-// MARK: - Year Wrap Theme
+// MARK: - Graphite PDF Writer
 
 #if canImport(UIKit)
-private struct YearWrapTheme {
-    static let vibrantOrange = "#FF6B35"
-    static let hotPink = "#FF006E"
-    static let electricPurple = "#8338EC"
-    static let spotifyGreen = "#06FFA5"
-    
-    static let sectionColors = [
-        "#FF6B35", "#FF8C42", "#FFA600", "#FFB800", "#06FFA5",
-        "#00D9FF", "#3A86FF", "#8338EC", "#B5179E", "#FF006E"
-    ]
-    
-    static func uiColor(_ hex: String) -> UIColor {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r, g, b: UInt64
-        r = (int >> 16) & 0xFF
-        g = (int >> 8) & 0xFF
-        b = int & 0xFF
-        return UIColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1.0)
+/// Draws PDFs in the app's graphite design language: warm paper background,
+/// ink text, serif headings, outline SF Symbols, white cards with hairline borders.
+private final class GraphitePDFWriter {
+    // Palette (matches AppTheme light mode)
+    static let paper = UIColor(red: 0xF7 / 255, green: 0xF7 / 255, blue: 0xF5 / 255, alpha: 1)
+    static let card = UIColor.white
+    static let ink = UIColor(red: 0x11 / 255, green: 0x11 / 255, blue: 0x11 / 255, alpha: 1)
+    static let ink2 = UIColor(red: 0x55 / 255, green: 0x55 / 255, blue: 0x4F / 255, alpha: 1)
+    static let hairline = UIColor(red: 0xE4 / 255, green: 0xE4 / 255, blue: 0xE0 / 255, alpha: 1)
+    static let onInk = UIColor(red: 0xF7 / 255, green: 0xF7 / 255, blue: 0xF5 / 255, alpha: 1)
+
+    let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
+    let margin: CGFloat = 54
+    let footerHeight: CGFloat = 40
+    private let title: String
+
+    private var context: UIGraphicsPDFRendererContext?
+    private var pageNumber = 0
+    var y: CGFloat = 0
+
+    var contentWidth: CGFloat { pageRect.width - margin * 2 }
+    var bottom: CGFloat { pageRect.height - margin - footerHeight }
+
+    init(title: String) {
+        self.title = title
+    }
+
+    func render(_ draw: (GraphitePDFWriter) -> Void) -> Data {
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = [
+            kCGPDFContextCreator as String: "Life Wrapped",
+            kCGPDFContextTitle as String: title
+        ]
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+        return renderer.pdfData { ctx in
+            self.context = ctx
+            draw(self)
+            self.context = nil
+        }
+    }
+
+    // MARK: Pages
+
+    func beginPage() {
+        context?.beginPage()
+        pageNumber += 1
+        Self.paper.setFill()
+        UIRectFill(pageRect)
+        drawFooter()
+        y = margin
+    }
+
+    func beginCoverPage() {
+        context?.beginPage()
+        pageNumber += 1
+        Self.ink.setFill()
+        UIRectFill(pageRect)
+        y = margin
+    }
+
+    func ensureSpace(_ height: CGFloat) {
+        if y + height > bottom { beginPage() }
+    }
+
+    private func drawFooter() {
+        let lineY = pageRect.height - margin - 18
+        Self.hairline.setFill()
+        UIRectFill(CGRect(x: margin, y: lineY, width: contentWidth, height: 0.75))
+        let attrs = Self.attributes(font: .systemFont(ofSize: 9), color: Self.ink2)
+        ("Life Wrapped" as NSString).draw(at: CGPoint(x: margin, y: lineY + 8), withAttributes: attrs)
+        let number = "\(pageNumber)" as NSString
+        let size = number.size(withAttributes: attrs)
+        number.draw(at: CGPoint(x: pageRect.width - margin - size.width, y: lineY + 8), withAttributes: attrs)
+    }
+
+    // MARK: Fonts
+
+    static func serif(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        guard let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    static func attributes(font: UIFont, color: UIColor, lineSpacing: CGFloat = 0, kern: CGFloat = 0) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        paragraph.lineBreakMode = .byWordWrapping
+        var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: paragraph]
+        if kern != 0 { attrs[.kern] = kern }
+        return attrs
+    }
+
+    // MARK: Text
+
+    private func height(of text: String, attrs: [NSAttributedString.Key: Any], width: CGFloat) -> CGFloat {
+        ceil((text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attrs,
+            context: nil
+        ).height)
+    }
+
+    private func draw(_ text: String, attrs: [NSAttributedString.Key: Any], x: CGFloat, width: CGFloat) {
+        let h = height(of: text, attrs: attrs, width: width)
+        (text as NSString).draw(
+            with: CGRect(x: x, y: y, width: width, height: h),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attrs,
+            context: nil
+        )
+        y += h
+    }
+
+    func drawOverline(_ text: String, color: UIColor = ink2) {
+        draw(text, attrs: Self.attributes(font: .systemFont(ofSize: 10, weight: .medium), color: color, kern: 1.2), x: margin, width: contentWidth)
+        y += 6
+    }
+
+    func drawSerif(_ text: String, size: CGFloat, color: UIColor = ink) {
+        draw(text, attrs: Self.attributes(font: Self.serif(size), color: color), x: margin, width: contentWidth)
+    }
+
+    /// Body text that flows across pages when it is taller than the space left.
+    func drawBody(_ text: String, size: CGFloat, color: UIColor = ink, x: CGFloat? = nil, width: CGFloat? = nil) {
+        let attrs = Self.attributes(font: .systemFont(ofSize: size), color: color, lineSpacing: size * 0.35)
+        drawFlowing(NSAttributedString(string: text, attributes: attrs), x: x ?? margin, width: width ?? contentWidth)
+    }
+
+    private func drawFlowing(_ text: NSAttributedString, x: CGFloat, width: CGFloat) {
+        let storage = NSTextStorage(attributedString: text)
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        var drawnGlyphs = 0
+
+        while drawnGlyphs < layout.numberOfGlyphs || layout.textContainers.isEmpty {
+            let available = bottom - y
+            if available < 24 { beginPage(); continue }
+
+            let container = NSTextContainer(size: CGSize(width: width, height: available))
+            container.lineFragmentPadding = 0
+            layout.addTextContainer(container)
+            let range = layout.glyphRange(for: container)
+            if range.length == 0 {
+                if layout.numberOfGlyphs == 0 { break }
+                beginPage()
+                continue
+            }
+            layout.drawGlyphs(forGlyphRange: range, at: CGPoint(x: x, y: y))
+            y += ceil(layout.usedRect(for: container).height)
+            drawnGlyphs = NSMaxRange(range)
+            if drawnGlyphs < layout.numberOfGlyphs { beginPage() }
+        }
+    }
+
+    // MARK: Icons
+
+    private func drawIcon(_ name: String, at point: CGPoint, size: CGFloat, color: UIColor) {
+        let config = UIImage.SymbolConfiguration(pointSize: size, weight: .regular)
+        guard let image = UIImage(systemName: name, withConfiguration: config)?
+            .withTintColor(color, renderingMode: .alwaysOriginal) else { return }
+        let scale = size / max(image.size.width, image.size.height)
+        let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        // Flatten the symbol to a plain bitmap first; symbol images drawn straight into a
+        // PDF context are stored as masks that some PDF viewers fill as solid squares.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 4
+        format.opaque = false
+        let bitmap = UIGraphicsImageRenderer(size: drawSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: drawSize))
+        }
+        bitmap.draw(in: CGRect(
+            x: point.x + (size - drawSize.width) / 2,
+            y: point.y + (size - drawSize.height) / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        ))
+    }
+
+    // MARK: Components
+
+    private func strokeCard(_ rect: CGRect, radius: CGFloat = 14) {
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+        Self.card.setFill()
+        path.fill()
+        Self.hairline.setStroke()
+        path.lineWidth = 0.75
+        path.stroke()
+    }
+
+    func drawSectionHeader(_ title: String, icon: String?, trailing: String? = nil) {
+        let font = Self.serif(20)
+        let attrs = Self.attributes(font: font, color: Self.ink)
+        var x = margin
+        if let icon {
+            drawIcon(icon, at: CGPoint(x: x, y: y + 3), size: 16, color: Self.ink2)
+            x += 26
+        }
+        if let trailing {
+            let tAttrs = Self.attributes(font: .systemFont(ofSize: 10), color: Self.ink2)
+            let size = (trailing as NSString).size(withAttributes: tAttrs)
+            (trailing as NSString).draw(at: CGPoint(x: pageRect.width - margin - size.width, y: y + 8), withAttributes: tAttrs)
+        }
+        draw(title, attrs: attrs, x: x, width: contentWidth - (x - margin) - 60)
+        y += 12
+    }
+
+    /// A white card with a small heading and body. Long bodies that cannot fit on a
+    /// single page are drawn without the card so the text can flow across pages.
+    func drawCard(heading: String, body: String) {
+        let padding: CGFloat = 16
+        let innerWidth = contentWidth - padding * 2
+        let headingAttrs = Self.attributes(font: .systemFont(ofSize: 10, weight: .semibold), color: Self.ink2)
+        let bodyAttrs = Self.attributes(font: .systemFont(ofSize: 11.5), color: Self.ink, lineSpacing: 4)
+        let headingHeight = height(of: heading, attrs: headingAttrs, width: innerWidth)
+        let bodyHeight = height(of: body, attrs: bodyAttrs, width: innerWidth)
+        let cardHeight = padding * 2 + headingHeight + 8 + bodyHeight
+        let fullPage = bottom - margin
+
+        if cardHeight <= fullPage {
+            ensureSpace(cardHeight)
+            strokeCard(CGRect(x: margin, y: y, width: contentWidth, height: cardHeight))
+            let top = y
+            y += padding
+            draw(heading, attrs: headingAttrs, x: margin + padding, width: innerWidth)
+            y += 8
+            draw(body, attrs: bodyAttrs, x: margin + padding, width: innerWidth)
+            y = top + cardHeight + 10
+        } else {
+            ensureSpace(60)
+            draw(heading, attrs: headingAttrs, x: margin, width: contentWidth)
+            y += 8
+            drawFlowing(NSAttributedString(string: body, attributes: bodyAttrs), x: margin, width: contentWidth)
+            y += 18
+        }
+    }
+
+    /// Three tiles in a row: icon, big value, small label.
+    func drawStatTiles(_ tiles: [(icon: String, value: String, label: String)]) {
+        let spacing: CGFloat = 12
+        let width = (contentWidth - spacing * CGFloat(tiles.count - 1)) / CGFloat(tiles.count)
+        let height: CGFloat = 96
+        ensureSpace(height)
+        for (index, tile) in tiles.enumerated() {
+            let rect = CGRect(x: margin + CGFloat(index) * (width + spacing), y: y, width: width, height: height)
+            strokeCard(rect)
+            drawIcon(tile.icon, at: CGPoint(x: rect.minX + 14, y: rect.minY + 14), size: 14, color: Self.ink2)
+            let valueAttrs = Self.attributes(font: .systemFont(ofSize: 24, weight: .semibold), color: Self.ink)
+            (tile.value as NSString).draw(at: CGPoint(x: rect.minX + 14, y: rect.minY + 38), withAttributes: valueAttrs)
+            let labelAttrs = Self.attributes(font: .systemFont(ofSize: 10), color: Self.ink2)
+            (tile.label as NSString).draw(at: CGPoint(x: rect.minX + 14, y: rect.minY + 70), withAttributes: labelAttrs)
+        }
+        y += height
+    }
+
+    /// Section with an outline icon, serif title and a numbered list with optional grey detail.
+    func drawListSection(title: String, icon: String, items: [(text: String, detail: String?)]) {
+        ensureSpace(90)
+        // Hairline divider between sections
+        Self.hairline.setFill()
+        UIRectFill(CGRect(x: margin, y: y, width: contentWidth, height: 0.75))
+        y += 20
+        drawSectionHeader(title, icon: icon)
+
+        let numberAttrs = Self.attributes(font: .monospacedDigitSystemFont(ofSize: 11, weight: .regular), color: Self.ink2)
+        let textAttrs = Self.attributes(font: .systemFont(ofSize: 12), color: Self.ink, lineSpacing: 4)
+        let detailAttrs = Self.attributes(font: .systemFont(ofSize: 10), color: Self.ink2)
+        let indent: CGFloat = 24
+        let width = contentWidth - indent
+
+        for (index, item) in items.enumerated() {
+            let textHeight = height(of: item.text, attrs: textAttrs, width: width)
+            let detailHeight = item.detail.map { height(of: $0, attrs: detailAttrs, width: width) + 3 } ?? 0
+            ensureSpace(min(textHeight + detailHeight, bottom - margin))
+            ("\(index + 1)." as NSString).draw(at: CGPoint(x: margin, y: y + 1), withAttributes: numberAttrs)
+            drawFlowing(NSAttributedString(string: item.text, attributes: textAttrs), x: margin + indent, width: width)
+            if let detail = item.detail {
+                y += 3
+                draw(detail, attrs: detailAttrs, x: margin + indent, width: width)
+            }
+            y += 10
+        }
+        y += 16
+    }
+
+    /// Black cover page: overline, very large serif year, title and summary in paper color.
+    func drawCover(year: Int, title: String, summary: String, filterLabel: String?) {
+        y = margin + 40
+        drawOverline(filterLabel.map { "YEAR WRAPPED · \($0.uppercased())" } ?? "YEAR WRAPPED", color: Self.onInk.withAlphaComponent(0.65))
+        y += 8
+        draw("\(year)", attrs: Self.attributes(font: Self.serif(120), color: Self.onInk), x: margin, width: contentWidth)
+        y += 24
+        draw(title, attrs: Self.attributes(font: Self.serif(28), color: Self.onInk), x: margin, width: contentWidth)
+        y += 18
+        let summaryAttrs = Self.attributes(font: .systemFont(ofSize: 13), color: Self.onInk.withAlphaComponent(0.85), lineSpacing: 5)
+        let maxHeight = pageRect.height - margin - 60 - y
+        let summaryHeight = min(height(of: summary, attrs: summaryAttrs, width: contentWidth), maxHeight)
+        (summary as NSString).draw(
+            with: CGRect(x: margin, y: y, width: contentWidth, height: summaryHeight),
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
+            attributes: summaryAttrs,
+            context: nil
+        )
+        let footerAttrs = Self.attributes(font: .systemFont(ofSize: 10, weight: .medium), color: Self.onInk.withAlphaComponent(0.65))
+        ("Life Wrapped" as NSString).draw(at: CGPoint(x: margin, y: pageRect.height - margin - 12), withAttributes: footerAttrs)
     }
 }
 #endif // canImport(UIKit)
