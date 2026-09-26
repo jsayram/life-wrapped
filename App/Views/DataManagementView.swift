@@ -292,7 +292,7 @@ struct DataManagementView: View {
                     }
                 }
             }
-            .alert("Delete All Data?", isPresented: $showDeleteConfirmation) {
+            .alert("Delete all data?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     deleteAllData()
@@ -304,7 +304,7 @@ struct DataManagementView: View {
                     Text("This action cannot be undone. All your recordings, transcriptions, and summaries will be permanently deleted.")
                 }
             }
-            .alert("Delete \(yearToDelete ?? 0) Data?", isPresented: $showYearDeleteConfirmation) {
+            .alert("Delete \(yearToDelete.map { String($0) } ?? "this year's") data?", isPresented: $showYearDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     if let year = yearToDelete {
@@ -314,7 +314,7 @@ struct DataManagementView: View {
             } message: {
                 if let year = yearToDelete,
                    let yearInfo = yearlyData.first(where: { $0.year == year }) {
-                    Text("This will permanently delete all data from \(year):\n\n• \(yearInfo.sessionCount) sessions\n• \(yearInfo.wordCount.formatted()) words\n\nThis action cannot be undone.")
+                    Text("This will permanently delete all data from \(String(year)):\n\n• \(yearInfo.sessionCount) sessions\n• \(yearInfo.wordCount.formatted()) words\n\nThis action cannot be undone.")
                 } else {
                     Text("This will permanently delete all data from this year. This action cannot be undone.")
                 }

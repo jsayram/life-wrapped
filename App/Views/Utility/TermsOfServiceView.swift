@@ -11,7 +11,7 @@ struct TermsOfServiceView: View {
                     Text("Terms of service")
                         .font(AppTheme.titleFont(size: 28))
                     
-                    Text("Last updated December 29, 2025")
+                    Text("Last updated September 26, 2026")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -38,7 +38,7 @@ struct TermsOfServiceView: View {
                         number: "3",
                         title: "Purchases & Refunds",
                         content: """
-                        All purchases made through the App Store are final. In-app purchases, including "Smartest AI Year Wrap," are non-refundable once completed.
+                        All purchases made through the App Store are final. In-app purchases, including "Smartest AI," are non-refundable once completed.
                         
                         Refund requests must be directed to Apple through the App Store, as Apple handles all payment processing. Apple's refund policy applies to all purchases.
                         
@@ -51,7 +51,7 @@ struct TermsOfServiceView: View {
                         number: "4",
                         title: "Bring Your Own Key (BYOK) & Third-Party Services",
                         content: """
-                        Life Wrapped offers optional integration with third-party AI services (OpenAI, Anthropic) using your own API keys. By using this feature:
+                        Life Wrapped offers optional integration with third-party AI services (OpenAI, Anthropic) using your own API keys. This is the Smartest summary option, unlocked with the "Smartest AI" in-app purchase. By using this feature:
                         
                         • YOU ARE SOLELY RESPONSIBLE for any costs, charges, or fees incurred through your API provider.
                         
@@ -61,7 +61,7 @@ struct TermsOfServiceView: View {
                         
                         • We are not responsible for how third-party providers (OpenAI, Anthropic) handle, store, or process your data. You must review and agree to their respective terms of service and privacy policies.
                         
-                        • If you do not wish to share data with external AI providers, use the on-device AI options (Local AI or Basic) which process data 100% locally.
+                        • If you do not wish to share data with external AI providers, use Basic, Smart or Smarter, which create summaries on your device.
                         """
                     )
                     
@@ -82,7 +82,7 @@ struct TermsOfServiceView: View {
                     TermsSection(
                         number: "6",
                         title: "Intellectual Property",
-                        content: "Life Wrapped and its original content, features, and functionality are owned by the developer and are protected by copyright, trademark, and other intellectual property laws. Your recordings and transcripts remain your property."
+                        content: "Life Wrapped and its original content, features, and functionality are owned by the developer and are protected by copyright, trademark, and other intellectual property laws. The source code is also published under the MIT License, which covers the code only and not the Life Wrapped name or branding. Your recordings and transcripts remain your property."
                     )
                     
                     // 7. Disclaimer of Warranties
@@ -114,7 +114,7 @@ struct TermsOfServiceView: View {
                         • Costs incurred through third-party API usage
                         • Any actions taken based on AI-generated content
                         
-                        Our total liability shall not exceed the amount you paid for the app.
+                        Our total liability shall not exceed the amount you paid for the app or in-app purchases in the twelve (12) months before the claim.
                         """
                     )
                     
@@ -122,7 +122,7 @@ struct TermsOfServiceView: View {
                     TermsSection(
                         number: "9",
                         title: "Data & Privacy",
-                        content: "Your use of Life Wrapped is also governed by our Privacy Policy. Audio recordings and transcripts are stored locally on your device. We do not collect, transmit, or store your personal data on our servers."
+                        content: "Your use of Life Wrapped is also governed by our Privacy Policy. Audio recordings, transcripts and summaries are stored locally on your device. We do not collect, transmit, or store your personal data on our servers. Transcripts are sent to a third-party AI provider only if you choose Smartest with your own API key."
                     )
                     
                     // 10. Changes to Terms
@@ -136,7 +136,7 @@ struct TermsOfServiceView: View {
                     TermsSection(
                         number: "11",
                         title: "Contact",
-                        content: "For questions about these Terms of Service, please contact us through our support page or GitHub repository."
+                        content: "For questions about these Terms of Service, open an issue at github.com/jsayram/life-wrapped/issues. The full terms are published at jsayram.github.io/life-wrapped/terms."
                     )
                 }
             }

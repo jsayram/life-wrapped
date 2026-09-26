@@ -1,318 +1,239 @@
 # Life Wrapped
 
-> **Privacy-focused audio journaling for iOS, watchOS, and macOS.**
+A private audio journal for iPhone and iPad. Record your day, get it transcribed on your device, read summaries by day, week and month, and look back with a Year Wrap.
 
-[![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange.svg)](https://swift.org)
-[![Xcode 26](https://img.shields.io/badge/Xcode-26-blue.svg)](https://developer.apple.com/xcode/)
-[![Platform](https://img.shields.io/badge/Platform-iOS%2018%20%7C%20watchOS%2011%20%7C%20macOS%2015-lightgrey.svg)](https://developer.apple.com)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[Download on the App Store](https://apps.apple.com/us/app/life-wrapped/id6757250245) · [Website](https://jsayram.github.io/life-wrapped/) · [Privacy policy](https://jsayram.github.io/life-wrapped/privacy) · [Support](https://jsayram.github.io/life-wrapped/support) · [Terms of service](https://jsayram.github.io/life-wrapped/terms)
 
----
-
-## 🎯 What is Life Wrapped?
-
-Life Wrapped records audio throughout your day, transcribes it **locally on your device**, and helps you discover insights about how you spend your time.
-
-### Key Features
-
-- 🎙️ **Auto-Chunking Recording** — Automatically splits recordings into 30-300s chunks for efficient processing
-- 🗣️ **On-Device Transcription** — Apple's Speech framework with abandoned utterance detection, no cloud required
-- 🤖 **Multi-Tier AI Summaries** — Intelligent fallback system with 4 engines:
-  - **External API** (Best Quality) — GPT-4, Claude Sonnet 3.5 with your API keys
-  - **Local AI** (Privacy-First) — Phi-3.5 Mini on-device via MLX, ~2.1GB model
-  - **Apple Intelligence** (iOS 18.1+) — Foundation Models when available
-  - **Basic** (Always Available) — Fast extractive summarization with NLP
-- 🔄 **Smart Fallback** — Automatically downgrades: External → Local → Apple → Basic
-- 📴 **Fully Offline Capable** — All features work without internet (Basic + Local AI)
-- 📊 **Rich Insights** — Session summaries, topics, entities, sentiment, key moments
-- ⌚ **Apple Watch Support** — Control and glance from your wrist
-- 🔒 **Privacy-First** — Transcription always on-device; you control AI provider
-- 📱 **Widgets & Siri** — Quick stats and voice control
-
-### How It Works
-
-```
-Record Audio → Auto-Chunk (30-300s) → Transcribe (On-Device) → AI Summary
-    ↓              ↓                       ↓                      ↓
-Session ID    Chunk 0,1,2...        Apple Speech API      External/Local/Basic
-    ↓              ↓                       ↓                      ↓
-Database      Parallel Processing    Word-perfect text    Structured insights
-```
-
-**Audio Processing:**
-
-- Recording automatically splits into configurable chunks (default 180s)
-- Each chunk processes independently with parallel transcription (max 3 concurrent)
-- Abandoned utterance detection captures pauses of any length
-- Real-time UI updates show transcription progress per chunk
-
-**AI Summarization (4-Tier System):**
-
-1. **External API** (Cloud) — OpenAI GPT-4.1, Anthropic Claude 3.5 Sonnet
-2. **Local AI** (On-Device) — Phi-3.5 Mini 4-bit quantized (~2.1GB via MLX)
-3. **Apple Intelligence** (On-Device) — Foundation Models (iOS 18.1+, A17 Pro/M1+)
-4. **Basic** (On-Device) — TF-IDF + semantic embeddings + NLP (always works)
+| | |
+| --- | --- |
+| Platform | iOS and iPadOS 18.0 or later |
+| App version in this repo | 1.1 (build number set by Xcode Cloud) |
+| Language | Swift 6 (language mode 6.0, strict concurrency) |
+| UI | SwiftUI |
+| Toolchain | Xcode 26.1 or later |
+| Bundle ID | `com.jsayram.lifewrapped` (widget: `com.jsayram.lifewrapped.widget`) |
+| License | [MIT](LICENSE) |
 
 ---
 
-## 🚀 Quick Start
+## What the app does
 
-### Prerequisites
+### Recording
 
-- **Xcode 26.1+** (verify: `xcodebuild -version`)
-- **Swift 6.2+** (verify: `swift --version`)
-- **macOS Tahoe 26.0+** (verify: `sw_vers`)
-- **Optional**: SwiftLint, swift-format (`brew install swiftlint swift-format`)
+- One-tap recording on the Record tab, tagged as **Work** or **Personal**
+- Recordings are split into parts automatically so they transcribe quickly. The part length is adjustable from 30 to 300 seconds in steps of 30 (default 30 seconds) in Settings, then Recording
+- Background audio is enabled, so recording continues when the screen locks
+- Deep links: `lifewrapped://record`, `lifewrapped://home`, `lifewrapped://history`, `lifewrapped://overview`, `lifewrapped://settings` (record links accept a `category` query parameter)
+
+### Transcription
+
+- Apple's Speech framework with `requiresOnDeviceRecognition = true`, so audio is never sent off the device
+- Up to 3 parts are transcribed at the same time
+- Handles pauses by keeping utterances that the recognizer abandons without marking them final
+- Language detection is limited to the languages turned on in Settings, then Recording, then Languages. Nine are available: English, Spanish, Hindi, Bangla, French, Vietnamese, Chinese, Korean and Turkish (English and Spanish are on by default)
+- Transcripts can be edited, and each recording can have a title, notes, a favorite star and a category
+
+### Summaries
+
+Four summary qualities. The app falls back automatically when the chosen one is not available.
+
+| Quality | Engine | Where it runs | Fallback order |
+| --- | --- | --- | --- |
+| Basic | `BasicEngine`: extractive summaries with TF-IDF ranking and Apple's NaturalLanguage framework (`NLEmbedding`, `NLTokenizer`, `NLTagger`) | On device | Basic |
+| Smart | `LocalEngine`: Phi-3.5 Mini Instruct, 4-bit ([`mlx-community/Phi-3.5-mini-instruct-4bit`](https://huggingface.co/mlx-community/Phi-3.5-mini-instruct-4bit)) run with MLX. One-time download of about 2.3 GB from Hugging Face | On device | Smart, then Basic |
+| Smarter | `AppleEngine`: Apple Intelligence through the Foundation Models framework, always `SystemLanguageModel.default` (the on-device model). Needs iOS 26 or later on a device with Apple Intelligence turned on | On device | Smarter, then Smart, then Basic |
+| Smartest | `ExternalAPIEngine`: OpenAI (Chat Completions API) or Anthropic (Messages API) with the user's own API key. The model ID is free text; defaults are `gpt-6-luna` and `claude-sonnet-5` | Cloud | Smartest, then Smart, then Basic |
+
+- Smartest is unlocked with a one-time in-app purchase, **Smartest AI** ($2.99 in the US)
+- API keys are stored in the iOS Keychain (`kSecAttrAccessibleAfterFirstUnlock`)
+- The Test button sends a small request with the typed model ID to confirm the key and model work
+- Summaries are made per recording, then rolled up into day, week, month and year summaries shown on the Overview tab
+
+### Year Wrap
+
+- A year in review with a title, a summary, major arcs, wins, losses, challenges, finished and unfinished projects, top topics, valuable actions, missed opportunities, people and places
+- Generated with Smart (on device) or Smartest (cloud), as All, Work only or Personal only
+- People and places can be redacted before exporting it as a PDF
+
+### Overview, history and statistics
+
+- History with search across titles, notes and transcripts, Work and Personal filters, and favorites
+- Overview by yesterday, today, week, month and year
+- Statistics: longest session, most active month, sessions by time of day and day of week, most used words (with an editable excluded-words list), mood from on-device sentiment analysis, and languages spoken
+- Daily streak
+
+### Data
+
+- Export as JSON (recording metadata, transcripts and summaries; no audio files), Markdown (day, week and month summaries) or PDF (summaries only), for everything or for one year
+- Import from a JSON export
+- Delete all data, or one year of data
+- Storage breakdown for audio, database and the Smart model
+
+### Widgets
+
+- **Quick Record** (small, medium, circular): start a Work or Personal recording, see the streak and today's sessions
+- **Today's Sessions** (small, circular, inline): today's session count and streak
+
+### Design
+
+Graphite design language: warm off-white and near-black surfaces, ink as the only accent, serif (New York) titles, SF Symbols, hairline borders and no gradients. Light and dark mode are supported. Colors live in `App/Constants/AppTheme.swift`.
+
+---
+
+## Privacy
+
+- **Audio** never leaves the device.
+- **Transcription** always runs on the device.
+- **Basic, Smart and Smarter** summaries run on the device.
+- **Smartest** sends the text being summarized to OpenAI or Anthropic using the user's own key: for a recording, its transcript and Work or Personal label (plus notes when the user regenerates with notes); for longer periods and Year Wrap, the earlier summaries. Before each Smartest request the app checks connectivity with a request to `https://www.apple.com`.
+- **Network use** is limited to: the Smart model download from Hugging Face, App Store purchases, Smartest requests and the connectivity check above.
+- **No analytics, crash reporting, advertising or tracking.** No account.
+- **Storage**: SQLite database and audio files live in the App Group container `group.com.jsayram.lifewrapped`. The database directory uses `FileProtectionType.completeUntilFirstUserAuthentication`. The widget only receives summary statistics (streak, today's entries, words and minutes).
+
+The full policy is at [jsayram.github.io/life-wrapped/privacy](https://jsayram.github.io/life-wrapped/privacy).
+
+---
+
+## Getting started
+
+### Requirements
+
+- macOS with **Xcode 26.1 or later**
+- An iOS 18 simulator or device (an iOS 26 device with Apple Intelligence is needed to try Smarter)
 
 ### Setup
 
 ```bash
-# 1. Clone the repository
+# 1. Clone
 git clone https://github.com/jsayram/life-wrapped.git
 cd life-wrapped
 
-# 2. Copy secrets template
+# 2. Create the local secrets file (required: Config/Debug.xcconfig includes it)
 cp Config/Secrets.example.xcconfig Config/Secrets.xcconfig
-# Edit Config/Secrets.xcconfig with your values
 
-# 3. Make scripts executable
-chmod +x Scripts/*.sh
-
-# 4. Build packages (verify setup)
-./Scripts/build.sh packages
-
-# 5. Open in Xcode
+# 3. Open the workspace
 open LifeWrapped.xcworkspace
 ```
 
----
+Select the **LifeWrapped** scheme and an iPhone simulator, then Run. Swift packages (MLX, swift-transformers and their dependencies) resolve automatically on first open.
 
-## 🛠️ Development Workflow
+The LifeWrapped scheme uses `Config/StoreKitConfiguration.storekit`, so the Smartest AI purchase can be tested in the simulator without a real payment.
 
-### VS Code + Xcode Hybrid
+### Running tests
 
-1. **Edit code in VS Code** — Swift LSP provides autocomplete
-2. **Build/test via CLI** — `./Scripts/build.sh` and `./Scripts/test.sh`
-3. **Run/debug in Xcode** — For device testing and Instruments
+Tests use Swift Testing, except LocalLLM, which uses XCTest. Xcode creates a scheme for each local package. Select a package scheme (for example **Summarization** or **Storage**) and choose Product, then Test.
 
-### Recommended VS Code Extensions
-
-```bash
-# Install recommended extensions
-code --install-extension sswg.swift-lang
-code --install-extension vknabel.vscode-apple-swift-format
-```
-
-### Scripts
-
-| Script                        | Purpose                                 |
-| ----------------------------- | --------------------------------------- |
-| `./Scripts/build.sh [target]` | Build iOS, Watch, Widgets, or all       |
-| `./Scripts/test.sh [target]`  | Run unit, integration, UI, or all tests |
-| `./Scripts/lint.sh`           | Check code style                        |
-| `./Scripts/format.sh`         | Auto-format Swift code                  |
-| `./Scripts/verify-privacy.sh` | Verify no unauthorized network calls    |
+| Package | Test files |
+| --- | --- |
+| AudioCapture | `AudioCaptureTests.swift` |
+| InsightsRollup | `InsightsRollupTests.swift` |
+| LocalLLM | `LocalLLMTests.swift` |
+| SharedModels | `SharedModelsTests.swift` |
+| Storage | `StorageTests.swift`, `PDFExportPreviewTests.swift` (writes sample PDFs to `TestResults/pdf-preview/`, which git ignores) |
+| Summarization | `SummarizationTests.swift`, `EngineRoutingTests.swift`, `ExternalModelSettingsTests.swift`, `AppleIntelligenceLiveTests.swift` (skips itself where Apple Intelligence is unavailable) |
+| Transcription | `TranscriptionTests.swift` |
+| WidgetCore | `WidgetCoreTests.swift` |
 
 ---
 
-## 📁 Project Structure
+## Project structure
 
 ```
 life-wrapped/
-├── App/                 # iOS SwiftUI app
-│   ├── LifeWrappedApp.swift         # App entry point
-│   ├── ContentView.swift            # Main tab container
-│   ├── Coordinators/                # Business logic coordinators
-│   │   ├── AppCoordinator.swift           # Central app coordinator
-│   │   ├── RecordingCoordinator.swift     # Recording lifecycle
-│   │   ├── TranscriptionCoordinator.swift # Transcription orchestration
-│   │   ├── SummaryCoordinator.swift       # AI summary generation
-│   │   ├── DataCoordinator.swift          # Data management operations
-│   │   ├── WidgetCoordinator.swift        # Widget data updates
-│   │   ├── PermissionsCoordinator.swift   # System permissions
-│   │   └── LocalModelCoordinator.swift    # Local LLM management
-│   ├── Views/                       # SwiftUI views
-│   │   ├── Tabs/                    # Main tab views
-│   │   ├── Overview/                # Overview & summaries
-│   │   ├── Details/                 # Session detail views
-│   │   ├── Insights/                # Analytics & charts
-│   │   ├── AI/                      # AI settings & management
-│   │   ├── Components/              # Reusable UI components
-│   │   └── Utility/                 # Helper views
-│   ├── Constants/                   # App-wide constants
-│   ├── Helpers/                     # Utility functions
-│   ├── Models/                      # View models
-│   └── Resources/                   # Assets & entitlements
-├── Extensions/
-│   └── Widgets/         # WidgetKit extension
-├── WatchApp/            # watchOS app
-├── Packages/            # Local Swift Packages
-│   ├── SharedModels/    # Data models & protocols
-│   ├── Storage/         # SQLite persistence with repository pattern
-│   │   ├── DatabaseManager.swift          # Facade coordinating repositories
-│   │   ├── DatabaseConnection.swift       # SQLite connection management
-│   │   ├── SchemaManager.swift            # Schema versioning & migrations
-│   │   └── Repositories/
-│   │       ├── AudioChunkRepository.swift      # Audio chunk CRUD
-│   │       ├── SessionRepository.swift         # Recording session operations
-│   │       ├── TranscriptRepository.swift      # Transcript segment storage
-│   │       ├── SummaryRepository.swift         # AI summary management
-│   │       ├── InsightsRepository.swift        # Stats & rollup queries
-│   │       └── ControlEventRepository.swift    # App control events
-│   ├── AudioCapture/    # AVAudioEngine recording & playback
-│   ├── Transcription/   # Apple Speech framework integration
-│   ├── InsightsRollup/  # Time-based aggregations & statistics
-│   ├── Summarization/   # External AI API adapter (OpenAI/Anthropic)
-│   ├── LocalLLM/        # On-device MLX-based language models
-│   └── WidgetCore/      # Shared widget data models
-├── Config/              # Build configurations (.xcconfig)
-├── Scripts/             # Build/test automation scripts
-├── Docs/                # Documentation
-└── Tests/               # Test suites
-└── Tests/               # Test suites
+├── App/                          # iOS app target (SwiftUI)
+│   ├── LifeWrappedApp.swift      # Entry point, deep links, appearance
+│   ├── ContentView.swift         # Tab bar: Record, History, Overview, Settings
+│   ├── Components/               # Reusable views: AI, Cards, Layouts, Loading, Recording, Rows, Shared
+│   ├── Constants/                # AppTheme (design tokens and shared components), StopWords
+│   ├── Coordinators/             # AppCoordinator, DataCoordinator, LocalModelCoordinator,
+│   │                             # PermissionsCoordinator, RecordingCoordinator, SummaryCoordinator,
+│   │                             # TranscriptionCoordinator, WidgetCoordinator
+│   ├── Helpers/                  # Extensions, KeychainHelper and other utilities
+│   ├── Models/                   # View-level models such as TimeRange
+│   ├── Resources/                # Info.plist, entitlements, asset catalog (app icon)
+│   ├── Settings/                 # Settings screens (AI & Summaries, Recording, Statistics, Data, Privacy)
+│   ├── Store/                    # StoreKit purchase handling
+│   ├── Views/                    # Tabs, Details, Overview, Insights, AI, Components, Utility,
+│   │                             # onboarding (PermissionsView) and data management
+│   └── appDocs/                  # Internal notes (architecture, App Store, Xcode Cloud, testing)
+├── WidgetExtension/              # WidgetKit extension (Quick Record, Today's Sessions)
+├── Packages/                     # Local Swift packages (swift-tools-version 6.0)
+│   ├── SharedModels/             # Data models, constants, feature flags, logging
+│   ├── Storage/                  # SQLite (SQLite3) persistence, repositories, migrations,
+│   │                             # JSON/Markdown/PDF export, JSON import
+│   ├── AudioCapture/             # Recording, part splitting, file management, playback
+│   ├── Transcription/            # On-device speech recognition, language detection, sentiment
+│   ├── Summarization/            # Basic, Smart, Smarter and Smartest engines, routing and fallback
+│   ├── LocalLLM/                 # MLX model loading and Hugging Face download for Smart
+│   ├── InsightsRollup/           # Streaks, goals, insights
+│   └── WidgetCore/               # Data shared with the widget through the App Group
+├── Config/                       # Debug/Release xcconfig, secrets template, StoreKit configuration
+├── Scripts/                      # Shell helpers (see below)
+├── docs/                         # GitHub Pages site: home, privacy, support, terms
+├── Images/                       # App Store and marketing screenshots
+├── Logo/                         # Logo source files
+├── LifeWrapped.xcodeproj
+├── LifeWrapped.xcworkspace       # Open this
+└── project.yml                   # XcodeGen spec (out of date: still lists version 1.0; build from the .xcodeproj)
 ```
 
----
+### Third-party dependencies
 
-## 🔒 Privacy & Security
+Resolved versions from `LifeWrapped.xcworkspace/xcshareddata/swiftpm/Package.resolved`:
 
-### Our Commitments
+| Package | Version |
+| --- | --- |
+| [mlx-swift](https://github.com/ml-explore/mlx-swift) | 0.29.1 |
+| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | `main` (d9f46e3) |
+| [swift-transformers](https://github.com/huggingface/swift-transformers) | 573e5c9 |
+| [swift-jinja](https://github.com/huggingface/swift-jinja) | 2.2.0 |
+| [swift-collections](https://github.com/apple/swift-collections) | 1.3.0 |
+| [swift-numerics](https://github.com/apple/swift-numerics) | 1.1.1 |
 
-1. **On-Device Transcription** — All speech-to-text processing happens locally using `requiresOnDeviceRecognition = true`
-2. **No Cloud Speech** — Apple Speech Recognition with strict on-device enforcement
-3. **Privacy-First AI Options** — Multiple on-device engines available:
-   - **Basic Engine** — NaturalLanguage framework, no data leaves device
-   - **Local AI** — Phi-3.5 Mini runs entirely on your device via MLX (~2.1GB)
-   - **Apple Intelligence** — On-device Foundation Models (iOS 18.1+, when available)
-4. **Optional External AI** — Use your own API keys (OpenAI/Anthropic) only if you choose
-5. **Smart Fallback Chain** — Automatic downgrade: External → Local → Apple → Basic
-6. **No Analytics** — No tracking, no telemetry, no third-party SDKs
-7. **Encrypted Storage** — SQLite with file protection, App Group sandboxing
-8. **Your Data, Your Control** — Export anytime, delete anytime
+All are used only by the LocalLLM package for the Smart engine.
 
-### AI Engine Details
+### Scripts
 
-**External API (Optional):**
+| Script | What it does |
+| --- | --- |
+| `Scripts/build.sh packages` | Runs `swift build` in each local package |
+| `Scripts/build.sh ios` | Builds the LifeWrapped scheme with `xcodebuild` |
+| `Scripts/build.sh clean` | Removes build output and package `.build` folders |
+| `Scripts/lint.sh [--fix]` | SwiftLint and swift-format checks (uses `.swiftlint.yml` and `.swift-format`) |
+| `Scripts/format.sh [path]` | Formats Swift files with swift-format |
+| `Scripts/verify-privacy.sh` | Lists network and cloud API usage in the source so it can be reviewed |
 
-- Providers: OpenAI (GPT-4.1, GPT-4o-mini) or Anthropic (Claude 3.5 Sonnet/Haiku)
-- Requires: Your API key stored securely in Keychain
-- Privacy: Sends transcript text to provider's servers (your keys, your control)
-- Quality: Highest quality summaries with structured insights
-
-**Local AI (On-Device):**
-
-- Model: Phi-3.5 Mini 4-bit quantized (Microsoft)
-- Size: ~2.1 GB download via HuggingFace
-- Framework: MLX (Apple's ML framework for Apple Silicon)
-- Privacy: 100% on-device, no internet required
-- Performance: Smart caching, chunk-by-chunk processing
-
-**Apple Intelligence (On-Device, iOS 18.1+):**
-
-- Availability: A17 Pro+ / M1+ with Apple Intelligence enabled
-- Privacy: On-device Foundation Models
-- Status: Placeholder for future integration
-
-**Basic Engine (Always Available):**
-
-- Framework: Apple's NaturalLanguage with TF-IDF + embeddings
-- Features: Extractive summarization, keyword extraction, sentiment analysis
-- Privacy: 100% on-device, instant processing
-- Use Case: Fallback when other engines unavailable
-
-### Verification
-
-```bash
-# Run privacy audit (checks for unauthorized network calls)
-./Scripts/verify-privacy.sh
-
-# Manual verification:
-# 1. Without API keys — app uses Local AI or Basic engine (fully offline)
-# 2. Network offline — Local AI and Basic engines work perfectly
-# 3. With API keys — only external AI API calls are made (optional, you control)
-```
+Some script options (`watch`, `widgets`, and the `integration`, `ui` and `performance` test targets) refer to schemes that do not exist in this project.
 
 ---
 
-## 🧪 Testing
+## Deployment
 
-```bash
-# Run all tests
-./Scripts/test.sh all
+- `main` is production. Pushing to `main` starts the Xcode Cloud workflow, which builds, archives and uploads to TestFlight and App Store Connect.
+- `dev` is the integration branch. Feature branches start from `dev`.
+- App Store releases are submitted from App Store Connect.
 
-# Package tests only (fast)
-./Scripts/test.sh packages
-
-# With coverage
-xcodebuild test \
-  -workspace LifeWrapped.xcworkspace \
-  -scheme LifeWrappedTests \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-  -enableCodeCoverage YES
-```
-
-### Test Categories
-
-- **Unit Tests** — Package-level logic (Storage, Insights, Backup)
-- **Integration Tests** — Cross-package flows (Audio → Transcribe → Store)
-- **UI Tests** — User interaction flows
-- **Performance Tests** — XCTest metrics + Instruments
+More detail is in `App/appDocs/XCODE_CLOUD_BUILD.md` and `App/appDocs/WORKFLOW.md`.
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-- [WORKFLOW.md](Docs/WORKFLOW.md) — Complete development workflow
-- [ARCHITECTURE.md](Docs/ARCHITECTURE.md) — System design (coming)
-- [DATA_MODEL.md](Docs/DATA_MODEL.md) — SQLite schema (coming)
-- [PRIVACY.md](Docs/PRIVACY.md) — Privacy implementation (coming)
-- [TESTING.md](Docs/TESTING.md) — Test strategy (coming)
-
----
-
-## 🗺️ Roadmap
-
-### V1 (Current) ✅
-
-- [x] Project setup & architecture
-- [x] SQLite storage with repository pattern
-- [x] Auto-chunking audio capture pipeline
-- [x] On-device transcription (Apple Speech)
-- [x] Multi-tier AI summarization (4 engines)
-- [x] Local LLM (Phi-3.5 Mini via MLX)
-- [x] Insights & time-based rollups
-- [x] iOS widgets
-- [x] Apple Watch app (in progress)
-
-### V2 (Future)
-
-- [ ] CloudKit sync (opt-in)
-- [ ] Siri Shortcuts integration
-- [ ] macOS companion app
-- [ ] Speaker diarization
-- [ ] Advanced entity extraction
-- [ ] Export/backup system
+| Document | Contents |
+| --- | --- |
+| [`docs/`](docs) | Public website, privacy policy, support and terms (served at [jsayram.github.io/life-wrapped](https://jsayram.github.io/life-wrapped/)) |
+| [`App/appDocs/`](App/appDocs) | Internal notes on the AI architecture, local AI, App Store submission, privacy labels, in-app purchases, StoreKit testing, widgets and Xcode Cloud |
 
 ---
 
-## 🤝 Contributing
+## Support
 
-This is a personal project, but suggestions are welcome! Please open an issue to discuss changes.
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
+Questions, bugs and feature requests: [open an issue](https://github.com/jsayram/life-wrapped/issues).
 
 ---
 
-## 🙏 Acknowledgments
+## License
 
-- Apple's Speech framework for on-device transcription
-- GRDB.swift for SQLite (if used)
-- The Swift community for excellent tooling
+The source code in this repository is released under the [MIT License](LICENSE). Copyright (c) 2025-2026 Jose Ramirez-Villa.
 
----
-
-**Built with ❤️ and 🔒 privacy in mind.**
+The MIT License covers the code. Use of the Life Wrapped app from the App Store is governed by the [terms of service](https://jsayram.github.io/life-wrapped/terms). The Life Wrapped name and app icon are not licensed for use as your own branding.

@@ -39,7 +39,7 @@ struct TranscriptChunkView: View {
                         
                         if isEdited {
                             HStack(spacing: 2) {
-                                Image(systemName: "pencil.circle.fill")
+                                Image(systemName: "pencil")
                                     .font(.caption2)
                                 Text("Edited")
                                     .font(.caption2)
@@ -49,7 +49,7 @@ struct TranscriptChunkView: View {
                     }
                 } else if isEdited {
                     HStack(spacing: 2) {
-                        Image(systemName: "pencil.circle.fill")
+                        Image(systemName: "pencil")
                             .font(.caption2)
                         Text("Edited")
                             .font(.caption2)

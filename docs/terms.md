@@ -1,6 +1,12 @@
-# Terms of Service for Life Wrapped
+---
+title: Terms of service
+---
 
-**Last Updated: December 29, 2025**
+<p class="overline">Legal</p>
+
+# Terms of service
+
+**Last updated: September 26, 2026**
 
 ---
 
@@ -20,7 +26,7 @@ We grant you a limited, non-exclusive, non-transferable, revocable license to us
 
 ### All Sales Are Final
 
-All purchases made through the Apple App Store, including in-app purchases such as "Smartest AI Year Wrap," are **final and non-refundable** once completed.
+All purchases made through the Apple App Store, including in-app purchases such as "Smartest AI," are **final and non-refundable** once completed.
 
 ### Refund Requests
 
@@ -41,7 +47,7 @@ By making a purchase, you acknowledge and agree that:
 
 ## 4. Bring Your Own Key (BYOK) & Third-Party Services
 
-Life Wrapped offers optional integration with third-party AI services (OpenAI, Anthropic) using your own API keys.
+Life Wrapped offers optional integration with third-party AI services (OpenAI, Anthropic) using your own API keys. This is the "Smartest" summary option, unlocked with the "Smartest AI" in-app purchase. Your API usage is billed by the provider, separately from that purchase.
 
 ### Your Responsibilities
 
@@ -53,8 +59,8 @@ By using the BYOK feature, **YOU ACKNOWLEDGE AND AGREE THAT**:
 
 3. **Third-Party Terms**: You must independently review and agree to the terms of service and privacy policies of:
 
-   - [OpenAI Terms of Use](https://openai.com/terms)
-   - [Anthropic Terms of Service](https://www.anthropic.com/terms)
+   - [OpenAI Services Agreement](https://openai.com/policies/services-agreement/) and [OpenAI Privacy Policy](https://openai.com/policies/privacy-policy/)
+   - [Anthropic Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms) and [Anthropic Privacy Policy](https://www.anthropic.com/legal/privacy)
 
 4. **No Liability**: We are not responsible for:
 
@@ -63,14 +69,15 @@ By using the BYOK feature, **YOU ACKNOWLEDGE AND AGREE THAT**:
    - Changes to third-party pricing, terms, or availability
    - Any issues arising from your use of third-party services
 
-5. **API Key Security**: While we store your API keys in the iOS Keychain (hardware-encrypted storage), you are responsible for keeping your keys confidential and not sharing them.
+5. **API Key Security**: While we store your API keys in the iOS Keychain on your device, you are responsible for keeping your keys confidential and not sharing them.
 
 ### Alternative Options
 
 If you do not wish to share data with external AI providers, you may use:
 
-- **Local AI**: Runs entirely on your device (no network required)
-- **Basic**: Uses Apple's NaturalLanguage framework (no network required)
+- **Basic**: Uses Apple's NaturalLanguage framework on your device
+- **Smart**: Runs a downloaded model on your device (the one-time download needs a network connection)
+- **Smarter**: Uses Apple Intelligence on your device, where available
 
 ---
 
@@ -90,7 +97,7 @@ You agree to:
 
 ### Our Rights
 
-Life Wrapped and its original content, features, functionality, design, and branding are owned by the developer and are protected by copyright, trademark, and other intellectual property laws.
+Life Wrapped and its original content, features, functionality, design, and branding are owned by the developer and are protected by copyright, trademark, and other intellectual property laws. The source code is published separately under the [MIT License](https://github.com/jsayram/life-wrapped/blob/main/LICENSE); that license covers the code only and does not grant rights to the Life Wrapped name or branding.
 
 ### Your Rights
 
@@ -157,11 +164,11 @@ You agree to indemnify, defend, and hold harmless the developer from any claims,
 
 ## 10. Data & Privacy
 
-Your use of Life Wrapped is also governed by our [Privacy Policy](privacy). Key points:
+Your use of Life Wrapped is also governed by our [privacy policy](privacy). Key points:
 
-- Audio recordings and transcripts are stored locally on your device
+- Audio recordings, transcripts and summaries are stored locally on your device
 - We do not collect, transmit, or store your personal data on our servers
-- External API usage (BYOK) is your choice and responsibility
+- Transcripts are sent to a third-party AI provider only if you choose the Smartest option with your own API key, and that use is your choice and responsibility
 
 ---
 
@@ -212,7 +219,7 @@ These Terms, together with our Privacy Policy, constitute the entire agreement b
 For questions about these Terms of Service:
 
 - Open an issue on our [GitHub repository](https://github.com/jsayram/life-wrapped/issues)
-- Review our [Privacy Policy](privacy)
+- Review our [privacy policy](privacy)
 
 ---
 

@@ -246,7 +246,7 @@ struct AISettingsView: View {
                     // Helper links side by side
                     HStack(spacing: 12) {
                         Link(destination: apiKeyURL) {
-                            CenteredButtonLabel(title: "Get API Key", systemImage: "key")
+                            CenteredButtonLabel(title: "Get API key", systemImage: "key")
                                 .frame(maxWidth: .infinity)
                         }
                         Link(destination: ExternalModelSettings.modelListURL(for: providerValue)) {

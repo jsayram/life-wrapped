@@ -1,3 +1,8 @@
-theme: jekyll-theme-minimal
 title: Life Wrapped
-description: Privacy-first audio journaling for iOS and watchOS
+description: A private audio journal for iPhone and iPad. Transcribed on your device, summarized your way.
+markdown: kramdown
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

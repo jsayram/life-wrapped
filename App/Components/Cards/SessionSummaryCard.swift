@@ -79,9 +79,24 @@ struct SessionSummaryCard: View {
         }
     }
 
-    /// "Thu, Sep 25 · 9:12 AM" (relative day for recent sessions)
+    /// "Thu, Sep 25 · 9:12 AM" for sessions; "Week of Sep 21", "September 2026" or "2026" for rollups
     private var headerString: String {
         let calendar = Calendar.current
+        let start = summary.periodStart
+        switch summary.periodType {
+        case .day:
+            return start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        case .week:
+            return "Week of " + start.formatted(.dateTime.month(.abbreviated).day())
+        case .month:
+            return start.formatted(.dateTime.month(.wide).year())
+        case .quarter:
+            return start.formatted(.dateTime.quarter().year())
+        case .year, .yearWrap, .yearWrapWork, .yearWrapPersonal:
+            return start.formatted(.dateTime.year())
+        case .session, .hour:
+            break
+        }
         let time = summary.periodStart.formatted(date: .omitted, time: .shortened)
         if calendar.isDateInToday(summary.periodStart) { return "Today · \(time)" }
         if calendar.isDateInYesterday(summary.periodStart) { return "Yesterday · \(time)" }

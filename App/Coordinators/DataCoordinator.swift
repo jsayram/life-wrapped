@@ -193,13 +193,10 @@ public final class DataCoordinator {
     public func deleteDataForYear(year: Int) async throws {
         // Get all sessions for this year
         let yearData = try await databaseManager.fetchSessionsByYear()
-        guard let yearInfo = yearData.first(where: { $0.year == year }) else {
-            print("⚠️ [DataCoordinator] No data found for year \(year)")
-            return
-        }
+        let sessionIds = yearData.first(where: { $0.year == year })?.sessionIds ?? []
         
         // Delete each session's data
-        for sessionId in yearInfo.sessionIds {
+        for sessionId in sessionIds {
             // Fetch chunks for this session
             let chunks = try await databaseManager.fetchChunksBySession(sessionId: sessionId)
             
@@ -226,6 +223,17 @@ public final class DataCoordinator {
             
             // Delete session summary
             if let summary = try await databaseManager.fetchSummaryForSession(sessionId: sessionId) {
+                try await databaseManager.deleteSummary(id: summary.id)
+            }
+        }
+        
+        // Delete day, week, month, year and Year Wrap summaries that start in this year,
+        // so nothing written from the deleted recordings is left behind
+        let calendar = Calendar.current
+        let rollupTypes = PeriodType.allCases.filter { $0 != .session }
+        for periodType in rollupTypes {
+            let summaries = try await databaseManager.fetchSummaries(periodType: periodType, limit: 100_000)
+            for summary in summaries where calendar.component(.year, from: summary.periodStart) == year {
                 try await databaseManager.deleteSummary(id: summary.id)
             }
         }

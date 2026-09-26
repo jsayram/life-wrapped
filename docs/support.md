@@ -1,153 +1,143 @@
-# Life Wrapped Support
+---
+title: Support
+---
 
-## Getting Help
+<p class="overline">Support</p>
 
-Thank you for using Life Wrapped! We're here to help you get the most out of your private audio journaling experience.
+# Getting help
+
+Thanks for using Life Wrapped. Here are answers to common questions, and how to reach us.
 
 ---
 
-## Frequently Asked Questions
+## Frequently asked questions
 
-### Recording & Transcription
+### Recording and transcription
 
-**Q: Why isn't my transcription accurate?**
-A: Transcription accuracy depends on several factors:
+**Why isn't my transcription accurate?**
+Accuracy depends on a few things:
 
-- Audio quality and microphone clarity
-- Background noise levels
+- Audio quality and how close you are to the microphone
+- Background noise
 - Speaking clearly and at a moderate pace
-- Language and accent recognition
-  Try recording in a quiet environment and speaking clearly for best results.
+- Language and accent support
 
-**Q: Can I edit transcripts?**
-A: Yes! Tap on any transcript segment to edit the text. Your changes are saved automatically.
+Try recording somewhere quiet and speaking clearly for the best results.
 
-**Q: Why does recording split into chunks?**
-A: Life Wrapped automatically splits recordings into manageable chunks (configurable 30-300 seconds) for efficient processing. This allows parallel transcription and better memory management.
+**Can I edit transcripts?**
+Yes. Open a recording from History, tap the pencil next to a part of the transcript, make your changes and tap Save.
 
----
-
-### AI Summaries
-
-**Q: Which AI engine should I use?**
-A: It depends on your needs:
-
-- **Basic**: Fast, always available, 100% on-device
-- **Local AI**: Better quality, 100% on-device, requires ~2GB download
-- **Smartest (BYOK)**: Best quality, uses your OpenAI/Anthropic API keys
-
-**Q: What does BYOK mean?**
-A: BYOK stands for "Bring Your Own Key." You provide your own API key from OpenAI or Anthropic. You pay the API provider directly and maintain full control over your data.
-
-**Q: Is my data sent to the cloud?**
-A: Only if you choose to use External API (BYOK) for summaries. Transcription always happens 100% on-device. Basic and Local AI options are fully offline.
+**Why are recordings split into parts?**
+Life Wrapped splits recordings into short parts (30 to 300 seconds, set in Settings, then Recording) so they transcribe quickly and use less memory.
 
 ---
 
-### Purchases & Billing
+### Summaries
 
-**Q: How do I restore my purchase?**
-A: Go to Settings → Purchases → Restore Purchases
+**Which summary quality should I use?**
 
-**Q: Can I get a refund?**
-A: All purchases are handled through the Apple App Store. To request a refund, visit [reportaproblem.apple.com](https://reportaproblem.apple.com)
+- **Basic**: fast, always available, on your device
+- **Smart**: better quality, on your device, needs a one-time download of about 2.3 GB
+- **Smarter**: Apple Intelligence on your device, needs iOS 26 or later on a supported iPhone
+- **Smartest**: the most detailed summaries, using your own OpenAI or Anthropic API key
 
----
+**What does "bring your own key" mean?**
+You add your own API key from OpenAI or Anthropic and choose the model. You pay the provider directly and stay in control of your account.
 
-### Privacy & Data
-
-**Q: Where is my data stored?**
-A: All your recordings, transcripts, and summaries are stored locally on your device. We never upload your data to our servers.
-
-**Q: How do I delete all my data?**
-A: Go to Settings → Data → Delete All Data
-
-**Q: How do I export my data?**
-A: Go to Settings → Data → Export Data
+**Is my data sent to the cloud?**
+Only if you choose Smartest. Transcription always happens on your device, and Basic, Smart and Smarter summaries stay on your device too.
 
 ---
 
-## Contact Support
+### Purchases and billing
 
-### Report a Bug
+**How do I restore my purchase?**
+Go to Settings, then Restore purchases.
 
-If you've found a bug, please report it on our GitHub Issues page:
+**Can I get a refund?**
+All purchases are handled by the Apple App Store. To request a refund, visit [reportaproblem.apple.com](https://reportaproblem.apple.com).
 
-- [Open a Bug Report](https://github.com/jsayram/life-wrapped/issues/new?template=bug_report.md)
+---
 
-### Request a Feature
+### Privacy and data
 
-Have an idea for Life Wrapped? We'd love to hear it:
+**Where is my data stored?**
+Your recordings, transcripts and summaries are stored on your device. We never upload your data to our servers.
 
-- [Request a Feature](https://github.com/jsayram/life-wrapped/issues/new?template=feature_request.md)
+**How do I export my data?**
+Go to Settings, then Data, then Export & backup. You can export as JSON, Markdown or PDF.
 
-### General Questions
+**How do I delete all my data?**
+Go to Settings, then Data, then Export & backup, and tap Delete all data.
 
-For general questions or feedback:
+---
 
-- [GitHub Discussions](https://github.com/jsayram/life-wrapped/discussions)
+## Contact support
+
+Bugs, feature ideas and general questions all go through GitHub Issues:
+
+- [Open a new issue](https://github.com/jsayram/life-wrapped/issues/new)
+- [See existing issues](https://github.com/jsayram/life-wrapped/issues)
+
+Please don't include API keys or private journal content in an issue.
 
 ---
 
 ## Troubleshooting
 
-### App Not Recording
+### The app isn't recording
 
-1. Check microphone permissions in Settings → Privacy → Microphone
-2. Ensure no other app is using the microphone
-3. Restart the app
+1. Check microphone access in the iPhone Settings app, under Privacy & Security, then Microphone
+2. Make sure no other app is using the microphone
+3. Restart Life Wrapped
 
-### Transcription Not Starting
+### Transcription isn't starting
 
-1. Check Speech Recognition permissions in Settings → Privacy → Speech Recognition
-2. Ensure you have an internet connection (first-time model download only)
-3. Check available storage space
+1. Check speech recognition access in the iPhone Settings app, under Privacy & Security, then Speech Recognition
+2. Make sure your iPhone has on-device speech recognition for your language (it may download once over the internet)
+3. Check that you have free storage space
 
-### Local AI Not Working
+### Smart summaries aren't working
 
-1. Ensure the model is fully downloaded (Settings → AI)
-2. Check available storage space (~2GB required)
-3. The model works offline once downloaded
+1. Make sure the model finished downloading (Settings, then AI & Summaries)
+2. Check that you have about 2.3 GB of free storage
+3. Once downloaded, the model works offline
 
-### External API Errors
+### Smartest errors
 
-1. Verify your API key is correct
-2. Check your API account has available credits
-3. Test the connection in Settings → AI → External API → Test
-
----
-
-## System Requirements
-
-- **iOS 18.0** or later
-- **Device**: iPhone or iPad with A12 chip or later
-- **Storage**: 500MB minimum, 3GB recommended (for Local AI model)
-- **For Local AI**: Apple Silicon (A-series) recommended
+1. Check that your API key is correct
+2. Check that your API account has credit available
+3. Check the model ID; tap View models to see the provider's current list
+4. Tap Test in Settings, then AI & Summaries, to try the key and model together
 
 ---
 
-## Version Information
+## System requirements
 
-To find your app version:
+- **iOS or iPadOS 18.0** or later
+- **Smarter (Apple Intelligence)**: iOS or iPadOS 26 or later on a device that supports Apple Intelligence, with it turned on in the Settings app
+- **Smart**: about 2.3 GB of free storage for the model, plus room for your recordings
 
-1. Open Life Wrapped
-2. Go to Settings
-3. Scroll to the bottom to see version information
+---
 
-When reporting issues, please include:
+## Version information
+
+To find your app version, open Life Wrapped, go to Settings and look under About.
+
+When reporting an issue, please include:
 
 - App version
 - iOS version
-- Device model
+- iPhone model
 - Steps to reproduce the issue
 
 ---
 
 ## Legal
 
-- [Privacy Policy](privacy)
-- [Terms of Service](terms)
+- [Privacy policy](privacy)
+- [Terms of service](terms)
 
 ---
 
-**Thank you for choosing Life Wrapped for your audio journaling journey!**
+**Thanks for choosing Life Wrapped for your audio journal.**

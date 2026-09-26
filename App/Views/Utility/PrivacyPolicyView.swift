@@ -42,7 +42,7 @@ struct PrivacyPolicyView: View {
                     PrivacyPoint(
                         icon: "square.and.arrow.up",
                         title: "Your Data, Your Control",
-                        description: "Export or delete your data anytime. Audio files never leave your iPhone. Transcripts leave it only when you use Smartest, and only go to the provider you connect."
+                        description: "Export or delete your data anytime. Audio files never leave your iPhone. Transcripts leave it only when you use Smartest, and only go to the provider you connect. If you back up your iPhone with iCloud or a computer, iOS includes the app's data in that backup. The full policy is at jsayram.github.io/life-wrapped/privacy."
                     )
                 }
             }
