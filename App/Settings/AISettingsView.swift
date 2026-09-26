@@ -25,35 +25,29 @@ struct AISettingsView: View {
     @State private var showPurchaseSheet = false
     
     // External API state
-    @State private var selectedProvider: String = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-    @State private var selectedModel: String = UserDefaults.standard.string(forKey: "externalAPIModel") ?? "gpt-4.1"
+    @State private var selectedProvider: String = ExternalModelSettings.provider().rawValue
+    @State private var selectedModel: String = ExternalModelSettings.model(for: ExternalModelSettings.provider())
+    @FocusState private var modelFieldFocused: Bool
+    @State private var revealAPIKey = false
     @State private var apiKey: String = ""
-    @State private var showAPIKeyField = false
     
     // API Key testing state
     @State private var isTesting = false
     @State private var testResult: String?
     @State private var testSuccess = false
     
-    // Available models per provider
-    private let openaiModels = [
-        ("gpt-4.1", "GPT-4.1 (Recommended)"),
-        ("gpt-4.1-mini", "GPT-4.1 Mini (Faster)"),
-        ("gpt-4o", "GPT-4o"),
-        ("gpt-4o-mini", "GPT-4o Mini"),
-        ("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheapest)")
-    ]
+    private var providerValue: ExternalAPIEngine.Provider {
+        selectedProvider == "OpenAI" ? .openai : .anthropic
+    }
     
-    private let anthropicModels = [
-        ("claude-sonnet-4-5", "Claude Sonnet 4.5 (Recommended)"),
-        ("claude-haiku-4-5", "Claude Haiku 4.5 (Fastest)"),
-        ("claude-opus-4-5", "Claude Opus 4.5 (Most Capable)"),
-        ("claude-sonnet-4-20250514", "Claude Sonnet 4 (Legacy)"),
-        ("claude-3-5-sonnet-20241022", "Claude 3.5 Sonnet (Legacy)")
-    ]
+    private var apiKeyPlaceholder: String {
+        providerValue == .openai ? "sk-..." : "sk-ant-..."
+    }
     
-    private var currentModels: [(String, String)] {
-        selectedProvider == "OpenAI" ? openaiModels : anthropicModels
+    private var apiKeyURL: URL {
+        URL(string: providerValue == .openai
+            ? "https://platform.openai.com/api-keys"
+            : "https://console.anthropic.com/settings/keys")!
     }
     
     var body: some View {
@@ -115,7 +109,7 @@ struct AISettingsView: View {
             } header: {
                 Text("Summary Quality")
             } footer: {
-                Text("Higher tiers provide better understanding, nuance, and JSON formatting. Basic and Smart work fully offline. Smartest uses GPT-4.1 or Claude 3.5 Sonnet with your API key.")
+                Text("Higher tiers provide better understanding, nuance, and JSON formatting. Basic and Smart work fully offline. Smartest uses the OpenAI or Anthropic model you choose, with your API key.")
             }
             
             // MARK: - Smartest Configuration (only show if purchased)
@@ -127,87 +121,138 @@ struct AISettingsView: View {
                         Text("Anthropic").tag("Anthropic")
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: selectedProvider) { _, newValue in
-                        UserDefaults.standard.set(newValue, forKey: "externalAPIProvider")
-                        let defaultModel = newValue == "OpenAI" ? "gpt-4.1" : "claude-sonnet-4-5"
-                        selectedModel = defaultModel
-                        UserDefaults.standard.set(defaultModel, forKey: "externalAPIModel")
+                    .onChange(of: selectedProvider) { _, _ in
+                        ExternalModelSettings.setProvider(providerValue)
+                        // Each provider keeps its own model, so switching back restores it
+                        selectedModel = ExternalModelSettings.model(for: providerValue)
+                        testResult = nil
+                        revealAPIKey = false
                         loadAPIKey()
                     }
                     
-                    // Model Selection
-                    Picker("Model", selection: $selectedModel) {
-                        ForEach(currentModels, id: \.0) { model in
-                            Text(model.1).tag(model.0)
-                        }
-                    }
-                    .onChange(of: selectedModel) { _, newValue in
-                        UserDefaults.standard.set(newValue, forKey: "externalAPIModel")
-                    }
-                    
-                    // API Key Input
-                    if showAPIKeyField {
-                        VStack(spacing: 8) {
-                            HStack {
-                                SecureField("API Key", text: $apiKey)
-                                    .textContentType(.password)
-                                    .autocapitalization(.none)
-                                    .autocorrectionDisabled()
-                                    .onChange(of: apiKey) { _, newValue in
-                                        let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if normalized != newValue {
-                                            apiKey = normalized
-                                        }
-                                        testResult = nil
-                                    }
-                                
-                                Button("Test") {
-                                    testAPIKey()
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(apiKey.isEmpty || isTesting)
-                                
-                                Button("Save") {
-                                    saveAPIKey()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(apiKey.isEmpty)
-                            }
-                            .modifier(WiggleModifier(wiggle: $wiggleAPIKeyField))
-                            
-                            // Instructional text
-                            if !hasValidAPIKey() {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.circle.fill")
-                                        .foregroundStyle(.orange)
-                                    Text("Save your API key to activate Smartest summaries")
-                                        .font(.caption)
-                                        .foregroundStyle(.orange)
-                                }
-                            }
-                            
-                            if let result = testResult {
-                                Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    // API Key
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("API Key")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if hasValidAPIKey() {
+                                Label("Saved", systemImage: "checkmark.seal.fill")
                                     .font(.caption)
-                                    .foregroundStyle(testSuccess ? .green : .red)
+                                    .foregroundStyle(.green)
                             }
                         }
-                    } else {
-                        Button {
-                            showAPIKeyField = true
-                        } label: {
-                            Label(hasValidAPIKey() ? "Change API Key" : "Add API Key", 
-                                  systemImage: hasValidAPIKey() ? "pencil" : "key.fill")
+                        HStack(spacing: 8) {
+                            Group {
+                                if revealAPIKey {
+                                    TextField(apiKeyPlaceholder, text: $apiKey)
+                                } else {
+                                    SecureField(apiKeyPlaceholder, text: $apiKey)
+                                }
+                            }
+                            .font(.body.monospaced())
+                            .textContentType(.password)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onChange(of: apiKey) { _, newValue in
+                                let normalized = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if normalized != newValue {
+                                    apiKey = normalized
+                                }
+                                testResult = nil
+                            }
+                            
+                            Button {
+                                revealAPIKey.toggle()
+                            } label: {
+                                Image(systemName: revealAPIKey ? "eye.slash" : "eye")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(revealAPIKey ? "Hide API key" : "Show API key")
+                        }
+                        .modifier(WiggleModifier(wiggle: $wiggleAPIKeyField))
+                    }
+                    
+                    // Model ID (free text so any current model can be used)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Model ID")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        TextField(ExternalModelSettings.placeholder(for: providerValue), text: $selectedModel)
+                            .font(.body.monospaced())
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.asciiCapable)
+                            .submitLabel(.done)
+                            .focused($modelFieldFocused)
+                            .onSubmit { saveModel() }
+                            .onChange(of: selectedModel) { _, _ in
+                                testResult = nil
+                            }
+                    }
+                    .onChange(of: modelFieldFocused) { _, focused in
+                        if !focused { saveModel() }
+                    }
+                    
+                    // Actions: Test and Save side by side
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 12) {
+                            Button {
+                                testAPIKey()
+                            } label: {
+                                Group {
+                                    if isTesting {
+                                        HStack(spacing: 6) {
+                                            ProgressView()
+                                            Text("Testing")
+                                        }
+                                    } else {
+                                        Label("Test", systemImage: "bolt.horizontal.circle")
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isTesting || apiKey.isEmpty || ExternalModelSettings.normalize(selectedModel).isEmpty)
+                            
+                            Button {
+                                saveAPIKey()
+                            } label: {
+                                Label("Save", systemImage: "checkmark")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(apiKey.isEmpty || ExternalModelSettings.normalize(selectedModel).isEmpty)
+                        }
+                        .controlSize(.large)
+                        
+                        if let result = testResult {
+                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(testSuccess ? .green : .red)
+                        } else if !hasValidAPIKey() {
+                            Label("Save your API key to activate Smartest summaries", systemImage: "exclamationmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
                         }
                     }
                     
-                    // Help link
-                    Link(destination: URL(string: selectedProvider == "OpenAI" 
-                        ? "https://platform.openai.com/api-keys" 
-                        : "https://console.anthropic.com/settings/keys")!) {
-                        Label("Get \(selectedProvider) API Key", systemImage: "arrow.up.right.square")
-                            .font(.footnote)
+                    // Helper links side by side
+                    HStack(spacing: 12) {
+                        Link(destination: apiKeyURL) {
+                            Label("Get API Key", systemImage: "key")
+                                .frame(maxWidth: .infinity)
+                        }
+                        Link(destination: ExternalModelSettings.modelListURL(for: providerValue)) {
+                            Label("View Models", systemImage: "list.bullet.rectangle")
+                                .frame(maxWidth: .infinity)
+                        }
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .font(.footnote)
                     
                     // Remove key
                     if hasValidAPIKey() {
@@ -376,7 +421,6 @@ struct AISettingsView: View {
             if fromYearWrap {
                 activeEngine = .external
                 showingSmartestConfig = true
-                showAPIKeyField = true
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     withAnimation {
@@ -412,7 +456,6 @@ struct AISettingsView: View {
                             // Now show the API configuration
                             activeEngine = .external
                             showingSmartestConfig = true
-                            showAPIKeyField = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 withAnimation {
                                     scrollProxy?.scrollTo("smartestConfig", anchor: .top)
@@ -602,7 +645,6 @@ struct AISettingsView: View {
             
             // Show config and trigger wiggle animation
             showingSmartestConfig = true
-            showAPIKeyField = true
             
             // Scroll to the section after a brief delay to ensure it's rendered
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -652,16 +694,14 @@ struct AISettingsView: View {
     private func loadAPIKey() {
         let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
         apiKey = KeychainHelper.load(key: keychainKey) ?? ""
-        showAPIKeyField = false
     }
     
     private func saveAPIKey() {
         let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
         
         if KeychainHelper.save(key: keychainKey, value: apiKey) {
-            UserDefaults.standard.set(selectedProvider, forKey: "externalAPIProvider")
-            UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
-            showAPIKeyField = false
+            ExternalModelSettings.setProvider(providerValue)
+            saveModel()
             showingSmartestConfig = false
             
             // Now that we have a valid key, switch to Smartest engine
@@ -677,12 +717,22 @@ struct AISettingsView: View {
         }
     }
     
+    /// Saves the typed model ID. A blank field falls back to the provider default.
+    private func saveModel() {
+        ExternalModelSettings.setModel(selectedModel, for: providerValue)
+        selectedModel = ExternalModelSettings.model(for: providerValue)
+    }
+    
     private func testAPIKey() {
+        saveModel()
         isTesting = true
         testResult = nil
+        let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
+        let keyToTest = apiKey.isEmpty ? (KeychainHelper.load(key: keychainKey) ?? "") : apiKey
+        let modelToTest = selectedModel
         
         Task {
-            guard !apiKey.isEmpty else {
+            guard !keyToTest.isEmpty else {
                 await MainActor.run {
                     testSuccess = false
                     testResult = "Please enter an API key"
@@ -700,8 +750,7 @@ struct AISettingsView: View {
                 return
             }
             
-            let provider: ExternalAPIEngine.Provider = selectedProvider == "OpenAI" ? .openai : .anthropic
-            let result = await summCoord.validateExternalAPIKey(apiKey, for: provider)
+            let result = await summCoord.validateExternalAPIKey(keyToTest, for: providerValue, model: modelToTest)
             
             await MainActor.run {
                 testSuccess = result.isValid
@@ -715,7 +764,6 @@ struct AISettingsView: View {
         let keychainKey = selectedProvider == "OpenAI" ? "openai_api_key" : "anthropic_api_key"
         KeychainHelper.delete(key: keychainKey)
         apiKey = ""
-        showAPIKeyField = false
         showingSmartestConfig = false
         
         if activeEngine == .external {

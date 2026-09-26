@@ -15,8 +15,8 @@ import Storage
 /// Requires user-provided API keys and internet connection.
 ///
 /// **Supported Providers**:
-/// - OpenAI (GPT-4, GPT-3.5)
-/// - Anthropic (Claude 3.5 Sonnet, Claude 3 Opus)
+/// - OpenAI and Anthropic. The model is free text (see `ExternalModelSettings`),
+///   so any current model ID from either provider can be used.
 public actor ExternalAPIEngine: SummarizationEngine {
     
     // MARK: - Types
@@ -28,10 +28,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
         public var displayName: String { rawValue }
         
         public var defaultModel: String {
-            switch self {
-            case .openai: return "gpt-4.1"
-            case .anthropic: return "claude-sonnet-4-5"
-            }
+            ExternalModelSettings.defaultModel(for: self)
         }
         
         public var endpoint: String {
@@ -67,10 +64,10 @@ public actor ExternalAPIEngine: SummarizationEngine {
     private let storage: DatabaseManager
     private let keychainManager: KeychainManager
     
-    // Configuration (nonisolated for UserDefaults access in init)
-    private nonisolated let initialProvider: Provider
-    private var selectedProvider: Provider
-    private var selectedModel: String
+    // Configuration is read from ExternalModelSettings on every use, so changes made
+    // in Settings take effect immediately without relaunching the app.
+    private var selectedProvider: Provider { ExternalModelSettings.provider() }
+    private var selectedModel: String { ExternalModelSettings.model(for: selectedProvider) }
     
     // Statistics tracking
     private var summariesGenerated: Int = 0
@@ -83,13 +80,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
         self.storage = storage
         self.keychainManager = keychainManager
         
-        // Load saved preferences (must be done before actor isolation begins)
-        let savedProvider = UserDefaults.standard.string(forKey: "externalAPIProvider")
-            .flatMap { Provider(rawValue: $0) } ?? Provider.openai
-        self.initialProvider = savedProvider
-        self.selectedProvider = savedProvider
-        self.selectedModel = UserDefaults.standard.string(forKey: "externalAPIModel")
-            ?? savedProvider.defaultModel
+        // Move a model saved by older builds into the per-provider settings (runs once)
+        ExternalModelSettings.migrateIfNeeded()
     }
     
     // MARK: - SummarizationEngine Protocol
@@ -231,12 +223,10 @@ public actor ExternalAPIEngine: SummarizationEngine {
     // MARK: - Configuration
     
     public func setProvider(_ provider: Provider, model: String? = nil) {
-        self.selectedProvider = provider
-        self.selectedModel = model ?? provider.defaultModel
-        
-        // Save preferences
-        UserDefaults.standard.set(provider.rawValue, forKey: "externalAPIProvider")
-        UserDefaults.standard.set(selectedModel, forKey: "externalAPIModel")
+        ExternalModelSettings.setProvider(provider)
+        if let model {
+            ExternalModelSettings.setModel(model, for: provider)
+        }
     }
     
     public func getProvider() -> (provider: Provider, model: String) {
@@ -252,33 +242,19 @@ public actor ExternalAPIEngine: SummarizationEngine {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         // Build request body based on provider with proper message structure
-        let requestBody: [String: Any]
         switch selectedProvider {
         case .openai:
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            requestBody = [
-                "model": selectedModel,
-                "messages": [
-                    ["role": "system", "content": systemPrompt],
-                    ["role": "user", "content": userMessage]
-                ],
-                "temperature": 0.7,
-                "response_format": ["type": "json_object"]
-            ]
-            
         case .anthropic:
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-            requestBody = [
-                "model": selectedModel,
-                "system": systemPrompt,  // Anthropic uses separate system field
-                "messages": [
-                    ["role": "user", "content": userMessage]
-                ],
-                "max_tokens": 2000,
-                "temperature": 0.7
-            ]
+            request.setValue(Self.anthropicVersion, forHTTPHeaderField: "anthropic-version")
         }
+        let requestBody = Self.buildRequestBody(
+            provider: selectedProvider,
+            model: selectedModel,
+            systemPrompt: systemPrompt,
+            userMessage: userMessage
+        )
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
@@ -291,6 +267,11 @@ public actor ExternalAPIEngine: SummarizationEngine {
         }
         
         guard (200...299).contains(httpResponse.statusCode) else {
+            if Self.isModelNotFound(statusCode: httpResponse.statusCode, data: data) {
+                throw SummarizationError.configurationError(
+                    "Model \"\(selectedModel)\" isn't available from \(selectedProvider.displayName). Update the model in Settings > AI."
+                )
+            }
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw SummarizationError.summarizationFailed("API error (\(httpResponse.statusCode)): \(errorMessage)")
         }
@@ -687,135 +668,158 @@ public actor ExternalAPIEngine: SummarizationEngine {
     
     // MARK: - API Key Validation
     
-    /// Validates an API key by making a minimal test request to the provider
+    /// Tests the API key and the model together by sending a tiny real request
+    /// with that model, so "Connected" means summaries will actually work.
     /// - Parameters:
-    ///   - apiKey: The API key to validate
+    ///   - apiKey: The API key to test
     ///   - provider: The provider (OpenAI or Anthropic)
-    /// - Returns: A validation result with success message or error description
-    public func validateAPIKey(_ apiKey: String, for provider: Provider) async -> APIKeyValidationResult {
-        // First, check format
-        let formatValid: Bool
-        switch provider {
-        case .openai:
-            formatValid = apiKey.hasPrefix("sk-") && apiKey.count > 20
-        case .anthropic:
-            formatValid = apiKey.hasPrefix("sk-ant-") && apiKey.count > 20
+    ///   - model: The model ID to test. Defaults to the saved model for the provider.
+    public func validateAPIKey(_ apiKey: String, for provider: Provider, model: String? = nil) async -> APIKeyValidationResult {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelID = ExternalModelSettings.normalize(model ?? ExternalModelSettings.model(for: provider))
+        
+        guard !modelID.isEmpty else {
+            return .invalid(reason: "Enter a model ID to test")
         }
         
+        let formatValid: Bool
+        switch provider {
+        case .openai: formatValid = key.hasPrefix("sk-") && key.count > 20
+        case .anthropic: formatValid = key.hasPrefix("sk-ant-") && key.count > 20
+        }
         guard formatValid else {
             return .invalid(reason: "Invalid API key format for \(provider.displayName)")
         }
         
-        // Make a minimal API request to validate the key
-        do {
-            switch provider {
-            case .openai:
-                return try await validateOpenAIKey(apiKey)
-            case .anthropic:
-                return try await validateAnthropicKey(apiKey)
-            }
-        } catch {
-            return .invalid(reason: "Network error: \(error.localizedDescription)")
-        }
-    }
-    
-    private func validateOpenAIKey(_ apiKey: String) async throws -> APIKeyValidationResult {
-        // Use the models endpoint - minimal request, just lists available models
-        guard let url = URL(string: "https://api.openai.com/v1/models") else {
-            return .invalid(reason: "Invalid URL")
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 10
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            return .invalid(reason: "Invalid response")
-        }
-        
-        switch httpResponse.statusCode {
-        case 200:
-            // Parse to get model count for a nice message
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let models = json["data"] as? [[String: Any]] {
-                return .valid(message: "✅ Valid! Access to \(models.count) models")
-            }
-            return .valid(message: "✅ API key is valid")
-        case 401:
-            return .invalid(reason: "Invalid API key - authentication failed")
-        case 403:
-            return .invalid(reason: "API key lacks required permissions")
-        case 429:
-            return .valid(message: "✅ Valid (rate limited, but key works)")
-        default:
-            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorData["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                return .invalid(reason: "API Error: \(message)")
-            }
-            return .invalid(reason: "HTTP \(httpResponse.statusCode)")
-        }
-    }
-    
-    private func validateAnthropicKey(_ apiKey: String) async throws -> APIKeyValidationResult {
-        // Anthropic doesn't have a models endpoint, so we make a minimal completion request
-        guard let url = URL(string: "https://api.anthropic.com/v1/messages") else {
+        guard let url = URL(string: provider.endpoint) else {
             return .invalid(reason: "Invalid URL")
         }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 10
+        request.timeoutInterval = 20
+        switch provider {
+        case .openai:
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .anthropic:
+            request.setValue(key, forHTTPHeaderField: "x-api-key")
+            request.setValue(Self.anthropicVersion, forHTTPHeaderField: "anthropic-version")
+        }
         
-        // Minimal request - 1 token max to minimize cost
-        let body: [String: Any] = [
-            "model": "claude-3-haiku-20240307",  // Cheapest model
-            "max_tokens": 1,
-            "messages": [
-                ["role": "user", "content": "Hi"]
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: Self.buildTestRequestBody(provider: provider, model: modelID))
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return .invalid(reason: "Invalid response")
+            }
+            return Self.interpretTestResponse(statusCode: httpResponse.statusCode, data: data, provider: provider, model: modelID)
+        } catch {
+            return .invalid(reason: "Network error: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Request building and response interpretation (pure, unit tested)
+    
+    static let anthropicVersion = "2023-06-01"
+    
+    /// Body for a summary request. No `temperature`: newer models (GPT-6 and later)
+    /// reject it, and the default works well for summaries.
+    static func buildRequestBody(provider: Provider, model: String, systemPrompt: String, userMessage: String) -> [String: Any] {
+        switch provider {
+        case .openai:
+            return [
+                "model": model,
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": userMessage]
+                ],
+                "response_format": ["type": "json_object"]
             ]
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            return .invalid(reason: "Invalid response")
+        case .anthropic:
+            return [
+                "model": model,
+                "system": systemPrompt,
+                "messages": [
+                    ["role": "user", "content": userMessage]
+                ],
+                "max_tokens": 2000
+            ]
         }
+    }
+    
+    /// Smallest possible request that still proves the key and model work.
+    static func buildTestRequestBody(provider: Provider, model: String) -> [String: Any] {
+        switch provider {
+        case .openai:
+            return [
+                "model": model,
+                "messages": [["role": "user", "content": "Hi"]],
+                "max_completion_tokens": 16
+            ]
+        case .anthropic:
+            return [
+                "model": model,
+                "messages": [["role": "user", "content": "Hi"]],
+                "max_tokens": 1
+            ]
+        }
+    }
+    
+    static func interpretTestResponse(statusCode: Int, data: Data, provider: Provider, model: String) -> APIKeyValidationResult {
+        let error = Self.errorInfo(from: data)
+        let lowerMessage = error.message?.lowercased() ?? ""
         
-        switch httpResponse.statusCode {
-        case 200:
-            return .valid(message: "✅ API key is valid")
+        switch statusCode {
+        case 200...299:
+            return .valid(message: "Connected. \(model) is working.")
         case 401:
-            return .invalid(reason: "Invalid API key - authentication failed")
-        case 403:
-            return .invalid(reason: "API key lacks required permissions")
+            return .invalid(reason: "Invalid API key. Check it and try again.")
+        case 402:
+            return .invalid(reason: "Billing problem on your \(provider.displayName) account. Check your plan or credits.")
         case 429:
-            return .valid(message: "✅ Valid (rate limited, but key works)")
-        case 400:
-            // Check if it's a billing/quota error (key is valid but account issue)
-            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorData["error"] as? [String: Any],
-               let errorType = error["type"] as? String {
-                if errorType == "invalid_request_error" {
-                    return .valid(message: "✅ API key is valid (request validation passed)")
-                }
+            if error.code == "insufficient_quota" || error.type == "insufficient_quota" {
+                return .invalid(reason: "Your \(provider.displayName) account is out of credits or quota.")
             }
-            return .invalid(reason: "Bad request")
+            return .valid(message: "Key and model accepted, but you're rate limited right now. Try again in a minute.")
         default:
-            if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorData["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                return .invalid(reason: "API Error: \(message)")
-            }
-            return .invalid(reason: "HTTP \(httpResponse.statusCode)")
+            break
         }
+        
+        if isModelNotFound(statusCode: statusCode, data: data) {
+            return .invalid(reason: "Model \"\(model)\" wasn't found or isn't available on your account. Check the spelling in the model list.")
+        }
+        if statusCode == 403 {
+            return .invalid(reason: "Your key doesn't have access to \(model).")
+        }
+        if lowerMessage.contains("credit balance") || lowerMessage.contains("billing") {
+            return .invalid(reason: "Billing problem on your \(provider.displayName) account. Check your plan or credits.")
+        }
+        if statusCode >= 500 {
+            return .invalid(reason: "\(provider.displayName) is having problems right now (HTTP \(statusCode)). Try again later.")
+        }
+        if let message = error.message {
+            return .invalid(reason: "\(provider.displayName) error: \(message)")
+        }
+        return .invalid(reason: "HTTP \(statusCode)")
+    }
+    
+    /// True when the provider says the requested model doesn't exist or can't be used.
+    static func isModelNotFound(statusCode: Int, data: Data) -> Bool {
+        let error = errorInfo(from: data)
+        if error.code == "model_not_found" { return true }
+        if statusCode == 404 { return true }
+        guard statusCode == 400, let message = error.message?.lowercased() else { return false }
+        return message.contains("model") && (message.contains("not found") || message.contains("does not exist") || message.contains("invalid model"))
+    }
+    
+    /// Extracts `error.type`, `error.code` and `error.message` from an OpenAI or Anthropic error body.
+    static func errorInfo(from data: Data) -> (type: String?, code: String?, message: String?) {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = json["error"] as? [String: Any] else {
+            return (nil, nil, nil)
+        }
+        return (error["type"] as? String, error["code"] as? String, error["message"] as? String)
     }
     
     // MARK: - Performance Monitoring

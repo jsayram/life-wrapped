@@ -148,12 +148,13 @@ public actor SummarizationCoordinator {
     /// - Parameters:
     ///   - apiKey: The API key to validate
     ///   - provider: The provider (OpenAI or Anthropic)
+    ///   - model: The model ID to test (defaults to the saved model)
     /// - Returns: Validation result with success message or error
-    public func validateExternalAPIKey(_ apiKey: String, for provider: ExternalAPIEngine.Provider) async -> ExternalAPIEngine.APIKeyValidationResult {
+    public func validateExternalAPIKey(_ apiKey: String, for provider: ExternalAPIEngine.Provider, model: String? = nil) async -> ExternalAPIEngine.APIKeyValidationResult {
         guard let external = externalEngine as? ExternalAPIEngine else {
             return .invalid(reason: "External API engine not available")
         }
-        return await external.validateAPIKey(apiKey, for: provider)
+        return await external.validateAPIKey(apiKey, for: provider, model: model)
     }
     
     /// Set the preferred engine tier
