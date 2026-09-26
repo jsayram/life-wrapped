@@ -37,14 +37,20 @@ struct SummaryQualityCard: View {
                         .font(.headline)
                         .foregroundStyle(.primary)
                     
+                    // Fixed two-line slots so the card never changes height when the
+                    // text changes (e.g. switching provider or model on the Smartest card)
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2, reservesSpace: true)
                     
                     Text(detail)
                         .font(.caption)
                         .foregroundStyle(isAvailable ? .secondary : Color.orange)
+                        .lineLimit(2, reservesSpace: true)
+                        .truncationMode(.middle)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 
                 Spacer()
                 
