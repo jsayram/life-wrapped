@@ -1,122 +1,125 @@
 import SwiftUI
 import Summarization
 
+/// Shown over a recording while its summary is being generated.
+/// Graphite style: dimmed backdrop, one flat card, ink progress bar, outline icons.
 struct GenerationOverlay: View {
     let progress: Double
     let phase: String
     let engineTier: EngineTier?
-    
+
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7)
+            Color.black.opacity(0.4)
                 .ignoresSafeArea()
-                .blur(radius: 2)
-            
-            VStack(spacing: 24) {
-                // CPU icon with animation
-                ZStack {
-                    Circle()
-                        .fill(
-                            AppTheme.purple.opacity(0.3)
+
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 12) {
+                    Image(systemName: tierSymbol)
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(AppTheme.fill)
                         )
-                        .frame(width: 100, height: 100)
-                        .scaleEffect(1.0 + progress * 0.2)
-                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: progress)
-                    
-                    Image(systemName: "cpu")
-                        .font(.system(size: 50))
-                        .foregroundStyle(
-                            AppTheme.purple
-                        )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Summarizing")
+                            .font(AppTheme.titleFont(size: 22))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        if let engineTier {
+                            Text(engineTier.displayName)
+                                .font(.footnote)
+                                .foregroundStyle(AppTheme.textSecondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    Text("\(Int(progress * 100))%")
+                        .font(.subheadline.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(AppTheme.textPrimary)
                 }
-                
-                VStack(spacing: 12) {
-                    Text(engineTier == .basic ? "Processing" : "AI Processing")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.primary)
-                    
-                    // Progress bar
+
+                // Progress bar
+                GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.secondary.opacity(0.3))
-                            .frame(width: 280, height: 8)
-                        
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(
-                                AppTheme.purple
-                            )
-                            .frame(width: 280 * progress, height: 8)
+                        Capsule()
+                            .fill(AppTheme.fill)
+                        Capsule()
+                            .fill(AppTheme.accent)
+                            .frame(width: geometry.size.width * min(max(progress, 0), 1))
                             .animation(.linear(duration: 0.3), value: progress)
                     }
-                    
-                    Text("\(Int(progress * 100))%")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.primary)
-                        .monospacedDigit()
-                    
+                }
+                .frame(height: 6)
+
+                if !phase.isEmpty {
                     Text(phase)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(minHeight: 44)
-                        .padding(.horizontal, 20)
-                }
-                
-                if let engineTier = engineTier {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "info.circle.fill")
-                                .foregroundStyle(AppTheme.skyBlue)
-                            Text(engineTier == .basic ? "What's happening?" : "Why does this take time?")
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.primary)
-                        }
-                        
-                        Group {
-                            switch engineTier {
-                            case .basic:
-                                Text("Life Wrapped is creating a basic summary by extracting key information from your transcript. This is a simple, fast process that works offline.")
-                            case .local:
-                                Text("Life Wrapped is using Phi-3.5, a powerful local AI model running directly on your device. This provides high-quality summaries while keeping all your data private.")
-                            case .apple:
-                                Text("Life Wrapped performs a comprehensive analysis directly on your iPhone using Apple Intelligence. No data leaves your device — it's completely private.")
-                            case .external:
-                                let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-                                Text("Life Wrapped uses \(provider)'s advanced AI to perform intelligent processing and generate the best possible summary of your transcript. This provides the most comprehensive and insightful analysis.")
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(AppTheme.accent)
-                            Text("Once complete, future views of this session are instant!")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.primary)
+                }
+
+                if let engineTier {
+                    Divider().overlay(AppTheme.hairline)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label {
+                            Text(explanation(for: engineTier))
+                        } icon: {
+                            Image(systemName: engineTier == .external ? "cloud" : "lock")
+                        }
+
+                        Label {
+                            Text("The summary is saved, so this only runs once.")
+                        } icon: {
+                            Image(systemName: "checkmark.circle")
                         }
                     }
-                    .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.secondary.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                    )
-                    .padding(.horizontal, 20)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .labelStyle(.titleAndIcon)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(32)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-            .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
-            .padding(.horizontal, 40)
+            .padding(24)
+            .frame(maxWidth: 420)
+            .background(
+                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                    .fill(AppTheme.card)
+                    .stroke(AppTheme.hairline, lineWidth: 1)
+            )
+            .padding(.horizontal, 24)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Summarizing, \(Int(progress * 100)) percent")
+    }
+
+    /// Same symbols as the AI & Summaries settings
+    private var tierSymbol: String {
+        switch engineTier {
+        case .basic: return "bolt"
+        case .local: return "cpu"
+        case .apple: return "sparkle"
+        case .external: return "cloud"
+        case nil: return "sparkle"
+        }
+    }
+
+    private func explanation(for tier: EngineTier) -> String {
+        switch tier {
+        case .basic:
+            return "Basic picks out the key sentences on your \(DeviceName.current). It's fast and works offline."
+        case .local:
+            return "Smart runs Phi-3.5 Mini on your \(DeviceName.current). Your transcript never leaves it."
+        case .apple:
+            return "Smarter uses Apple Intelligence on your \(DeviceName.current). Your transcript never leaves it."
+        case .external:
+            let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
+            return "Smartest sends this transcript to \(provider) with your API key, then saves the summary here."
         }
     }
 }

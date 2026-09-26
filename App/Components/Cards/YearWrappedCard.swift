@@ -136,6 +136,7 @@ struct YearWrappedCard: View {
         )
         .sheet(isPresented: $showDetailView) {
             YearWrapDetailView(yearWrap: summary, coordinator: coordinator, initialFilter: filter)
+                .presentationSizing(.page) // full-page sheet on iPad; no change on iPhone
         }
     }
     

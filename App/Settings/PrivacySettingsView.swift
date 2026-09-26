@@ -11,7 +11,7 @@ struct PrivacySettingsView: View {
             } header: {
                 Text("Privacy status")
             } footer: {
-                Text("Audio is transcribed on your iPhone with Apple's Speech framework and never leaves it. Basic, Smart and Smarter summaries also stay on your iPhone. Transcripts are sent out only if you choose Smartest, to the OpenAI or Anthropic account you connect.")
+                Text("Audio is transcribed on your \(DeviceName.current) with Apple's Speech framework and never leaves it. Basic, Smart and Smarter summaries also stay on your \(DeviceName.current). Transcripts are sent out only if you choose Smartest, to the OpenAI or Anthropic account you connect.")
             }
             
             Section {

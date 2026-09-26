@@ -1,5 +1,13 @@
 import SwiftUI
+import UIKit
 import SharedModels
+
+/// The device name for copy such as "Transcribed privately on this iPhone": "iPad" on iPad, "iPhone" otherwise.
+enum DeviceName {
+    @MainActor static var current: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    }
+}
 
 /// Graphite design system: black, white and warm greys with ink as the only accent.
 /// Every color adapts to light and dark mode. Flat surfaces, hairline borders, no gradients.

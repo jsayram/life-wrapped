@@ -303,7 +303,8 @@ public actor AppleEngine: SummarizationEngine {
         }
         
         // Extract fields from JSON (matching UniversalPrompt session schema)
-        let title = json["title"] as? String ?? ""
+        // The prompt also asks for a "title"; recordings already have their own title,
+        // so only the summary text is kept (no "[Title] " prefix in the summary).
         let summary = json["summary"] as? String ?? responseText
         let keyPoints = json["key_points"] as? [String] ?? []
         
@@ -312,7 +313,7 @@ public actor AppleEngine: SummarizationEngine {
         
         return SessionIntelligence(
             sessionId: sessionId,
-            summary: title.isEmpty ? summary : "[\(title)] \(summary)",
+            summary: summary,
             topics: topics,
             entities: [],
             sentiment: 0.0,

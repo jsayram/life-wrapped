@@ -1,147 +1,68 @@
 import SwiftUI
 import SharedModels
 
-/// Full-screen loading overlay for Year Wrap generation with animated progress indicator
+/// Shown while a Year Wrap is being generated.
+/// (App/Components/Loading/YearWrapLoadingOverlay.swift is not in the app target; this copy is the one that ships.)
+/// Graphite style: dimmed backdrop, one flat card, system spinner, step dots in ink.
 fileprivate struct YearWrapLoadingOverlay: View {
     let statusMessage: String
-    
-    @State private var animationRotation: Double = 0
-    @State private var pulseScale: CGFloat = 1.0
-    
+
     var body: some View {
         ZStack {
-            // Blurred background
-            Color.black.opacity(0.7)
+            Color.black.opacity(0.4)
                 .ignoresSafeArea()
-            
-            VStack(spacing: 30) {
-                // Animated year wrap icon
-                ZStack {
-                    // Outer pulsing ring
-                    Circle()
-                        .stroke(
-                            Color.white.opacity(0.3),
-                            lineWidth: 4
-                        )
-                        .frame(width: 120, height: 120)
-                        .scaleEffect(pulseScale)
-                        .animation(
-                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
-                            value: pulseScale
-                        )
-                    
-                    // Rotating gradient ring
-                    Circle()
-                        .trim(from: 0, to: 0.75)
-                        .stroke(
-                            Color.white,
-                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                        )
-                        .frame(width: 100, height: 100)
-                        .rotationEffect(.degrees(animationRotation))
-                        .animation(
-                            .linear(duration: 2).repeatForever(autoreverses: false),
-                            value: animationRotation
-                        )
-                    
-                    // Center icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                Color.white.opacity(0.3)
-                            )
-                            .frame(width: 70, height: 70)
-                        
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 32, weight: .medium))
-                            .foregroundStyle(
-                                Color.white
-                            )
-                            .symbolEffect(.pulse.byLayer)
-                    }
+
+            VStack(spacing: 18) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .symbolEffect(.pulse)
+
+                Text("Wrapping up your year")
+                    .font(AppTheme.titleFont(size: 24))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                if !statusMessage.isEmpty {
+                    Text(statusMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .animation(.easeInOut, value: statusMessage)
                 }
-                .frame(width: 120, height: 120)
-                
-                VStack(spacing: 12) {
-                    // Title
-                    Text("Generating Year Wrap")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                    
-                    // Status message with detailed steps
-                    VStack(spacing: 8) {
-                        Text(statusMessage)
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                            .animation(.easeInOut, value: statusMessage)
-                        
-                        // Progress indicators
-                        if statusMessage.contains("Step") {
-                            HStack(spacing: 8) {
-                                ForEach(1...3, id: \.self) { step in
-                                    Circle()
-                                        .fill(getStepColor(for: step, current: statusMessage))
-                                        .frame(width: 10, height: 10)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                                        )
-                                }
-                            }
-                            .padding(.top, 4)
+
+                if let current = currentStep {
+                    HStack(spacing: 8) {
+                        ForEach(1...3, id: \.self) { step in
+                            Capsule()
+                                .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
+                                .frame(width: 24, height: 4)
                         }
                     }
-                    
-                    // Animated progress dots
-                    HStack(spacing: 4) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Circle()
-                                .fill(Color.white.opacity(0.6))
-                                .frame(width: 6, height: 6)
-                                .scaleEffect(pulseScale)
-                                .animation(
-                                    .easeInOut(duration: 0.6)
-                                        .repeatForever(autoreverses: true)
-                                        .delay(Double(index) * 0.2),
-                                    value: pulseScale
-                                )
-                        }
-                    }
-                    .padding(.top, 8)
+                    .accessibilityLabel("Step \(current) of 3")
                 }
+
+                ProgressView()
+                    .tint(AppTheme.textPrimary)
+                    .padding(.top, 4)
             }
-            .padding(40)
+            .padding(28)
+            .frame(maxWidth: 400)
             .background(
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: Color.white.opacity(0.3), radius: 30, x: 0, y: 10)
+                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                    .fill(AppTheme.card)
+                    .stroke(AppTheme.hairline, lineWidth: 1)
             )
-            .padding(.horizontal, 40)
-        }
-        .onAppear {
-            animationRotation = 360
-            pulseScale = 1.2
+            .padding(.horizontal, 32)
         }
     }
-    
-    /// Determines the color for step progress indicators
-    private func getStepColor(for step: Int, current statusMessage: String) -> Color {
-        // Extract step number from message like "Step 1 of 3: Combined Year Wrap"
-        if let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
-           let currentStepString = statusMessage[range].split(separator: " ").last,
-           let currentStep = Int(currentStepString) {
-            if step < currentStep {
-                return Color.white // Completed
-            } else if step == currentStep {
-                return Color.white // In progress
-            } else {
-                return Color.white.opacity(0.3) // Pending
-            }
-        }
-        return Color.white.opacity(0.3) // Default
+
+    /// Reads the step from messages like "Step 2 of 3: Work Year Wrap"
+    private var currentStep: Int? {
+        guard let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
+              let number = statusMessage[range].split(separator: " ").last else { return nil }
+        return Int(number)
     }
 }
 
@@ -249,7 +170,7 @@ struct OverviewTab: View {
                                     if let periodSummary {
                                         PeriodSummaryCard(
                                             title: periodSummaryTitle(for: selectedTimeRange),
-                                            subtitle: "Generated on this iPhone",
+                                            subtitle: "Generated on this \(DeviceName.current)",
                                             summary: periodSummary,
                                             isRegenerating: isRegeneratingPeriodSummary,
                                             onCopy: {
@@ -1173,12 +1094,11 @@ struct YearWrapGenerationSheet: View {
             // Header
             VStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 40))
+                    .font(.system(size: 28, weight: .regular))
                     .foregroundStyle(AppTheme.textPrimary)
                 
                 Text("Generate Year Wrap")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(AppTheme.titleFont(size: 24))
                 
                 Text("Choose your AI engine")
                     .font(.subheadline)
@@ -1198,8 +1118,8 @@ struct YearWrapGenerationSheet: View {
                     }
                 }) {
                     HStack(spacing: 12) {
-                        Image(systemName: "iphone")
-                            .font(.title2)
+                        Image(systemName: "cpu")
+                            .font(.title3)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Smart (Local AI)")
@@ -1218,7 +1138,7 @@ struct YearWrapGenerationSheet: View {
                                 .fontWeight(.medium)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(.white.opacity(0.2))
+                                .background(AppTheme.onAccent.opacity(0.15))
                                 .clipShape(Capsule())
                             Text("2-3 min")
                                 .font(.caption2)
@@ -1230,8 +1150,7 @@ struct YearWrapGenerationSheet: View {
                     .background(
                         AppTheme.purple
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 8, y: 4)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 
@@ -1245,8 +1164,8 @@ struct YearWrapGenerationSheet: View {
                         }
                     }) {
                         HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
+                            Image(systemName: "cloud")
+                                .font(.title3)
                             
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Smartest (\(provider))")
@@ -1275,8 +1194,8 @@ struct YearWrapGenerationSheet: View {
                         )
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
+                            Image(systemName: "cloud")
+                                .font(.title3)
                             
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Smartest (External AI)")
@@ -1299,8 +1218,8 @@ struct YearWrapGenerationSheet: View {
                     // Not unlocked - show purchase option
                     Button(action: onPurchaseSmartestAI) {
                         HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
+                            Image(systemName: "cloud")
+                                .font(.title3)
                             
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 4) {
@@ -1347,9 +1266,10 @@ struct YearWrapGenerationSheet: View {
             }
             
             // Timing note
-            Text("This may take 30-60 seconds")
+            Text("Smart takes 2 to 3 minutes and Smartest 1 to 2. Keep the app open until it's done.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             
             // Purchase disclaimer (shown when purchase option visible)
             if !isSmartestAIUnlocked {

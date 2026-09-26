@@ -3,6 +3,7 @@
 // =============================================================================
 
 import SwiftUI
+import UIKit
 
 /// Toast notification style
 public enum ToastStyle {
@@ -64,7 +65,9 @@ struct ToastModifier: ViewModifier {
                     .onAppear {
                         scheduleAutoDismiss(duration: toast.duration)
                     }
-                    .padding(.top, 50)
+                    // On iPad the tab bar sits at the top, so the toast drops below it and stays narrow
+                    .frame(maxWidth: 560)
+                    .padding(.top, UIDevice.current.userInterfaceIdiom == .pad ? 110 : 50)
                     .zIndex(999)
                 }
             }

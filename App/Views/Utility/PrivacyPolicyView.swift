@@ -12,13 +12,13 @@ struct PrivacyPolicyView: View {
                     PrivacyPoint(
                         icon: "waveform",
                         title: "Transcription: 100% On-Device",
-                        description: "All audio recording and speech-to-text happens on your iPhone using Apple's Speech framework, set to on-device recognition only. Your audio is never uploaded."
+                        description: "All audio recording and speech-to-text happens on your \(DeviceName.current) using Apple's Speech framework, set to on-device recognition only. Your audio is never uploaded."
                     )
                     
                     PrivacyPoint(
                         icon: "sparkles",
                         title: "AI Summaries: User-Controlled",
-                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, summaries are made on your iPhone with Basic, the Smart model, or Apple Intelligence."
+                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, summaries are made on your \(DeviceName.current) with Basic, the Smart model, or Apple Intelligence."
                     )
                     
                     PrivacyPoint(
@@ -42,7 +42,7 @@ struct PrivacyPolicyView: View {
                     PrivacyPoint(
                         icon: "square.and.arrow.up",
                         title: "Your Data, Your Control",
-                        description: "Export or delete your data anytime. Audio files never leave your iPhone. Transcripts leave it only when you use Smartest, and only go to the provider you connect. If you back up your iPhone with iCloud or a computer, iOS includes the app's data in that backup. The full policy is at jsayram.github.io/life-wrapped/privacy."
+                        description: "Export or delete your data anytime. Audio files never leave your \(DeviceName.current). Transcripts leave it only when you use Smartest, and only go to the provider you connect. If you back up your \(DeviceName.current) with iCloud or a computer, iOS includes the app's data in that backup. The full policy is at jsayram.github.io/life-wrapped/privacy."
                     )
                 }
             }

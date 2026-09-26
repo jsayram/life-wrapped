@@ -125,7 +125,7 @@ struct PermissionsView: View {
                                 Text("Private by design")
                                     .font(.subheadline.bold())
                                 
-                                Text("Transcription happens on your iPhone. Nothing is sent to the cloud unless you choose Smartest.")
+                                Text("Transcription happens on your \(DeviceName.current). Nothing is sent to the cloud unless you choose Smartest.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -337,7 +337,7 @@ struct PermissionsView: View {
                         Text("100% Private")
                             .font(.subheadline.bold())
                         
-                        Text("With on-device AI, your transcripts and summaries stay on your iPhone.")
+                        Text("With on-device AI, your transcripts and summaries stay on your \(DeviceName.current).")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

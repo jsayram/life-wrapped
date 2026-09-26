@@ -117,7 +117,7 @@ struct SessionSummaryCard: View {
     
     // Clean up any stray timestamps from the summary text
     private var cleanedSummaryText: String {
-        var text = summary.text
+        var text = summary.text.withoutSummaryTitlePrefix
         
         // Remove multiple consecutive timestamps (the main problem)
         let multiTimestampPattern = #"([•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*)+"#

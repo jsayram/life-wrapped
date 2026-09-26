@@ -110,7 +110,7 @@ struct AISettingsView: View {
             } header: {
                 Text("Summary quality")
             } footer: {
-                Text("Basic, Smart and Smarter never leave your iPhone. Smartest sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
+                Text("Basic, Smart and Smarter never leave your \(DeviceName.current). Smartest sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
             }
             
             // MARK: - Smartest Configuration (only show if purchased)

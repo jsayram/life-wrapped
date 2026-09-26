@@ -933,7 +933,7 @@ struct SessionDetailView: View {
                 
                 // Copy button
                 Button {
-                    UIPasteboard.general.string = summary.text
+                    UIPasteboard.general.string = summary.text.withoutSummaryTitlePrefix
                     coordinator.showSuccess("Summary copied to clipboard")
                 } label: {
                     Image(systemName: "doc.on.doc")
@@ -977,7 +977,7 @@ struct SessionDetailView: View {
                 .accessibilityLabel(isRegeneratingSummary ? "Regenerating summary" : "Regenerate summary")
             }
             
-            Text(summary.text)
+            Text(summary.text.withoutSummaryTitlePrefix)
                 .font(.body)
                 .foregroundStyle(.primary)
             
@@ -1305,7 +1305,7 @@ struct SessionDetailView: View {
             }
             
             generationProgress = 1.0
-            generationPhase = "Complete!"
+            generationPhase = "Done"
             
             await loadSessionSummary()
             // Reset edit tracking after summary is regenerated
@@ -1316,7 +1316,8 @@ struct SessionDetailView: View {
             
             // Show success with engine used
             if let summary = sessionSummary {
-                let engineName = summary.engineTier ?? "AI"
+                // engineTier is stored raw ("apple"); show the tier name people see in Settings ("Smarter")
+                let engineName = summary.engineTier.flatMap { EngineTier(rawValue: $0)?.displayName } ?? "AI"
                 coordinator.showSuccess("Summary generated with \(engineName)")
             } else {
                 coordinator.showSuccess("Summary generated")

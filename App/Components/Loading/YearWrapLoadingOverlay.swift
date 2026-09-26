@@ -2,120 +2,73 @@
 //  YearWrapLoadingOverlay.swift
 //  LifeWrapped
 //
-//  Created by Life Wrapped on 1/2/2026.
-//
 
 import SwiftUI
 
-/// Full-screen loading overlay for Year Wrap generation with animated progress indicator
+/// Shown while a Year Wrap is being generated.
+/// Graphite style: dimmed backdrop, one flat card, system spinner, step dots in ink.
 struct YearWrapLoadingOverlay: View {
     let statusMessage: String
-    
-    @State private var animationRotation: Double = 0
-    @State private var pulseScale: CGFloat = 1.0
-    
+
     var body: some View {
         ZStack {
-            // Blurred background
-            Color.black.opacity(0.7)
+            Color.black.opacity(0.4)
                 .ignoresSafeArea()
-            
-            VStack(spacing: 30) {
-                // Animated year wrap icon
-                ZStack {
-                    // Outer pulsing ring
-                    Circle()
-                        .stroke(
-                            Color.white.opacity(0.3),
-                            lineWidth: 4
-                        )
-                        .frame(width: 120, height: 120)
-                        .scaleEffect(pulseScale)
-                        .animation(
-                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
-                            value: pulseScale
-                        )
-                    
-                    // Rotating gradient ring
-                    Circle()
-                        .trim(from: 0, to: 0.75)
-                        .stroke(
-                            Color.white,
-                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                        )
-                        .frame(width: 100, height: 100)
-                        .rotationEffect(.degrees(animationRotation))
-                        .animation(
-                            .linear(duration: 2).repeatForever(autoreverses: false),
-                            value: animationRotation
-                        )
-                    
-                    // Center icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                Color.white.opacity(0.3)
-                            )
-                            .frame(width: 70, height: 70)
-                        
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 32, weight: .medium))
-                            .foregroundStyle(
-                                Color.white
-                            )
-                            .symbolEffect(.pulse.byLayer)
-                    }
-                }
-                .frame(width: 120, height: 120)
-                
-                VStack(spacing: 12) {
-                    // Title
-                    Text("Generating Year Wrap")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                    
-                    // Status message
+
+            VStack(spacing: 18) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .symbolEffect(.pulse)
+
+                Text("Wrapping up your year")
+                    .font(AppTheme.titleFont(size: 24))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                if !statusMessage.isEmpty {
                     Text(statusMessage)
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(AppTheme.textSecondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
+                        .fixedSize(horizontal: false, vertical: true)
                         .animation(.easeInOut, value: statusMessage)
-                    
-                    // Progress indicator text
-                    HStack(spacing: 4) {
-                        ForEach(0..<3, id: \\.self) { index in
-                            Circle()
-                                .fill(Color.white.opacity(0.6))
-                                .frame(width: 6, height: 6)
-                                .scaleEffect(pulseScale)
-                                .animation(
-                                    .easeInOut(duration: 0.6)
-                                        .repeatForever(autoreverses: true)
-                                        .delay(Double(index) * 0.2),
-                                    value: pulseScale
-                                )
+                }
+
+                if let current = currentStep {
+                    HStack(spacing: 8) {
+                        ForEach(1...3, id: \.self) { step in
+                            Capsule()
+                                .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
+                                .frame(width: 24, height: 4)
                         }
                     }
-                    .padding(.top, 8)
+                    .accessibilityLabel("Step \(current) of 3")
                 }
+
+                ProgressView()
+                    .tint(AppTheme.textPrimary)
+                    .padding(.top, 4)
             }
-            .padding(40)
+            .padding(28)
+            .frame(maxWidth: 400)
             .background(
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: Color.white.opacity(0.3), radius: 30, x: 0, y: 10)
+                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                    .fill(AppTheme.card)
+                    .stroke(AppTheme.hairline, lineWidth: 1)
             )
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 32)
         }
-        .onAppear {
-            animationRotation = 360
-            pulseScale = 1.2
-        }
+    }
+
+    /// Reads the step from messages like "Step 2 of 3: Work Year Wrap"
+    private var currentStep: Int? {
+        guard let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
+              let number = statusMessage[range].split(separator: " ").last else { return nil }
+        return Int(number)
     }
 }
 
 #Preview {
-    YearWrapLoadingOverlay(statusMessage: "Analyzing with Local AI...\\nThis may take a minute")
+    YearWrapLoadingOverlay(statusMessage: "Step 2 of 3: Work Year Wrap")
 }

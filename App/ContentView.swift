@@ -51,6 +51,7 @@ struct ContentView: View {
             PermissionsView()
                 .environmentObject(coordinator)
                 .interactiveDismissDisabled()
+                .presentationSizing(.page) // full-page sheet on iPad; no change on iPhone
         }
         .toast($coordinator.currentToast)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchToSettingsTab"))) { _ in

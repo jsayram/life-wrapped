@@ -47,7 +47,7 @@ struct RecordingButton: View {
                     .font(.headline)
                     .foregroundStyle(AppTheme.textPrimary)
                 if case .idle = coordinator.recordingState {
-                    Text("Transcribed privately on this iPhone")
+                    Text("Transcribed privately on this \(DeviceName.current)")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.textSecondary)
                 }
