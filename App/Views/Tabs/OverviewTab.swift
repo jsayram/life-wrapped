@@ -20,11 +20,7 @@ fileprivate struct YearWrapLoadingOverlay: View {
                     // Outer pulsing ring
                     Circle()
                         .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
+                            Color.white.opacity(0.3),
                             lineWidth: 4
                         )
                         .frame(width: 120, height: 120)
@@ -38,17 +34,7 @@ fileprivate struct YearWrapLoadingOverlay: View {
                     Circle()
                         .trim(from: 0, to: 0.75)
                         .stroke(
-                            AngularGradient(
-                                gradient: Gradient(colors: [
-                                    AppTheme.purple,
-                                    .blue,
-                                    .cyan,
-                                    AppTheme.purple
-                                ]),
-                                center: .center,
-                                startAngle: .degrees(0),
-                                endAngle: .degrees(360)
-                            ),
+                            Color.white,
                             style: StrokeStyle(lineWidth: 6, lineCap: .round)
                         )
                         .frame(width: 100, height: 100)
@@ -62,22 +48,14 @@ fileprivate struct YearWrapLoadingOverlay: View {
                     ZStack {
                         Circle()
                             .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                                Color.white.opacity(0.3)
                             )
                             .frame(width: 70, height: 70)
                         
                         Image(systemName: "sparkles")
                             .font(.system(size: 32, weight: .medium))
                             .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AppTheme.purple, .cyan],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                                Color.white
                             )
                             .symbolEffect(.pulse.byLayer)
                     }
@@ -89,13 +67,13 @@ fileprivate struct YearWrapLoadingOverlay: View {
                     Text("Generating Year Wrap")
                         .font(.title2)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                     
                     // Status message with detailed steps
                     VStack(spacing: 8) {
                         Text(statusMessage)
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.9))
+                            .foregroundStyle(.white.opacity(0.9))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 40)
                             .animation(.easeInOut, value: statusMessage)
@@ -139,7 +117,7 @@ fileprivate struct YearWrapLoadingOverlay: View {
             .background(
                 RoundedRectangle(cornerRadius: 24)
                     .fill(.ultraThinMaterial)
-                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 30, x: 0, y: 10)
+                    .shadow(color: Color.white.opacity(0.3), radius: 30, x: 0, y: 10)
             )
             .padding(.horizontal, 40)
         }
@@ -156,9 +134,9 @@ fileprivate struct YearWrapLoadingOverlay: View {
            let currentStepString = statusMessage[range].split(separator: " ").last,
            let currentStep = Int(currentStepString) {
             if step < currentStep {
-                return AppTheme.emerald // Completed
+                return Color.white // Completed
             } else if step == currentStep {
-                return AppTheme.purple // In progress
+                return Color.white // In progress
             } else {
                 return Color.white.opacity(0.3) // Pending
             }
@@ -219,13 +197,10 @@ struct OverviewTab: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Time Range Picker - ALWAYS show so users can switch periods
-                Picker("Time Range", selection: $selectedTimeRange) {
-                    ForEach(TimeRange.allCases) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .tint(AppTheme.purple)
+                GraphiteSegmentedControl(
+                    options: TimeRange.allCases.map { .init(value: $0, title: $0.rawValue) },
+                    selection: $selectedTimeRange
+                )
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .disabled(isLoading)
@@ -236,8 +211,8 @@ struct OverviewTab: View {
                         LoadingView(size: .medium)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if periodSummary == nil && sessionsInPeriod.isEmpty {
-                        ContentUnavailableView(
-                            "No Overview Yet",
+                        GraphiteEmptyState(
+                            "No overview yet",
                             systemImage: "doc.text",
                             description: Text("Record more journal entries to generate summaries.")
                         )
@@ -256,31 +231,10 @@ struct OverviewTab: View {
                                             .font(.caption)
                                             .fontWeight(.medium)
                                     }
-                                    .foregroundStyle(AppTheme.purple)
+                                    .foregroundStyle(AppTheme.textPrimary)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(
-                                                RadialGradient(
-                                                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                                                    center: .center,
-                                                    startRadius: 0,
-                                                    endRadius: 40
-                                                )
-                                            )
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(
-                                                LinearGradient(
-                                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                ),
-                                                lineWidth: 1.5
-                                            )
-                                    )
+                                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -295,7 +249,7 @@ struct OverviewTab: View {
                                     if let periodSummary {
                                         PeriodSummaryCard(
                                             title: periodSummaryTitle(for: selectedTimeRange),
-                                            subtitle: "Local AI rollup (on-device)",
+                                            subtitle: "Generated on this iPhone",
                                             summary: periodSummary,
                                             isRegenerating: isRegeneratingPeriodSummary,
                                             onCopy: {
@@ -328,35 +282,9 @@ struct OverviewTab: View {
                                 // Year Wrapped Summary (only show for Year timerange)
                                 if selectedTimeRange == .allTime {
                                     // Filter picker for Year Wrap
-                                    HStack(spacing: 0) {
-                                        ForEach(ItemFilter.allCases) { filter in
-                                            Button {
-                                                withAnimation(.easeInOut(duration: 0.2)) {
-                                                    yearWrapFilter = filter
-                                                }
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: filter.icon)
-                                                        .font(.caption2)
-                                                    Text(filter.displayName)
-                                                        .font(.caption)
-                                                        .fontWeight(.medium)
-                                                }
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
-                                                .frame(maxWidth: .infinity)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 8)
-                                                        .fill(yearWrapFilter == filter ? filterColor(for: filter) : Color.clear)
-                                                )
-                                                .foregroundStyle(yearWrapFilter == filter ? .white : .secondary)
-                                            }
-                                        }
-                                    }
-                                    .padding(4)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color(.tertiarySystemBackground))
+                                    GraphiteSegmentedControl(
+                                        options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
+                                        selection: $yearWrapFilter
                                     )
                                     .padding(.horizontal, 16)
                                     .padding(.top, 8)
@@ -400,7 +328,7 @@ struct OverviewTab: View {
                                         .frame(maxWidth: .infinity)
                                         .background(
                                             RoundedRectangle(cornerRadius: 16)
-                                                .fill(Color(.secondarySystemBackground))
+                                                .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -419,12 +347,13 @@ struct OverviewTab: View {
                             }
                             
                             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                                let timeBuckets = groupSessionsByTimeBucket()
+                                // Only buckets with summaries; empty hours/days add noise
+                                let timeBuckets = groupSessionsByTimeBucket().filter { !$0.isEmpty }
                                 
                                 if timeBuckets.isEmpty {
                                     // No session summaries found
-                                    ContentUnavailableView(
-                                        "No Summaries Yet",
+                                    GraphiteEmptyState(
+                                        "No summaries yet",
                                         systemImage: "doc.text",
                                         description: Text("Session summaries will appear here once recordings are summarized.")
                                     )
@@ -456,28 +385,20 @@ struct OverviewTab: View {
                                             // Time bucket header
                                             HStack {
                                                 Text(bucket.header)
-                                                    .font(.headline)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
+                                                    .font(.footnote.weight(.semibold))
+                                                    .foregroundStyle(AppTheme.textPrimary)
                                                 
                                                 Spacer()
                                                 
                                                 if !bucket.isEmpty {
-                                                    Text("\(bucket.summaries.count)")
-                                                        .font(.caption)
-                                                        .fontWeight(.medium)
-                                                        .foregroundStyle(.secondary)
-                                                        .padding(.horizontal, 8)
-                                                        .padding(.vertical, 4)
-                                                        .background(
-                                                            Capsule()
-                                                                .fill(Color(.tertiarySystemFill))
-                                                        )
+                                                    Text("\(bucket.summaries.count) summar\(bucket.summaries.count == 1 ? "y" : "ies")")
+                                                        .font(.footnote)
+                                                        .foregroundStyle(AppTheme.textSecondary)
                                                 }
                                             }
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 12)
-                                            .background(Color(.systemGroupedBackground))
+                                            .background(AppTheme.background)
                                         }
                                     }
                                 }
@@ -486,7 +407,8 @@ struct OverviewTab: View {
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(AppTheme.background)
+            .themedScreen()
             .navigationTitle("Overview")
             .navigationDestination(isPresented: $showSessionDetail) {
                 if let session = selectedSession {
@@ -517,7 +439,7 @@ struct OverviewTab: View {
                     }
                 }
             } message: {
-                Text("⚠️ This will take 2-3 minutes and cannot be stopped once started.\n\n‼️ IMPORTANT: Keep the app open and screen unlocked during generation. Don't minimize or switch apps.\n\nAre you sure you want to continue?")
+                Text("This will take 2-3 minutes and cannot be stopped once started.\n\nImportant: Keep the app open and screen unlocked during generation. Don't minimize or switch apps.\n\nAre you sure you want to continue?")
             }
             .alert("Generate Year Wrap with External AI?", isPresented: $showExternalAIConfirmation) {
                 Button("Cancel", role: .cancel) {}
@@ -527,7 +449,7 @@ struct OverviewTab: View {
                     }
                 }
             } message: {
-                Text("⚠️ This will take 1-2 minutes and cannot be stopped once started.\n\nYour transcript will be sent to your configured AI provider for processing.\n\nAre you sure you want to continue?")
+                Text("This will take 1-2 minutes and cannot be stopped once started.\n\nYour transcript will be sent to your configured AI provider for processing.\n\nAre you sure you want to continue?")
             }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
@@ -615,9 +537,9 @@ struct OverviewTab: View {
         case .all:
             return AppTheme.purple
         case .workOnly:
-            return .blue
+            return AppTheme.accent
         case .personalOnly:
-            return .green
+            return AppTheme.accent
         }
     }
     
@@ -802,7 +724,7 @@ struct OverviewTab: View {
         print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
         
         // Update status to show AI processing
-        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\n\n⚠️ IMPORTANT: Keep this app open\nDon't minimize or lock screen\n\nThis takes 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
+        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\n\nImportant: Keep this app open\nDon't minimize or lock screen\n\nThis takes 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
         
         await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
         print("✅ [OverviewTab] Year Wrap generation completed successfully")
@@ -1147,7 +1069,9 @@ struct OverviewTab: View {
         
         // Create buckets for all years in range
         let startYear = calendar.component(.year, from: dateRange.start)
-        let endYear = calendar.component(.year, from: dateRange.end)
+        // The range end is exclusive (start of the next period), so step back a second
+        // to avoid showing an empty bucket for next year.
+        let endYear = max(startYear, calendar.component(.year, from: dateRange.end.addingTimeInterval(-1)))
         
         for year in startYear...endYear {
             let header = "\(year)"
@@ -1242,13 +1166,7 @@ struct YearWrapGenerationSheet: View {
             VStack(spacing: 8) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 40))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.magenta, AppTheme.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .foregroundStyle(AppTheme.textPrimary)
                 
                 Text("Generate Year Wrap")
                     .font(.title2)
@@ -1281,7 +1199,7 @@ struct YearWrapGenerationSheet: View {
                                 .fontWeight(.semibold)
                             Text("Privacy-first • No internet needed")
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.9))
+                                .foregroundStyle(AppTheme.onAccent.opacity(0.9))
                         }
                         
                         Spacer()
@@ -1296,17 +1214,13 @@ struct YearWrapGenerationSheet: View {
                                 .clipShape(Capsule())
                             Text("2-3 min")
                                 .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
                         }
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppTheme.onAccent)
                     .padding()
                     .background(
-                        LinearGradient(
-                            colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
+                        AppTheme.purple
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .shadow(color: AppTheme.purple.opacity(0.3), radius: 8, y: 4)
@@ -1336,12 +1250,11 @@ struct YearWrapGenerationSheet: View {
                             
                             Spacer()
                             
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                            Image(systemName: "checkmark.circle")
+                                .foregroundStyle(AppTheme.accent)
                         }
                         .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 } else if isSmartestAIUnlocked && !hasExternalAPIConfigured {
@@ -1371,8 +1284,7 @@ struct YearWrapGenerationSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -1386,7 +1298,7 @@ struct YearWrapGenerationSheet: View {
                                 HStack(spacing: 4) {
                                     Text("Smartest (External AI)")
                                         .font(.headline)
-                                    Image(systemName: "lock.fill")
+                                    Image(systemName: "lock")
                                         .font(.caption)
                                 }
                                 Text("OpenAI or Anthropic • Best quality")
@@ -1402,7 +1314,7 @@ struct YearWrapGenerationSheet: View {
                                 Text(price)
                                     .font(.caption)
                                     .fontWeight(.semibold)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(AppTheme.onAccent)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
                                     .background(AppTheme.purple)
@@ -1411,7 +1323,7 @@ struct YearWrapGenerationSheet: View {
                                 Text("Unlock")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(AppTheme.onAccent)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
                                     .background(AppTheme.purple)
@@ -1419,8 +1331,7 @@ struct YearWrapGenerationSheet: View {
                             }
                         }
                         .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .disabled(isPurchasing)

@@ -17,7 +17,7 @@ struct SetupView: View {
     
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea()
+            AppTheme.background.ignoresSafeArea()
             
             VStack(spacing: 32) {
                 Spacer()
@@ -26,7 +26,7 @@ struct SetupView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "cpu")
                         .font(.system(size: 80))
-                        .foregroundStyle(.purple.gradient)
+                        .foregroundStyle(AppTheme.accent)
                     
                     Text("Setting Up Life Wrapped")
                         .font(.title.bold())
@@ -40,7 +40,7 @@ struct SetupView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "lock.shield.fill")
-                            .foregroundColor(.green)
+                            .foregroundColor(AppTheme.accent)
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text("100% Private")
@@ -54,10 +54,10 @@ struct SetupView: View {
                     
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "bolt.fill")
-                            .foregroundColor(.purple)
+                            .foregroundColor(AppTheme.accent)
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Smart Summaries")
+                            Text("Smart summaries")
                                 .font(.subheadline.bold())
                             
                             Text("AI-powered insights from your audio recordings, processed locally.")
@@ -67,7 +67,7 @@ struct SetupView: View {
                     }
                 }
                 .padding()
-                .background(Color.purple.opacity(0.08))
+                .background(AppTheme.accent.opacity(0.08))
                 .cornerRadius(12)
                 .padding(.horizontal)
                 
@@ -79,7 +79,7 @@ struct SetupView: View {
                         VStack(spacing: 16) {
                             ProgressView(value: downloadProgress)
                                 .progressViewStyle(.linear)
-                                .tint(.purple)
+                                .tint(AppTheme.accent)
                                 .scaleEffect(x: 1, y: 2, anchor: .center)
                             
                             Text("Downloading... \(Int(downloadProgress * 100))%")
@@ -94,7 +94,7 @@ struct SetupView: View {
                         VStack(spacing: 12) {
                             Text(error)
                                 .font(.caption)
-                                .foregroundColor(.red)
+                                .foregroundColor(AppTheme.destructive)
                                 .multilineTextAlignment(.center)
                             
                             Button {
@@ -102,10 +102,10 @@ struct SetupView: View {
                             } label: {
                                 Text("Retry")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(AppTheme.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.purple)
+                                    .background(AppTheme.accent)
                                     .cornerRadius(12)
                             }
                         }
@@ -114,7 +114,7 @@ struct SetupView: View {
                         VStack(spacing: 16) {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 50))
-                                .foregroundColor(.green)
+                                .foregroundColor(AppTheme.accent)
                             
                             Text("Ready to go!")
                                 .font(.headline)
@@ -122,12 +122,12 @@ struct SetupView: View {
                             Button {
                                 finishSetup()
                             } label: {
-                                Text("Get Started")
+                                Text("Get started")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(AppTheme.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.blue)
+                                    .background(AppTheme.accent)
                                     .cornerRadius(12)
                             }
                         }
@@ -148,10 +148,10 @@ struct SetupView: View {
                             } label: {
                                 Text("Download (\(coordinator.expectedLocalModelSizeMB))")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(AppTheme.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.purple)
+                                    .background(AppTheme.accent)
                                     .cornerRadius(12)
                             }
                             

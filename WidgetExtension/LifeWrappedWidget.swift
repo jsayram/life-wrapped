@@ -122,40 +122,40 @@ struct RecordSmallView: View {
             // Work button
             Link(destination: WidgetDeepLink.recordWork) {
                 HStack {
-                    Image(systemName: "briefcase.fill")
+                    Image(systemName: "briefcase")
                     Text("Work")
                         .fontWeight(.medium)
                 }
                 .font(.subheadline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.blue.opacity(0.2))
-                .foregroundStyle(.blue)
+                .background(Color.primary.opacity(0.08))
+                .foregroundStyle(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             
             // Personal button
             Link(destination: WidgetDeepLink.recordPersonal) {
                 HStack {
-                    Image(systemName: "person.fill")
+                    Image(systemName: "house")
                     Text("Personal")
                         .fontWeight(.medium)
                 }
                 .font(.subheadline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.purple.opacity(0.2))
-                .foregroundStyle(.purple)
+                .background(Color.primary.opacity(0.08))
+                .foregroundStyle(.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             
             // Streak indicator
             if entry.isStreakAtRisk {
-                Text("🔥 Save your streak!")
+                Label("Save your streak", systemImage: "flame")
                     .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.primary)
             } else if entry.streakDays > 0 {
-                Text("🔥 \(entry.streakDays) day streak")
+                Label("\(entry.streakDays) day streak", systemImage: "flame")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -175,11 +175,11 @@ struct RecordMediumView: View {
                 VStack(spacing: 8) {
                     ZStack {
                         Circle()
-                            .fill(Color.blue.opacity(0.2))
+                            .fill(Color.primary.opacity(0.08))
                             .frame(width: 56, height: 56)
-                        Image(systemName: "briefcase.fill")
+                        Image(systemName: "briefcase")
                             .font(.title2)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.primary)
                     }
                     Text("Work")
                         .font(.caption)
@@ -192,18 +192,11 @@ struct RecordMediumView: View {
             Link(destination: WidgetDeepLink.record) {
                 ZStack {
                     Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [.red, .red.opacity(0.7)],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: 35
-                            )
-                        )
+                        .fill(Color.primary)
                         .frame(width: 70, height: 70)
-                    Image(systemName: "mic.fill")
+                    Image(systemName: "mic")
                         .font(.title)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color(.systemBackground))
                 }
             }
             
@@ -212,11 +205,11 @@ struct RecordMediumView: View {
                 VStack(spacing: 8) {
                     ZStack {
                         Circle()
-                            .fill(Color.purple.opacity(0.2))
+                            .fill(Color.primary.opacity(0.08))
                             .frame(width: 56, height: 56)
-                        Image(systemName: "person.fill")
+                        Image(systemName: "house")
                             .font(.title2)
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(.primary)
                     }
                     Text("Personal")
                         .font(.caption)
@@ -229,9 +222,9 @@ struct RecordMediumView: View {
         .overlay(alignment: .bottom) {
             HStack {
                 if entry.isStreakAtRisk {
-                    Label("Save your \(entry.streakDays) day streak!", systemImage: "flame.fill")
+                    Label("Save your \(entry.streakDays) day streak", systemImage: "flame")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.primary)
                 } else {
                     Label("\(entry.todaySessions) sessions today", systemImage: "waveform")
                         .font(.caption2)
@@ -305,11 +298,11 @@ struct SessionsSmallView: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "waveform")
-                .font(.system(size: 32))
-                .foregroundStyle(.purple)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.secondary)
             
             Text("\(entry.todaySessions)")
-                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .font(.system(size: 48, weight: .regular, design: .serif))
             
             Text(entry.todaySessions == 1 ? "session today" : "sessions today")
                 .font(.caption)
@@ -318,8 +311,8 @@ struct SessionsSmallView: View {
             // Streak indicator
             if entry.streakDays > 0 {
                 HStack(spacing: 4) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
+                    Image(systemName: "flame")
+                        .foregroundStyle(.secondary)
                     Text("\(entry.streakDays)")
                         .fontWeight(.semibold)
                 }
@@ -353,7 +346,7 @@ struct SessionsInlineView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
-        Text("📝 \(entry.todaySessions) sessions today")
+        Text("\(entry.todaySessions) sessions today")
             .widgetURL(WidgetDeepLink.history)
     }
 }

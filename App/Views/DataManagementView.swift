@@ -49,8 +49,7 @@ struct DataManagementView: View {
                                 // Year header with stats
                                 HStack {
                                     Text(String(yearData.year))
-                                        .font(.title2)
-                                        .fontWeight(.bold)
+                                        .font(.title3.weight(.semibold))
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text("\(yearData.sessionCount) sessions")
@@ -67,7 +66,7 @@ struct DataManagementView: View {
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.title3)
-                                            .foregroundColor(.red)
+                                            .foregroundColor(AppTheme.destructive)
                                             .padding(8)
                                     }
                                     .buttonStyle(.plain)
@@ -106,7 +105,7 @@ struct DataManagementView: View {
                             .padding(.vertical, 8)
                         }
                     } header: {
-                        Text("Export by Year")
+                        Text("Export by year")
                     } footer: {
                         Text("Export data for specific years. Choose your preferred format.")
                     }
@@ -114,11 +113,11 @@ struct DataManagementView: View {
                 
                 // Export All All Section
                 Section {
-                    Picker("Export Format", selection: $exportFormat) {
-                        ForEach(ExportFormat.allCases, id: \.self) { format in
-                            Text(format.rawValue).tag(format)
-                        }
-                    }
+                    GraphiteSegmentedControl(
+                        options: ExportFormat.allCases.map { .init(value: $0, title: $0.rawValue) },
+                        selection: $exportFormat
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onChange(of: exportFormat) { _, newValue in
                         UserDefaults.standard.lastExportFormat = newValue.rawValue
                     }
@@ -134,7 +133,8 @@ struct DataManagementView: View {
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.up")
-                            Text("Export All Data")
+                            Text("Export all data")
+                                .fontWeight(.semibold)
                             
                             if isExporting {
                                 Spacer()
@@ -144,7 +144,7 @@ struct DataManagementView: View {
                     }
                     .disabled(isExporting)
                 } header: {
-                    Text("Export All")
+                    Text("Export all")
                 } footer: {
                     Text("Export all your journal entries and summaries across all years.")
                 }
@@ -156,7 +156,7 @@ struct DataManagementView: View {
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.down")
-                            Text("Import JSON Data")
+                            Text("Import JSON backup")
                             
                             if isImporting {
                                 Spacer()
@@ -198,18 +198,19 @@ struct DataManagementView: View {
                         }
                     } label: {
                         HStack {
-                            Image(systemName: "trash.fill")
-                            Text("Delete All Data")
+                            Image(systemName: "trash")
+                            Text("Delete all data")
                         }
                     }
                 } header: {
-                    Text("Danger Zone")
+                    Text("Danger zone")
                 } footer: {
                     Text("This will permanently delete all recordings, transcriptions, and summaries.")
                 }
             }
-            .navigationTitle("Data Management")
-            .navigationBarTitleDisplayMode(.inline)
+            .themedScreen()
+            .navigationTitle("Export & backup")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -267,17 +268,18 @@ struct DataManagementView: View {
                                             .foregroundColor(.secondary)
                                         Text(error.message)
                                             .font(.body)
-                                            .foregroundColor(.red)
+                                            .foregroundColor(AppTheme.destructive)
                                     }
                                 }
                             }
                         }
                     }
+                    .themedScreen()
                     .navigationTitle("Import Details")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Copy All") {
+                            Button("Copy all") {
                                 let allErrors = importErrors.map { "\($0.id): \($0.message)" }.joined(separator: "\n")
                                 UIPasteboard.general.string = allErrors
                             }
@@ -448,11 +450,11 @@ struct DataManagementView: View {
                     }
                     
                     if result.isSuccessful {
-                        coordinator.showSuccess("✅ \(result.summary)")
+                        coordinator.showSuccess(result.summary)
                     } else if result.hasPartialSuccess {
-                        coordinator.showError("⚠️ Partial import: \(result.summary)")
+                        coordinator.showError("Partial import: \(result.summary)")
                     } else {
-                        coordinator.showError("❌ Import failed: \(result.errors.first?.error ?? "Unknown error")")
+                        coordinator.showError("Import failed: \(result.errors.first?.error ?? "Unknown error")")
                     }
                 }
             }

@@ -16,8 +16,8 @@ struct FilteredSessionsView: View {
             if isLoading {
                 ProgressView("Loading sessions...")
             } else if sessions.isEmpty {
-                ContentUnavailableView(
-                    "No Sessions",
+                GraphiteEmptyState(
+                    "No sessions",
                     systemImage: "waveform",
                     description: Text("No sessions found for this filter.")
                 )
@@ -56,7 +56,9 @@ struct FilteredSessionsView: View {
                 }
             }
         }
+        .themedScreen()
         .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadSessions()
         }

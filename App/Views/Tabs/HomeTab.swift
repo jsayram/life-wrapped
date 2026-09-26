@@ -7,108 +7,104 @@ struct HomeTab: View {
     @State private var shouldShowDownloadPrompt: Bool = false  // Controlled by engine tier + download status
     @State private var showDownloadCompleteBanner: Bool = false
     
+    @State private var category: SessionCategory = .personal
+    @State private var activeTier: EngineTier?
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    // App Title - Centered and smaller
-                    Text("Life Wrapped")
-                        .font(Font.largeTitle.bold())
-                        .fontWeight(.semibold)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.magenta],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
-                    
-                    // Streak Display - Minimal and transparent
-                    StreakDisplay(streak: coordinator.currentStreak)
-                    
+                VStack(spacing: 20) {
+                    // Header: serif title with the streak pill (or a recording indicator)
+                    HStack(alignment: .center) {
+                        Text("Life Wrapped")
+                            .font(AppTheme.titleFont(size: 34))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 12)
+                        if coordinator.recordingState.isRecording {
+                            RecordingIndicatorPill()
+                        } else {
+                            StreakDisplay(streak: coordinator.currentStreak)
+                        }
+                    }
+                    .padding(.top, 8)
+
                     // Download in progress banner
                     if coordinator.isDownloadingLocalModel {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .scaleEffect(0.8)
-                            Text("Downloading AI model...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            Text("Downloading AI model")
+                                .font(.footnote)
+                                .foregroundStyle(AppTheme.textSecondary)
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.purple.opacity(0.1))
-                        .cornerRadius(8)
+                        .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
                     }
-                    
+
                     // Download complete banner
                     if showDownloadCompleteBanner {
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Text("AI model ready!")
-                                .font(.caption)
-                                .foregroundStyle(.primary)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(8)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        Label("AI model ready", systemImage: "checkmark.circle")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
-                    
-                    // Category Selector
-                    if let recordingCoord = coordinator.recordingCoordinator {
-                        Picker("Category", selection: Binding(
-                            get: { recordingCoord.selectedCategory },
-                            set: { recordingCoord.selectedCategory = $0 }
-                        )) {
-                            ForEach(SessionCategory.allCases, id: \.self) { cat in
-                                Label {
-                                    Text(cat.displayName)
-                                        .font(.subheadline)
-                                } icon: {
-                                    Image(systemName: cat.systemImage)
-                                }
-                                .tag(cat)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+
+                    // Category selector
+                    if coordinator.recordingCoordinator != nil {
+                        GraphiteSegmentedControl(
+                            options: [
+                                .init(value: SessionCategory.work, title: "Work", systemImage: SessionCategory.work.outlineSymbol),
+                                .init(value: SessionCategory.personal, title: "Personal", systemImage: SessionCategory.personal.outlineSymbol)
+                            ],
+                            selection: $category
+                        )
                         .disabled(coordinator.recordingState != .idle)
-                        .opacity(coordinator.recordingState != .idle ? 0.6 : 1.0)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 8)
+                        .opacity(coordinator.recordingState != .idle ? 0.5 : 1.0)
                     }
-                    
-                    // Recording Button
+
+                    // Recording button fills the middle of the screen
                     RecordingButton()
-                    
+                        .frame(maxHeight: .infinity)
+
                     // Subtle Local AI reminder (only shows when on Basic tier and model not downloaded)
-                    if shouldShowDownloadPrompt && !coordinator.isDownloadingLocalModel {
+                    if shouldShowDownloadPrompt && !coordinator.isDownloadingLocalModel && !coordinator.recordingState.isRecording {
                         VStack(spacing: 6) {
-                            Text("Transcription works! Summaries use basic mode.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            
-                            Text("Download AI model (\(coordinator.expectedLocalModelSizeMB)) for smarter summaries.")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                            
-                            NavigationLink(destination: AISettingsView()) {
-                                Text("Configure in Settings →")
-                                    .font(.caption2)
-                                    .foregroundStyle(AppTheme.purple)
-                            }
+                            Text("Summaries use Basic mode. Download the AI model (\(coordinator.expectedLocalModelSizeMB)) for smarter summaries.")
+                                .font(.footnote)
+                                .foregroundStyle(AppTheme.textSecondary)
+                                .multilineTextAlignment(.center)
                         }
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 8)
                     }
-                    
-                    Spacer()
+
+                    // Current summary engine
+                    if let tier = activeTier, !coordinator.recordingState.isRecording {
+                        NavigationLink(destination: AISettingsView()) {
+                            SummaryEngineCard(tier: tier)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding()
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+                .containerRelativeFrame(.vertical, alignment: .top)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .onAppear {
+                if let recordingCoord = coordinator.recordingCoordinator {
+                    category = recordingCoord.selectedCategory
+                }
+                Task { await loadActiveTier() }
+            }
+            .onChange(of: category) { _, newValue in
+                coordinator.recordingCoordinator?.selectedCategory = newValue
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
+                Task { await loadActiveTier() }
             }
             .task {
                 // Check if should show Local AI download prompt
@@ -138,14 +134,83 @@ struct HomeTab: View {
             .refreshable {
                 await refreshStats()
             }
+            .themedScreen()
             .navigationBarHidden(true)
         }
     }
     
+    private func loadActiveTier() async {
+        guard let summCoord = coordinator.summarizationCoordinator else { return }
+        activeTier = await summCoord.getActiveEngine()
+    }
+
     private func refreshStats() async {
         print("🔄 [HomeTab] Manual refresh triggered")
         await coordinator.refreshTodayStats()
         await coordinator.refreshStreak()
         print("✅ [HomeTab] Stats refreshed")
+    }
+}
+
+// MARK: - Header Pills
+
+private struct RecordingIndicatorPill: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(AppTheme.recording)
+                .frame(width: 8, height: 8)
+            Text("Recording")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(AppTheme.textPrimary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
+    }
+}
+
+/// Bottom card on the Record screen showing which summary engine is active.
+private struct SummaryEngineCard: View {
+    let tier: EngineTier
+
+    private var detail: String {
+        switch tier {
+        case .basic: return "Key sentences · On-device"
+        case .local: return "Local model · On-device"
+        case .apple: return "Apple Intelligence · On-device"
+        case .external: return "\(ExternalModelSettings.provider().rawValue) · Cloud"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "sparkle")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Summaries: \(tier.displayName)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                Text(detail)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(AppTheme.card)
+                .stroke(AppTheme.hairline, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens AI and summary settings")
     }
 }

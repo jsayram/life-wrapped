@@ -1,85 +1,81 @@
 import SwiftUI
+import Transcription
 
 struct RecordingSettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var chunkDuration: Double = 180
+    @State private var languagesSummary: String = ""
     
     var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("Auto-Chunk Duration")
+                        Text("Split recordings every")
+                            .foregroundStyle(AppTheme.textPrimary)
                         Spacer()
                         Text("\(Int(chunkDuration))s")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                            .font(.system(.body, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
                     }
                     
                     Slider(value: $chunkDuration, in: 30...300, step: 30) {
-                        Text("Chunk Duration")
+                        Text("Part length")
+                    } minimumValueLabel: {
+                        EmptyView()
+                    } maximumValueLabel: {
+                        EmptyView()
                     }
-                    .tint(AppTheme.purple)
+                    .tint(AppTheme.accent)
+
+                    HStack {
+                        Text("30s")
+                        Spacer()
+                        Text("300s")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
                     .onChange(of: chunkDuration) { oldValue, newValue in
                         coordinator.audioCapture.autoChunkDuration = newValue
                         UserDefaults.standard.autoChunkDuration = newValue
-                        coordinator.showSuccess("Chunk duration updated to \(Int(newValue))s")
+                        coordinator.showSuccess("Parts set to \(Int(newValue))s")
                     }
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Chunk Settings")
+                Text("Parts")
             } footer: {
-                Text("Recordings are automatically split into chunks of this duration for efficient processing and transcription.")
+                Text("Shorter parts transcribe faster. Longer parts keep more context.")
             }
             
             Section {
-                HStack {
-                    Label("Format", systemImage: "waveform")
-                    Spacer()
-                    Text("AAC")
-                        .foregroundStyle(.secondary)
-                }
+                SettingsRowLabel(icon: "waveform", title: "Format", value: "AAC")
                 
-                HStack {
-                    Label("Sample Rate", systemImage: "dial.medium")
-                    Spacer()
-                    Text("44.1 kHz")
-                        .foregroundStyle(.secondary)
-                }
+                SettingsRowLabel(icon: "gauge.with.dots.needle.33percent", title: "Sample rate", value: "44.1 kHz")
                 
-                HStack {
-                    Label("Channels", systemImage: "speaker.wave.2")
-                    Spacer()
-                    Text("Mono")
-                        .foregroundStyle(.secondary)
-                }
+                SettingsRowLabel(icon: "speaker.wave.1", title: "Channels", value: "Mono")
             } header: {
-                Text("Audio Quality")
+                Text("Audio quality")
             } footer: {
-                Text("Optimized settings for voice recording with smaller file sizes.")
+                Text("Tuned for voice with small file sizes.")
             }
             
             Section {
                 NavigationLink(destination: LanguageSettingsView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Languages")
-                            Text("Manage which languages can be detected")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "globe")
-                            .foregroundStyle(AppTheme.emerald)
-                    }
+                    SettingsRowLabel(icon: "globe", title: "Languages", value: languagesSummary)
                 }
             } header: {
                 Text("Detection")
             }
         }
-        .navigationTitle("Recording Chunks")
-        .navigationBarTitleDisplayMode(.inline)
+        .themedScreen()
+        .navigationTitle("Recording")
+        .navigationBarTitleDisplayMode(.large)
+        .onAppear {
+            let codes = (UserDefaults.standard.array(forKey: "enabledLanguages") as? [String]) ?? ["en", "es"]
+            let names = codes.map { LanguageDetector.displayName(for: $0) }.sorted()
+            languagesSummary = names.count > 2 ? "\(names.count) languages" : names.joined(separator: ", ")
+        }
         .task {
             // Load saved setting or use current value
             let savedDuration = UserDefaults.standard.autoChunkDuration

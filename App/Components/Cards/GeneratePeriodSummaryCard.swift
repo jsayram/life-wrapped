@@ -11,71 +11,43 @@ struct GeneratePeriodSummaryCard: View {
     
     var body: some View {
         Button(action: onGenerate) {
-            VStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 48))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.magenta, AppTheme.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                
-                VStack(spacing: 8) {
-                    Text(title)
-                        .font(.title3)
-                        .fontWeight(.bold)
-                    
-                    Text("Generate an on-device summary for this period")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                
-                if isGenerating {
-                    ProgressView()
-                        .tint(AppTheme.purple)
-                        .scaleEffect(1.1)
-                        .padding(.top, 6)
-                } else {
-                    HStack {
-                        Image(systemName: "wand.and.stars")
-                        Text("Generate with Local AI")
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title)
+                    .font(AppTheme.titleFont(size: 24))
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Text("Generate an on-device summary of the recordings in this period.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Group {
+                    if isGenerating {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .tint(AppTheme.onAccent)
+                            Text("Generating")
+                                .fontWeight(.semibold)
+                        }
+                    } else {
+                        Label("Generate summary", systemImage: "sparkles")
                             .fontWeight(.semibold)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(
-                        LinearGradient(
-                            colors: [AppTheme.purple, AppTheme.magenta],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .cornerRadius(10)
                 }
+                .font(.body)
+                .foregroundStyle(AppTheme.onAccent)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(
+                    RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
+                        .fill(AppTheme.accent)
+                )
+                .padding(.top, 4)
             }
-            .frame(maxWidth: .infinity)
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(AppTheme.cardGradient(for: colorScheme))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            colors: [AppTheme.magenta.opacity(0.35), AppTheme.purple.opacity(0.25)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.5
-                    )
-            )
+            .graphiteCard()
         }
         .buttonStyle(.plain)
+        .disabled(isGenerating)
     }
 }
 

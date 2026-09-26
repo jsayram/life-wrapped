@@ -19,7 +19,7 @@ struct ContentView: View {
                 TabView(selection: $selectedTab) {
                     HomeTab()
                         .tabItem {
-                            Label("Home", systemImage: "house.fill")
+                            Label("Record", systemImage: "mic")
                         }
                         .tag(0)
 
@@ -31,17 +31,17 @@ struct ContentView: View {
 
             OverviewTab()
                 .tabItem {
-                    Label("Overview", systemImage: "doc.text.fill")
+                    Label("Overview", systemImage: "doc.text")
                 }
                 .tag(2)
 
             SettingsTab()
                 .tabItem {
-                    Label("Settings", systemImage: "gear")
+                    Label("Settings", systemImage: "slider.horizontal.3")
                 }
                 .tag(3)
                 }
-                .tint(AppTheme.purple)
+                .tint(AppTheme.accent)
                 .disabled(coordinator.isGeneratingYearWrap)
             } else {
                 Color.clear
@@ -86,13 +86,13 @@ struct ContentView: View {
                         }
                         
                         VStack(spacing: 4) {
-                            Text("⚠️ Keep app open and screen unlocked")
+                            Label("Keep app open and screen unlocked", systemImage: "exclamationmark.triangle")
                                 .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.yellow)
+                                .foregroundColor(AppTheme.textSecondary)
                             Text("Navigation locked • Don't minimize • 2-3 minutes")
                                 .font(.caption2)
-                                .foregroundColor(.white.opacity(0.8))
+                                .foregroundStyle(AppTheme.onAccent.opacity(0.8))
                         }
                     }
                     .padding(.horizontal, 16)
@@ -102,7 +102,7 @@ struct ContentView: View {
                             .fill(.black.opacity(0.8))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.yellow.opacity(0.5), lineWidth: 1)
+                                    .stroke(AppTheme.textSecondary.opacity(0.5), lineWidth: 1)
                             )
                     )
                     .padding(.top, 8)

@@ -8,46 +8,22 @@ import SwiftUI
 
 struct StreakDisplay: View {
     let streak: Int
-    
+
     var body: some View {
-        HStack(spacing: 8) {
-            Text("🔥")
-                .font(.system(size: 20))
-            
-            Text("\(streak) Day Streak")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [AppTheme.purple.opacity(0.9), AppTheme.magenta.opacity(0.9)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-            
-            if streak > 0 {
-                Text("•")
-                    .foregroundStyle(.tertiary)
-                Text(streakMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        HStack(spacing: 6) {
+            Image(systemName: "flame")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(AppTheme.textSecondary)
+            Text("\(Text("\(streak)").fontWeight(.semibold).foregroundColor(AppTheme.textPrimary)) day streak")
+                .foregroundStyle(AppTheme.textSecondary)
+                .font(.footnote)
+                .monospacedDigit()
         }
+        .padding(.horizontal, 12)
         .padding(.vertical, 6)
-    }
-    
-    private var streakMessage: String {
-        if streak == 0 {
-            return ""
-        } else if streak == 1 {
-            return "Great start!"
-        } else if streak < 7 {
-            return "Building momentum!"
-        } else if streak < 30 {
-            return "Amazing!"
-        } else {
-            return "Incredible!"
-        }
+        .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(streak) day streak")
     }
 }
 

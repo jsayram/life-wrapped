@@ -17,11 +17,7 @@ struct GenerationOverlay: View {
                 ZStack {
                     Circle()
                         .fill(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.3), AppTheme.magenta.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                            AppTheme.purple.opacity(0.3)
                         )
                         .frame(width: 100, height: 100)
                         .scaleEffect(1.0 + progress * 0.2)
@@ -30,11 +26,7 @@ struct GenerationOverlay: View {
                     Image(systemName: "cpu")
                         .font(.system(size: 50))
                         .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.purple, AppTheme.magenta],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                            AppTheme.purple
                         )
                 }
                 
@@ -52,11 +44,7 @@ struct GenerationOverlay: View {
                         
                         RoundedRectangle(cornerRadius: 10)
                             .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.purple, AppTheme.magenta],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
+                                AppTheme.purple
                             )
                             .frame(width: 280 * progress, height: 8)
                             .animation(.linear(duration: 0.3), value: progress)
@@ -106,7 +94,7 @@ struct GenerationOverlay: View {
                         
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(AppTheme.accent)
                             Text("Once complete, future views of this session are instant!")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -126,21 +114,7 @@ struct GenerationOverlay: View {
                 }
             }
             .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(.systemBackground).opacity(0.95))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(
-                        LinearGradient(
-                            colors: [AppTheme.purple.opacity(0.5), AppTheme.magenta.opacity(0.5)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 2
-                    )
-            )
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
             .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
             .padding(.horizontal, 40)
         }

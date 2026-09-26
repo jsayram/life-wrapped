@@ -34,22 +34,17 @@ struct LoadingView: View {
     @State private var pulse3Scale: CGFloat = 0.8
     
     // Theme colors (embedded since AppTheme isn't accessible in separate file)
-    private let purple = Color(hex: "#8B5CF6")
-    private let darkPurple = Color(hex: "#6D28D9")
-    private let magenta = Color(hex: "#EC4899")
-    private let skyBlue = Color(hex: "#60A5FA")
+    private let purple = AppTheme.accent
+    private let darkPurple = AppTheme.accent
+    private let magenta = AppTheme.textSecondary
+    private let skyBlue = AppTheme.textSecondary
     
     var body: some View {
         ZStack {
             // Pulsing concentric circles (center)
             Circle()
                 .strokeBorder(
-                    RadialGradient(
-                        colors: [purple, magenta.opacity(0.3)],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: size.diameter * 0.15
-                    ),
+                    purple,
                     lineWidth: 2
                 )
                 .frame(width: size.diameter * 0.3, height: size.diameter * 0.3)
@@ -58,12 +53,7 @@ struct LoadingView: View {
             
             Circle()
                 .strokeBorder(
-                    RadialGradient(
-                        colors: [skyBlue, purple.opacity(0.3)],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: size.diameter * 0.25
-                    ),
+                    skyBlue,
                     lineWidth: 2
                 )
                 .frame(width: size.diameter * 0.5, height: size.diameter * 0.5)
@@ -72,12 +62,7 @@ struct LoadingView: View {
             
             Circle()
                 .strokeBorder(
-                    RadialGradient(
-                        colors: [darkPurple, skyBlue.opacity(0.3)],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: size.diameter * 0.38
-                    ),
+                    darkPurple,
                     lineWidth: 2
                 )
                 .frame(width: size.diameter * 0.75, height: size.diameter * 0.75)
@@ -89,15 +74,7 @@ struct LoadingView: View {
                 ForEach(0..<12) { index in
                     Circle()
                         .fill(
-                            RadialGradient(
-                                colors: [
-                                    colorForDot(index),
-                                    colorForDot(index).opacity(0.5)
-                                ],
-                                center: .center,
-                                startRadius: 0,
-                                endRadius: size.dotSize
-                            )
+                            colorForDot(index)
                         )
                         .frame(width: size.dotSize, height: size.dotSize)
                         .offset(y: -size.diameter / 2 + size.dotSize)
@@ -184,7 +161,7 @@ struct LoadingView: View {
             .foregroundStyle(.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemBackground))
+    .background(AppTheme.background)
 }
 
 #Preview("Medium") {
@@ -195,7 +172,7 @@ struct LoadingView: View {
             .foregroundStyle(.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemBackground))
+    .background(AppTheme.background)
 }
 
 #Preview("Large") {
@@ -206,7 +183,7 @@ struct LoadingView: View {
             .foregroundStyle(.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemBackground))
+    .background(AppTheme.background)
 }
 
 #Preview("Dark Mode") {
@@ -217,6 +194,6 @@ struct LoadingView: View {
             .foregroundStyle(.secondary)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemBackground))
+    .background(AppTheme.background)
     .preferredColorScheme(.dark)
 }

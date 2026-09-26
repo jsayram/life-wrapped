@@ -42,159 +42,98 @@ struct YearWrappedCard: View {
         case .all:
             return AppTheme.purple
         case .workOnly:
-            return .blue
+            return AppTheme.accent
         case .personalOnly:
-            return .green
+            return AppTheme.accent
         }
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text("✨")
-                            .font(.title2)
-                        Text("Year Wrapped")
-                            .font(.title3)
-                            .fontWeight(.bold)
-                        
-                        // Filter badge
-                        Label(filterLabel, systemImage: filterIcon)
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(filterColor)
-                            )
-                    }
-                    Text("AI-powered yearly summary")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    // Staleness badge
-                    if coordinator.yearWrapNewSessionCount > 0 {
-                        Label(
-                            "Outdated (\(coordinator.yearWrapNewSessionCount) new \(coordinator.yearWrapNewSessionCount == 1 ? "session" : "sessions"))",
-                            systemImage: "exclamationmark.triangle.fill"
-                        )
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(.orange.opacity(0.15))
-                        )
-                        .padding(.top, 2)
-                    }
+            HStack(alignment: .center, spacing: 8) {
+                Text(filter == .all ? "YEAR WRAPPED" : "YEAR WRAPPED · \(filterLabel.uppercased())")
+                    .font(.caption)
+                    .tracking(0.8)
+                    .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+
+                Spacer(minLength: 0)
+
+                Button {
+                    let summaryText = extractYearSummary(from: summary.text)
+                    UIPasteboard.general.string = summaryText
+                    coordinator.showSuccess("Year Wrapped summary copied")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 15))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
-                
-                Spacer()
-                
-                HStack(spacing: 12) {
-                    // Copy button
-                    Button {
-                        let summaryText = extractYearSummary(from: summary.text)
-                        UIPasteboard.general.string = summaryText
-                        coordinator.showSuccess("Year Wrapped summary copied")
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.body)
-                            .foregroundStyle(AppTheme.skyBlue)
-                    }
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.skyBlue.opacity(0.1))
-                    )
-                    
-                    // Regenerate button
-                    Button {
-                        onRegenerate()
-                    } label: {
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy Year Wrapped summary")
+
+                Button {
+                    onRegenerate()
+                } label: {
+                    Group {
                         if isRegenerating {
                             ProgressView()
-                                .tint(AppTheme.purple)
-                                .scaleEffect(0.8)
+                                .tint(AppTheme.onAccent)
                         } else {
                             Image(systemName: "arrow.clockwise")
-                                .font(.body)
-                                .foregroundStyle(AppTheme.magenta)
+                                .font(.system(size: 15))
                         }
                     }
-                    .disabled(isRegenerating)
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.magenta.opacity(0.1))
-                    )
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .disabled(isRegenerating)
+                .accessibilityLabel("Regenerate Year Wrap")
             }
-            
-            Divider()
-            
-            // Summary preview with View Full button
-            VStack(spacing: 12) {
-                Text(extractYearSummary(from: summary.text))
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-                Button {
-                    showDetailView = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("View Full Wrap")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.subheadline)
-                        Spacer()
-                    }
-                    .foregroundStyle(YearWrapTheme.electricPurple)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(YearWrapTheme.electricPurple.opacity(0.15))
-                    )
-                }
-            }
-            .padding(12)
-            .background(Color(.tertiarySystemBackground))
-            .cornerRadius(8)
-        }
-        .padding(16)
-        .background(
-            LinearGradient(
-                colors: [
-                    AppTheme.darkPurple.opacity(0.15),
-                    AppTheme.magenta.opacity(0.1),
-                    AppTheme.purple.opacity(0.05)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(
-                    LinearGradient(
-                        colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2
+            .foregroundStyle(AppTheme.onAccent)
+
+            Text(String(Calendar.current.component(.year, from: summary.periodStart)))
+                .font(AppTheme.titleFont(size: 44))
+                .foregroundStyle(AppTheme.onAccent)
+
+            Text(extractYearSummary(from: summary.text))
+                .font(.body)
+                .foregroundStyle(AppTheme.onAccent.opacity(0.85))
+                .lineLimit(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Staleness note
+            if coordinator.yearWrapNewSessionCount > 0 {
+                Label(
+                    "\(coordinator.yearWrapNewSessionCount) new \(coordinator.yearWrapNewSessionCount == 1 ? "session" : "sessions") since this wrap",
+                    systemImage: "exclamationmark.circle"
                 )
+                .font(.footnote)
+                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+            }
+
+            Button {
+                showDetailView = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text("View full wrap")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(AppTheme.onAccent)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                .fill(AppTheme.accent)
         )
-        .cornerRadius(16)
-        .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
         .sheet(isPresented: $showDetailView) {
             YearWrapDetailView(yearWrap: summary, coordinator: coordinator, initialFilter: filter)
         }

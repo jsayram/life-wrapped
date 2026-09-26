@@ -40,80 +40,53 @@ struct SessionSummaryCard: View {
     }
     
     private var cardBody: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Summary text (scrollable with max height)
-            ScrollView {
-                Text(cleanedSummaryText)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 450)
-                
-                // Footer with time and copy button
-                HStack(spacing: 12) {
-                    // Time display (relative + absolute)
-                    // Only show relative time for individual sessions, not rollups
-                    VStack(alignment: .leading, spacing: 2) {
-                        if summary.sessionId != nil {
-                            Text(relativeTimeString)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        
-                        Text(absoluteTimeString)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    
-                    Spacer()
-                    
-                    // Copy button
-                    Button {
-                        UIPasteboard.general.string = summary.text
-                        coordinator.showSuccess("Summary copied")
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.body)
-                            .foregroundStyle(AppTheme.skyBlue)
-                            .padding(8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(AppTheme.skyBlue.opacity(0.1))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        ),
-                                        lineWidth: 1.5
-                                    )
-                            )
-                    }
-                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 8) {
+            // Header: day and time, with copy
+            HStack(spacing: 8) {
+                Text(headerString)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+                Spacer(minLength: 0)
+                Button {
+                    UIPasteboard.general.string = summary.text
+                    coordinator.showSuccess("Summary copied")
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy summary")
             }
-            .padding(12)
-            .background(Color(.secondarySystemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(AppTheme.cardGradient(for: colorScheme))
-                    .allowsHitTesting(false)
-            )
-            .cornerRadius(12)
-            .overlay {
-                if isLoadingSession {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.black.opacity(0.3))
-                    ProgressView()
-                        .tint(.white)
-                }
+
+            Text(cleanedSummaryText)
+                .font(.body)
+                .foregroundStyle(AppTheme.textPrimary)
+                .multilineTextAlignment(.leading)
+                .lineLimit(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .graphiteCard(padding: 16, radius: 16)
+        .overlay {
+            if isLoadingSession {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black.opacity(0.3))
+                ProgressView()
+                    .tint(.white)
             }
         }
+    }
+
+    /// "Thu, Sep 25 · 9:12 AM" (relative day for recent sessions)
+    private var headerString: String {
+        let calendar = Calendar.current
+        let time = summary.periodStart.formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(summary.periodStart) { return "Today · \(time)" }
+        if calendar.isDateInYesterday(summary.periodStart) { return "Yesterday · \(time)" }
+        return summary.periodStart.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) + " · " + time
+    }
 
     private var relativeTimeString: String {
         let formatter = RelativeDateTimeFormatter()

@@ -27,19 +27,19 @@ struct EngineRow: View {
                         Text("Active")
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppTheme.onAccent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(.green.gradient)
+                            .background(AppTheme.accent)
                             .clipShape(Capsule())
                     } else if isAvailable && !isActive {
                         Text("Available")
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(AppTheme.accent)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(.green.opacity(0.1))
+                            .background(AppTheme.accent.opacity(0.1))
                             .clipShape(Capsule())
                     } else if !isAvailable {
                         Text("Unavailable")
@@ -63,7 +63,7 @@ struct EngineRow: View {
                     AttributeBadge(
                         icon: tier.isPrivacyPreserving ? "lock.fill" : "lock.open.fill",
                         text: tier.isPrivacyPreserving ? "Private" : "Cloud",
-                        color: tier.isPrivacyPreserving ? .green : .orange,
+                        color: tier.isPrivacyPreserving ? AppTheme.accent : AppTheme.textSecondary,
                         isAvailable: isAvailable
                     )
                     
@@ -71,7 +71,7 @@ struct EngineRow: View {
                         AttributeBadge(
                             icon: "wifi",
                             text: "Internet",
-                            color: .blue,
+                            color: AppTheme.accent,
                             isAvailable: isAvailable
                         )
                     }
@@ -92,11 +92,11 @@ struct EngineRow: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isActive ? Color.green.opacity(0.12) : Color.clear)
+                .fill(isActive ? AppTheme.accent.opacity(0.12) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(isActive ? Color.green.opacity(0.3) : Color.clear, lineWidth: 2)
+                .strokeBorder(isActive ? AppTheme.accent.opacity(0.3) : Color.clear, lineWidth: 2)
         )
         .contentShape(Rectangle())
         .opacity(isAvailable ? 1.0 : 0.5)
@@ -114,9 +114,9 @@ struct EngineRow: View {
     private var iconColor: Color {
         switch tier {
         case .basic: return .gray
-        case .local: return .purple
-        case .apple: return .blue
-        case .external: return .orange
+        case .local: return AppTheme.accent
+        case .apple: return AppTheme.accent
+        case .external: return AppTheme.textSecondary
         }
     }
 }

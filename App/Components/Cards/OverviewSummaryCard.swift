@@ -41,8 +41,8 @@ struct OverviewSummaryCard: View {
     private var headerSection: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("📝 \(periodTitle)")
-                    .font(.headline)
+                Text(periodTitle)
+                    .font(AppTheme.titleFont(size: 20))
                 Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -57,9 +57,9 @@ struct OverviewSummaryCard: View {
             } label: {
                 Image(systemName: "doc.on.doc")
                     .font(.title3)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppTheme.accent)
                     .frame(width: 44, height: 44)
-                    .background(Color.blue.opacity(0.1))
+                    .background(AppTheme.accent.opacity(0.1))
                     .cornerRadius(8)
             }
             .buttonStyle(.plain)
@@ -79,9 +79,9 @@ struct OverviewSummaryCard: View {
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.title3)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(AppTheme.textSecondary)
                             .frame(width: 44, height: 44)
-                            .background(Color.orange.opacity(0.1))
+                            .background(AppTheme.textSecondary.opacity(0.1))
                             .cornerRadius(8)
                     }
                 }
@@ -99,9 +99,9 @@ struct OverviewSummaryCard: View {
                     } else {
                         Image(systemName: "sparkles")
                             .font(.title3)
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(AppTheme.accent)
                             .frame(width: 44, height: 44)
-                            .background(Color.purple.opacity(0.1))
+                            .background(AppTheme.accent.opacity(0.1))
                             .cornerRadius(8)
                     }
                 }
@@ -126,7 +126,7 @@ struct OverviewSummaryCard: View {
             }
             .frame(minHeight: 120, maxHeight: 200)
             .padding(16)
-            .background(Color(.tertiarySystemBackground))
+            .background(AppTheme.fill)
             .cornerRadius(12)
         }
     }
@@ -147,9 +147,9 @@ struct OverviewSummaryCard: View {
     
     private func engineIcon(for tier: String) -> String {
         switch tier.lowercased() {
-        case "apple": return "apple.intelligence"
-        case "basic": return "bolt.fill"
-        case "external": return "sparkles"
+        case "apple": return "sparkle"
+        case "basic": return "bolt"
+        case "external": return "cloud"
         case "rollup": return "arrow.triangle.merge"
         case "year wrap": return "sparkles"
         default: return "cpu"

@@ -26,11 +26,7 @@ struct YearWrapLoadingOverlay: View {
                     // Outer pulsing ring
                     Circle()
                         .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
+                            Color.white.opacity(0.3),
                             lineWidth: 4
                         )
                         .frame(width: 120, height: 120)
@@ -44,17 +40,7 @@ struct YearWrapLoadingOverlay: View {
                     Circle()
                         .trim(from: 0, to: 0.75)
                         .stroke(
-                            AngularGradient(
-                                gradient: Gradient(colors: [
-                                    AppTheme.purple,
-                                    .blue,
-                                    .cyan,
-                                    AppTheme.purple
-                                ]),
-                                center: .center,
-                                startAngle: .degrees(0),
-                                endAngle: .degrees(360)
-                            ),
+                            Color.white,
                             style: StrokeStyle(lineWidth: 6, lineCap: .round)
                         )
                         .frame(width: 100, height: 100)
@@ -68,22 +54,14 @@ struct YearWrapLoadingOverlay: View {
                     ZStack {
                         Circle()
                             .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                                Color.white.opacity(0.3)
                             )
                             .frame(width: 70, height: 70)
                         
                         Image(systemName: "sparkles")
                             .font(.system(size: 32, weight: .medium))
                             .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AppTheme.purple, .cyan],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
+                                Color.white
                             )
                             .symbolEffect(.pulse.byLayer)
                     }
@@ -95,12 +73,12 @@ struct YearWrapLoadingOverlay: View {
                     Text("Generating Year Wrap")
                         .font(.title2)
                         .fontWeight(.semibold)
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                     
                     // Status message
                     Text(statusMessage)
                         .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                         .animation(.easeInOut, value: statusMessage)
@@ -127,7 +105,7 @@ struct YearWrapLoadingOverlay: View {
             .background(
                 RoundedRectangle(cornerRadius: 24)
                     .fill(.ultraThinMaterial)
-                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 30, x: 0, y: 10)
+                    .shadow(color: Color.white.opacity(0.3), radius: 30, x: 0, y: 10)
             )
             .padding(.horizontal, 40)
         }

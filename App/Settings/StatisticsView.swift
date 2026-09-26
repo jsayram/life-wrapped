@@ -42,27 +42,18 @@ struct StatisticsView: View {
                     if let longest = longestSession {
                         NavigationLink {
                             FilteredSessionsView(
-                                title: "Longest Session",
+                                title: "Longest session",
                                 sessionIds: [longest.sessionId]
                             )
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "timer")
-                                    .font(.title2)
-                                    .foregroundStyle(AppTheme.purple)
-                                    .frame(width: 40, height: 40)
-                                    .background(
-                                        RadialGradient(
-                                            colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                                            center: .center,
-                                            startRadius: 0,
-                                            endRadius: 20
-                                        )
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .font(.system(size: 20, weight: .regular))
+                                    .foregroundStyle(AppTheme.textPrimary)
+                                    .frame(width: 28)
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Longest Session")
+                                    Text("Longest session")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     HStack {
@@ -89,21 +80,12 @@ struct StatisticsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "calendar.badge.plus")
-                                    .font(.title2)
-                                    .foregroundStyle(AppTheme.magenta)
-                                    .frame(width: 40, height: 40)
-                                    .background(
-                                        RadialGradient(
-                                            colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
-                                            center: .center,
-                                            startRadius: 0,
-                                            endRadius: 20
-                                        )
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .font(.system(size: 20, weight: .regular))
+                                    .foregroundStyle(AppTheme.textPrimary)
+                                    .frame(width: 28)
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Most Active Month")
+                                    Text("Most active month")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     HStack {
@@ -121,7 +103,7 @@ struct StatisticsView: View {
                         }
                     }
                 } header: {
-                    Text("Key Statistics")
+                    Text("Key statistics")
                 }
             }
             
@@ -141,7 +123,7 @@ struct StatisticsView: View {
                                         Text(formatHourShort(data.hour))
                                             .font(.caption)
                                             .fontWeight(.semibold)
-                                            .foregroundStyle(AppTheme.skyBlue)
+                                            .foregroundStyle(AppTheme.textSecondary)
                                         Text("\(data.count)")
                                             .font(.title3)
                                             .fontWeight(.bold)
@@ -152,12 +134,7 @@ struct StatisticsView: View {
                                     .frame(width: 70)
                                     .padding(.vertical, 8)
                                     .background(
-                                        RadialGradient(
-                                            colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
-                                            center: .center,
-                                            startRadius: 0,
-                                            endRadius: 35
-                                        )
+                                        AppTheme.fill
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                 }
@@ -167,7 +144,7 @@ struct StatisticsView: View {
                         .padding(.horizontal, 4)
                     }
                 } header: {
-                    Text("Sessions by Time of Day")
+                    Text("Sessions by time of day")
                 }
             }
             
@@ -187,7 +164,7 @@ struct StatisticsView: View {
                                         Text(formatDayOfWeek(data.dayOfWeek))
                                             .font(.caption)
                                             .fontWeight(.semibold)
-                                            .foregroundStyle(AppTheme.emerald)
+                                            .foregroundStyle(AppTheme.textSecondary)
                                         Text("\(data.count)")
                                             .font(.title3)
                                             .fontWeight(.bold)
@@ -198,12 +175,7 @@ struct StatisticsView: View {
                                     .frame(width: 70)
                                     .padding(.vertical, 8)
                                     .background(
-                                        RadialGradient(
-                                            colors: [AppTheme.emerald.opacity(0.15), AppTheme.emerald.opacity(0.05)],
-                                            center: .center,
-                                            startRadius: 0,
-                                            endRadius: 35
-                                        )
+                                        AppTheme.fill
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                 }
@@ -213,7 +185,7 @@ struct StatisticsView: View {
                         .padding(.horizontal, 4)
                     }
                 } header: {
-                    Text("Sessions by Day of Week")
+                    Text("Sessions by day of week")
                 }
             }
             
@@ -236,10 +208,10 @@ struct StatisticsView: View {
                                     Text("\(wordFreq.count)")
                                         .font(.caption)
                                         .fontWeight(.semibold)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(AppTheme.onAccent)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
-                                        .background(colorForRank(index).gradient)
+                                        .background(colorForRank(index))
                                         .clipShape(Capsule())
                                 }
                                 .frame(maxWidth: .infinity)
@@ -252,7 +224,7 @@ struct StatisticsView: View {
                     }
                     .frame(height: 400)
                 } header: {
-                    Text("Most Used Words")
+                    Text("Most used words")
                 } footer: {
                     Text("Meaningful words from your transcripts")
                 }
@@ -265,22 +237,22 @@ struct StatisticsView: View {
                         sentimentStatBox(
                             label: "Positive",
                             count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
-                            color: .green
+                            color: AppTheme.accent
                         )
                         sentimentStatBox(
                             label: "Neutral",
                             count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
-                            color: .gray
+                            color: AppTheme.textSecondary
                         )
                         sentimentStatBox(
                             label: "Negative",
                             count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
-                            color: .red
+                            color: AppTheme.destructive
                         )
                     }
                     .padding(.vertical, 8)
                 } header: {
-                    Text("Emotional Trends")
+                    Text("Mood")
                 } footer: {
                     Text("Daily sentiment analysis from your journal entries")
                 }
@@ -328,7 +300,7 @@ struct StatisticsView: View {
                             .padding(.top, 8)
                     }
                 } header: {
-                    Text("Languages Spoken")
+                    Text("Languages")
                 } footer: {
                     Text("Distribution of languages in your recordings")
                 }
@@ -338,7 +310,7 @@ struct StatisticsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("Word Cloud Limit")
+                        Text("Word cloud limit")
                         Spacer()
                         Text("\(Int(wordLimit))")
                             .foregroundStyle(.secondary)
@@ -346,7 +318,7 @@ struct StatisticsView: View {
                     }
                     
                     Slider(value: $wordLimit, in: 10...200, step: 10) {
-                        Text("Word Limit")
+                        Text("Word limit")
                     }
                     .onChange(of: wordLimit) { oldValue, newValue in
                         UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
@@ -364,7 +336,7 @@ struct StatisticsView: View {
             }
             
             Section {
-                Picker("Date Format", selection: $dateFormat) {
+                Picker("Date format", selection: $dateFormat) {
                     ForEach(dateFormatOptions, id: \.0) { format, example in
                         Text(example).tag(format)
                     }
@@ -374,7 +346,7 @@ struct StatisticsView: View {
                     coordinator.showSuccess("Date format updated")
                 }
                 
-                Picker("Time Format", selection: $timeFormat) {
+                Picker("Time format", selection: $timeFormat) {
                     ForEach(timeFormatOptions, id: \.0) { format, example in
                         Text(example).tag(format)
                     }
@@ -384,31 +356,22 @@ struct StatisticsView: View {
                     coordinator.showSuccess("Time format updated")
                 }
             } header: {
-                Text("Rollup Date & Time Format")
+                Text("Summary date and time format")
             } footer: {
                 Text("Date and time format used in period rollups (hour, day, week, month, year).")
             }
             
             Section {
                 NavigationLink(destination: ExcludedWordsView()) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Excluded Words")
-                            Text("Manage stop words for word cloud")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "text.badge.xmark")
-                            .foregroundStyle(.red)
-                    }
+                    SettingsRowLabel(icon: "text.badge.minus", title: "Excluded words")
                 }
             } header: {
                 Text("Filters")
             }
         }
+        .themedScreen()
         .navigationTitle("Statistics")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .overlay {
             if isLoadingStats {
                 LoadingView(size: .medium)

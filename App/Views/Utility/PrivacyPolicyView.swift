@@ -5,24 +5,24 @@ struct PrivacyPolicyView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Privacy First")
-                    .font(.title.bold())
+                Text("Privacy first")
+                    .font(AppTheme.titleFont(size: 28))
                 
                 VStack(alignment: .leading, spacing: 12) {
                     PrivacyPoint(
                         icon: "waveform",
                         title: "Transcription: 100% On-Device",
-                        description: "All audio recording and speech-to-text happens locally using Apple's Speech framework. Zero network calls."
+                        description: "All audio recording and speech-to-text happens on your iPhone using Apple's Speech framework, set to on-device recognition only. Your audio is never uploaded."
                     )
                     
                     PrivacyPoint(
                         icon: "sparkles",
                         title: "AI Summaries: User-Controlled",
-                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, on-device processing with Apple Intelligence or Basic summaries."
+                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, summaries are made on your iPhone with Basic, the Smart model, or Apple Intelligence."
                     )
                     
                     PrivacyPoint(
-                        icon: "exclamationmark.shield.fill",
+                        icon: "exclamationmark.shield",
                         title: "BYOK: Your Data, Your Responsibility",
                         description: "When using External API with your keys, YOU are responsible for the data you send to third-party providers and any API costs. We are not responsible for how OpenAI or Anthropic handle your data."
                     )
@@ -30,11 +30,11 @@ struct PrivacyPolicyView: View {
                     PrivacyPoint(
                         icon: "network",
                         title: "Network Calls: Transparent",
-                        description: "With API keys: Connects to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) using YOUR keys. Without keys: 100% offline."
+                        description: "The app only goes online to: download the optional Smart model from Hugging Face (huggingface.co), handle purchases through the App Store, and, if you choose Smartest, send transcripts to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) with your own key, after a quick connection check to apple.com. Everything else works offline."
                     )
                     
                     PrivacyPoint(
-                        icon: "eye.slash.fill",
+                        icon: "eye.slash",
                         title: "No Tracking",
                         description: "We don't collect analytics, telemetry, or usage data. Your API keys are stored securely in Keychain."
                     )
@@ -42,14 +42,19 @@ struct PrivacyPolicyView: View {
                     PrivacyPoint(
                         icon: "square.and.arrow.up",
                         title: "Your Data, Your Control",
-                        description: "Export or delete your data anytime. Audio files and transcripts never leave your device."
+                        description: "Export or delete your data anytime. Audio files never leave your iPhone. Transcripts leave it only when you use Smartest, and only go to the provider you connect."
                     )
                 }
             }
             .padding()
         }
-        .navigationTitle("Privacy Policy")
+        .themedScreen()
+        .navigationTitle("Privacy policy")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The page shows its own serif heading
+            ToolbarItem(placement: .principal) { Text("").accessibilityHidden(true) }
+        }
     }
 }
 
@@ -62,9 +67,9 @@ struct PrivacyPoint: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(.blue)
-                .frame(width: 32)
+                .font(.system(size: 20, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 28)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -75,14 +80,7 @@ struct PrivacyPoint: View {
                     .foregroundColor(.secondary)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard()
     }
 }
 

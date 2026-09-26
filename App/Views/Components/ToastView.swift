@@ -22,10 +22,10 @@ public enum ToastStyle {
     
     var color: Color {
         switch self {
-        case .success: return .green
-        case .error: return .red
-        case .info: return .blue
-        case .warning: return .orange
+        case .success: return AppTheme.accent
+        case .error: return AppTheme.destructive
+        case .info: return AppTheme.accent
+        case .warning: return AppTheme.textSecondary
         }
     }
 }
@@ -127,7 +127,7 @@ struct ToastView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
+                .fill(AppTheme.background)
                 .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 5)
         )
         .padding(.horizontal)

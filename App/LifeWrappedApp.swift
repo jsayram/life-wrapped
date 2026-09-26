@@ -25,6 +25,7 @@ struct LifeWrappedApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
+        AppAppearance.configure()
         print("🚀 [LifeWrappedApp] App starting...")
         print("📱 [LifeWrappedApp] iOS Version: \(UIDevice.current.systemVersion)")
         print("📱 [LifeWrappedApp] Device: \(UIDevice.current.model)")

@@ -8,10 +8,10 @@ struct TermsOfServiceView: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Terms of Service")
-                        .font(.title.bold())
+                    Text("Terms of service")
+                        .font(AppTheme.titleFont(size: 28))
                     
-                    Text("Last Updated: December 29, 2025")
+                    Text("Last updated December 29, 2025")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -142,8 +142,13 @@ struct TermsOfServiceView: View {
             }
             .padding()
         }
-        .navigationTitle("Terms of Service")
+        .themedScreen()
+        .navigationTitle("Terms of service")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The page shows its own serif heading
+            ToolbarItem(placement: .principal) { Text("").accessibilityHidden(true) }
+        }
     }
 }
 
@@ -174,13 +179,7 @@ struct TermsSection: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard(padding: 0)
     }
 }
 

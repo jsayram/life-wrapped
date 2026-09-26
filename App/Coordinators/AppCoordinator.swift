@@ -1327,7 +1327,7 @@ public final class AppCoordinator: ObservableObject {
     //   • The app is fully functional on first launch with zero downloads
     //
     // ✅ PART (ii) - Size Disclosure & User Prompt:
-    //   • All download buttons display size: "Download Model (~2.3 GB)"
+    //   • All download buttons display size: "Download model (~2.3 GB)"
     //   • User must explicitly tap button to start download (never automatic)
     //   • Skip/Cancel options shown at every download prompt
     //   • "Wi-Fi recommended" note displayed before download

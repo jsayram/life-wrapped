@@ -4,82 +4,28 @@ struct PrivacySettingsView: View {
     var body: some View {
         List {
             Section {
-                HStack {
-                    Label {
-                        Text("Transcription: On-Device")
-                    } icon: {
-                        Image(systemName: "checkmark.shield.fill")
-                            .foregroundStyle(.green)
-                    }
-                    Spacer()
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                }
-            } footer: {
-                Text("All transcription happens 100% on-device using Apple's Speech framework. No audio or transcripts ever leave your device.")
-            }
-            
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Label("Transcription", systemImage: "waveform")
-                        Spacer()
-                        Text("On-Device")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.green)
-                    }
-                    Text("100% local, uses Apple Speech framework")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 32)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Label("AI Summaries", systemImage: "sparkles")
-                        Spacer()
-                        Text("User-Controlled")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.blue)
-                    }
-                    Text("Uses your API keys (OpenAI/Anthropic) or on-device fallback")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, 32)
-                }
-                
-                HStack {
-                    Label("iCloud Sync", systemImage: "icloud.slash")
-                    Spacer()
-                    Text("Disabled")
-                        .foregroundStyle(.secondary)
-                }
-                
-                HStack {
-                    Label("Analytics", systemImage: "chart.bar.xaxis")
-                    Spacer()
-                    Text("None")
-                        .foregroundStyle(.secondary)
-                }
+                SettingsRowLabel(icon: "waveform", title: "Transcription", value: "On-device")
+                SettingsRowLabel(icon: "sparkle", title: "AI summaries", value: "Your choice")
+                SettingsRowLabel(icon: "icloud.slash", title: "iCloud sync", value: "Off")
+                SettingsRowLabel(icon: "chart.bar", title: "Analytics", value: "None")
             } header: {
-                Text("Privacy Status")
+                Text("Privacy status")
             } footer: {
-                Text("Transcription always happens on-device. AI summaries use external APIs only if you provide API keys, otherwise on-device processing.")
+                Text("Audio is transcribed on your iPhone with Apple's Speech framework and never leaves it. Basic, Smart and Smarter summaries also stay on your iPhone. Transcripts are sent out only if you choose Smartest, to the OpenAI or Anthropic account you connect.")
             }
             
             Section {
                 NavigationLink(destination: PrivacyPolicyView()) {
-                    Label("Privacy Policy", systemImage: "doc.text")
+                    SettingsRowLabel(icon: "doc.text", title: "Privacy policy")
                 }
                 
                 NavigationLink(destination: TermsOfServiceView()) {
-                    Label("Terms of Service", systemImage: "doc.plaintext")
+                    SettingsRowLabel(icon: "doc.plaintext", title: "Terms of service")
                 }
             }
         }
+        .themedScreen()
         .navigationTitle("Privacy & Terms")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }

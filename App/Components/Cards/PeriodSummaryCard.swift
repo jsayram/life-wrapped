@@ -12,96 +12,46 @@ struct PeriodSummaryCard: View {
     let onRegenerate: () -> Void
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             // Header Row
-            HStack(alignment: .top) {
-                Text("✨")
-                    .font(.title2)
-                
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.title3)
-                        .fontWeight(.bold)
-                    Text(subtitle)
+                    Text("SUMMARY")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .tracking(0.8)
+                        .foregroundStyle(AppTheme.textSecondary)
+                    Text(title)
+                        .font(AppTheme.titleFont(size: 24))
+                        .foregroundStyle(AppTheme.textPrimary)
                 }
-                
-                Spacer()
-                
+
+                Spacer(minLength: 0)
+
                 HStack(spacing: 8) {
-                    // Copy
-                    Button(action: onCopy) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.subheadline)
-                            .foregroundStyle(AppTheme.skyBlue)
+                    IconSquareButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy summary", action: onCopy)
+                    if isRegenerating {
+                        ProgressView()
+                            .frame(width: 36, height: 36)
+                    } else {
+                        IconSquareButton(systemImage: "arrow.clockwise", accessibilityLabel: "Regenerate summary", action: onRegenerate)
                     }
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.skyBlue.opacity(0.1))
-                    )
-                
-                    // Regenerate
-                    Button(action: onRegenerate) {
-                        if isRegenerating {
-                            ProgressView()
-                                .tint(AppTheme.purple)
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.subheadline)
-                                .foregroundStyle(AppTheme.magenta)
-                        }
-                    }
-                    .disabled(isRegenerating)
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.magenta.opacity(0.1))
-                    )
                 }
             }
-            
+
+            Text(summary.text)
+                .font(.body)
+                .foregroundStyle(AppTheme.textPrimary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+
             Divider()
-            
-            ScrollView {
-                Text(summary.text)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-            }
-            .frame(minHeight: 150, maxHeight: 250)
-            .background(Color(.tertiarySystemBackground))
-            .cornerRadius(8)
+                .overlay(AppTheme.hairline)
+
+            Text(subtitle)
+                .font(.footnote)
+                .foregroundStyle(AppTheme.textSecondary)
         }
-        .padding(16)
-        .background(
-            LinearGradient(
-                colors: [
-                    AppTheme.darkPurple.opacity(0.15),
-                    AppTheme.magenta.opacity(0.1),
-                    AppTheme.purple.opacity(0.05)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(
-                    LinearGradient(
-                        colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2
-                )
-        )
-        .cornerRadius(16)
-        .shadow(color: AppTheme.purple.opacity(0.2), radius: 10, x: 0, y: 5)
+        .graphiteCard()
     }
 }
-

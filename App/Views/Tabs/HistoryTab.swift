@@ -60,8 +60,9 @@ struct HistoryTab: View {
     var body: some View {
         NavigationStack {
             contentView
+                .themedScreen()
                 .navigationTitle("History")
-                .searchable(text: $searchText, prompt: "Search titles, notes, transcripts...")
+                .searchable(text: $searchText, prompt: "Search recordings")
                 .onChange(of: searchText) { _, newValue in
                     // Debounce transcript search
                     searchDebounceTask?.cancel()
@@ -83,36 +84,11 @@ struct HistoryTab: View {
                                     .scaleEffect(0.7)
                             }
                             
-                            // Category filter menu
-                            Menu {
-                                Button {
-                                    categoryFilter = nil
-                                } label: {
-                                    Label("All", systemImage: categoryFilter == nil ? "checkmark" : "")
-                                }
-                                
-                                Divider()
-                                
-                                ForEach(SessionCategory.allCases, id: \.self) { category in
-                                    Button {
-                                        categoryFilter = categoryFilter == category ? nil : category
-                                    } label: {
-                                        Label(
-                                            category.displayName,
-                                            systemImage: categoryFilter == category ? "checkmark" : category.systemImage
-                                        )
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: categoryFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                                    .foregroundStyle(categoryFilter == nil ? .secondary : Color(hex: categoryFilter!.colorHex))
-                            }
-                            
                             Button {
                                 showFavoritesOnly.toggle()
                             } label: {
                                 Image(systemName: showFavoritesOnly ? "star.fill" : "star")
-                                    .foregroundStyle(showFavoritesOnly ? .yellow : .secondary)
+                                    .foregroundStyle(showFavoritesOnly ? AppTheme.textSecondary : .secondary)
                             }
                         }
                     }
@@ -140,14 +116,14 @@ struct HistoryTab: View {
         if isLoading {
             LoadingView(size: .medium)
         } else if sessions.isEmpty {
-            ContentUnavailableView(
-                "No Recordings Yet",
+            GraphiteEmptyState(
+                "No recordings yet",
                 systemImage: "mic.slash",
-                description: Text("Tap the record button on the Home tab to start your first journal entry.")
+                description: Text("Tap the record button on the Record tab to start your first entry.")
             )
-        } else if filteredSessions.isEmpty {
-            ContentUnavailableView(
-                "No Results",
+        } else if filteredSessions.isEmpty && !searchText.isEmpty {
+            GraphiteEmptyState(
+                "No results",
                 systemImage: "magnifyingglass",
                 description: Text("No recordings match '\(searchText)'")
             )
@@ -158,6 +134,26 @@ struct HistoryTab: View {
     
     private var sessionsList: some View {
         List {
+            // Category filter chips
+            Section {
+                categoryChips
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            }
+            .listSectionSpacing(8)
+
+            // Empty filter result (chips stay visible so the filter can be changed)
+            if filteredSessions.isEmpty {
+                Section {
+                    Text(showFavoritesOnly ? "No favorites in this filter." : "No recordings in this filter.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 24)
+                        .listRowBackground(Color.clear)
+                }
+            }
+
             // Stats summary at top
             if !searchText.isEmpty {
                 Section {
@@ -177,6 +173,7 @@ struct HistoryTab: View {
                                 hasSummary: sessionHasSummary[session.sessionId] ?? false
                             )
                         }
+                        .hidesNavigationChevron()
                     }
                     .onDelete { offsets in
                         deleteSession(at: offsets, in: date)
@@ -184,17 +181,32 @@ struct HistoryTab: View {
                 } header: {
                     HStack {
                         Text(formatSectionDate(date))
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
                         Spacer()
                         Text("\(sessionsForDate(date).count) recording\(sessionsForDate(date).count == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textSecondary)
                     }
+                    .textCase(nil)
                 }
             }
         }
         .listStyle(.insetGrouped)
     }
     
+    private var categoryChips: some View {
+        HStack(spacing: 8) {
+            FilterChip(title: "All", isSelected: categoryFilter == nil) { categoryFilter = nil }
+            ForEach(SessionCategory.allCases, id: \.self) { category in
+                FilterChip(title: category.displayName, isSelected: categoryFilter == category) {
+                    categoryFilter = categoryFilter == category ? nil : category
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
     private func sessionDetailView(for session: RecordingSession) -> some View {
         SessionDetailView(session: session)
     }
@@ -302,5 +314,30 @@ struct HistoryTab: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Filter Chip
+
+private struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? AppTheme.onAccent : AppTheme.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? AppTheme.accent : AppTheme.card)
+                        .stroke(isSelected ? Color.clear : AppTheme.hairline, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

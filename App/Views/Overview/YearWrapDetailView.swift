@@ -117,7 +117,7 @@ struct YearWrapDetailView: View {
                         .padding(.bottom, 24)
                     } else if activeSummary == nil {
                         // No summary available for this filter
-                        ContentUnavailableView(
+                        GraphiteEmptyState(
                             "No \(filterTitle) Available",
                             systemImage: displayFilter == .workOnly ? "briefcase" : "house",
                             description: Text("Generate a Year Wrap with \(displayFilter == .workOnly ? "work" : "personal") sessions to see insights here.")
@@ -135,7 +135,7 @@ struct YearWrapDetailView: View {
                     footerSection
                 }
             }
-            .background(Color(.systemBackground))
+            .background(AppTheme.background)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -157,11 +157,11 @@ struct YearWrapDetailView: View {
                         
                         Section("Privacy") {
                             Toggle(isOn: $redactPeople) {
-                                Label("Redact People", systemImage: "person.slash")
+                                Label("Redact people", systemImage: "person.slash")
                             }
                             
                             Toggle(isOn: $redactPlaces) {
-                                Label("Redact Places", systemImage: "mappin.slash")
+                                Label("Redact places", systemImage: "mappin.slash")
                             }
                         }
                         
@@ -285,33 +285,26 @@ struct YearWrapDetailView: View {
     private var heroSection: some View {
         ZStack {
             // Background gradient
-            LinearGradient(
-                colors: [
-                    YearWrapTheme.electricPurple,
-                    YearWrapTheme.electricPurple.opacity(0.8)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            YearWrapTheme.electricPurple
             
             VStack(spacing: 16) {
                 // Sparkles icon
-                Text("✨")
-                    .font(.system(size: 60))
+                Image(systemName: "sparkles")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(AppTheme.onAccent)
                 
                 // Year title
                 if let data = parsedData {
                     Text(data.yearTitle)
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.white)
+                        .font(AppTheme.titleFont(size: 30))
+                        .foregroundStyle(AppTheme.onAccent)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                     
                     // Year summary
                     Text(data.yearSummary)
                         .font(.body)
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(AppTheme.onAccent.opacity(0.9))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
                         .padding(.top, 8)
@@ -351,7 +344,7 @@ struct YearWrapDetailView: View {
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
         )
     }
     
@@ -360,9 +353,10 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func majorArcsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "📖 Major Arcs",
+            title: "Major arcs",
+            icon: "book",
             items: items,
-            color: .cyan,
+            color: AppTheme.accent,
             emptyMessage: "None"
         )
     }
@@ -370,7 +364,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func biggestWinsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "🏆 Biggest Wins",
+            title: "Biggest wins",
+            icon: "trophy",
             items: items,
             color: YearWrapTheme.winsColor,
             emptyMessage: "None"
@@ -380,7 +375,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func biggestLossesSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "💔 Biggest Losses",
+            title: "Biggest losses",
+            icon: "heart.slash",
             items: items,
             color: YearWrapTheme.lossesColor,
             emptyMessage: "None"
@@ -390,7 +386,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func biggestChallengesSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "⚡ Biggest Challenges",
+            title: "Biggest challenges",
+            icon: "bolt",
             items: items,
             color: YearWrapTheme.challengesColor,
             emptyMessage: "None"
@@ -400,7 +397,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func finishedProjectsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "✅ Finished Projects",
+            title: "Finished projects",
+            icon: "checkmark.circle",
             items: items,
             color: YearWrapTheme.finishedProjectsColor,
             emptyMessage: "None"
@@ -410,7 +408,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func unfinishedProjectsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "⏸️ Unfinished Projects",
+            title: "Unfinished projects",
+            icon: "pause.circle",
             items: items,
             color: YearWrapTheme.unfinishedProjectsColor,
             emptyMessage: "None"
@@ -420,7 +419,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func topWorkedOnSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "🔨 Top Worked-On Topics",
+            title: "Top worked-on topics",
+            icon: "hammer",
             items: items,
             color: YearWrapTheme.topicsColor,
             emptyMessage: "None"
@@ -430,7 +430,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func topTalkedAboutSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "💬 Top Talked-About Things",
+            title: "Top talked-about things",
+            icon: "bubble.left",
             items: items,
             color: YearWrapTheme.peopleColor,
             emptyMessage: "None"
@@ -440,7 +441,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func valuableActionsSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "💎 Valuable Actions Taken",
+            title: "Valuable actions taken",
+            icon: "diamond",
             items: items,
             color: YearWrapTheme.actionsColor,
             emptyMessage: "None"
@@ -450,7 +452,8 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func opportunitiesMissedSection(_ items: [ClassifiedItem]) -> some View {
         insightSection(
-            title: "🎯 Opportunities Missed",
+            title: "Opportunities missed",
+            icon: "scope",
             items: items,
             color: YearWrapTheme.opportunitiesColor,
             emptyMessage: "None"
@@ -460,13 +463,12 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func peopleMentionedSection(_ people: [PersonMention]) -> some View {
         if people.isEmpty {
-            insightSection(title: "👥 People Mentioned", items: [] as [ClassifiedItem], color: .blue, emptyMessage: "None")
+            insightSection(title: "People mentioned", icon: "person.2", items: [] as [ClassifiedItem], color: AppTheme.accent, emptyMessage: "None")
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 // Header
                 HStack {
-                    Text("👥 People Mentioned")
-                        .font(.headline)
+                    sectionHeader("People mentioned", icon: "person.2")
                     Spacer()
                 }
                 
@@ -495,7 +497,7 @@ struct YearWrapDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.blue.opacity(0.1))
+                                .fill(AppTheme.accent.opacity(0.1))
                         )
                     }
                 }
@@ -503,7 +505,7 @@ struct YearWrapDetailView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
             )
         }
     }
@@ -511,13 +513,12 @@ struct YearWrapDetailView: View {
     @ViewBuilder
     private func placesVisitedSection(_ places: [PlaceVisit]) -> some View {
         if places.isEmpty {
-            insightSection(title: "📍 Places Visited", items: [] as [ClassifiedItem], color: .purple, emptyMessage: "None")
+            insightSection(title: "Places visited", icon: "mappin.and.ellipse", items: [] as [ClassifiedItem], color: AppTheme.accent, emptyMessage: "None")
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 // Header
                 HStack {
-                    Text("📍 Places Visited")
-                        .font(.headline)
+                    sectionHeader("Places visited", icon: "mappin.and.ellipse")
                     Spacer()
                 }
                 
@@ -546,7 +547,7 @@ struct YearWrapDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.purple.opacity(0.1))
+                                .fill(AppTheme.accent.opacity(0.1))
                         )
                     }
                 }
@@ -554,21 +555,33 @@ struct YearWrapDetailView: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
+                    .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
             )
         }
     }
     
+    private func sectionHeader(_ title: String, icon: String) -> some View {
+        Label {
+            Text(title)
+                .font(AppTheme.titleFont(size: 20))
+                .foregroundStyle(AppTheme.textPrimary)
+        } icon: {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+        .accessibilityAddTraits(.isHeader)
+    }
+
     // Generic insight section builder
     @ViewBuilder
-    private func insightSection(title: String, items: [ClassifiedItem], color: Color, emptyMessage: String) -> some View {
+    private func insightSection(title: String, icon: String, items: [ClassifiedItem], color: Color, emptyMessage: String) -> some View {
         let filteredItems = filterItems(items, by: displayFilter)
         
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
-                Text(title)
-                    .font(.headline)
+                sectionHeader(title, icon: icon)
                 Spacer()
             }
             
@@ -604,7 +617,7 @@ struct YearWrapDetailView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
         )
     }
     
@@ -616,35 +629,35 @@ struct YearWrapDetailView: View {
             case .work:
                 Label("Work", systemImage: "briefcase.fill")
                     .font(.caption)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppTheme.onAccent)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.blue)
+                    .background(AppTheme.accent)
                     .clipShape(Capsule())
             case .personal:
                 Label("Personal", systemImage: "house.fill")
                     .font(.caption)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppTheme.onAccent)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.green)
+                    .background(AppTheme.accent)
                     .clipShape(Capsule())
             case .both:
                 HStack(spacing: 4) {
                     Label("Work", systemImage: "briefcase.fill")
                         .font(.caption)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.onAccent)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.blue)
+                        .background(AppTheme.accent)
                         .clipShape(Capsule())
                     
                     Label("Personal", systemImage: "house.fill")
                         .font(.caption)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppTheme.onAccent)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.green)
+                        .background(AppTheme.accent)
                         .clipShape(Capsule())
                 }
             }

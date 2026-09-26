@@ -48,25 +48,16 @@ struct SessionDetailView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Session Title Section (Editable)
+            VStack(alignment: .leading, spacing: 16) {
+                // Title and meta line (editable title)
                 sessionTitleSection
-                
+
+                // Work / Personal
+                sessionInfoSection
+
                 // Transcription Processing Banner
                 processingBannerSection
-                
-                // Session Info Card
-                sessionInfoSection
-                
-                // Playback Controls
-                playbackControlsSection
-                
-                // Personal Notes Section (moved here from bottom)
-                personalNotesSection
-                
-                // Transcription Section
-                transcriptionSection
-                
+
                 // Session Summary Section (if available or error)
                 if let summary = sessionSummary {
                     sessionSummarySection(summary: summary)
@@ -75,11 +66,27 @@ struct SessionDetailView: View {
                 } else if isTranscriptionComplete {
                     sessionSummaryPlaceholderSection
                 }
+
+                // Notes
+                personalNotesSection
+
+                // Playback Controls
+                playbackControlsSection
+
+                // Transcription Section
+                transcriptionSection
             }
-            .padding()
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
+        .themedScreen()
         .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The title is shown large in the content, so keep the bar clean
+            ToolbarItem(placement: .principal) { Text("").accessibilityHidden(true) }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 toolbarButtons
@@ -113,13 +120,13 @@ struct SessionDetailView: View {
         }
         .alert("Regenerate Summary with Notes?", isPresented: $showRegenerateWithNotesAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Remove Notes") {
+            Button("Remove notes") {
                 Task {
                     notesWereAppended = false
                     await regenerateSummary()
                 }
             }
-            Button("Re-append Notes") {
+            Button("Re-append notes") {
                 Task {
                     await regenerateSummary(reappendNotes: true)
                 }
@@ -141,10 +148,10 @@ struct SessionDetailView: View {
                     .scaleEffect(0.8)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Processing Transcription...")
+                    Text("Transcribing")
                         .font(.subheadline)
                         .fontWeight(.medium)
-                    Text("\(pendingCount) of \(session.chunkCount) chunks pending")
+                    Text("\(pendingCount) of \(session.chunkCount) part\(session.chunkCount == 1 ? "" : "s") left")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -156,23 +163,14 @@ struct SessionDetailView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.body)
-                        .foregroundStyle(AppTheme.purple)
+                        .foregroundStyle(AppTheme.textPrimary)
                 }
                 .buttonStyle(.borderless)
             }
-            .padding()
+            .padding(16)
             .background(
-                RadialGradient(
-                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: 100
-                )
-            )
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(AppTheme.purple.opacity(0.3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(AppTheme.fill)
             )
         }
     }
@@ -180,79 +178,18 @@ struct SessionDetailView: View {
     // MARK: - Session Info Section
     
     private var sessionInfoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Session Details")
-                .font(.headline)
-            
-            InfoRow(label: "Date", value: session.startTime.formatted(date: .abbreviated, time: .shortened))
-            InfoRow(label: "Total Duration", value: formatDuration(session.totalDuration))
-            InfoRow(label: "Parts", value: "\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
-            
-            if !transcriptSegments.isEmpty {
-                let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
-                InfoRow(label: "Word Count", value: "\(wordCount) words")
-            }
-            
-            // Category toggle
-            HStack {
-                Text("Category")
-                    .foregroundStyle(.secondary)
-                
-                Spacer()
-                
-                HStack(spacing: 0) {
-                    // Personal button
-                    Button {
-                        updateCategory(.personal)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: SessionCategory.personal.systemImage)
-                                .font(.system(size: 14))
-                            Text(SessionCategory.personal.displayName)
-                                .font(.subheadline)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(sessionCategory == .personal ? Color(hex: SessionCategory.personal.colorHex) : Color(.tertiarySystemBackground))
-                        .foregroundStyle(sessionCategory == .personal ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Work button
-                    Button {
-                        updateCategory(.work)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: SessionCategory.work.systemImage)
-                                .font(.system(size: 14))
-                            Text(SessionCategory.work.displayName)
-                                .font(.subheadline)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(sessionCategory == .work ? Color(hex: SessionCategory.work.colorHex) : Color(.tertiarySystemBackground))
-                        .foregroundStyle(sessionCategory == .work ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color(.separator), lineWidth: 0.5)
-                )
-            }
-            .padding(.vertical, 8)
-        }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
+        GraphiteSegmentedControl(
+            options: [
+                .init(value: SessionCategory.work, title: "Work", systemImage: SessionCategory.work.outlineSymbol),
+                .init(value: SessionCategory.personal, title: "Personal", systemImage: SessionCategory.personal.outlineSymbol)
+            ],
+            selection: Binding(
+                get: { sessionCategory ?? .personal },
+                set: { updateCategory($0) }
+            )
         )
-        .cornerRadius(12)
     }
-    
+
     // MARK: - Toolbar Buttons
     
     private var toolbarButtons: some View {
@@ -267,7 +204,7 @@ struct SessionDetailView: View {
                 }
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
-                    .foregroundStyle(isFavorite ? .yellow : .secondary)
+                    .foregroundStyle(isFavorite ? AppTheme.textSecondary : .secondary)
             }
             
             ShareLink(item: transcriptText) {
@@ -285,14 +222,7 @@ struct SessionDetailView: View {
             timeDisplayRow
             playPauseButton
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard()
     }
     
     private var waveformView: some View {
@@ -402,7 +332,7 @@ struct SessionDetailView: View {
                let idx = session.chunks.firstIndex(where: { $0.fileURL == currentURL }) {
                 Text("Part \(idx + 1) of \(session.chunkCount)")
                     .font(.caption)
-                    .foregroundStyle(AppTheme.purple)
+                    .foregroundStyle(AppTheme.textPrimary)
                     .fontWeight(.medium)
             }
             
@@ -423,12 +353,12 @@ struct SessionDetailView: View {
                 // Icon in a circular background
                 ZStack {
                     Circle()
-                        .fill(AppTheme.purple.opacity(0.15))
-                        .frame(width: 56, height: 56)
+                        .fill(AppTheme.accent)
+                        .frame(width: 44, height: 44)
                     
                     Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(AppTheme.purple)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppTheme.onAccent)
                 }
                 
                 // Text label
@@ -442,7 +372,7 @@ struct SessionDetailView: View {
                             .font(.headline)
                             .foregroundStyle(.primary)
                     } else {
-                        Text(session.chunkCount > 1 ? "Play All \(session.chunkCount) Parts" : "Play Recording")
+                        Text(session.chunkCount > 1 ? "Play all \(session.chunkCount) parts" : "Play recording")
                             .font(.headline)
                             .foregroundStyle(.primary)
                     }
@@ -457,7 +387,7 @@ struct SessionDetailView: View {
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.tertiarySystemBackground))
+                    .fill(AppTheme.fill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
@@ -472,14 +402,15 @@ struct SessionDetailView: View {
     private var transcriptionSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header - just the title
-            Text("Recording Transcript")
+            Text("Transcript")
                 .font(.headline)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
             
             // Content directly below header
             transcriptionContent
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 16)
             
             // Action buttons at the bottom (only if there's content)
             if !transcriptSegments.isEmpty {
@@ -494,35 +425,14 @@ struct SessionDetailView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.on.doc")
                                 .font(.body)
-                            Text("Copy All")
+                            Text("Copy all")
                                 .fontWeight(.medium)
                         }
                         .font(.subheadline)
-                        .foregroundStyle(AppTheme.skyBlue)
+                        .foregroundStyle(AppTheme.textPrimary)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(
-                                    RadialGradient(
-                                        colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
-                                        center: .center,
-                                        startRadius: 0,
-                                        endRadius: 50
-                                    )
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.skyBlue.opacity(0.3)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        )
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -536,31 +446,10 @@ struct SessionDetailView: View {
                                 .fontWeight(.medium)
                         }
                         .font(.subheadline)
-                        .foregroundStyle(AppTheme.skyBlue)
+                        .foregroundStyle(AppTheme.textPrimary)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(
-                                    RadialGradient(
-                                        colors: [AppTheme.skyBlue.opacity(0.15), AppTheme.skyBlue.opacity(0.05)],
-                                        center: .center,
-                                        startRadius: 0,
-                                        endRadius: 50
-                                    )
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        )
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                         .contentShape(Rectangle())
                     }
                 }
@@ -570,13 +459,7 @@ struct SessionDetailView: View {
                 Spacer().frame(height: 12)
             }
         }
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard(padding: 0)
     }
     
     @ViewBuilder
@@ -593,7 +476,7 @@ struct SessionDetailView: View {
             .padding(.vertical, 16)
         } else if let error = loadError {
             Text("Error: \(error)")
-                .foregroundStyle(.red)
+                .foregroundStyle(AppTheme.destructive)
                 .font(.subheadline)
                 .padding(.vertical, 8)
         } else if transcriptSegments.isEmpty {
@@ -610,23 +493,23 @@ struct SessionDetailView: View {
         let hasFailed = !chunkIds.isDisjoint(with: coordinator.failedChunkIds)
         
         if hasTranscribing {
-            ContentUnavailableView(
-                "Transcribing Audio...",
+            GraphiteEmptyState(
+                "Transcribing",
                 systemImage: "waveform.path",
                 description: Text("Your audio is being processed. This may take a moment.")
             )
             .padding(.vertical, 8)
         } else if hasFailed {
-            ContentUnavailableView(
-                "Transcription Failed",
+            GraphiteEmptyState(
+                "Transcription failed",
                 systemImage: "exclamationmark.triangle",
                 description: Text("Unable to transcribe this recording. Try recording again.")
             )
             .padding(.vertical, 8)
         } else {
-            ContentUnavailableView(
-                "No Transcript",
-                systemImage: "doc.text.slash",
+            GraphiteEmptyState(
+                "No transcript",
+                systemImage: "text.page.slash",
                 description: Text("No transcription available for this recording.")
             )
             .padding(.vertical, 8)
@@ -668,7 +551,7 @@ struct SessionDetailView: View {
             VStack(spacing: 16) {
                 HStack {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(AppTheme.magenta)
+                        .foregroundStyle(AppTheme.textPrimary)
                     Text("Transcript was edited")
                         .font(.subheadline)
                         .fontWeight(.medium)
@@ -684,7 +567,7 @@ struct SessionDetailView: View {
                     Button {
                         transcriptWasEdited = false
                     } label: {
-                        Text("Not Now")
+                        Text("Not now")
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
@@ -718,14 +601,9 @@ struct SessionDetailView: View {
             }
             .padding()
             .background(
-                RadialGradient(
-                    colors: [AppTheme.magenta.opacity(0.15), AppTheme.magenta.opacity(0.05)],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: 100
-                )
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(AppTheme.fill)
             )
-            .cornerRadius(12)
             .frame(maxWidth: 400)
             Spacer()
         }
@@ -882,45 +760,48 @@ struct SessionDetailView: View {
                         saveTitle()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.purple)
+                    .tint(AppTheme.accent)
                     
                     Button("Cancel") {
                         isEditingTitle = false
                         sessionTitle = session.title ?? ""
                     }
                     .buttonStyle(.bordered)
-                    .tint(AppTheme.skyBlue)
+                    .tint(AppTheme.textPrimary)
                 }
             } else {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if !sessionTitle.isEmpty {
-                            Text(sessionTitle)
-                                .font(.title2)
-                                .fontWeight(.semibold)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(sessionTitle.isEmpty ? "Untitled recording" : sessionTitle)
+                            .font(AppTheme.titleFont(size: 28))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+
+                        HStack(spacing: 10) {
+                            Text(session.startTime.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()) + " · " + session.startTime.formatted(date: .omitted, time: .shortened))
+                            Text(formatDuration(session.totalDuration))
+                                .monospacedDigit()
+                            if !transcriptSegments.isEmpty {
+                                let wordCount = transcriptSegments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+                                Text("\(wordCount.formatted()) words")
+                            }
                         }
-                        
-                        Text(session.startTime.formatted(date: .abbreviated, time: .shortened))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                     }
-                    
-                    Spacer()
-                    
-                    Button {
+
+                    Spacer(minLength: 0)
+
+                    IconSquareButton(systemImage: "pencil", accessibilityLabel: "Edit title") {
                         isEditingTitle = true
                         isTextFieldFocused = true
-                    } label: {
-                        Image(systemName: "pencil.circle")
-                            .font(.title2)
-                            .foregroundStyle(AppTheme.skyBlue)
                     }
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(12)
     }
     
     // MARK: - Session Summary Section
@@ -928,7 +809,7 @@ struct SessionDetailView: View {
     private var sessionSummaryPlaceholderSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Recording Chunks")
+                Text("Recording parts")
                     .font(.headline)
                 
                 Spacer()
@@ -952,30 +833,10 @@ struct SessionDetailView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.darkPurple, AppTheme.magenta],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .foregroundStyle(AppTheme.textPrimary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.purple.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                lineWidth: 1.5
-                            )
-                    )
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -998,20 +859,13 @@ struct SessionDetailView: View {
                     .italic()
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard()
     }
     
     private func sessionSummaryErrorSection(error: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Recording Summary")
+                Text("Summary")
                     .font(.headline)
                 
                 Spacer()
@@ -1025,7 +879,7 @@ struct SessionDetailView: View {
                     HStack(spacing: 4) {
                         if isRegeneratingSummary {
                             ProgressView()
-                                .tint(.orange)
+                                .tint(AppTheme.textSecondary)
                                 .scaleEffect(0.8)
                         } else {
                             Image(systemName: "arrow.clockwise")
@@ -1035,20 +889,10 @@ struct SessionDetailView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(AppTheme.textSecondary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.orange.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(
-                                Color.orange.opacity(0.4),
-                                lineWidth: 1.5
-                            )
-                    )
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1056,39 +900,33 @@ struct SessionDetailView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
+                let isWaiting = !isTranscriptionComplete || error.contains("not yet generated")
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text("Summary Generation Failed")
+                    Image(systemName: isWaiting ? "clock" : "exclamationmark.triangle")
+                        .foregroundStyle(AppTheme.textSecondary)
+                    Text(isWaiting ? "Waiting for the transcript" : "Summary failed")
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
                 
-                Text(error)
+                Text(isWaiting ? "The summary is written once transcription finishes." : error)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
                 if error.contains("API key") {
-                    Text("Go to Settings → AI & Intelligence to add your API key.")
+                    Text("Go to Settings, then AI & Summaries, to add your API key.")
                         .font(.caption)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(AppTheme.accent)
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard()
     }
     
     private func sessionSummarySection(summary: Summary) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Recording Summary")
+                Text("Summary")
                     .font(.headline)
                 
                 Spacer()
@@ -1099,24 +937,10 @@ struct SessionDetailView: View {
                     coordinator.showSuccess("Summary copied to clipboard")
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.body)
-                        .foregroundStyle(AppTheme.skyBlue)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(AppTheme.skyBlue.opacity(0.1))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(
-                                    LinearGradient(
-                                        colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.purple.opacity(0.3)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                        )
+                        .font(.system(size: 15))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1142,29 +966,9 @@ struct SessionDetailView: View {
                                 .font(.body)
                         }
                     }
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.darkPurple, AppTheme.magenta],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
+                    .foregroundStyle(AppTheme.textPrimary)
                     .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.purple.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ),
-                                lineWidth: 1.5
-                            )
-                    )
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1187,14 +991,7 @@ struct SessionDetailView: View {
                 .padding(.top, 4)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard()
     }
     
     // MARK: - Additional Notes Section
@@ -1202,7 +999,7 @@ struct SessionDetailView: View {
     private var personalNotesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Additional Notes")
+                Text("Notes")
                     .font(.headline)
                 
                 Spacer()
@@ -1217,25 +1014,11 @@ struct SessionDetailView: View {
                     Button {
                         isEditingNotes = true
                     } label: {
-                        Image(systemName: "pencil.circle")
-                            .font(.body)
-                            .foregroundStyle(AppTheme.skyBlue)
-                            .padding(10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(AppTheme.skyBlue.opacity(0.1))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(
-                                        LinearGradient(
-                                            colors: [AppTheme.skyBlue.opacity(0.4), AppTheme.skyBlue.opacity(0.3)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        ),
-                                        lineWidth: 1.5
-                                    )
-                            )
+                        Image(systemName: "pencil")
+                            .font(.system(size: 15))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .frame(width: 36, height: 36)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -1246,10 +1029,10 @@ struct SessionDetailView: View {
                 TextEditor(text: $sessionNotes)
                     .frame(minHeight: 100)
                     .padding(8)
-                    .background(Color(.tertiarySystemBackground))
+                    .background(AppTheme.fill)
                     .cornerRadius(8)
             } else if sessionNotes.isEmpty {
-                Text("Tap the pencil to add additional notes...")
+                Text("Add anything the recording missed.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .italic()
@@ -1273,30 +1056,16 @@ struct SessionDetailView: View {
                             .font(.caption)
                             .fontWeight(.medium)
                     }
-                    .foregroundStyle(AppTheme.purple)
+                    .foregroundStyle(AppTheme.textPrimary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(AppTheme.purple.opacity(0.1))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(AppTheme.purple.opacity(0.3), lineWidth: 1)
-                    )
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 4)
             }
         }
-        .padding()
-        .background(Color(.secondarySystemBackground))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppTheme.cardGradient(for: colorScheme))
-                .allowsHitTesting(false)
-        )
-        .cornerRadius(12)
+        .graphiteCard()
     }
     
     /// Show regenerate button only if: notes exist, summary exists, and notes changed after summary
@@ -1310,9 +1079,9 @@ struct SessionDetailView: View {
     
     private func engineIcon(for tier: String) -> String {
         switch tier.lowercased() {
-        case "apple": return "apple.intelligence"
-        case "basic": return "bolt.fill"
-        case "external": return "sparkles"
+        case "apple": return "sparkle"
+        case "basic": return "bolt"
+        case "external": return "cloud"
         case "rollup": return "arrow.triangle.merge"
         case "year wrap": return "sparkles"
         default: return "cpu"

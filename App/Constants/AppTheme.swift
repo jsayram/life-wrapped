@@ -1,152 +1,102 @@
 import SwiftUI
+import SharedModels
 
-/// Apple Intelligence-inspired design system with purple/blue/magenta/green color palette
-/// All colors meet WCAG AA accessibility standards (4.5:1 for normal text, 3:1 for large text)
+/// Graphite design system: black, white and warm greys with ink as the only accent.
+/// Every color adapts to light and dark mode. Flat surfaces, hairline borders, no gradients.
+///
+/// Use the semantic tokens (background, card, textPrimary, accent...) in new code.
+/// The older names (purple, magenta, skyBlue...) remain as aliases so existing views
+/// pick up the graphite palette; replace them with semantic tokens as screens are reworked.
 public struct AppTheme {
-    // MARK: - Core Colors
-    
-    /// Dark purple - Primary accent for active states
-    /// Contrast on white: 7.8:1 (AAA) | Contrast on black: 2.7:1
-    public static let darkPurple = Color(hex: "#6D28D9")
-    
-    /// Medium purple - Secondary accent for buttons and highlights
-    /// Contrast on white: 5.2:1 (AA) | Contrast on black: 4.0:1
-    public static let purple = Color(hex: "#8B5CF6")
-    
-    /// Light purple - Tertiary accent for backgrounds and borders
-    /// Contrast on white: 2.1:1 | Contrast on black: 10.0:1 (AAA)
-    public static let lightPurple = Color(hex: "#C4B5FD")
-    
-    /// Sky blue - Cool accent for info states
-    /// Contrast on white: 3.8:1 | Contrast on black: 5.5:1 (AA)
-    public static let skyBlue = Color(hex: "#60A5FA")
-    
-    /// Pale blue - Subtle backgrounds
-    /// Contrast on white: 1.4:1 | Contrast on black: 15.0:1 (AAA)
-    public static let paleBlue = Color(hex: "#DBEAFE")
-    
-    /// Magenta - Energetic accent for recording states
-    /// Contrast on white: 4.9:1 (AA) | Contrast on black: 4.3:1
-    public static let magenta = Color(hex: "#EC4899")
-    
-    /// Emerald - Success states
-    /// Contrast on white: 4.5:1 (AA) | Contrast on black: 4.7:1
-    public static let emerald = Color(hex: "#10B981")
-    
-    // MARK: - Radial Gradients (Outer Ring Glow Effect)
-    
-    /// Idle state gradient - Purple radiance
-    public static let idleGradient = RadialGradient(
-        colors: [purple, darkPurple, purple.opacity(0.3)],
-        center: .center,
-        startRadius: 30,
-        endRadius: 70
-    )
-    
-    /// Recording state gradient - Magenta to purple energy
-    public static let recordingGradient = RadialGradient(
-        colors: [magenta, purple, darkPurple, magenta.opacity(0.3)],
-        center: .center,
-        startRadius: 30,
-        endRadius: 70
-    )
-    
-    /// Processing state gradient - Blue to purple transition
-    public static let processingGradient = RadialGradient(
-        colors: [skyBlue, purple, darkPurple, skyBlue.opacity(0.3)],
-        center: .center,
-        startRadius: 30,
-        endRadius: 70
-    )
-    
-    /// Success state gradient - Emerald to blue completion
-    public static let successGradient = RadialGradient(
-        colors: [emerald, skyBlue, darkPurple, emerald.opacity(0.3)],
-        center: .center,
-        startRadius: 30,
-        endRadius: 70
-    )
-    
-    /// Chart gradient - Purple to blue for data visualization
-    public static let purpleBlueGradient = RadialGradient(
-        colors: [purple, skyBlue, darkPurple.opacity(0.5)],
-        center: .center,
-        startRadius: 30,
-        endRadius: 70
-    )
-    
-    /// Chart gradient - Magenta to pink for secondary data
-    public static let magentaPinkGradient = RadialGradient(
-        colors: [magenta, lightPurple, magenta.opacity(0.5)],
-        center: .center,
-        startRadius: 30,
-        endRadius: 70
-    )
-    
-    // MARK: - Word Cloud Gradients by Rank
-    
+    // MARK: - Adaptive helper
+
+    /// A color that switches between light and dark mode values.
+    static func adaptive(light: String, dark: String) -> Color {
+        Color(UIColor { traits in
+            UIColor(Color(hex: traits.userInterfaceStyle == .dark ? dark : light))
+        })
+    }
+
+    // MARK: - Semantic tokens
+
+    /// Screen background (warm off-white / near black)
+    public static let background = adaptive(light: "#F7F7F5", dark: "#0B0B0B")
+    /// Card and grouped-row surface
+    public static let card = adaptive(light: "#FFFFFF", dark: "#161616")
+    /// Subtle fill: segmented controls, chips, progress tracks
+    public static let fill = adaptive(light: "#EFEFEC", dark: "#202020")
+    /// Hairline borders and dividers
+    public static let hairline = adaptive(light: "#E4E4E0", dark: "#2A2A2A")
+    /// Primary text and icons
+    public static let textPrimary = adaptive(light: "#111111", dark: "#F3F3F1")
+    /// Secondary text, captions, inactive icons (meets 4.5:1 on card and background)
+    public static let textSecondary = adaptive(light: "#55554F", dark: "#B4B4AF")
+    /// The single accent: ink. Primary buttons, selection, record button.
+    public static let accent = adaptive(light: "#111111", dark: "#F3F3F1")
+    /// Text and icons placed on an accent fill
+    public static let onAccent = adaptive(light: "#FFFFFF", dark: "#0B0B0B")
+    /// Recording indicator only
+    public static let recording = adaptive(light: "#D92D20", dark: "#F04438")
+    /// Destructive actions only (delete, remove)
+    public static let destructive = adaptive(light: "#B42318", dark: "#F97066")
+
+    // MARK: - Typography
+
+    /// Large screen titles in New York (Apple's system serif)
+    public static func titleFont(size: CGFloat = 34) -> Font {
+        .system(size: size, weight: .regular, design: .serif)
+    }
+
+    // MARK: - Shape
+
+    public static let cardRadius: CGFloat = 20
+    public static let buttonRadius: CGFloat = 12
+
+    // MARK: - Legacy names (mapped to graphite)
+
+    /// Legacy: was dark purple. Now ink.
+    public static let darkPurple = accent
+    /// Legacy: was purple accent. Now ink.
+    public static let purple = accent
+    /// Legacy: was light purple for borders/backgrounds. Now hairline.
+    public static let lightPurple = hairline
+    /// Legacy: was sky blue info accent. Now secondary text.
+    public static let skyBlue = textSecondary
+    /// Legacy: was pale blue background. Now fill.
+    public static let paleBlue = fill
+    /// Legacy: was magenta (energetic accent). Now ink.
+    public static let magenta = accent
+    /// Legacy: was emerald success. Now ink (status is shown with icons and words).
+    public static let emerald = accent
+
+    // MARK: - Legacy gradients (now flat)
+
+    private static func flat(_ color: Color) -> RadialGradient {
+        RadialGradient(colors: [color, color], center: .center, startRadius: 0, endRadius: 1)
+    }
+
+    public static let idleGradient = flat(accent)
+    public static let recordingGradient = flat(accent)
+    public static let processingGradient = flat(accent)
+    public static let successGradient = flat(accent)
+    public static let purpleBlueGradient = flat(accent)
+    public static let magentaPinkGradient = flat(textSecondary)
+
+    /// Word cloud: top ranks in ink, lower ranks in secondary grey (single-color scale)
     public static func wordCloudGradient(forRank rank: Int) -> RadialGradient {
-        switch rank {
-        case 0...2: // Top 3 - Dark purple
-            return RadialGradient(
-                colors: [darkPurple, purple],
-                center: .center,
-                startRadius: 30,
-                endRadius: 70
-            )
-        case 3...5: // 4-6 - Magenta/Purple
-            return RadialGradient(
-                colors: [magenta, purple],
-                center: .center,
-                startRadius: 30,
-                endRadius: 70
-            )
-        case 6...9: // 7-10 - Blue/Purple
-            return RadialGradient(
-                colors: [skyBlue, purple],
-                center: .center,
-                startRadius: 30,
-                endRadius: 70
-            )
-        case 10...14: // 11-15 - Teal/Blue
-            return RadialGradient(
-                colors: [Color(hex: "#14B8A6"), skyBlue],
-                center: .center,
-                startRadius: 30,
-                endRadius: 70
-            )
-        default: // 16+ - Cyan/Blue
-            return RadialGradient(
-                colors: [Color(hex: "#06B6D4"), skyBlue],
-                center: .center,
-                startRadius: 30,
-                endRadius: 70
-            )
-        }
+        flat(rank < 6 ? textPrimary : textSecondary)
     }
-    
-    // MARK: - Card Overlays (Environment-Aware)
-    
-    /// Subtle purple overlay for cards
-    /// Light mode: 0.03 opacity | Dark mode: 0.05 opacity
+
+    // MARK: - Card overlay (removed; kept for source compatibility)
+
     public static func cardGradient(for colorScheme: ColorScheme) -> some ShapeStyle {
-        let opacity = colorScheme == .light ? 0.03 : 0.05
-        return RadialGradient(
-            colors: [
-                purple.opacity(opacity),
-                darkPurple.opacity(opacity * 0.5),
-                Color.clear
-            ],
-            center: .center,
-            startRadius: 50,
-            endRadius: 200
-        )
+        Color.clear
     }
-    
-    // MARK: - Icon Backgrounds
-    
-    /// Light purple background for icon-only buttons
-    public static let purpleIconBackground = purple.opacity(0.1)
+
+    // MARK: - Icon backgrounds
+
+    /// Subtle fill behind icon-only buttons
+    public static let purpleIconBackground = fill
     
     // MARK: - WCAG Accessibility Helpers
     
@@ -196,58 +146,27 @@ public struct AppTheme {
 
 // MARK: - Year Wrap Theme
 
-/// Spotify-inspired Year Wrap color system with solid colors for sections and charts
+/// Year Wrap colors, graphite: sections differ by icon and title, not color
 public struct YearWrapTheme {
-    // MARK: - Spotify-Style Base Colors
-    
-    /// Vibrant orange - Primary accent
-    public static let vibrantOrange = Color(hex: "#FF6B35")
-    
-    /// Hot pink - Secondary accent
-    public static let hotPink = Color(hex: "#FF006E")
-    
-    /// Electric purple - Hero sections
-    public static let electricPurple = Color(hex: "#A855F7")
-    
-    /// Spotify green - Success/positive actions
-    public static let spotifyGreen = Color(hex: "#1DB954")
-    
-    // MARK: - Section Colors (Consistent by Type)
-    
-    /// Wins section color
-    public static let winsColor = Color.green
-    
-    /// Losses section color
-    public static let lossesColor = Color.red
-    
-    /// Challenges section color
-    public static let challengesColor = Color.orange
-    
-    /// Finished projects section color
-    public static let finishedProjectsColor = Color.blue
-    
-    /// Unfinished projects section color
-    public static let unfinishedProjectsColor = Color.yellow
-    
-    /// People section color
-    public static let peopleColor = Color.purple
-    
-    /// Places section color
-    public static let placesColor = Color.cyan
-    
-    /// Topics section color
-    public static let topicsColor = Color.mint
-    
-    /// Actions section color
-    public static let actionsColor = spotifyGreen
-    
-    /// Opportunities section color
-    public static let opportunitiesColor = Color.pink
-    
-    // MARK: - Chart Colors (Alternating)
-    
-    /// Colors for monthly activity charts (cycles through for visual distinction)
-    public static let chartColors: [Color] = [electricPurple, hotPink, vibrantOrange]
+    // Graphite: sections are told apart by icons and titles, not by color.
+    public static let vibrantOrange = AppTheme.accent
+    public static let hotPink = AppTheme.accent
+    public static let electricPurple = AppTheme.accent
+    public static let spotifyGreen = AppTheme.accent
+
+    public static let winsColor = AppTheme.textPrimary
+    public static let lossesColor = AppTheme.textPrimary
+    public static let challengesColor = AppTheme.textPrimary
+    public static let finishedProjectsColor = AppTheme.textPrimary
+    public static let unfinishedProjectsColor = AppTheme.textPrimary
+    public static let peopleColor = AppTheme.textPrimary
+    public static let placesColor = AppTheme.textPrimary
+    public static let topicsColor = AppTheme.textPrimary
+    public static let actionsColor = AppTheme.textPrimary
+    public static let opportunitiesColor = AppTheme.textPrimary
+
+    /// Monthly activity charts: ink, alternating with secondary grey
+    public static let chartColors: [Color] = [AppTheme.textPrimary, AppTheme.textSecondary]
     
     // MARK: - UIKit Conversion Helper
     
@@ -257,3 +176,188 @@ public struct YearWrapTheme {
     }
 }
 
+
+// MARK: - Screen Styling
+
+extension View {
+    /// Warm graphite screen background for lists and scroll views.
+    func themedScreen() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(AppTheme.background.ignoresSafeArea())
+    }
+}
+
+// MARK: - Navigation Bar Appearance
+
+enum AppAppearance {
+    /// Serif (New York) navigation titles to match the graphite design.
+    @MainActor
+    static func configure() {
+        let bar = UINavigationBar.appearance()
+        bar.largeTitleTextAttributes = [
+            .font: serifFont(size: 34, weight: .regular, textStyle: .largeTitle),
+            .foregroundColor: UIColor(AppTheme.textPrimary)
+        ]
+        bar.titleTextAttributes = [
+            .font: serifFont(size: 17, weight: .semibold, textStyle: .headline),
+            .foregroundColor: UIColor(AppTheme.textPrimary)
+        ]
+    }
+
+    private static func serifFont(size: CGFloat, weight: UIFont.Weight, textStyle: UIFont.TextStyle) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        guard let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
+        let font = UIFont(descriptor: descriptor, size: size)
+        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: font)
+    }
+}
+
+// MARK: - Graphite Components
+
+extension View {
+    /// White card with a hairline border, matching the mockups (radius 20, padding 20).
+    func graphiteCard(padding: CGFloat = 20, radius: CGFloat = AppTheme.cardRadius) -> some View {
+        self
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(AppTheme.card)
+                    .stroke(AppTheme.hairline, lineWidth: 1)
+            )
+    }
+
+    /// Hides the disclosure chevron on NavigationLink rows where the platform supports it.
+    @ViewBuilder
+    func hidesNavigationChevron() -> some View {
+        if #available(iOS 26.0, *) {
+            self.navigationLinkIndicatorVisibility(.hidden)
+        } else {
+            self
+        }
+    }
+}
+
+/// Segmented control drawn like the mockups: a soft grey track with a white,
+/// hairline-bordered pill for the selected option. Optional SF Symbol per option.
+struct GraphiteSegmentedControl<Value: Hashable>: View {
+    struct Option {
+        let value: Value
+        let title: String
+        var systemImage: String? = nil
+    }
+
+    let options: [Option]
+    @Binding var selection: Value
+    var height: CGFloat = 36
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options.indices, id: \.self) { index in
+                let option = options[index]
+                let isSelected = option.value == selection
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { selection = option.value }
+                } label: {
+                    HStack(spacing: 6) {
+                        if let icon = option.systemImage {
+                            Image(systemName: icon)
+                                .font(.system(size: 14, weight: .regular))
+                        }
+                        Text(option.title)
+                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(isSelected ? AppTheme.textPrimary : AppTheme.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: height)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(AppTheme.card)
+                                .stroke(AppTheme.hairline, lineWidth: 1)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.fill)
+        )
+    }
+}
+
+/// Square outlined icon button used for copy, regenerate and edit actions (36pt).
+struct IconSquareButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 36, height: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(AppTheme.card)
+                        .stroke(AppTheme.hairline, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+extension SessionCategory {
+    /// Outline symbol used across the graphite UI (briefcase for work, house for personal).
+    var outlineSymbol: String {
+        switch self {
+        case .work: return "briefcase"
+        case .personal: return "house"
+        }
+    }
+}
+
+/// Empty state from the mockups: quiet outline icon, serif title, short secondary line.
+struct GraphiteEmptyState: View {
+    let title: String
+    let systemImage: String
+    let description: Text
+
+    init(_ title: String, systemImage: String, description: Text) {
+        self.title = title
+        self.systemImage = systemImage
+        self.description = description
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(AppTheme.textSecondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(AppTheme.titleFont(size: 22))
+                .foregroundStyle(AppTheme.textPrimary)
+                .multilineTextAlignment(.center)
+            description
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}

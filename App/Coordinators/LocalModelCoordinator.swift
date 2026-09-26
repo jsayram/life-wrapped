@@ -82,9 +82,9 @@ public final class LocalModelCoordinator: ObservableObject {
     //   • NO auto-downloads in .task, .onAppear, or init()
     //
     // Download trigger points (all require explicit button tap):
-    //   • PermissionsView: "Download Model (~2.3 GB)" button + "Skip for Now"
-    //   • SetupView: "Download Model (~2.3 GB)" button + "Skip for Now"
-    //   • AISettingsView: "Download Model (~2.3 GB)" button
+    //   • PermissionsView: "Download model (~2.3 GB)" button + "Skip for Now"
+    //   • SetupView: "Download model (~2.3 GB)" button + "Skip for Now"
+    //   • AISettingsView: "Download model (~2.3 GB)" button
     //   • HomeTab: "Download" button with "~2.3 GB" in description
     //
     // =========================================================================

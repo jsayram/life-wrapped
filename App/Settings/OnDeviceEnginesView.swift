@@ -22,13 +22,14 @@ struct OnDeviceEnginesView: View {
                     }
                 }
             } header: {
-                Text("Select Engine")
+                Text("Select engine")
             } footer: {
                 Text("Tap an engine to activate it. All on-device engines process data locally for privacy.")
             }
         }
+        .themedScreen()
         .navigationTitle("On-Device Engines")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadEngineStatus()
         }

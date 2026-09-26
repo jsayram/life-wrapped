@@ -30,7 +30,7 @@ struct TranscriptChunkView: View {
                     HStack(spacing: 6) {
                         Text("Part \(chunkIndex + 1)")
                             .font(.caption)
-                            .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                            .foregroundStyle(isCurrentChunk ? AppTheme.accent : .secondary)
                             .fontWeight(isCurrentChunk ? .semibold : .regular)
                         
                         if let chunkId = chunkId {
@@ -44,7 +44,7 @@ struct TranscriptChunkView: View {
                                 Text("Edited")
                                     .font(.caption2)
                             }
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(AppTheme.textSecondary)
                         }
                     }
                 } else if isEdited {
@@ -54,7 +54,7 @@ struct TranscriptChunkView: View {
                         Text("Edited")
                             .font(.caption2)
                     }
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(AppTheme.textSecondary)
                 }
                 
                 Spacer()
@@ -83,7 +83,7 @@ struct TranscriptChunkView: View {
                             }
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(AppTheme.accent)
                         }
                         .buttonStyle(.plain)
                     }
@@ -111,9 +111,9 @@ struct TranscriptChunkView: View {
     
     private var chunkBackground: Color {
         if isEdited {
-            return Color.orange.opacity(0.08)
+            return AppTheme.textSecondary.opacity(0.08)
         } else if isCurrentChunk {
-            return Color.blue.opacity(0.1)
+            return AppTheme.accent.opacity(0.1)
         } else {
             return Color.clear
         }
@@ -121,9 +121,9 @@ struct TranscriptChunkView: View {
     
     private var chunkBorderColor: Color {
         if isEdited {
-            return Color.orange.opacity(0.5)
+            return AppTheme.textSecondary.opacity(0.5)
         } else if isCurrentChunk {
-            return Color.blue.opacity(0.5)
+            return AppTheme.accent.opacity(0.5)
         } else {
             return Color.clear
         }
@@ -140,16 +140,11 @@ struct TranscriptChunkView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                 }
-                .foregroundStyle(.blue)
+                .foregroundStyle(AppTheme.accent)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RadialGradient(
-                        colors: [Color.blue.opacity(0.2), Color.blue.opacity(0.05)],
-                        center: .center,
-                        startRadius: 5,
-                        endRadius: 20
-                    )
+                    AppTheme.accent.opacity(0.2)
                 )
                 .clipShape(Capsule())
             } else if coordinator.transcribedChunkIds.contains(chunkId) {
@@ -160,16 +155,11 @@ struct TranscriptChunkView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                 }
-                .foregroundColor(.green)
+                .foregroundColor(AppTheme.accent)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RadialGradient(
-                        colors: [Color.green.opacity(0.2), Color.green.opacity(0.05)],
-                        center: .center,
-                        startRadius: 5,
-                        endRadius: 20
-                    )
+                    AppTheme.accent.opacity(0.2)
                 )
                 .clipShape(Capsule())
             } else if coordinator.failedChunkIds.contains(chunkId) {
@@ -180,16 +170,11 @@ struct TranscriptChunkView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                 }
-                .foregroundColor(.orange)
+                .foregroundColor(AppTheme.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RadialGradient(
-                        colors: [Color.orange.opacity(0.2), Color.orange.opacity(0.05)],
-                        center: .center,
-                        startRadius: 5,
-                        endRadius: 20
-                    )
+                    AppTheme.textSecondary.opacity(0.2)
                 )
                 .clipShape(Capsule())
             }
@@ -211,7 +196,7 @@ struct TranscriptChunkView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise")
-                        Text("Retry Transcription")
+                        Text("Retry transcription")
                     }
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -227,7 +212,7 @@ struct TranscriptChunkView: View {
                     .font(.body)
                     .frame(minHeight: 200, maxHeight: 400)
                     .padding(12)
-                    .background(Color(.tertiarySystemBackground))
+                    .background(AppTheme.fill)
                     .cornerRadius(12)
                     .focused($isTextFocused)
                     .scrollContentBackground(.hidden)
@@ -243,7 +228,7 @@ struct TranscriptChunkView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color(.tertiarySystemBackground))
+                            .background(AppTheme.fill)
                             .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
@@ -254,10 +239,10 @@ struct TranscriptChunkView: View {
                         Text("Save")
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppTheme.onAccent)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                            .background(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : AppTheme.accent)
                             .cornerRadius(10)
                     }
                     .buttonStyle(.plain)

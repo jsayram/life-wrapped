@@ -15,128 +15,65 @@ struct SettingsTab: View {
     var body: some View {
         NavigationStack {
             List {
-                // Recording Section
+                // Main settings
                 Section {
                     NavigationLink(destination: RecordingSettingsView()) {
-                        Label {
-                            Text("Recording Chunks")
-                        } icon: {
-                            Image(systemName: "mic.fill")
-                                .foregroundStyle(AppTheme.magenta)
-                        }
+                        SettingsRowLabel(icon: "mic", title: "Recording", value: chunkLabel)
                     }
-                }
-                
-                // AI & Summaries Section
-                Section {
                     NavigationLink(destination: AISettingsView()) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("AI & Summaries")
-                                Text(activeEngineName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "brain")
-                                .foregroundStyle(AppTheme.purple)
-                        }
+                        SettingsRowLabel(icon: "sparkle", title: "AI & Summaries", value: activeEngineName)
                     }
-                } footer: {
-                    Text("Configure how your recordings are summarized.")
-                }
-                
-                // Statistics Section
-                Section {
                     NavigationLink(destination: StatisticsView()) {
-                        Label {
-                            Text("Statistics")
-                        } icon: {
-                            Image(systemName: "chart.xyaxis.line")
-                                .foregroundStyle(AppTheme.skyBlue)
-                        }
+                        SettingsRowLabel(icon: "chart.bar", title: "Statistics")
                     }
-                } footer: {
-                    Text("View word clouds, charts, and statistical analysis.")
-                }
-                
-                // Data Section
-                Section {
                     NavigationLink(destination: DataSettingsView()) {
-                        Label {
-                            Text("Data")
-                        } icon: {
-                            Image(systemName: "externaldrive.fill")
-                                .foregroundStyle(AppTheme.magenta)
-                        }
+                        SettingsRowLabel(icon: "cylinder", title: "Data", value: "Export, import")
                     }
                 }
-                
+
                 // Purchases Section
                 Section {
+                    SettingsRowLabel(
+                        icon: "cloud",
+                        title: "Smartest",
+                        value: coordinator.storeManager.isSmartestAIUnlocked
+                            ? "Unlocked"
+                            : (coordinator.storeManager.smartestAIProduct?.displayPrice ?? "Locked")
+                    )
+
                     Button {
                         Task {
                             await coordinator.storeManager.restorePurchases()
                         }
                     } label: {
-                        Label {
-                            HStack {
-                                Text("Restore Purchases")
-                                Spacer()
-                                if coordinator.storeManager.purchaseState == .restoring {
-                                    ProgressView()
-                                }
+                        HStack {
+                            SettingsRowLabel(icon: "arrow.clockwise", title: "Restore purchases")
+                            if coordinator.storeManager.purchaseState == .restoring {
+                                ProgressView()
                             }
-                        } icon: {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundStyle(AppTheme.purple)
                         }
                     }
                     .disabled(coordinator.storeManager.purchaseState == .restoring)
                 } header: {
                     Text("Purchases")
-                } footer: {
-                    if coordinator.storeManager.isSmartestAIUnlocked {
-                        Text("Smartest AI Year Wrap is unlocked.")
-                    } else {
-                        Text("Restore previous purchases if you've reinstalled the app.")
-                    }
                 }
-                
-                // Privacy Policy Section
-                Section {
-                    NavigationLink(destination: PrivacySettingsView()) {
-                        Label {
-                            Text("Privacy Policy")
-                        } icon: {
-                            Image(systemName: "lock.shield.fill")
-                                .foregroundStyle(AppTheme.darkPurple)
-                        }
-                    }
-                }
-                
+
                 // About Section
                 Section {
-                    HStack {
-                        Label {
-                            Text("Version")
-                        } icon: {
-                            Image(systemName: "info.circle")
-                                .foregroundStyle(AppTheme.lightPurple)
-                        }
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundStyle(.secondary)
+                    NavigationLink(destination: PrivacySettingsView()) {
+                        SettingsRowLabel(icon: "shield", title: "Privacy policy")
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        debugTapCount += 1
-                        if debugTapCount >= 5 {
-                            showDebugSection = true
-                            coordinator.showSuccess("Debug mode enabled")
-                            debugTapCount = 0
+
+                    SettingsRowLabel(icon: "info.circle", title: "Version", value: appVersion, monospacedValue: true)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            debugTapCount += 1
+                            if debugTapCount >= 5 {
+                                showDebugSection = true
+                                coordinator.showSuccess("Debug mode enabled")
+                                debugTapCount = 0
+                            }
                         }
-                    }
                 } header: {
                     Text("About")
                 }
@@ -179,6 +116,7 @@ struct SettingsTab: View {
                     }
                 }
             }
+            .themedScreen()
             .navigationTitle("Settings")
             .task {
                 await loadActiveEngine()
@@ -202,6 +140,16 @@ struct SettingsTab: View {
         }
     }
     
+    private var chunkLabel: String {
+        let seconds = Int(UserDefaults.standard.autoChunkDuration)
+        if seconds % 60 == 0 { return "\(seconds / 60) min parts" }
+        return "\(seconds)s parts"
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
     private func loadActiveEngine() async {
         guard let summCoord = coordinator.summarizationCoordinator else {
             activeEngineName = "Not configured"
@@ -210,5 +158,33 @@ struct SettingsTab: View {
         
         let engine = await summCoord.getActiveEngine()
         activeEngineName = engine.displayName
+    }
+}
+
+// MARK: - Settings Row
+
+/// Settings row matching the graphite mockup: outline icon, title, optional trailing value.
+struct SettingsRowLabel: View {
+    let icon: String
+    let title: String
+    var value: String? = nil
+    var monospacedValue: Bool = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 24)
+            Text(title)
+                .foregroundStyle(AppTheme.textPrimary)
+            Spacer(minLength: 8)
+            if let value {
+                Text(value)
+                    .font(monospacedValue ? .system(.subheadline, design: .monospaced) : .subheadline)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .lineLimit(1)
+            }
+        }
     }
 }

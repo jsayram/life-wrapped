@@ -57,7 +57,7 @@ struct AISettingsView: View {
                 Section {
                 // Basic (Quick word-based)
                 SummaryQualityCard(
-                    emoji: "⚡️",
+                    systemImage: "bolt",
                     title: "Basic",
                     subtitle: "Functional, extractive only",
                     detail: "Always available • Works offline • Free",
@@ -69,7 +69,7 @@ struct AISettingsView: View {
                 
                 // Smart (Local AI - Phi-3.5)
                 SummaryQualityCard(
-                    emoji: "🤖",
+                    systemImage: "cpu",
                     title: "Smart",
                     subtitle: "Decent quality • 100% private",
                     detail: localModelStatus,
@@ -81,7 +81,7 @@ struct AISettingsView: View {
                 
                 // Smarter (Apple Intelligence)
                 SummaryQualityCard(
-                    emoji: "🧠",
+                    systemImage: "sparkle",
                     title: "Smarter",
                     subtitle: "Good quality • 100% private • Free",
                     detail: availableEngines.contains(.apple) ? "Apple Intelligence • On-device" : "Needs Apple Intelligence turned on (iOS 26+)",
@@ -93,8 +93,8 @@ struct AISettingsView: View {
                 
                 // Smartest (External API) - Requires Purchase
                 SummaryQualityCard(
-                    emoji: "✨",
-                    title: coordinator.storeManager.isSmartestAIUnlocked ? "Smartest" : "Smartest 🔒",
+                    systemImage: "cloud",
+                    title: "Smartest",
                     subtitle: coordinator.storeManager.isSmartestAIUnlocked 
                         ? (hasValidAPIKey() ? "Best quality • \(selectedProvider)" : "Best quality • Cloud")
                         : "Best quality • Cloud",
@@ -104,23 +104,26 @@ struct AISettingsView: View {
                     tier: .external,
                     isSelected: activeEngine == .external,
                     isAvailable: true,
+                    showsLock: !coordinator.storeManager.isSmartestAIUnlocked,
                     onSelect: { selectEngine(.external) }
                 )
             } header: {
-                Text("Summary Quality")
+                Text("Summary quality")
             } footer: {
-                Text("Higher tiers provide better understanding, nuance, and JSON formatting. Basic and Smart work fully offline. Smartest uses the OpenAI or Anthropic model you choose, with your API key.")
+                Text("Basic, Smart and Smarter never leave your iPhone. Smartest sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
             }
             
             // MARK: - Smartest Configuration (only show if purchased)
             if activeEngine == .external && coordinator.storeManager.isSmartestAIUnlocked {
                 Section {
                     // Provider Selection
-                    Picker("Provider", selection: $selectedProvider) {
-                        Text("OpenAI").tag("OpenAI")
-                        Text("Anthropic").tag("Anthropic")
-                    }
-                    .pickerStyle(.segmented)
+                    GraphiteSegmentedControl(
+                        options: [
+                            .init(value: "OpenAI", title: "OpenAI"),
+                            .init(value: "Anthropic", title: "Anthropic")
+                        ],
+                        selection: $selectedProvider
+                    )
                     .onChange(of: selectedProvider) { _, _ in
                         ExternalModelSettings.setProvider(providerValue)
                         // Each provider keeps its own model, so switching back restores it
@@ -138,9 +141,9 @@ struct AISettingsView: View {
                                 .foregroundStyle(.secondary)
                             Spacer()
                             if hasValidAPIKey() {
-                                Label("Saved", systemImage: "checkmark.seal.fill")
+                                Label("Saved", systemImage: "checkmark")
                                     .font(.caption)
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(AppTheme.accent)
                             }
                         }
                         HStack(spacing: 8) {
@@ -209,7 +212,7 @@ struct AISettingsView: View {
                                             Text("Testing")
                                         }
                                     } else {
-                                        CenteredButtonLabel(title: "Test", systemImage: "bolt.horizontal.circle")
+                                        CenteredButtonLabel(title: "Test", systemImage: "bolt")
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
@@ -230,13 +233,13 @@ struct AISettingsView: View {
                         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                         
                         if let result = testResult {
-                            Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            Label(result, systemImage: testSuccess ? "checkmark.circle" : "xmark.circle")
                                 .font(.caption)
-                                .foregroundStyle(testSuccess ? .green : .red)
+                                .foregroundStyle(testSuccess ? AppTheme.accent : AppTheme.destructive)
                         } else if !hasValidAPIKey() {
-                            Label("Save your API key to activate Smartest summaries", systemImage: "exclamationmark.circle.fill")
+                            Label("Save your API key to activate Smartest summaries", systemImage: "exclamationmark.circle")
                                 .font(.caption)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(AppTheme.textSecondary)
                         }
                     }
                     
@@ -247,7 +250,7 @@ struct AISettingsView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         Link(destination: ExternalModelSettings.modelListURL(for: providerValue)) {
-                            CenteredButtonLabel(title: "View Models", systemImage: "list.bullet.rectangle")
+                            CenteredButtonLabel(title: "View models", systemImage: "list.bullet.rectangle")
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -265,7 +268,7 @@ struct AISettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Smartest Configuration")
+                    Text("Smartest")
                 } footer: {
                     if hasValidAPIKey() {
                         Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
@@ -280,11 +283,11 @@ struct AISettingsView: View {
             if activeEngine == .external && !coordinator.storeManager.isSmartestAIUnlocked {
                 Section {
                     VStack(spacing: 16) {
-                        Image(systemName: "lock.fill")
+                        Image(systemName: "lock")
                             .font(.system(size: 32))
                             .foregroundStyle(AppTheme.purple)
                         
-                        Text("Purchase Required")
+                        Text("Purchase required")
                             .font(.headline)
                         
                         Text("Unlock Smartest AI to configure your OpenAI or Anthropic API keys.")
@@ -296,20 +299,16 @@ struct AISettingsView: View {
                             showPurchaseSheet = true
                         } label: {
                             HStack {
-                                Image(systemName: "lock.open.fill")
+                                Image(systemName: "lock.open")
                                 Text(coordinator.storeManager.smartestAIProduct?.displayPrice != nil 
                                     ? "Unlock for \(coordinator.storeManager.smartestAIProduct!.displayPrice)" 
                                     : "Unlock Smartest AI")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppTheme.onAccent)
                             .background(
-                                LinearGradient(
-                                    colors: [AppTheme.magenta, AppTheme.purple],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
+                                AppTheme.magenta
                             )
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
@@ -318,7 +317,7 @@ struct AISettingsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 } header: {
-                    Text("Smartest Configuration")
+                    Text("Smartest")
                 }
                 .id("smartestConfig")
             }
@@ -335,7 +334,7 @@ struct AISettingsView: View {
                                 .font(.subheadline)
                             Text(localModelStatus)
                                 .font(.caption)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(AppTheme.accent)
                         }
                         Spacer()
                         Button(role: .destructive) {
@@ -353,7 +352,7 @@ struct AISettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(coordinator.localModelDisplayName)
                                     .font(.subheadline)
-                                Text("Not Downloaded")
+                                Text("Not downloaded")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -374,20 +373,20 @@ struct AISettingsView: View {
                             downloadLocalModel()
                         } label: {
                             HStack {
-                                Image(systemName: "arrow.down.circle.fill")
-                                Text("Download Model (\(coordinator.expectedLocalModelSizeMB))")
+                                Image(systemName: "arrow.down.circle")
+                                Text("Download model (\(coordinator.expectedLocalModelSizeMB))")
                             }
                             .font(.subheadline.bold())
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.purple)
+                        .tint(AppTheme.accent)
                         .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
                     }
                 }
             } header: {
-                Text("Local AI Model")
+                Text("Local AI model")
             } footer: {
                 if coordinator.isDownloadingLocalModel {
                     Text("Download continues in the background. You'll receive a notification when complete.")
@@ -408,7 +407,9 @@ struct AISettingsView: View {
             .id("localAIConfig")
             } // End of if activeEngine == .local
         }
+        .themedScreen()
         .navigationTitle("AI & Summaries")
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadEngineStatus()
             loadAPIKey()
@@ -436,7 +437,9 @@ struct AISettingsView: View {
             if wasDownloading && !isDownloading {
                 Task {
                     isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
-                    localModelStatus = await coordinator.localModelSizeFormatted()
+                    localModelStatus = isLocalModelDownloaded
+            ? await coordinator.localModelSizeFormatted()
+            : "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
                 }
             }
         }
@@ -515,14 +518,14 @@ struct AISettingsView: View {
             Button {
                 cancelDownload()
             } label: {
-                Text("Cancel Download")
+                Text("Cancel download")
                     .font(.subheadline.weight(.medium))
-                    .foregroundColor(.red)
+                    .foregroundColor(AppTheme.destructive)
                     .padding(.vertical, 8)
                     .padding(.horizontal, 24)
                     .background(
                         Capsule()
-                            .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
+                            .strokeBorder(AppTheme.destructive.opacity(0.5), lineWidth: 1)
                     )
             }
             .padding(.top, 4)
@@ -543,7 +546,9 @@ struct AISettingsView: View {
         
         // Load local model status
         isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
-        localModelStatus = await coordinator.localModelSizeFormatted()
+        localModelStatus = isLocalModelDownloaded
+            ? await coordinator.localModelSizeFormatted()
+            : "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
     }
     
     private func downloadLocalModel() {
@@ -562,7 +567,7 @@ struct AISettingsView: View {
                 try await coordinator.deleteLocalModel()
                 await MainActor.run {
                     isLocalModelDownloaded = false
-                    localModelStatus = "Not Downloaded"
+                    localModelStatus = "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
                 }
                 // Refresh status
                 await loadEngineStatus()
@@ -793,102 +798,99 @@ struct SmartestPurchaseSheet: View {
     let onCancel: () -> Void
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Header
-            VStack(spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 44))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.magenta, AppTheme.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(spacing: 12) {
+                    Image(systemName: "cloud")
+                        .font(.system(size: 24, weight: .regular))
+                        .foregroundStyle(AppTheme.onAccent)
+                        .frame(width: 56, height: 56)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(AppTheme.accent)
                         )
-                    )
-                
-                Text("Unlock Smartest AI")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Text("Get the highest quality summaries with OpenAI or Anthropic")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 12)
-            
-            Divider()
-            
-            // Features
-            VStack(alignment: .leading, spacing: 10) {
-                FeatureRow(icon: "sparkles", text: "Best quality AI summaries")
-                FeatureRow(icon: "key.fill", text: "Use your own API keys (BYOK)")
-                FeatureRow(icon: "arrow.clockwise", text: "One-time purchase, forever access")
-                FeatureRow(icon: "key.fill", text: "Your API keys stay private")
-            }
-            .padding(.horizontal)
-            
-            // Purchase disclaimer
-            Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            
-            // Purchase button
-            Button(action: onPurchase) {
-                HStack {
-                    if isPurchasing {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "lock.open.fill")
-                        Text(price != nil ? "Unlock for \(price!)" : "Unlock Smartest AI")
-                            .fontWeight(.semibold)
-                    }
+                        .accessibilityHidden(true)
+
+                    Text("Unlock Smartest")
+                        .font(AppTheme.titleFont(size: 30))
+                        .foregroundStyle(AppTheme.textPrimary)
+
+                    Text("The most detailed summaries, using OpenAI or Anthropic with your own API key.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(.white)
+                .padding(.top, 24)
+
+                // Features
+                VStack(spacing: 0) {
+                    FeatureRow(icon: "sparkle", text: "Best quality summaries and Year Wrap")
+                    Divider().overlay(AppTheme.hairline)
+                    FeatureRow(icon: "key", text: "Bring your own key, any current model")
+                    Divider().overlay(AppTheme.hairline)
+                    FeatureRow(icon: "arrow.clockwise", text: "One-time purchase")
+                    Divider().overlay(AppTheme.hairline)
+                    FeatureRow(icon: "lock", text: "Keys stay in your Keychain")
+                }
                 .background(
-                    LinearGradient(
-                        colors: [AppTheme.magenta, AppTheme.purple],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(AppTheme.card)
+                        .stroke(AppTheme.hairline, lineWidth: 1)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .disabled(isPurchasing)
-            .padding(.horizontal)
-            
-            // Cancel button
-            Button("Not Now", action: onCancel)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-            
-            // Restore Purchases button (App Store Guideline 3.1.1)
-            Button(action: onRestore) {
-                HStack(spacing: 4) {
-                    if isRestoring {
-                        ProgressView()
-                            .scaleEffect(0.8)
+
+                // Purchase button
+                Button(action: onPurchase) {
+                    Group {
+                        if isPurchasing {
+                            ProgressView()
+                                .tint(AppTheme.onAccent)
+                        } else {
+                            Text(price != nil ? "Unlock for \(price!)" : "Unlock Smartest")
+                                .fontWeight(.semibold)
+                        }
                     }
-                    Text("Restore Purchases")
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .foregroundStyle(AppTheme.onAccent)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
+                            .fill(AppTheme.accent)
+                    )
                 }
+                .buttonStyle(.plain)
+                .disabled(isPurchasing)
+
+                // Cancel button
+                Button("Not now", action: onCancel)
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                // Restore (App Store Guideline 3.1.1) and redeem
+                HStack(spacing: 32) {
+                    Button(action: onRestore) {
+                        HStack(spacing: 4) {
+                            if isRestoring {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            }
+                            Text("Restore purchases")
+                        }
+                    }
+                    Button("Redeem code", action: onRedeem)
+                }
+                .font(.footnote)
+                .foregroundStyle(AppTheme.textSecondary)
+
+                // Purchase disclaimer
+                Text("All sales are final. Refunds are handled by Apple under App Store policies.")
+                    .font(.caption2)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 16)
             }
-            .foregroundStyle(.secondary)
-            .font(.footnote)
-            
-            // Redeem Code button
-            Button(action: onRedeem) {
-                Text("Redeem Code")
-            }
-            .foregroundStyle(.secondary)
-            .font(.footnote)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 24)
         }
-        .padding()
+        .background(AppTheme.background.ignoresSafeArea())
     }
 }
 
@@ -897,13 +899,18 @@ struct FeatureRow: View {
     let text: String
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image(systemName: icon)
-                .foregroundStyle(AppTheme.purple)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 24)
             Text(text)
                 .font(.subheadline)
+                .foregroundStyle(AppTheme.textPrimary)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 }
 

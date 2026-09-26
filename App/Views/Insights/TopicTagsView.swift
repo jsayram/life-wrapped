@@ -19,10 +19,10 @@ struct TopicTagsView: View {
                         Text(topic.capitalized)
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(AppTheme.accent)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(.blue.opacity(0.1))
+                            .background(AppTheme.accent.opacity(0.1))
                             .clipShape(Capsule())
                     }
                 }

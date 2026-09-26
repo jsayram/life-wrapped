@@ -32,12 +32,7 @@ struct StatusPill: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            RadialGradient(
-                colors: [color.opacity(0.2), color.opacity(0.05)],
-                center: .center,
-                startRadius: 5,
-                endRadius: 20
-            )
+            color.opacity(0.1)
         )
         .clipShape(Capsule())
     }
