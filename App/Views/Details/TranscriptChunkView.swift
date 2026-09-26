@@ -71,6 +71,7 @@ struct TranscriptChunkView: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Copy part \(chunkIndex + 1)")
                         
                         Button {
                             editedText = combinedText
@@ -86,6 +87,7 @@ struct TranscriptChunkView: View {
                             .foregroundStyle(AppTheme.accent)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Edit part \(chunkIndex + 1)")
                     }
                 }
             }

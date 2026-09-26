@@ -347,11 +347,19 @@ struct OverviewTab: View {
                             }
                             
                             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                                // Only buckets with summaries; empty hours/days add noise
-                                let timeBuckets = groupSessionsByTimeBucket().filter { !$0.isEmpty }
+                                // Only buckets with summaries; empty hours/days add noise.
+                                // Skip the summary already shown in the card above, so Week and Month don't repeat it.
+                                let shownSummaryId = [.today, .week, .month].contains(selectedTimeRange) ? periodSummary?.id : nil
+                                let timeBuckets = groupSessionsByTimeBucket()
+                                    .map { bucket in
+                                        let summaries = bucket.summaries.filter { $0.id != shownSummaryId }
+                                        return TimeBucket(header: bucket.header, summaries: summaries, isEmpty: summaries.isEmpty)
+                                    }
+                                    .filter { !$0.isEmpty }
                                 
-                                if timeBuckets.isEmpty {
-                                    // No session summaries found
+                                if timeBuckets.isEmpty && [.today, .yesterday].contains(selectedTimeRange) {
+                                    // Today and Yesterday list session summaries; the other ranges already
+                                    // show their summary card, a generate card or the Year Wrap above
                                     GraphiteEmptyState(
                                         "No summaries yet",
                                         systemImage: "doc.text",

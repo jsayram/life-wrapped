@@ -944,6 +944,7 @@ struct SessionDetailView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Copy summary")
                 
                 // Regenerate button
                 Button {
@@ -973,6 +974,7 @@ struct SessionDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isRegeneratingSummary)
+                .accessibilityLabel(isRegeneratingSummary ? "Regenerating summary" : "Regenerate summary")
             }
             
             Text(summary.text)
@@ -1022,6 +1024,7 @@ struct SessionDetailView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Edit notes")
                 }
             }
             
