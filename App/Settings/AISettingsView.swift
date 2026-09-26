@@ -209,7 +209,7 @@ struct AISettingsView: View {
                                             Text("Testing")
                                         }
                                     } else {
-                                        Label("Test", systemImage: "bolt.horizontal.circle")
+                                        CenteredButtonLabel(title: "Test", systemImage: "bolt.horizontal.circle")
                                     }
                                 }
                                 .frame(maxWidth: .infinity)
@@ -220,13 +220,14 @@ struct AISettingsView: View {
                             Button {
                                 saveAPIKey()
                             } label: {
-                                Label("Save", systemImage: "checkmark")
+                                CenteredButtonLabel(title: "Save", systemImage: "checkmark")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
                             .disabled(apiKey.isEmpty || ExternalModelSettings.normalize(selectedModel).isEmpty)
                         }
                         .controlSize(.large)
+                        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                         
                         if let result = testResult {
                             Label(result, systemImage: testSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -242,17 +243,18 @@ struct AISettingsView: View {
                     // Helper links side by side
                     HStack(spacing: 12) {
                         Link(destination: apiKeyURL) {
-                            Label("Get API Key", systemImage: "key")
+                            CenteredButtonLabel(title: "Get API Key", systemImage: "key")
                                 .frame(maxWidth: .infinity)
                         }
                         Link(destination: ExternalModelSettings.modelListURL(for: providerValue)) {
-                            Label("View Models", systemImage: "list.bullet.rectangle")
+                            CenteredButtonLabel(title: "View Models", systemImage: "list.bullet.rectangle")
                                 .frame(maxWidth: .infinity)
                         }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .font(.footnote)
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
                     
                     // Remove key
                     if hasValidAPIKey() {
@@ -902,5 +904,22 @@ struct FeatureRow: View {
             Text(text)
                 .font(.subheadline)
         }
+    }
+}
+
+// MARK: - Centered Button Label
+
+/// Icon and text centered together. `Label` inside a List aligns its icon to a
+/// column, which pushes the title off center in full-width buttons.
+private struct CenteredButtonLabel: View {
+    let title: String
+    let systemImage: String
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+        }
+        .lineLimit(1)
     }
 }
