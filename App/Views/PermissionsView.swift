@@ -214,7 +214,7 @@ struct PermissionsView: View {
                                         .cornerRadius(6)
                                     
                                     VStack(alignment: .leading, spacing: 6) {
-                                        FeatureBullet(text: "GPT-4 & Claude", color: .purple)
+                                        FeatureBullet(text: "OpenAI & Anthropic", color: .purple)
                                         FeatureBullet(text: "Best quality", color: .purple)
                                         FeatureBullet(text: "Deep insights", color: .purple)
                                         FeatureBullet(text: "Detailed analysis", color: .purple)

@@ -397,14 +397,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
         print("📄 [ExternalAPIEngine] \(contentText.prefix(500))...")
         #endif
         
-        guard let jsonData = contentText.data(using: .utf8) else {
-            #if DEBUG
-            print("❌ [ExternalAPIEngine] Failed to convert content to UTF-8 data")
-            #endif
-            throw SummarizationError.decodingFailed("Failed to convert content to UTF-8 data")
-        }
-        
-        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+        guard let json = ModelJSON.object(from: contentText) else {
             #if DEBUG
             print("❌ [ExternalAPIEngine] Content is not valid JSON - using as plain text summary")
             #endif
@@ -563,8 +556,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
         print("📄 [ExternalAPIEngine] \(contentText.prefix(500))...")
         #endif
         
-        guard let jsonData = contentText.data(using: .utf8),
-              let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+        guard let json = ModelJSON.object(from: contentText) else {
             throw SummarizationError.decodingFailed("Failed to parse content as JSON")
         }
         

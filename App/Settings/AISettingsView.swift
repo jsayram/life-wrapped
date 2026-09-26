@@ -84,7 +84,7 @@ struct AISettingsView: View {
                     emoji: "🧠",
                     title: "Smarter",
                     subtitle: "Good quality • 100% private • Free",
-                    detail: availableEngines.contains(.apple) ? "Apple Intelligence • Works offline" : "Requires iOS 26+ and compatible device",
+                    detail: availableEngines.contains(.apple) ? "Apple Intelligence • On-device" : "Needs Apple Intelligence turned on (iOS 26+)",
                     tier: .apple,
                     isSelected: activeEngine == .apple,
                     isAvailable: availableEngines.contains(.apple),
@@ -611,7 +611,7 @@ struct AISettingsView: View {
         }
         
         if tier == .apple && !availableEngines.contains(.apple) {
-            coordinator.showError("Apple Intelligence requires iOS 18.1+ and compatible hardware")
+            coordinator.showError("Apple Intelligence isn't available. It needs iOS 26 or later on a supported device, with Apple Intelligence turned on in Settings.")
             return
         }
         

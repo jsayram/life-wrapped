@@ -335,9 +335,9 @@ public actor SummarizationCoordinator {
         var lastError: Error?
         var engineToTry = activeEngine
         
-        // Define fallback chain: External → Local → Basic
-        // Apple Intelligence is not in automatic fallback - user must explicitly select it
-        let fallbackChain: [EngineTier] = [.external, .local, .basic]
+        // Start with the engine the user chose, then fall back only to on-device engines.
+        // Never escalate to the cloud unless the user picked External.
+        let fallbackChain = Self.fallbackChain(for: preferredTier)
         var triedEngines: [EngineTier] = []
         
         for tier in fallbackChain {
@@ -421,6 +421,18 @@ public actor SummarizationCoordinator {
             throw error
         } else {
             throw SummarizationError.summarizationFailed("All summarization engines unavailable")
+        }
+    }
+    
+    /// Engines to try, in order, for a session summary.
+    /// Starts with the user's choice; falls back to on-device engines only, so a
+    /// transcript is never sent to a cloud API unless the user selected External.
+    static func fallbackChain(for preferred: EngineTier) -> [EngineTier] {
+        switch preferred {
+        case .external: return [.external, .local, .basic]
+        case .apple: return [.apple, .local, .basic]
+        case .local: return [.local, .basic]
+        case .basic: return [.basic]
         }
     }
     

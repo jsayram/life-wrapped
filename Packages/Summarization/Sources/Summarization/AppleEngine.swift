@@ -34,16 +34,20 @@ public actor AppleEngine: SummarizationEngine {
     private var summariesGenerated: Int = 0
     private var totalProcessingTime: TimeInterval = 0.0
     
-    #if canImport(FoundationModels)
-    // Language model session for conversations
-    private var session: LanguageModelSession?
-    #endif
-    
     // MARK: - Initialization
     
     public init(storage: DatabaseManager) {
         self.storage = storage
     }
+    
+    #if canImport(FoundationModels)
+    /// The only place a model session is created. Always Apple's on-device model:
+    /// transcripts never leave the phone. Do not switch to the Private Cloud Compute
+    /// server model; the Smarter tier is promised to users as on-device and private.
+    private func makeSession() -> LanguageModelSession {
+        LanguageModelSession(model: SystemLanguageModel.default)
+    }
+    #endif
     
     // MARK: - SummarizationEngine Protocol
     
@@ -58,9 +62,10 @@ public actor AppleEngine: SummarizationEngine {
         switch availability {
         case .available:
             return true
-        case .unavailable:
+        case .unavailable(let reason):
             #if DEBUG
-            print("⚠️ [AppleEngine] Apple Intelligence is unavailable on this device")
+            // deviceNotEligible / appleIntelligenceNotEnabled / modelNotReady
+            print("⚠️ [AppleEngine] Apple Intelligence is unavailable: \(reason)")
             #endif
             return false
         @unknown default:
@@ -87,14 +92,10 @@ public actor AppleEngine: SummarizationEngine {
         }
         
         #if canImport(FoundationModels)
-        // Create or reuse session
-        if session == nil {
-            session = LanguageModelSession()
-        }
-        
-        guard let session = session else {
-            throw SummarizationError.summarizationFailed("Failed to create language model session")
-        }
+        // Fresh session per request. A reused session keeps every earlier prompt and
+        // reply in its transcript, which overflows the model's context window after a
+        // few summaries and leaks one recording's content into the next.
+        let session = makeSession()
         
         // Calculate word count
         let wordCount = transcriptText.split(separator: " ").count
@@ -173,14 +174,10 @@ public actor AppleEngine: SummarizationEngine {
         }
         
         #if canImport(FoundationModels)
-        // Create or reuse session
-        if session == nil {
-            session = LanguageModelSession()
-        }
-        
-        guard let session = session else {
-            throw SummarizationError.summarizationFailed("Failed to create language model session")
-        }
+        // Fresh session per request. A reused session keeps every earlier prompt and
+        // reply in its transcript, which overflows the model's context window after a
+        // few summaries and leaks one recording's content into the next.
+        let session = makeSession()
         
         // Build input from session summaries (same as External API)
         let combinedSummaries = sessionSummaries
@@ -290,8 +287,7 @@ public actor AppleEngine: SummarizationEngine {
         languageCodes: [String]
     ) -> SessionIntelligence {
         // Try to parse JSON response
-        guard let jsonData = responseText.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+        guard let json = ModelJSON.object(from: responseText) else {
             // Fallback: use response as plain text summary
             return SessionIntelligence(
                 sessionId: sessionId,
@@ -340,8 +336,7 @@ public actor AppleEngine: SummarizationEngine {
         let totalWords = sessionSummaries.reduce(0) { $0 + $1.wordCount }
         
         // Try to parse JSON response
-        guard let jsonData = responseText.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+        guard let json = ModelJSON.object(from: responseText) else {
             // Fallback: use response as plain text summary
             return PeriodIntelligence(
                 periodType: periodType,
