@@ -19,6 +19,7 @@ struct PermissionsView: View {
     @State private var downloadProgress: Double = 0.0
     @State private var isDownloading = false
     @State private var downloadError: String? = nil
+    @State private var downloadTask: Task<Void, Never>? = nil
     
     enum SetupStep {
         case modelDownload  // Download AI first
@@ -361,7 +362,7 @@ struct PermissionsView: View {
                         Text("Downloading AI Model... \(Int(downloadProgress * 100))%")
                             .font(.headline)
                         
-                        Text("Phi-3.5 Mini • \(coordinator.expectedLocalModelSizeMB)")
+                        Text("\(coordinator.localModelDisplayName) • \(coordinator.expectedLocalModelSizeMB)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -409,7 +410,7 @@ struct PermissionsView: View {
                         Text("Download AI model")
                             .font(.headline)
                         
-                        Text("This will download the Phi-3.5 Mini model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
+                        Text("This will download the \(coordinator.localModelDisplayName) model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -479,6 +480,9 @@ struct PermissionsView: View {
     
     private func cancelDownload() {
         print("⏹️ [PermissionsView] User cancelled download")
+        // Stop the download itself, then let the coordinator reset its state and remove partial files
+        downloadTask?.cancel()
+        downloadTask = nil
         coordinator.getLocalModelCoordinator()?.cancelDownload()
         
         // Reset state to show Download/Skip buttons again
@@ -500,23 +504,31 @@ struct PermissionsView: View {
         downloadError = nil
         downloadProgress = 0.0
         
-        Task {
+        downloadTask = Task {
             do {
                 try await coordinator.downloadLocalModel { progress in
                     Task { @MainActor in
+                        // Ignore late updates after Cancel
+                        guard self.isDownloading else { return }
                         self.downloadProgress = progress
                     }
                 }
                 
+                // Cancelled at the last moment: stay on this screen
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     print("✅ [PermissionsView] Model download complete")
                     isDownloading = false
+                    downloadTask = nil
                     proceedToPermissions()  // Move to permissions after download
                 }
             } catch {
+                // Cancel already reset the screen, so a cancelled download shows no error
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     print("❌ [PermissionsView] Model download failed: \(error)")
                     isDownloading = false
+                    downloadTask = nil
                     downloadError = "Download failed: \(error.localizedDescription)"
                 }
             }

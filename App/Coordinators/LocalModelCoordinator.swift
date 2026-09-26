@@ -16,6 +16,8 @@ public final class LocalModelCoordinator: ObservableObject {
     // MARK: - State
     
     @Published public private(set) var isDownloadingLocalModel: Bool = false
+    /// Progress of the Settings download (0.0-1.0), by bytes
+    @Published public private(set) var localModelDownloadProgress: Double = 0
     private var localModelDownloadTask: Task<Void, Never>?
     
     // MARK: - Callbacks
@@ -28,8 +30,19 @@ public final class LocalModelCoordinator: ObservableObject {
     
     // MARK: - Constants
     
-    public let expectedLocalModelSizeMB: String = "~2.3 GB"
-    public let localModelDisplayName: String = "Phi-3.5 Mini"
+    /// Download size shown on every download button, for example "~2.3 GB"
+    public let expectedLocalModelSizeMB: String = LocalEngine.modelDownloadSize
+    /// Name of the model Smart runs
+    public let localModelDisplayName: String = LocalEngine.modelDisplayName
+    
+    /// True when the old Smart model (Phi-3.5) was removed and the new one isn't downloaded yet
+    public var showsModelReplacedNotice: Bool {
+        UserDefaults.standard.bool(forKey: LocalEngine.modelReplacedNoticeKey)
+    }
+    
+    private func clearModelReplacedNotice() {
+        UserDefaults.standard.removeObject(forKey: LocalEngine.modelReplacedNoticeKey)
+    }
     
     // MARK: - Initialization
     
@@ -44,7 +57,7 @@ public final class LocalModelCoordinator: ObservableObject {
         return await summarizationCoordinator.getLocalEngine().isModelDownloaded()
     }
     
-    /// Get formatted model size string: "Downloaded (2282 MB)" or "Not Downloaded"
+    /// Get formatted model size string: "Downloaded (2173 MB)" or "Not Downloaded"
     public func localModelSizeFormatted() async -> String {
         return await summarizationCoordinator.getLocalEngine().modelSizeFormatted()
     }
@@ -75,17 +88,17 @@ public final class LocalModelCoordinator: ObservableObject {
     //   • Local AI model is OPTIONAL enhancement, not required for functionality
     //
     // Part (ii) - Size disclosure and user prompt:
-    //   • Download size (~2.3 GB) is clearly displayed on ALL download buttons
+    //   • Download size (LocalEngine.modelDownloadSize, ~2.3 GB) is clearly displayed on ALL download buttons
     //   • User must explicitly tap a button to initiate download
     //   • Skip/Cancel options available at every download prompt
     //   • Wi-Fi recommendation shown before download
     //   • NO auto-downloads in .task, .onAppear, or init()
     //
     // Download trigger points (all require explicit button tap):
-    //   • PermissionsView: "Download model (~2.3 GB)" button + "Skip for Now"
-    //   • SetupView: "Download model (~2.3 GB)" button + "Skip for Now"
+    //   • PermissionsView: "Download (~2.3 GB)" button + "Skip for now"
+    //   • SetupView: "Download (~2.3 GB)" button + "Skip for Now"
     //   • AISettingsView: "Download model (~2.3 GB)" button
-    //   • HomeTab: "Download" button with "~2.3 GB" in description
+    //   • HomeTab: "~2.3 GB" in the Basic-mode reminder
     //
     // =========================================================================
     
@@ -100,15 +113,27 @@ public final class LocalModelCoordinator: ObservableObject {
         guard !isDownloadingLocalModel else { return }
         
         isDownloadingLocalModel = true
+        localModelDownloadProgress = 0
         
         localModelDownloadTask = Task {
             do {
-                try await summarizationCoordinator.getLocalEngine().downloadModel(progress: nil)
+                try await summarizationCoordinator.getLocalEngine().downloadModel { progress in
+                    Task { @MainActor in
+                        // Publish whole percents only (the whole app observes this), never backwards
+                        let percent = (progress * 100).rounded(.down) / 100
+                        if percent > self.localModelDownloadProgress {
+                            self.localModelDownloadProgress = percent
+                        }
+                    }
+                }
+                // A cancelled download never switches the app to Smart
+                try Task.checkCancellation()
                 
                 // After successful download, switch to Local AI
                 await summarizationCoordinator.setPreferredEngine(.local)
                 
                 await MainActor.run {
+                    self.clearModelReplacedNotice()
                     self.isDownloadingLocalModel = false
                     self.onSuccess?("Local AI model downloaded and activated")
                 }
@@ -116,6 +141,8 @@ public final class LocalModelCoordinator: ObservableObject {
                 // Notify that engine changed
                 NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
             } catch {
+                // Cancelling is not a failure: cancelDownload() already reset the state
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     self.isDownloadingLocalModel = false
                     self.onError?("Download failed: \(error.localizedDescription)")
@@ -135,9 +162,12 @@ public final class LocalModelCoordinator: ObservableObject {
         isDownloadingLocalModel = true
         defer { isDownloadingLocalModel = false }
         try await summarizationCoordinator.getLocalEngine().downloadModel(progress: progress)
+        // A cancelled download never switches the app to Smart
+        try Task.checkCancellation()
         
         // After successful download during onboarding, set Local AI as default
         await summarizationCoordinator.setPreferredEngine(.local)
+        clearModelReplacedNotice()
         
         onSuccess?("Local AI model downloaded and activated")
         

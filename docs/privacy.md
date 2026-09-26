@@ -38,7 +38,7 @@ All speech-to-text happens on your device using Apple's Speech framework with `r
 | Summary quality | Engine | Where it runs | Data sent |
 | --- | --- | --- | --- |
 | **Basic** | Key sentences with Apple's NaturalLanguage framework | On your device | None |
-| **Smart** | Phi-3.5 Mini, downloaded once | On your device | None |
+| **Smart** | Qwen3 4B, downloaded once | On your device | None |
 | **Smarter** | Apple Intelligence (iOS 26 or later, supported devices) | On your device | None |
 | **Smartest** | OpenAI or Anthropic, with your own API key | Cloud | The text being summarized, see below |
 

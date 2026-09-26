@@ -42,7 +42,7 @@ The app offers 4 AI summarization engines:
 | Engine                 | Internet Required | Notes                                    |
 | ---------------------- | ----------------- | ---------------------------------------- |
 | **Basic**              | No                | Built-in NLP, always works               |
-| **Local AI**           | Download only     | Phi-3.5 model (~2.1GB one-time download) |
+| **Local AI**           | Download only     | Qwen3 4B model (~2.3 GB one-time download) |
 | **Apple Intelligence** | No                | iOS 18.1+, A17 Pro/M1+ devices           |
 | **External API**       | Yes               | User provides their own API keys         |
 

@@ -243,6 +243,7 @@ struct OverviewTab: View {
                                                     .fontWeight(.medium)
                                             }
                                             .buttonStyle(.borderedProminent)
+                                            .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                                             .tint(filterColor(for: yearWrapFilter))
                                         }
                                         .padding(24)

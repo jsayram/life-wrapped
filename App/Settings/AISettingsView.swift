@@ -67,7 +67,7 @@ struct AISettingsView: View {
                     onSelect: { selectEngine(.basic) }
                 )
                 
-                // Smart (Local AI - Phi-3.5)
+                // Smart (on-device model, downloaded once)
                 SummaryQualityCard(
                     systemImage: "cpu",
                     title: "Smart",
@@ -227,6 +227,7 @@ struct AISettingsView: View {
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
+                            .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                             .disabled(apiKey.isEmpty || ExternalModelSettings.normalize(selectedModel).isEmpty)
                         }
                         .controlSize(.large)
@@ -352,7 +353,7 @@ struct AISettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(coordinator.localModelDisplayName)
                                     .font(.subheadline)
-                                Text("Not downloaded")
+                                Text(coordinator.showsLocalModelReplacedNotice ? "New model, not downloaded yet" : "Not downloaded")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -377,10 +378,12 @@ struct AISettingsView: View {
                                 Text("Download model (\(coordinator.expectedLocalModelSizeMB))")
                             }
                             .font(.subheadline.bold())
+                            .foregroundStyle(AppTheme.onAccent)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                         }
                         .buttonStyle(.borderedProminent)
+                        .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                         .tint(AppTheme.accent)
                         .modifier(WiggleModifier(wiggle: $wiggleLocalAIButton))
                     }
@@ -390,6 +393,8 @@ struct AISettingsView: View {
             } footer: {
                 if coordinator.isDownloadingLocalModel {
                     Text("Download continues in the background. You'll receive a notification when complete.")
+                } else if !isLocalModelDownloaded && coordinator.showsLocalModelReplacedNotice {
+                    Text("Smart now uses \(coordinator.localModelDisplayName), a more capable model. The old model was removed to free up space. Download the new one to keep using Smart.")
                 } else if !isLocalModelDownloaded {
                     Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
                 } else {
@@ -439,7 +444,7 @@ struct AISettingsView: View {
                     isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
                     localModelStatus = isLocalModelDownloaded
             ? await coordinator.localModelSizeFormatted()
-            : "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
+            : notDownloadedStatus
                 }
             }
         }
@@ -503,12 +508,14 @@ struct AISettingsView: View {
     @ViewBuilder
     private var downloadingModelView: some View {
         VStack(spacing: 12) {
-            ProgressView()
-                .scaleEffect(1.2)
+            ProgressView(value: coordinator.localModelDownloadProgress)
+                .progressViewStyle(.linear)
+                .tint(AppTheme.accent)
             
-            Text("Downloading \(coordinator.localModelDisplayName)...")
+            Text("Downloading \(coordinator.localModelDisplayName)... \(Int(coordinator.localModelDownloadProgress * 100))%")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .monospacedDigit()
             
             Text("You can leave this screen. We'll notify you when the download is complete.")
                 .font(.caption)
@@ -536,6 +543,13 @@ struct AISettingsView: View {
     
     // MARK: - Helper Methods
     
+    /// Smart row detail when the model isn't on the device
+    private var notDownloadedStatus: String {
+        coordinator.showsLocalModelReplacedNotice
+            ? "New model available · \(coordinator.expectedLocalModelSizeMB)"
+            : "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
+    }
+    
     private func loadEngineStatus() async {
         isLoading = true
         defer { isLoading = false }
@@ -548,7 +562,7 @@ struct AISettingsView: View {
         isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
         localModelStatus = isLocalModelDownloaded
             ? await coordinator.localModelSizeFormatted()
-            : "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
+            : notDownloadedStatus
     }
     
     private func downloadLocalModel() {
@@ -567,7 +581,7 @@ struct AISettingsView: View {
                 try await coordinator.deleteLocalModel()
                 await MainActor.run {
                     isLocalModelDownloaded = false
-                    localModelStatus = "Not downloaded · \(coordinator.expectedLocalModelSizeMB)"
+                    localModelStatus = notDownloadedStatus
                 }
                 // Refresh status
                 await loadEngineStatus()

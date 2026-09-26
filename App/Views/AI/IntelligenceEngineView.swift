@@ -113,7 +113,7 @@ struct IntelligenceEngineView: View {
         case .basic:
             return "Basic engine should always be available. Please restart the app."
         case .local:
-            return "Local AI model needs to be downloaded. Go to Settings to download Phi-3.5."
+            return "The Smart model needs to be downloaded. Go to Settings, AI & Summaries to download it."
         case .apple:
             return "Apple Intelligence requires iOS 26+ and compatible hardware (A17 Pro / M1 or later). Enable Apple Intelligence in Settings to use this engine."
         case .external:

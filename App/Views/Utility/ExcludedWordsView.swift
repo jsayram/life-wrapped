@@ -134,6 +134,7 @@ struct ExcludedWordsView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                     .tint(AppTheme.purple)
                     .disabled(customWordsText.isEmpty)
                     

@@ -204,6 +204,7 @@ struct TranscriptChunkView: View {
                     .fontWeight(.medium)
                 }
                 .buttonStyle(.borderedProminent)
+                .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                 .tint(AppTheme.magenta)
             }
             .frame(maxWidth: .infinity)

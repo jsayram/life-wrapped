@@ -44,7 +44,7 @@ public actor SummarizationCoordinator {
         self.basicEngine = BasicEngine(storage: storage)
         self.activeEngine = basicEngine
         
-        // Initialize local LLM engine (Phi-3.5)
+        // Initialize local LLM engine (Smart tier)
         self.localEngine = LocalEngine()
         
         // Initialize Apple Intelligence engine
@@ -72,6 +72,16 @@ public actor SummarizationCoordinator {
     /// Restore saved preference and select appropriate engine
     /// Call this after initialization to properly set up the active engine
     public func restoreSavedPreference() async {
+        // Smart used Phi-3.5 before it moved to Qwen3 4B. Delete the old download (about 2.1 GB).
+        // If Smart was selected, it falls back to the next tier until the new model is downloaded,
+        // and Settings explains why.
+        if await localEngine.removeRetiredModels() {
+            UserDefaults.standard.set(true, forKey: LocalEngine.modelReplacedNoticeKey)
+            #if DEBUG
+            print("🧹 [SummarizationCoordinator] Removed the retired Phi-3.5 model")
+            #endif
+        }
+        
         // Load saved preference from UserDefaults
         if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
            let tier = EngineTier(rawValue: savedPreference) {
@@ -552,7 +562,7 @@ public actor SummarizationCoordinator {
         let engine: any SummarizationEngine
         
         if useLocalAI {
-            // Use Local AI (Phi-3.5 Mini)
+            // Use Local AI (Smart tier)
             guard await localEngine.isAvailable() else {
                 throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
             }

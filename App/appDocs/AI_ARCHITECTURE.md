@@ -1,5 +1,7 @@
 # AI Architecture (4 Engines: Basic, Apple Intelligence, Local AI, External API)
 
+> **Update, September 2026:** Smart (Local AI) now runs **Qwen3-4B-Instruct-2507, 4-bit** (`mlx-community/Qwen3-4B-Instruct-2507-4bit`, ~2.3 GB) with MLX, not Phi-3.5 Mini. Prompts are sent as system and user messages and formatted by the model's own chat template; never hand-write chat tags. See [LOCAL_AI_ARCHITECTURE.md](LOCAL_AI_ARCHITECTURE.md) for the current setup. Sections below that describe Phi-3.5, llama.cpp or SwiftLlama are kept as history.
+
 Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS with Swift 6.2. Covers all four engines: on-device processing (Basic, Apple Intelligence, Local AI) and cloud-based (External API).
 
 ---
@@ -13,7 +15,7 @@ Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS 
 5. [Universal Prompt System](#universal-prompt-system)
 6. [Basic Engine (NaturalLanguage Framework)](#basic-engine-naturallanguage-framework)
 7. [Apple Intelligence Engine](#apple-intelligence-engine)
-8. [Local AI Engine (Phi-3.5 via MLX)](#local-ai-engine-phi-35-via-mlx)
+8. [Local AI Engine (Qwen3 4B via MLX)](#local-ai-engine-qwen3-4b-via-mlx)
 9. [External API Engine (OpenAI/Anthropic)](#external-api-engine-openai-anthropic)
 10. [Engine Selection & Availability](#engine-selection--availability)
 11. [Data Flow](#data-flow-session-summaries)
@@ -38,7 +40,7 @@ Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS 
 | ------------------ | ----------- | ---------------------- | -------- | ----------------------------- |
 | Basic              | 15.0+       | Any iPhone             | Offline  | Always available              |
 | Apple Intelligence | 18.1+       | A17 Pro / M1+, 8GB RAM | Offline  | Placeholder (APIs not public) |
-| Local AI (Phi-3.5) | 17.0+       | 4GB+ RAM recommended   | Offline  | ~2.1 GB model download        |
+| Local AI (Qwen3 4B) | 18.0+      | 6GB+ RAM (estimate)    | Offline  | ~2.3 GB model download        |
 | External API       | 15.0+       | Any iPhone             | Required | User API key required         |
 
 ---
@@ -73,10 +75,10 @@ Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS 
 - **Privacy**: 🔒 100% on-device
 - **Use Case**: When Apple releases public APIs
 
-### 3. **Local AI (Phi-3.5)**
+### 3. **Local AI (Qwen3 4B)**
 
-- **Technology**: MLX framework + Phi-3.5-mini-instruct-4bit
-- **Model Size**: ~2.1 GB (4-bit quantized)
+- **Technology**: MLX framework + Qwen3-4B-Instruct-2507-4bit
+- **Model Size**: ~2.3 GB (4-bit quantized)
 - **Quality**: ⭐⭐⭐⭐ (Near GPT-3.5 quality)
 - **Speed**: ⚡⚡⚡ (5-15s per session, device dependent)
 - **Privacy**: 🔒 100% on-device
@@ -96,9 +98,9 @@ Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS 
 
 | Feature                 | Basic           | Apple Intelligence | Local AI (MLX)         | External API           |
 | ----------------------- | --------------- | ------------------ | ---------------------- | ---------------------- |
-| **Framework**           | NaturalLanguage | Foundation Models  | MLX + Phi-3.5          | HTTP API               |
-| **Model**               | TF-IDF + Rules  | Undisclosed        | Phi-3.5-mini-4bit      | GPT-4/Claude-Sonnet    |
-| **Model Size**          | 0 MB            | Built-in           | 2.1 GB                 | N/A                    |
+| **Framework**           | NaturalLanguage | Foundation Models  | MLX + Qwen3 4B         | HTTP API               |
+| **Model**               | TF-IDF + Rules  | Undisclosed        | Qwen3-4B-2507-4bit     | GPT-4/Claude-Sonnet    |
+| **Model Size**          | 0 MB            | Built-in           | 2.3 GB                 | N/A                    |
 | **First Setup**         | Instant         | Instant            | ~2 min download        | API key entry          |
 | **Processing Location** | On-device       | On-device          | On-device              | Cloud                  |
 | **Network Required**    | No              | No                 | No                     | Yes                    |
@@ -328,7 +330,9 @@ When APIs become available:
 
 ---
 
-## Local AI Engine (Phi-3.5 via MLX)
+## Local AI Engine (Qwen3 4B via MLX)
+
+> The model is now Qwen3-4B-Instruct-2507. The code samples in this section show the earlier Phi-3.5 version; the current code is in `Packages/LocalLLM` and described in [LOCAL_AI_ARCHITECTURE.md](LOCAL_AI_ARCHITECTURE.md).
 
 ### Overview
 

@@ -227,7 +227,7 @@ Processing work sessions...
 
 ## Related Documentation
 
-- [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Phi-3.5 Mini implementation details
+- [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Local model (Qwen3 4B) implementation details
 - [Work/Personal Classification](WORK_PERSONAL_CLASSIFICATION_TEST.md) - Category system
 - [AI Architecture](AI_ARCHITECTURE.md) - Multi-tier summarization overview
 

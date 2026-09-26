@@ -27,11 +27,6 @@ public final class SummaryCoordinator {
     /// Called to update Year Wrap generation progress
     public var onYearWrapProgressUpdate: ((String) -> Void)?
     
-    // MARK: - Constants
-    
-    private let expectedLocalModelSizeMB: Double = 3800
-    public let localModelDisplayName = "Qwen2.5-3B-Instruct 4-bit"
-    
     // MARK: - Initialization
     
     public init(

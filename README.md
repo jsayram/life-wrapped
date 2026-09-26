@@ -40,7 +40,7 @@ Four summary qualities. The app falls back automatically when the chosen one is 
 | Quality | Engine | Where it runs | Fallback order |
 | --- | --- | --- | --- |
 | Basic | `BasicEngine`: extractive summaries with TF-IDF ranking and Apple's NaturalLanguage framework (`NLEmbedding`, `NLTokenizer`, `NLTagger`) | On device | Basic |
-| Smart | `LocalEngine`: Phi-3.5 Mini Instruct, 4-bit ([`mlx-community/Phi-3.5-mini-instruct-4bit`](https://huggingface.co/mlx-community/Phi-3.5-mini-instruct-4bit)) run with MLX. One-time download of about 2.3 GB from Hugging Face | On device | Smart, then Basic |
+| Smart | `LocalEngine`: Qwen3 4B Instruct 2507, 4-bit ([`mlx-community/Qwen3-4B-Instruct-2507-4bit`](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit), pinned to one commit) run with MLX. One-time download of about 2.3 GB from Hugging Face. Updating from a version that used Phi-3.5 deletes the old model | On device | Smart, then Basic |
 | Smarter | `AppleEngine`: Apple Intelligence through the Foundation Models framework, always `SystemLanguageModel.default` (the on-device model). Needs iOS 26 or later on a device with Apple Intelligence turned on | On device | Smarter, then Smart, then Basic |
 | Smartest | `ExternalAPIEngine`: OpenAI (Chat Completions API) or Anthropic (Messages API) with the user's own API key. The model ID is free text; defaults are `gpt-6-luna` and `claude-sonnet-5` | Cloud | Smartest, then Smart, then Basic |
 
@@ -184,7 +184,7 @@ Resolved versions from `LifeWrapped.xcworkspace/xcshareddata/swiftpm/Package.res
 | Package | Version |
 | --- | --- |
 | [mlx-swift](https://github.com/ml-explore/mlx-swift) | 0.29.1 |
-| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | `main` (d9f46e3) |
+| [mlx-swift-lm](https://github.com/ml-explore/mlx-swift-lm) | d9f46e3 (pinned) |
 | [swift-transformers](https://github.com/huggingface/swift-transformers) | 573e5c9 |
 | [swift-jinja](https://github.com/huggingface/swift-jinja) | 2.2.0 |
 | [swift-collections](https://github.com/apple/swift-collections) | 1.3.0 |

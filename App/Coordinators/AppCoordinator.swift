@@ -116,6 +116,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
     @Published public private(set) var isDownloadingLocalModel: Bool = false
+    @Published public private(set) var localModelDownloadProgress: Double = 0
     @Published public private(set) var yearWrapNewSessionCount: Int = 0
     @Published public var yearWrapProgress: String = ""
     @Published public var isGeneratingYearWrap: Bool = false
@@ -236,6 +237,7 @@ public final class AppCoordinator: ObservableObject {
                 self?.showError(message)
             }
             localModelCoord.$isDownloadingLocalModel.assign(to: &self.$isDownloadingLocalModel)
+            localModelCoord.$localModelDownloadProgress.assign(to: &self.$localModelDownloadProgress)
             self.localModelCoordinator = localModelCoord
             print("✅ [AppCoordinator] LocalModelCoordinator initialized for download")
             
@@ -371,8 +373,9 @@ public final class AppCoordinator: ObservableObject {
             localModelCoord.onError = { [weak self] message in
                 self?.showError(message)
             }
-            // Sync isDownloadingLocalModel state
+            // Sync download state
             localModelCoord.$isDownloadingLocalModel.assign(to: &self.$isDownloadingLocalModel)
+            localModelCoord.$localModelDownloadProgress.assign(to: &self.$localModelDownloadProgress)
             self.localModelCoordinator = localModelCoord
             print("✅ [AppCoordinator] LocalModelCoordinator initialized")
             
@@ -1327,7 +1330,7 @@ public final class AppCoordinator: ObservableObject {
     //   • The app is fully functional on first launch with zero downloads
     //
     // ✅ PART (ii) - Size Disclosure & User Prompt:
-    //   • All download buttons display size: "Download model (~2.3 GB)"
+    //   • All download buttons display size, e.g. "Download model (~2.3 GB)" (LocalEngine.modelDownloadSize)
     //   • User must explicitly tap button to start download (never automatic)
     //   • Skip/Cancel options shown at every download prompt
     //   • "Wi-Fi recommended" note displayed before download
@@ -1385,12 +1388,17 @@ public final class AppCoordinator: ObservableObject {
     
     /// Get the expected model size for display before download
     public var expectedLocalModelSizeMB: String {
-        localModelCoordinator?.expectedLocalModelSizeMB ?? "~2.3 GB"
+        localModelCoordinator?.expectedLocalModelSizeMB ?? LocalEngine.modelDownloadSize
     }
     
     /// Get the local model display name
     public var localModelDisplayName: String {
-        localModelCoordinator?.localModelDisplayName ?? "Phi-3.5 Mini"
+        localModelCoordinator?.localModelDisplayName ?? LocalEngine.modelDisplayName
+    }
+    
+    /// True when the old Smart model was removed and the new one isn't downloaded yet
+    public var showsLocalModelReplacedNotice: Bool {
+        localModelCoordinator?.showsModelReplacedNotice ?? false
     }
 }
 

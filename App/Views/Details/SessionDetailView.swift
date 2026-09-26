@@ -584,7 +584,7 @@ struct SessionDetailView: View {
                         HStack {
                             if isRegeneratingSummary {
                                 ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.onAccent))
                                     .scaleEffect(0.8)
                             } else {
                                 Image(systemName: "sparkles")
@@ -595,6 +595,7 @@ struct SessionDetailView: View {
                         .fontWeight(.medium)
                     }
                     .buttonStyle(.borderedProminent)
+                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                     .tint(AppTheme.magenta)
                     .disabled(isRegeneratingSummary)
                 }
@@ -760,6 +761,7 @@ struct SessionDetailView: View {
                         saveTitle()
                     }
                     .buttonStyle(.borderedProminent)
+                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                     .tint(AppTheme.accent)
                     
                     Button("Cancel") {
@@ -1012,6 +1014,7 @@ struct SessionDetailView: View {
                         saveNotes()
                     }
                     .buttonStyle(.borderedProminent)
+                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                 } else {
                     Button {
                         isEditingNotes = true
@@ -1259,7 +1262,7 @@ struct SessionDetailView: View {
                     case .basic:
                         generationPhase = "Identifying main topics..."
                     case .local:
-                        generationPhase = "Processing with Phi-3.5..."
+                        generationPhase = "Processing with \(LocalEngine.modelDisplayName)..."
                     case .apple:
                         generationPhase = "Processing key points..."
                     case .external:

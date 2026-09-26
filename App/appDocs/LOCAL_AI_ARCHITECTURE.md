@@ -1,21 +1,21 @@
-# Local AI Architecture (MLX + Phi-3.5)
+# Local AI Architecture (MLX + Qwen3 4B)
 
 ## Overview
 
-The Local AI engine provides on-device summarization using Apple's MLX framework with the Phi-3.5-mini-instruct model. This document covers model requirements, performance optimizations, and quality improvements.
+The Local AI engine (the Smart tier) provides on-device summarization using Apple's MLX framework with Qwen3-4B-Instruct-2507, 4-bit. It replaced Phi-3.5 Mini in September 2026. This document covers model requirements, performance optimizations, and quality improvements.
 
 **Key Features:**
 
 - 🔒 **Privacy-first**: All processing on-device
 - ⚡ **Real-time**: Per-chunk processing during recording
 - 🧠 **Smart caching**: Only reprocess edited chunks
-- 🎯 **Quality control**: Proper chat template and stop sequences
+- 🎯 **Quality control**: Chat messages formatted by the model's own template, plus stop sequences
 
 ---
 
 ## Table of Contents
 
-1. [Phi-3.5 Model Requirements](#phi-35-model-requirements)
+1. [Model Requirements](#model-requirements)
 2. [Performance Optimizations](#performance-optimizations)
 3. [Implementation Details](#implementation-details)
 4. [Testing & Troubleshooting](#testing--troubleshooting)
@@ -23,83 +23,71 @@ The Local AI engine provides on-device summarization using Apple's MLX framework
 
 ---
 
-## Phi-3.5 Model Requirements
+## Model Requirements
 
 ### Model Specifications
 
-- **Model:** microsoft/Phi-3.5-mini-instruct
-- **Format:** MLX 4-bit quantization
-- **Size:** ~2.1 GB on disk
-- **Parameters:** 3.8B (quantized to 4-bit)
-- **Context Window:** 2048 tokens (iOS-optimized, 128K capable)
-- **Repository:** mlx-community/Phi-3.5-mini-instruct-4bit
+- **Model:** Qwen/Qwen3-4B-Instruct-2507 (Apache 2.0, non-thinking)
+- **Format:** MLX 4-bit quantization (group size 64)
+- **Download:** 2,278,972,236 bytes (~2.3 GB), all 13 repository files. Config and tokenizer files download first, then the 2.26 GB weights, and the progress bar follows bytes
+- **Parameters:** 4B, 36 layers, 8 KV heads (grouped-query attention)
+- **Context Window:** 4,096 tokens used on device (262K capable)
+- **Repository:** mlx-community/Qwen3-4B-Instruct-2507-4bit, pinned to commit `50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b`
+- **Defined in:** `Packages/LocalLLM/Sources/LocalLLM/LocalModelType.swift` (the only place to change to switch models)
 
-### Critical: Chat Template Format
+**Memory:** the KV cache costs about 144 KB per token (2 × 36 layers × 8 heads × 128 dims × 2 bytes), so a full 4,096-token window is about 0.6 GB. Phi-3.5 had no grouped-query attention and needed about 0.8 GB for 2,048 tokens.
 
-Phi-3.5 **requires** specific chat template markers. Using incorrect format causes hallucinations and control token leakage.
+### Critical: Never Hand-Write Chat Tags
 
-**Required Format:**
+Prompts are sent as chat messages: `LlamaContext.generate(system:prompt:maxTokens:)` builds a system message (instructions) and a user message (content), and MLX's `UserInput(chat:)` applies the model's own chat template, which is downloaded with the model (`chat_template.jinja`).
+
+**Do not** put tags like `<|user|>`, `<|end|>` or `<|im_start|>` in prompt strings. MLX always applies the template, so hand-written tags end up wrapped a second time. That is exactly what happened with Phi-3.5: the prompts were written for llama.cpp (which sends text as-is) and kept their tags after the move to MLX, so every chunk clean-up prompt reached the model double-wrapped. That likely contributed to the problems `cleanupMetaCommentary()` works around: quotes around answers, "(no changes...)" notes and role-play of the next turn.
+
+For reference, Qwen's template produces:
 
 ```
-<|system|>
-{system instructions}
-<|end|>
-<|user|>
-{user message}
-<|end|>
-<|assistant|>
-{model response}
-<|end|>
+<|im_start|>system
+{system instructions}<|im_end|>
+<|im_start|>user
+{user message}<|im_end|>
+<|im_start|>assistant
 ```
-
-**Template Markers:**
-
-- `<|system|>` — System-level instructions
-- `<|user|>` — User input/query
-- `<|assistant|>` — Model's response
-- `<|end|>` — Section boundary marker
 
 ### Stop Sequences
 
-**Required stop tokens** to prevent unwanted generation:
+Generation stops at the tokenizer's end token (`<|im_end|>`) and at `extraEOSTokens` (`<|im_end|>`, `<|endoftext|>`), passed to `ModelConfiguration`. As a safety net, streamed text is also cut at:
 
 ```swift
-public var stopTokens: [String] {
-    return ["<|end|>", "<|endoftext|>", "<|user|>", "<|system|>"]
+public var stopSequences: [String] {
+    ["<|im_end|>", "<|endoftext|>", "<|im_start|>"]
 }
 ```
 
-**Purpose:**
+The streaming loop uses a labelled `break generation` so a stop actually ends generation (a plain `break` inside the `switch` only left the switch).
 
-- `<|end|>` — Primary stop (marks response end)
-- `<|endoftext|>` — Model's internal completion token
-- `<|user|>` — Prevents role-switching to user
-- `<|system|>` — Prevents adding system instructions
-
-**Implementation:** Manual detection during streaming (MLX doesn't support native stop sequences in `GenerateParameters`).
+Qwen3-4B-Instruct-2507 never emits `<think>` blocks, but `LlamaContext.removeReasoning(from:)` strips one if it ever appears.
 
 ### Generation Parameters
 
-**Optimal configuration for voice journal summaries:**
-
 ```swift
-public var recommendedConfig: (nCTX: Int32, batch: Int32, maxTokens: Int32, temp: Float) {
-    return (
-        nCTX: 2048,           // Context window
-        batch: 128,            // Batch size for generation
-        maxTokens: 128,        // Output length (concise summaries)
-        temp: 0.3              // Temperature (factual but natural)
-    )
+public var recommendedConfig: (contextTokens: Int, maxTokens: Int, temperature: Float, topP: Float) {
+    (contextTokens: 4096, maxTokens: 256, temperature: 0.3, topP: 0.8)
 }
 ```
 
-**Parameter Rationale:**
+- **Context (4,096):** instructions (~700 tokens) + input (up to 2,800) + output + margin
+- **Prompt cap:** 12,000 characters (~3,400 tokens); only the user message is shortened, never the instructions
+- **Chunk clean-up output:** scales with the input, 30% over the estimated input tokens, between 128 and 1,024 (`cleanupTokenLimit(for:)`). A fixed 128 used to cut longer chunks off mid-sentence
+- **Temperature 0.3, top-p 0.8:** factual and close to the transcript; Qwen recommends top-p 0.8
+- **Year Wrap:** quarterly summaries and title use up to 200 tokens, list steps 128
 
-- **Context (2048):** Fits typical 120-word chunks (~500 tokens)
-- **Batch (128):** Optimal for M1/M2/M3 unified memory
-- **Max Tokens (128):** Forces concise summaries, prevents hallucination
-- **Temperature (0.3):** Balance between factual (0.0) and creative (0.7)
-- **Post-processing:** Aggressive cleanup strips meta-commentary patterns
+### Updating from Phi-3.5
+
+On launch, `SummarizationCoordinator.restoreSavedPreference()` calls `LocalEngine.removeRetiredModels()`, which deletes the old `mlx-community/Phi-3.5-mini-instruct-4bit` folder (about 2.1 GB). If Smart was selected, it falls back to Basic until the new model is downloaded, and AI & Summaries shows "New model available".
+
+### Library Versions
+
+`mlx-swift-lm` is pinned to commit `d9f46e3` in `Packages/LocalLLM/Package.swift`. Its `main` branch moved to 3.x, which changes the API, so following `main` would break the build on the next package update.
 
 ---
 
@@ -181,7 +169,9 @@ public func summarizeChunk(chunkId: UUID, transcriptText: String) async throws -
     }
 
     // Generate new summary
-    let summary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+    let summary = try await llamaContext.generate(
+        system: cleanupPrompt.system, prompt: cleanupPrompt.user,
+        maxTokens: cleanupTokenLimit(for: transcriptText))
 
     // Store with hash
     chunkSummaries[chunkId] = summary
@@ -247,7 +237,7 @@ if shouldUseCache {
 
 ### Prompt Engineering
 
-**Critical Fix:** Using proper Phi-3.5 chat template prevents hallucinations.
+**Critical Fix (updated Sep 2026):** instructions go in the system message and the transcript in the user message, with no hand-written tags. See [Never Hand-Write Chat Tags](#critical-never-hand-write-chat-tags). The history below is from the Phi-3.5 era.
 
 **Before (WRONG):**
 
@@ -303,7 +293,7 @@ private func buildSimplifiedPrompt(text: String) -> String {
 
 **Key Design Principles:**
 
-- ✅ Proper Phi-3.5 chat template with `<|system|>`, `<|user|>`, `<|assistant|>`, `<|end|>` markers
+- ✅ System and user messages formatted by the model's own chat template (no hand-written tags)
 - ✅ Concrete WRONG vs CORRECT examples (models learn better from examples)
 - ✅ Direct, short system prompt ("Output ONLY the cleaned text")
 - ✅ Explicit prohibition of meta-commentary ("Never write '(Note:'")
@@ -426,7 +416,9 @@ private func cleanupMetaCommentary(_ text: String) -> String {
 **Usage in generation pipeline:**
 
 ```swift
-let rawSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+let rawSummary = try await llamaContext.generate(
+    system: cleanupPrompt.system, prompt: cleanupPrompt.user,
+    maxTokens: cleanupTokenLimit(for: transcriptText))
 summary = cleanupMetaCommentary(rawSummary)  // Apply cleanup
 ```
 
@@ -666,20 +658,20 @@ Done (90% time saved if 1/10 edited)
 ```
 Transcript Text (120 words)
     ↓
-buildSimplifiedPrompt(text)
+buildCleanupPrompt(text) → (system, user)
     ↓
-Phi-3.5 Chat Template Applied:
-    <|system|>...<|end|>
-    <|user|>...<|end|>
-    <|assistant|>
+UserInput(chat: [.system, .user]) → Qwen chat template applied once:
+    <|im_start|>system ...<|im_end|>
+    <|im_start|>user ...<|im_end|>
+    <|im_start|>assistant
     ↓
-llamaContext.generate(prompt, maxTokens: 128)
+llamaContext.generate(system:prompt:maxTokens: cleanupTokenLimit(for: text))
     ↓
 MLX Streaming Generation
     ↓
 Stop Sequence Detection (every chunk)
     ↓
-If "<|end|>" found → STOP + TRIM
+If "<|im_end|>" found → STOP + TRIM (labelled break)
     ↓
 Post-Processing: cleanupMetaCommentary()
     ↓
@@ -696,7 +688,7 @@ Output (20-50 words, first person, clean)
 
 1. **LocalEngine.swift**
 
-   - `buildSimplifiedPrompt()` - Phi-3.5 chat template
+   - `buildCleanupPrompt()` - System and user messages, no hand-written tags
    - `summarizeChunk()` - Hash tracking + maxTokens 128
    - `cleanupMetaCommentary()` - Post-processing to strip unwanted patterns
    - `clearChangedChunkSummaries()` - Smart cache clearing
@@ -807,7 +799,7 @@ Output (20-50 words, first person, clean)
 
 The Local AI engine combines:
 
-- ✅ **Proper Phi-3.5 integration** - Chat template + stop sequences
+- ✅ **Model-agnostic prompts** - Chat messages formatted by the model's own template, plus stop sequences
 - ✅ **Real-time processing** - Chunks process as transcribed
 - ✅ **Smart caching** - Only reprocess edited chunks (90% time saved)
 - ✅ **Quality control** - No hallucinations, control token leakage, or meta-commentary

@@ -85,7 +85,7 @@ struct SetupView: View {
                             Text("Downloading... \(Int(downloadProgress * 100))%")
                                 .font(.headline)
                             
-                            Text("Phi-3.5 Mini • \(coordinator.expectedLocalModelSizeMB)")
+                            Text("\(coordinator.localModelDisplayName) • \(coordinator.expectedLocalModelSizeMB)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -138,7 +138,7 @@ struct SetupView: View {
                             Text("Download AI Model")
                                 .font(.headline)
                             
-                            Text("This will download the Phi-3.5 Mini model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
+                            Text("This will download the \(coordinator.localModelDisplayName) model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)

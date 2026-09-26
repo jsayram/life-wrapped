@@ -622,9 +622,10 @@ struct AppStoreGuideline423ComplianceTests {
     
     @Test("4.2.3(ii): Download size is clearly disclosed")
     func testDownloadSizeDisclosed() async throws {
-        // All download UI must show the size before user initiates download
-        let expectedSizeFormat = "~2.3 GB"
-        #expect(expectedSizeFormat.contains("GB"), "Download size must be displayed in GB for large files")
+        // All download UI must show the size before user initiates download.
+        // This is the exact string every download button and prompt uses.
+        let shownSize = LocalEngine.modelDownloadSize
+        #expect(shownSize == "~2.3 GB", "Shown size must match the Qwen3 4B download (2.28 GB)")
     }
     
     @Test("4.2.3(ii): User must explicitly initiate download")
@@ -678,9 +679,10 @@ struct UserConsentDownloadTests {
     
     @Test("Download button must show file size")
     func testDownloadButtonShowsSize() async throws {
-        // Expected model size format should be displayed
-        let expectedSizeFormat = "~2.3 GB"
-        #expect(expectedSizeFormat.contains("GB") || expectedSizeFormat.contains("MB"))
+        // The size string shown on download buttons
+        let shownSize = LocalEngine.modelDownloadSize
+        #expect(shownSize.contains("GB") || shownSize.contains("MB"))
+        #expect(!LocalEngine.modelDisplayName.isEmpty)
     }
     
     @Test("Model size is non-trivial and must be disclosed")

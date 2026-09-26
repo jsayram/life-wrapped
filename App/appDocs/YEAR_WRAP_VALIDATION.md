@@ -2,7 +2,7 @@
 
 ## Problem
 
-Local AI (Phi-3.5 Mini) was fabricating topics not present in the source summaries. Example:
+Local AI (Phi-3.5 Mini, the model Smart used before Qwen3 4B) was fabricating topics not present in the source summaries. Example:
 
 ```
 ❌ "The summarization tool functioned without crashing"
@@ -90,13 +90,13 @@ private func buildValidationPrompt(extractedTopics: String, sourceSummaries: Str
 ```swift
 // Step 4: Extract topics
 let topicsPrompt = buildTopicsActionsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-let rawTopics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: 64)
+let rawTopics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: Int32(YEAR_WRAP_LIST_TOKENS))
 totalLLMCalls += 1
 try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
 
 // Step 5: Validate topics against source
 let validationPrompt = buildValidationPrompt(extractedTopics: rawTopics, sourceSummaries: combinedQuarterlySummaries)
-let topics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: 64)
+let topics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: Int32(YEAR_WRAP_LIST_TOKENS))
 totalLLMCalls += 1
 ```
 
@@ -244,7 +244,7 @@ Add confidence metadata to each topic:
 
 ## Related Documentation
 
-- [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Phi-3.5 Mini implementation
+- [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Local model (Qwen3 4B) implementation
 - [Year Wrap Progress Tracking](YEAR_WRAP_PROGRESS_TRACKING.md) - UI feedback
 - [AI Architecture](AI_ARCHITECTURE.md) - Multi-tier system overview
 

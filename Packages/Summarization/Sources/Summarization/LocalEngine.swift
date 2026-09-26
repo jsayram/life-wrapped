@@ -10,7 +10,7 @@ import SharedModels
 import LocalLLM
 import CryptoKit
 
-/// Local LLM-based summarization engine using Phi-3.5 via llama.cpp
+/// Smart tier: on-device summarization with a local model (Qwen3 4B, 4-bit, run with MLX).
 /// Processes each chunk through the local model, then aggregates for session summary
 public actor LocalEngine: SummarizationEngine {
     
@@ -39,14 +39,19 @@ public actor LocalEngine: SummarizationEngine {
     
     // MARK: - Token Estimation Constants
     
-    // Phi-3.5 Mini token limits and safety margins
-    private let MAX_CONTEXT_TOKENS = 2048          // Phi-3.5 Mini context window
+    // Token budget for one request (see LocalModelType.recommendedConfig)
+    // 4,096 total = 700 instructions + 2,800 input + up to 200 output + margin
+    private let MAX_CONTEXT_TOKENS = 4096          // Working window used on device
     private let FIXED_OVERHEAD_TOKENS = 700        // System prompt + schema + rules
-    private let AVAILABLE_INPUT_TOKENS = 1200      // Safe room for input summaries
-    private let SAFETY_BUFFER_TOKENS = 148         // Extra margin for safety
-    private let INTERMEDIATE_OUTPUT_TOKENS = 128   // For quarterly/intermediate summaries
-    private let FINAL_OUTPUT_TOKENS = 256          // For final Year Wrap JSON
+    private let AVAILABLE_INPUT_TOKENS = 2800      // Room for input summaries
+    private let SAFETY_BUFFER_TOKENS = 396         // Extra margin for safety
+    private let INTERMEDIATE_OUTPUT_TOKENS = 200   // For quarterly/intermediate summaries (3-5 sentences)
+    private let YEAR_WRAP_LIST_TOKENS = 128        // Year Wrap list steps (wins, projects, topics)
+    private let YEAR_WRAP_SOURCE_CHARACTERS = 3000 // Summaries text shown to the list steps
     private let MAX_RECURSION_DEPTH = 12           // Safety limit for pathological cases
+    
+    /// The model Smart runs
+    private static let model = LocalModelType.current
     
     // Performance tracking for Year Wrap generation
     private var totalLLMCalls = 0
@@ -71,7 +76,7 @@ public actor LocalEngine: SummarizationEngine {
     
     /// Estimate token count for text using conservative character-based formula
     /// Over-estimates to trigger more chunking, ensuring safety within token limits
-    /// Note: MLX/llama.cpp does not expose tokenizer API, so we use approximation
+    /// Note: the tokenizer lives inside the MLX model container, so counts are estimated from characters
     private func estimateTokenCount(_ text: String) -> Int {
         // Conservative estimate: 1 token ≈ 3.5 characters for English text
         // Over-estimating is safer than under-estimating (triggers more chunking)
@@ -276,7 +281,7 @@ public actor LocalEngine: SummarizationEngine {
     /// Check if local AI is available (model downloaded and ready)
     public func isAvailable() async -> Bool {
         // Check if model file exists
-        let isDownloaded = await modelFileManager.isModelDownloaded(.phi35)
+        let isDownloaded = await modelFileManager.isModelDownloaded(Self.model)
         return isDownloaded
     }
     
@@ -287,7 +292,7 @@ public actor LocalEngine: SummarizationEngine {
     
     /// Load the model into memory
     public func loadModel() async throws {
-        try await llamaContext.loadModel(.phi35)
+        try await llamaContext.loadModel(Self.model)
     }
     
     /// Unload the model from memory
@@ -324,14 +329,18 @@ public actor LocalEngine: SummarizationEngine {
             try await loadModel()
         }
         
-        // Use simplified prompt for Local AI
-        let simplePrompt = buildSimplifiedPrompt(text: transcriptText)
+        // Clean-up prompt: instructions as the system message, transcript as the user message
+        let cleanupPrompt = buildCleanupPrompt(text: transcriptText)
         
         // Generate summary with error handling
         let summary: String
         do {
-            // Use shorter max tokens for more concise, focused summaries
-            let rawSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+            // The cleaned text is about as long as the transcript, so the limit scales with it
+            let rawSummary = try await llamaContext.generate(
+                system: cleanupPrompt.system,
+                prompt: cleanupPrompt.user,
+                maxTokens: cleanupTokenLimit(for: transcriptText)
+            )
             
             // Post-process: aggressively strip any meta-commentary patterns
             summary = cleanupMetaCommentary(rawSummary)
@@ -409,22 +418,25 @@ public actor LocalEngine: SummarizationEngine {
             cleaned = noteSentenceRegex.stringByReplacingMatches(in: cleaned, options: [], range: range, withTemplate: "")
         }
         
-        // Pattern 4: Remove common explanatory phrases
-        let explanatoryPhrases = [
+        // Pattern 4: Remove whole explanatory sentences the model sometimes adds.
+        // Only full model-speak sentences are removed. Short phrases like "grammar issues" used to be
+        // removed anywhere, which also deleted them from what the person actually said.
+        let explanatorySentences = [
             "The transcript has been cleaned up for clarity",
             "The above response removes filler words",
             "Filler words have been removed",
-            "This is a cleaned-up version",
-            "Cleaned transcript:",
-            "Summary:",
-            "no changes as there are no",
-            "no filler words",
-            "grammar issues",
-            "unnecessary notes"
+            "This is a cleaned-up version"
         ]
-        for phrase in explanatoryPhrases {
+        for phrase in explanatorySentences {
             cleaned = cleaned.replacingOccurrences(of: phrase, with: "", options: [.caseInsensitive])
         }
+        
+        // Pattern 4b: Remove a label at the very start ("Cleaned transcript:", "Summary:")
+        cleaned = cleaned.replacingOccurrences(
+            of: #"^\s*(Cleaned transcript|Summary)\s*:\s*"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
         
         // Pattern 5: Remove lines that are purely parenthetical notes or explanations
         let lines = cleaned.components(separatedBy: .newlines)
@@ -434,7 +446,7 @@ public actor LocalEngine: SummarizationEngine {
             return !trimmed.hasPrefix("(Note") 
                 && !trimmed.hasPrefix("Note:") 
                 && !trimmed.hasPrefix("(no changes")
-                && !trimmed.contains("no filler words")
+                && !(trimmed.hasPrefix("(") && trimmed.contains("no filler words"))
         }
         cleaned = filteredLines.joined(separator: "\n")
         
@@ -600,7 +612,7 @@ public actor LocalEngine: SummarizationEngine {
                 print("📥 [LocalEngine] Model not loaded, loading now...")
                 #endif
                 do {
-                    try await llamaContext.loadModel(.phi35)
+                    try await llamaContext.loadModel(Self.model)
                     #if DEBUG
                     print("✅ [LocalEngine] Model loaded successfully")
                     #endif
@@ -652,9 +664,12 @@ public actor LocalEngine: SummarizationEngine {
                 // Generate summary with error handling
                 let chunkSummary: String
                 do {
-                    // Use simplified prompt for Local AI (less memory intensive)
-                    let simplePrompt = buildSimplifiedPrompt(text: chunkText)
-                    let rawSummary = try await llamaContext.generate(prompt: simplePrompt, maxTokens: 128)
+                    let cleanupPrompt = buildCleanupPrompt(text: chunkText)
+                    let rawSummary = try await llamaContext.generate(
+                        system: cleanupPrompt.system,
+                        prompt: cleanupPrompt.user,
+                        maxTokens: cleanupTokenLimit(for: chunkText)
+                    )
                     
                     // Post-process: aggressively strip any meta-commentary patterns
                     chunkSummary = cleanupMetaCommentary(rawSummary)
@@ -971,7 +986,7 @@ public actor LocalEngine: SummarizationEngine {
             print("📝 [LocalEngine] Step 1/6: Generating title and summary...")
             #endif
             let titleSummaryPrompt = buildTitleSummaryPrompt(summaries: combinedQuarterlySummaries, topTopics: topTopics, categoryLabel: categoryLabel)
-            let rawTitleSummary = try await llamaContext.generate(prompt: titleSummaryPrompt, maxTokens: 128)
+            let rawTitleSummary = try await llamaContext.generate(prompt: titleSummaryPrompt, maxTokens: Int32(INTERMEDIATE_OUTPUT_TOKENS))
             let titleSummary = validateAndCleanOutput(rawTitleSummary, step: "Title/Summary")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
@@ -981,7 +996,7 @@ public actor LocalEngine: SummarizationEngine {
             print("📝 [LocalEngine] Step 2/6: Generating wins and challenges...")
             #endif
             let winsPrompt = buildWinsChallengesPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-            let rawWins = try await llamaContext.generate(prompt: winsPrompt, maxTokens: 64)
+            let rawWins = try await llamaContext.generate(prompt: winsPrompt, maxTokens: Int32(YEAR_WRAP_LIST_TOKENS))
             let wins = validateAndCleanOutput(rawWins, step: "Wins/Challenges")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
@@ -991,7 +1006,7 @@ public actor LocalEngine: SummarizationEngine {
             print("📝 [LocalEngine] Step 3/6: Generating projects...")
             #endif
             let projectsPrompt = buildProjectsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-            let rawProjects = try await llamaContext.generate(prompt: projectsPrompt, maxTokens: 64)
+            let rawProjects = try await llamaContext.generate(prompt: projectsPrompt, maxTokens: Int32(YEAR_WRAP_LIST_TOKENS))
             let projects = validateAndCleanOutput(rawProjects, step: "Projects")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
@@ -1001,7 +1016,7 @@ public actor LocalEngine: SummarizationEngine {
             print("📝 [LocalEngine] Step 4/6: Extracting topics and actions...")
             #endif
             let topicsPrompt = buildTopicsActionsPrompt(summaries: combinedQuarterlySummaries, categoryLabel: categoryLabel)
-            let rawTopics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: 64)
+            let rawTopics = try await llamaContext.generate(prompt: topicsPrompt, maxTokens: Int32(YEAR_WRAP_LIST_TOKENS))
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
@@ -1011,7 +1026,7 @@ public actor LocalEngine: SummarizationEngine {
             #endif
             let cleanedRawTopics = validateAndCleanOutput(rawTopics, step: "Extracted Topics")
             let validationPrompt = buildValidationPrompt(extractedTopics: cleanedRawTopics, sourceSummaries: combinedQuarterlySummaries)
-            let rawValidatedTopics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: 64)
+            let rawValidatedTopics = try await llamaContext.generate(prompt: validationPrompt, maxTokens: Int32(YEAR_WRAP_LIST_TOKENS))
             let topics = validateAndCleanOutput(rawValidatedTopics, step: "Validated Topics")
             totalLLMCalls += 1
             try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
@@ -1021,7 +1036,7 @@ public actor LocalEngine: SummarizationEngine {
             print("📝 [LocalEngine] Step 6/6: Generating people and places...")
             #endif
             let peoplePrompt = buildPeoplePrompt(summaries: combinedQuarterlySummaries)
-            let people = try await llamaContext.generate(prompt: peoplePrompt, maxTokens: 32)
+            let people = try await llamaContext.generate(prompt: peoplePrompt, maxTokens: 64)
             totalLLMCalls += 1
             
             // Combine all components into final JSON
@@ -1164,7 +1179,7 @@ public actor LocalEngine: SummarizationEngine {
         CATEGORY: \(categoryLabel)
         
         SUMMARY:
-        \(summaries.prefix(400))
+        \(summaries.prefix(YEAR_WRAP_SOURCE_CHARACTERS))
         
         Output format: Simple bullet list in FIRST PERSON like:
         - Working on app stability
@@ -1188,7 +1203,7 @@ public actor LocalEngine: SummarizationEngine {
         \(extractedTopics)
         
         SOURCE SUMMARIES:
-        \(sourceSummaries.prefix(600))
+        \(sourceSummaries.prefix(YEAR_WRAP_SOURCE_CHARACTERS))
         
         TASK: For each topic, check if it's actually mentioned in the source. Remove any fabricated topics.
         Output only verified topics that exist in the source. If none are real, output "None".
@@ -1207,7 +1222,7 @@ public actor LocalEngine: SummarizationEngine {
         List people mentioned in the summaries below (1-2, or fewer if not enough data).
         
         SUMMARIES:
-        \(summaries.prefix(200))
+        \(summaries.prefix(YEAR_WRAP_SOURCE_CHARACTERS))
         
         CRITICAL: Only list people explicitly mentioned by name. If none found, output "None found".
         """
@@ -1305,7 +1320,7 @@ public actor LocalEngine: SummarizationEngine {
         let projectsItems = parseItemsFromText(cleanedProjects, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
         let topicsItems = parseItemsFromText(cleanedTopics, count: 3, primaryCategory: primaryCategory, secondaryCategory: secondaryCategory, isAll: categoryLabel == "ALL")
         
-        // Build JSON - increased summary limit to 800 chars to match 128 token output (~400-500 chars)
+        // Build JSON - summary capped at 800 chars (the step allows about 200 tokens, 2-3 sentences)
         let finalSummary = cleanedSummary.replacingOccurrences(of: "\"", with: "'").prefix(800)
         
         return """
@@ -1793,14 +1808,14 @@ public actor LocalEngine: SummarizationEngine {
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
     
-    /// Build a simplified prompt optimized for local MLX inference
-    /// Uses Phi-3.5 chat template and produces natural, note-style output
-    private func buildSimplifiedPrompt(text: String) -> String {
-        return """
-        <|system|>
+    /// Clean-up prompt for one chunk of transcript.
+    /// Returned as two parts: the instructions go in the system message, the transcript in the user message.
+    /// The model's chat template adds its own tags, so none are written here.
+    private func buildCleanupPrompt(text: String) -> (system: String, user: String) {
+        let system = """
         You clean up voice recordings. Output ONLY the cleaned text directly. Never wrap in quotes. Never add explanations.
-        <|end|>
-        <|user|>
+        """
+        let user = """
         Clean up this voice recording transcript:
         - Remove filler words (um, uh, like, you know)
         - Fix obvious grammar issues
@@ -1825,50 +1840,67 @@ public actor LocalEngine: SummarizationEngine {
 
         Transcript:
         \(text)
-        <|end|>
-        <|assistant|>
         """
+        return (system, user)
+    }
+    
+    /// Output limit for cleaning up a piece of transcript.
+    /// The cleaned text is about as long as the original, so a fixed small limit cut longer parts off
+    /// mid-sentence. Allow 30% more than the estimated input, between 128 and 1,024 tokens.
+    private func cleanupTokenLimit(for text: String) -> Int32 {
+        let estimated = estimateTokenCount(text) * 13 / 10 + 32
+        return Int32(min(max(estimated, 128), 1024))
     }
     
     /// Check if the local AI model is downloaded
     public func isModelDownloaded() async -> Bool {
-        return await modelFileManager.isModelDownloaded(.phi35)
+        return await modelFileManager.isModelDownloaded(Self.model)
     }
     
     /// Download the local AI model with progress tracking
     /// - Parameter progress: Closure called with download progress (0.0-1.0)
     public func downloadModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
-        try await modelFileManager.downloadModel(.phi35, progress: progress)
+        try await modelFileManager.downloadModel(Self.model, progress: progress)
     }
     
     /// Delete the local AI model
     public func deleteModel() async throws {
-        try await modelFileManager.deleteModel(.phi35)
+        try await modelFileManager.deleteModel(Self.model)
         // Unload from memory if loaded
         await llamaContext.unloadModel()
     }
     
-    /// Get the size of the downloaded model in bytes, or nil if not downloaded
-    public func modelSizeBytes() async -> Int64? {
-        return await modelFileManager.modelSize(.phi35)
+    /// Delete models that earlier versions downloaded and Smart no longer uses (Phi-3.5).
+    /// Safe to call on every launch; does nothing if there's nothing to remove.
+    /// - Returns: true if an old model was deleted
+    public func removeRetiredModels() async -> Bool {
+        return await modelFileManager.deleteRetiredModels()
     }
     
-    /// Get formatted model size string: "Downloaded (2282 MB)" or "Not Downloaded"
+    /// Get the size of the downloaded model in bytes, or nil if not downloaded
+    public func modelSizeBytes() async -> Int64? {
+        return await modelFileManager.modelSize(Self.model)
+    }
+    
+    /// Get formatted model size string: "Downloaded (2173 MB)" or "Not Downloaded"
     public func modelSizeFormatted() async -> String {
-        if let size = await modelFileManager.modelSize(.phi35) {
+        if let size = await modelFileManager.modelSize(Self.model) {
             let sizeMB = size / (1024 * 1024)
             return "Downloaded (\(sizeMB) MB)"
         }
         return "Not Downloaded"
     }
     
-    /// Get the expected model size for display before download
-    public var expectedModelSizeMB: String {
-        return "~2.3 GB"
+    /// Download size to show before downloading, for example "~2.3 GB"
+    public static var modelDownloadSize: String {
+        LocalModelType.current.downloadSizeDescription
     }
     
-    /// Get the model display name
-    public var modelDisplayName: String {
-        return LocalModelType.phi35.displayName
+    /// Name of the model Smart runs, for display
+    public static var modelDisplayName: String {
+        LocalModelType.current.displayName
     }
+    
+    /// UserDefaults key set when an old model was removed and the new one hasn't been downloaded yet
+    public static let modelReplacedNoticeKey = "localModelReplacedNotice"
 }

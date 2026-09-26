@@ -114,7 +114,7 @@ struct GenerationOverlay: View {
         case .basic:
             return "Basic picks out the key sentences on your \(DeviceName.current). It's fast and works offline."
         case .local:
-            return "Smart runs Phi-3.5 Mini on your \(DeviceName.current). Your transcript never leaves it."
+            return "Smart runs \(LocalEngine.modelDisplayName) on your \(DeviceName.current). Your transcript never leaves it."
         case .apple:
             return "Smarter uses Apple Intelligence on your \(DeviceName.current). Your transcript never leaves it."
         case .external:
