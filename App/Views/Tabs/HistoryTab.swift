@@ -11,6 +11,8 @@ struct HistoryTab: View {
     @State private var searchText = ""
     @State private var showFavoritesOnly = false
     @State private var categoryFilter: SessionCategory? = nil
+    /// Set once the user dismisses the note about older recordings filed under Personal
+    @AppStorage("uncategorizedNoticeDismissed") private var uncategorizedNoticeDismissed = false
     @State private var transcriptMatchingSessionIds: Set<UUID> = []
     @State private var isSearchingTranscripts = false
     @State private var searchDebounceTask: Task<Void, Never>?
@@ -25,7 +27,7 @@ struct HistoryTab: View {
         
         // Filter by category if selected
         if let category = categoryFilter {
-            result = result.filter { $0.category == category }
+            result = result.filter { $0.journal == category }
         }
         
         // Filter by search text
@@ -144,6 +146,36 @@ struct HistoryTab: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
             }
             .listSectionSpacing(8)
+
+            // Recordings from before categories existed count as Personal; say so once
+            let uncategorized = sessions.filter { $0.category == nil }.count
+            if uncategorized > 0 && !uncategorizedNoticeDismissed {
+                Section {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "house")
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .accessibilityHidden(true)
+                        Text(uncategorized == 1
+                             ? "1 older recording was made before Work and Personal existed, so it's in Personal. Open it to move it to Work."
+                             : "\(uncategorized) older recordings were made before Work and Personal existed, so they're in Personal. Open one to move it to Work.")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button {
+                            uncategorizedNoticeDismissed = true
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(AppTheme.textSecondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss")
+                    }
+                }
+            }
 
             // Empty filter result (chips stay visible so the filter can be changed)
             if filteredSessions.isEmpty {

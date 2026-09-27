@@ -15,7 +15,7 @@ struct GenerateYearWrapCard: View {
                     .font(AppTheme.titleFont(size: 24))
                     .foregroundStyle(AppTheme.textPrimary)
 
-                Text("Your year so far, with a wrap for work, one for personal life and one for everything together. It runs in the background while you use the app.")
+                Text("Your year so far: a wrap for work and one for personal, side by side under All. It runs in the background while you use the app.")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -28,8 +28,8 @@ struct OverviewTab: View {
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
-    // Period rollups for Month/Year feed
-    @State private var periodRollups: [Summary] = []
+    /// Journal of each recording in the Today/Yesterday feed, from its saved category
+    @State private var sessionJournals: [UUID: SessionCategory] = [:]
     
     // Navigation state for session detail
     @State private var selectedSession: RecordingSession?
@@ -48,6 +48,14 @@ struct OverviewTab: View {
                 .padding(.top, 12)
                 .disabled(isLoading)
                 
+                // Which journal: one switch for every range, so the choice carries between them
+                GraphiteSegmentedControl(
+                    options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
+                    selection: $categoryFilter
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                
                 // Content area
                 Group {
                     if isLoading {
@@ -61,7 +69,7 @@ struct OverviewTab: View {
                         )
                     } else {
                         // Copy All button
-                        if !sessionSummaries.isEmpty {
+                        if !visibleSessionSummaries.isEmpty {
                             HStack {
                                 Spacer()
                                 Button {
@@ -70,7 +78,7 @@ struct OverviewTab: View {
                                     HStack(spacing: 6) {
                                         Image(systemName: "doc.on.doc")
                                             .font(.caption)
-                                        Text("Copy \(sessionSummaries.count)")
+                                        Text("Copy \(visibleSessionSummaries.count)")
                                             .font(.caption)
                                             .fontWeight(.medium)
                                     }
@@ -109,13 +117,6 @@ struct OverviewTab: View {
                                 // Local period summary card for Today/Month; Month shows its digest once there is one
                                 if [.today, .month].contains(selectedTimeRange) {
                                     if selectedTimeRange == .month, let monthDigest {
-                                        GraphiteSegmentedControl(
-                                            options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
-                                            selection: $categoryFilter
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                        
                                         MonthDigestCard(
                                             digest: monthDigest,
                                             filter: categoryFilter,
@@ -131,7 +132,8 @@ struct OverviewTab: View {
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
-                                    } else if let periodSummary {
+                                    } else if let periodSummary, categoryFilter == .all {
+                                        // The day's rollup covers both journals, so it only shows under All
                                         PeriodSummaryCard(
                                             title: periodSummaryTitle(for: selectedTimeRange),
                                             subtitle: "Generated on this \(DeviceName.current)",
@@ -149,7 +151,7 @@ struct OverviewTab: View {
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
-                                    } else if !sessionsInPeriod.isEmpty {
+                                    } else if periodSummary == nil, categoryFilter == .all, !sessionsInPeriod.isEmpty {
                                         GeneratePeriodSummaryCard(
                                             title: periodSummaryTitle(for: selectedTimeRange),
                                             isGenerating: isRegeneratingPeriodSummary,
@@ -166,14 +168,6 @@ struct OverviewTab: View {
                                 
                                 // Year Wrapped Summary (only show for Year timerange)
                                 if selectedTimeRange == .allTime {
-                                    // Filter picker for Year Wrap
-                                    GraphiteSegmentedControl(
-                                        options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
-                                        selection: $categoryFilter
-                                    )
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 8)
-                                    
                                     yearWrapSection
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -196,9 +190,11 @@ struct OverviewTab: View {
                                     // Today and Yesterday list session summaries; the other ranges already
                                     // show their summary card, a generate card or the Year Wrap above
                                     GraphiteEmptyState(
-                                        "No summaries yet",
+                                        categoryFilter == .all ? "No summaries yet" : "No \(categoryFilter.displayName.lowercased()) recordings",
                                         systemImage: "doc.text",
-                                        description: Text("Session summaries will appear here once recordings are summarized.")
+                                        description: Text(categoryFilter == .all
+                                            ? "Session summaries will appear here once recordings are summarized."
+                                            : "Recordings you make as \(categoryFilter.displayName.capitalized) will appear here.")
                                     )
                                     .padding(.top, 60)
                                 } else {
@@ -366,7 +362,6 @@ struct OverviewTab: View {
         sessionsInPeriod = []
         sessionCount = 0
         sessionSummaries = []
-        periodRollups = []
         
         // Load sessions in this period first
         if let dbManager = coordinator.getDatabaseManager() {
@@ -385,27 +380,21 @@ struct OverviewTab: View {
             switch selectedTimeRange {
             case .today, .yesterday:
                 // Load session summaries for individual sessions
-                sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                let summaries = (try? await dbManager.fetchSessionSummariesInDateRange(
                     from: dateRange.start,
                     to: dateRange.end
                 )) ?? []
+                let ids = summaries.compactMap { $0.sessionId }
+                // A deleted recording's summary can outlive it; only list recordings that still exist
+                let existing = (try? await dbManager.existingSessionIds(among: ids)) ?? Set(ids)
+                sessionSummaries = summaries.filter { $0.sessionId.map(existing.contains) ?? false }
+                let metadata = (try? await dbManager.fetchSessionMetadataBatch(sessionIds: ids)) ?? [:]
+                sessionJournals = metadata.compactMapValues { $0.category }
                 print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
                 
-            case .month:
-                // Load monthly rollup summaries (one card per month)
-                periodRollups = (try? await dbManager.fetchMonthlySummaries(
-                    from: dateRange.start,
-                    to: dateRange.end
-                )) ?? []
-                print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
-                
-            case .allTime:
-                // Load yearly rollup summary (single card for whole year)
-                let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
-                periodRollups = allYearlySummaries.filter { summary in
-                    summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
-                }
-                print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
+            case .month, .allTime:
+                // Month digests and Year Wraps are loaded below
+                break
             }
         }
         
@@ -726,6 +715,16 @@ struct OverviewTab: View {
         let isEmpty: Bool
     }
     
+    /// Today/Yesterday session summaries for the chosen journal
+    private var visibleSessionSummaries: [Summary] {
+        guard categoryFilter != .all else { return sessionSummaries }
+        return sessionSummaries.filter { summary in
+            guard let id = summary.sessionId else { return false }
+            // No saved category means Personal, the recorder's default
+            return (sessionJournals[id] ?? .personal).itemFilter == categoryFilter
+        }
+    }
+    
     private func groupSessionsByTimeBucket() -> [TimeBucket] {
         let calendar = Calendar.current
         let dateRange = getDateRange(for: selectedTimeRange)
@@ -735,13 +734,10 @@ struct OverviewTab: View {
             // Show individual session summaries grouped by hour
             return groupByHour(dateRange: dateRange, calendar: calendar)
             
-        case .month:
-            // Show monthly rollup summaries (one card per month)
-            return groupByMonthRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
-            
-        case .allTime:
-            // Show yearly rollup summary (single card for whole year)
-            return groupByYearRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+        case .month, .allTime:
+            // The month digest and the Year Wrap are the content here. The older text rollups
+            // mixed both journals together, so they aren't listed.
+            return []
         }
     }
     
@@ -750,7 +746,7 @@ struct OverviewTab: View {
         var summariesByHour: [Int: [Summary]] = [:]
         
         // Group existing summaries by hour
-        for summary in sessionSummaries {
+        for summary in visibleSessionSummaries {
             let hour = calendar.component(.hour, from: summary.periodStart)
             summariesByHour[hour, default: []].append(summary)
         }
@@ -771,98 +767,6 @@ struct OverviewTab: View {
         }
         
         return buckets.reversed() // Newest first (oldest at bottom)
-    }
-    
-    private func groupByDayRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByDay: [Date: [Summary]] = [:]
-        for summary in rollups {
-            let dayStart = calendar.startOfDay(for: summary.periodStart)
-            summariesByDay[dayStart, default: []].append(summary)
-        }
-        
-        // Create buckets for all days in range
-        var currentDate = calendar.startOfDay(for: dateRange.start)
-        let endDate = calendar.startOfDay(for: dateRange.end)
-        
-        while currentDate <= endDate {
-            let formatter = DateFormatter()
-            if calendar.isDateInToday(currentDate) {
-                formatter.dateFormat = "'Today' - EEEE, MMM d"
-            } else if calendar.isDateInYesterday(currentDate) {
-                formatter.dateFormat = "'Yesterday' - EEEE, MMM d"
-            } else {
-                formatter.dateFormat = "EEEE, MMM d"
-            }
-            let header = formatter.string(from: currentDate)
-            
-            let summaries = summariesByDay[currentDate] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-            
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
-        }
-        
-        return buckets.reversed() // Most recent first
-    }
-    
-    private func groupByMonthRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByMonth: [Date: [Summary]] = [:]
-        for summary in rollups {
-            let monthStart = calendar.dateComponents([.year, .month], from: summary.periodStart)
-            if let monthStartDate = calendar.date(from: monthStart) {
-                summariesByMonth[monthStartDate, default: []].append(summary)
-            }
-        }
-        
-        // Create buckets for all months in range
-        let currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
-        let endMonthStart = calendar.dateComponents([.year, .month], from: dateRange.end)
-        
-        guard var currentMonthDate = calendar.date(from: currentMonthStart),
-              let endMonthDate = calendar.date(from: endMonthStart) else {
-            return buckets
-        }
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMMM yyyy"
-        
-        while currentMonthDate <= endMonthDate {
-            let header = dateFormatter.string(from: currentMonthDate)
-            
-            let summaries = summariesByMonth[currentMonthDate] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-            
-            currentMonthDate = calendar.date(byAdding: .month, value: 1, to: currentMonthDate) ?? currentMonthDate
-        }
-        
-        return buckets.reversed() // Most recent first
-    }
-    
-    private func groupByYearRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByYear: [Int: [Summary]] = [:]
-        for summary in rollups {
-            let year = calendar.component(.year, from: summary.periodStart)
-            summariesByYear[year, default: []].append(summary)
-        }
-        
-        // Create buckets for all years in range
-        let startYear = calendar.component(.year, from: dateRange.start)
-        // The range end is exclusive (start of the next period), so step back a second
-        // to avoid showing an empty bucket for next year.
-        let endYear = max(startYear, calendar.component(.year, from: dateRange.end.addingTimeInterval(-1)))
-        
-        for year in startYear...endYear {
-            let header = "\(year)"
-            let summaries = summariesByYear[year] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-        }
-        
-        return buckets.reversed() // Most recent first
     }
     
     // MARK: - Copy All Functionality
@@ -956,7 +860,7 @@ struct YearWrapGenerationSheet: View {
                 Text("Wrap your year")
                     .font(AppTheme.titleFont(size: 24))
                 
-                Text("Makes three wraps: work, personal and everything together")
+                Text("One wrap for work and one for personal, side by side under All")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -974,6 +878,7 @@ struct YearWrapGenerationSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             
             if !isSmartestAIUnlocked {
                 Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")

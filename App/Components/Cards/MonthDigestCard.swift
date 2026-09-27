@@ -100,10 +100,11 @@ struct MonthDigestCard: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(filter == .all ? "MONTH DIGEST" : "MONTH DIGEST · \(filter == .workOnly ? "WORK" : "PERSONAL")")
+                    Text(filter == .all ? "MONTH DIGEST" : (filter == .workOnly ? "WORK" : "PERSONAL"))
                         .font(.caption)
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.textSecondary)
+                        .lineLimit(1)
                     if !digest.isFinal {
                         StatusPill(text: "In progress", color: AppTheme.textSecondary)
                     }

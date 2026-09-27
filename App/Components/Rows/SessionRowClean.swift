@@ -14,12 +14,12 @@ struct SessionRowClean: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: (session.category ?? .personal).outlineSymbol)
+            Image(systemName: session.journal.outlineSymbol)
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 22, height: 22)
                 .padding(.top, 1)
-                .accessibilityLabel((session.category ?? .personal).displayName)
+                .accessibilityLabel(session.journal.displayName)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {

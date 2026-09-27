@@ -93,6 +93,10 @@ public struct RecordingSession: Identifiable, Sendable, Hashable {
     
     public var id: UUID { sessionId }
     
+    /// The journal this recording belongs to. Recordings from before categories existed have
+    /// none and count as Personal, the recorder's default.
+    public var journal: SessionCategory { category ?? .personal }
+    
     public init(sessionId: UUID, chunks: [AudioChunk], title: String? = nil, notes: String? = nil, isFavorite: Bool = false, category: SessionCategory? = nil) {
         self.sessionId = sessionId
         self.chunks = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
