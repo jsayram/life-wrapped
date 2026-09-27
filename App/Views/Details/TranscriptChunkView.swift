@@ -59,20 +59,23 @@ struct TranscriptChunkView: View {
                 
                 Spacer()
                 
-                // Action buttons - compact
-                if !isEditing && !combinedText.isEmpty {
+                // Action buttons - compact. While editing, Cancel and Done sit here, like the notes card.
+                if isEditing {
                     HStack(spacing: 8) {
-                        Button {
-                            UIPasteboard.general.string = combinedText
-                            coordinator.showSuccess("Copied")
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Copy part \(chunkIndex + 1)")
-                        
+                        Button("Cancel") { cancelEdit() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(AppTheme.textPrimary)
+                        Button("Done") { saveEdit() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
+                            .tint(AppTheme.accent)
+                            .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .transition(.opacity)
+                } else if !combinedText.isEmpty {
+                    HStack(spacing: 8) {
                         Button {
                             editedText = combinedText
                             isEditing = true
@@ -103,10 +106,9 @@ struct TranscriptChunkView: View {
                 .stroke(chunkBorderColor, lineWidth: 2)
         )
         .onTapGesture {
-            if !isEditing {
-                onSeekToChunk()
-            }
+            if !isEditing { onSeekToChunk() }
         }
+        .animation(.easeInOut(duration: 0.15), value: isEditing)
         .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
         .animation(.easeInOut(duration: 0.3), value: isEdited)
     }
@@ -210,48 +212,7 @@ struct TranscriptChunkView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
         } else if isEditing {
-            VStack(alignment: .leading, spacing: 12) {
-                TextEditor(text: $editedText)
-                    .font(.body)
-                    .frame(minHeight: 200, maxHeight: 400)
-                    .padding(12)
-                    .background(AppTheme.fill)
-                    .cornerRadius(12)
-                    .focused($isTextFocused)
-                    .scrollContentBackground(.hidden)
-                
-                HStack(spacing: 12) {
-                    Button {
-                        isEditing = false
-                        editedText = ""
-                    } label: {
-                        Text("Cancel")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(AppTheme.fill)
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button {
-                        saveEdit()
-                    } label: {
-                        Text("Save")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(AppTheme.onAccent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : AppTheme.accent)
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
+            inlineEditor
         } else {
             // Selectable text - user can select and copy individual words
             Text(combinedText)
@@ -264,15 +225,49 @@ struct TranscriptChunkView: View {
         }
     }
     
+    /// Inline editor, the same as the notes box: grows with the text, up to a limit
+    private var inlineEditor: some View {
+        ZStack(alignment: .topLeading) {
+            // Invisible copy of the text sizes the box to its content
+            Text(editedText.isEmpty ? " " : editedText + " ")
+                .font(.body)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+                .opacity(0)
+                .accessibilityHidden(true)
+
+            TextEditor(text: $editedText)
+                .font(.body)
+                .focused($isTextFocused)
+                .scrollContentBackground(.hidden)
+                .accessibilityLabel("Transcript part \(chunkIndex + 1)")
+        }
+        .frame(maxHeight: 420)
+        .padding(.horizontal, 6)
+        .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(AppTheme.textSecondary.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private func cancelEdit() {
+        isTextFocused = false
+        isEditing = false
+        editedText = ""
+    }
+
     private func saveEdit() {
         let trimmedText = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty, let firstSegment = segments.first else {
-            isEditing = false
+        guard !trimmedText.isEmpty, trimmedText != combinedText, let firstSegment = segments.first else {
+            cancelEdit()
             return
         }
         
         // Save the edited text to the first segment (we combine all segments into one for simplicity)
         onTextEdited(firstSegment.id, trimmedText)
+        isTextFocused = false
         isEditing = false
         editedText = ""
     }

@@ -29,7 +29,6 @@ struct SessionDetailView: View {
     @State private var isFavorite: Bool = false
     @State private var sessionCategory: SessionCategory? = nil
     @State private var isEditingTitle: Bool = false
-    @State private var isEditingNotes: Bool = false
     @State private var lastSavedNotes: String = ""
     @FocusState private var isNotesFocused: Bool
     
@@ -46,8 +45,6 @@ struct SessionDetailView: View {
     @State private var generationPhase: String = ""
     @State private var showGenerationOverlay = false
     @State private var activeEngineForGeneration: EngineTier?
-    @State private var showRegenerateWithNotesAlert: Bool = false
-    @State private var notesWereAppended: Bool = false
     /// Set once the user moves this recording to the other journal, to explain what that changes
     @State private var movedToJournal: SessionCategory?
     
@@ -125,22 +122,6 @@ struct SessionDetailView: View {
                 )
             }
         }
-        .alert("Regenerate Summary with Notes?", isPresented: $showRegenerateWithNotesAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Remove notes") {
-                Task {
-                    notesWereAppended = false
-                    await regenerateSummary()
-                }
-            }
-            Button("Re-append notes") {
-                Task {
-                    await regenerateSummary(reappendNotes: true)
-                }
-            }
-        } message: {
-            Text("Your notes are currently appended to the summary. Would you like to regenerate and re-append them, or remove them?")
-        }
     }
     
     // MARK: - Processing Banner
@@ -197,21 +178,17 @@ struct SessionDetailView: View {
                 )
             )
 
-            Text(journalFootnote)
-                .font(.footnote)
-                .foregroundStyle(AppTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .animation(.easeInOut(duration: 0.2), value: movedToJournal)
+            // Brief confirmation after a move. Month digests pick it up the next time the month is
+            // opened; the Year Wrap card counts the recording as changed until the wrap is rebuilt.
+            if let journal = movedToJournal {
+                Label("Moved to \(journal.displayName). Your month and year summaries will follow.", systemImage: "checkmark")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
         }
-    }
-
-    /// Month digests pick up a move the next time the month is opened (their input hash changes).
-    /// Year Wraps are only built on request, so they keep the old journal until rebuilt.
-    private var journalFootnote: String {
-        if let journal = movedToJournal {
-            return "Moved to \(journal.displayName). This month's summary updates the next time you open it. Rebuild your Year Wrap to include the change."
-        }
-        return "Sets which journal this recording belongs to. Month summaries and your Year Wrap use it."
+        .animation(.easeInOut(duration: 0.25), value: movedToJournal)
     }
 
     // MARK: - Toolbar Buttons
@@ -561,76 +538,6 @@ struct SessionDetailView: View {
                     }
                 )
             }
-            
-            // Show regenerate prompt if transcript was edited
-            if transcriptWasEdited && sessionSummary != nil {
-                regenerateSummaryPrompt
-            }
-        }
-    }
-    
-    private var regenerateSummaryPrompt: some View {
-        HStack {
-            Spacer()
-            VStack(spacing: 16) {
-                HStack {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(AppTheme.textPrimary)
-                    Text("Transcript was edited")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                }
-                
-                Text("The summary still reflects the old text. Regenerate it to update this recording's summary. The month summary follows the next time you open it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                
-                HStack(spacing: 12) {
-                    // Dismiss button
-                    Button {
-                        transcriptWasEdited = false
-                    } label: {
-                        Text("Not now")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.secondary)
-                    
-                    // Regenerate button with loading state
-                    Button {
-                        Task {
-                            await regenerateSummary()
-                            transcriptWasEdited = false
-                        }
-                    } label: {
-                        HStack {
-                            if isRegeneratingSummary {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: AppTheme.onAccent))
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "sparkles")
-                            }
-                            Text(isRegeneratingSummary ? "Regenerating..." : "Regenerate Summary")
-                        }
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
-                    .tint(AppTheme.magenta)
-                    .disabled(isRegeneratingSummary)
-                }
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppTheme.fill)
-            )
-            .frame(maxWidth: 400)
-            Spacer()
         }
     }
     
@@ -791,26 +698,44 @@ struct SessionDetailView: View {
     private var sessionTitleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if isEditingTitle {
-                HStack {
-                    TextField("Session Title", text: $sessionTitle)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.title2)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Title")
+                            .font(.headline)
+                        Spacer()
+                        Button("Cancel") {
+                            isEditingTitle = false
+                            sessionTitle = session.title ?? ""
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(AppTheme.textPrimary)
+
+                        Button("Save") {
+                            isEditingTitle = false
+                            saveTitle()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
+                        .tint(AppTheme.accent)
+                    }
+
+                    TextField("Untitled recording", text: $sessionTitle)
+                        .font(AppTheme.titleFont(size: 24))
+                        .foregroundStyle(AppTheme.textPrimary)
                         .focused($isTextFieldFocused)
-                    
-                    Button("Save") {
-                        isEditingTitle = false
-                        saveTitle()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
-                    .tint(AppTheme.accent)
-                    
-                    Button("Cancel") {
-                        isEditingTitle = false
-                        sessionTitle = session.title ?? ""
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(AppTheme.textPrimary)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            isEditingTitle = false
+                            saveTitle()
+                        }
+                        .padding(10)
+                        .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(AppTheme.textSecondary.opacity(0.6), lineWidth: 1)
+                        )
                 }
             } else {
                 HStack(alignment: .top, spacing: 12) {
@@ -974,55 +899,56 @@ struct SessionDetailView: View {
                 
                 Spacer()
                 
-                // Copy button
-                Button {
-                    UIPasteboard.general.string = summary.text.withoutSummaryTitlePrefix
-                    coordinator.showSuccess("Summary copied to clipboard")
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 15))
-                        .foregroundStyle(AppTheme.textPrimary)
+                if isRegeneratingSummary {
+                    ProgressView()
                         .frame(width: 36, height: 36)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy summary")
-                
-                // Regenerate button
-                Button {
-                    Task {
-                        // If notes were appended, ask user what to do
-                        if notesWereAppended {
-                            showRegenerateWithNotesAlert = true
-                        } else {
-                            await regenerateSummary()
+                        .accessibilityLabel("Regenerating summary")
+                } else {
+                    Menu {
+                        Button {
+                            UIPasteboard.general.string = summary.text.withoutSummaryTitlePrefix
+                            coordinator.showSuccess("Summary copied")
+                        } label: {
+                            Label("Copy summary", systemImage: "doc.on.doc")
                         }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        if isRegeneratingSummary {
-                            ProgressView()
-                                .tint(AppTheme.purple)
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "sparkles")
-                                .font(.body)
+                        Button {
+                            Task { await regenerateSummary() }
+                        } label: {
+                            Label("Regenerate summary", systemImage: "sparkles")
                         }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .frame(width: 36, height: 36)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
+                            .contentShape(Rectangle())
                     }
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                    .contentShape(Rectangle())
+                    .accessibilityLabel("Summary options")
                 }
-                .buttonStyle(.plain)
-                .disabled(isRegeneratingSummary)
-                .accessibilityLabel(isRegeneratingSummary ? "Regenerating summary" : "Regenerate summary")
             }
             
             Text(summary.text.withoutSummaryTitlePrefix)
                 .font(.body)
                 .foregroundStyle(.primary)
+
+            // The transcript changed after this summary was written
+            if transcriptWasEdited && !isRegeneratingSummary {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Transcript changed since this summary")
+                    Spacer(minLength: 8)
+                    Button("Update") {
+                        Task { await regenerateSummary() }
+                    }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(AppTheme.textPrimary)
+                }
+                .font(.footnote)
+                .foregroundStyle(AppTheme.textSecondary)
+                .padding(10)
+                .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
             
             // Show engine tier if available
             if let engineTier = summary.engineTier {
@@ -1041,105 +967,72 @@ struct SessionDetailView: View {
     
     // MARK: - Additional Notes Section
     
+    /// Tap and type. Saves on its own a moment after typing or dictation pauses, and when leaving.
     private var personalNotesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Notes")
                     .font(.headline)
-                
                 Spacer()
-                
-                if isEditingNotes {
-                    Button("Done") {
-                        isNotesFocused = false
-                        isEditingNotes = false
-                        saveNotes()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
-                } else {
-                    Button {
-                        isEditingNotes = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 15))
-                            .foregroundStyle(AppTheme.textPrimary)
-                            .frame(width: 36, height: 36)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Edit notes")
+                if isNotesFocused {
+                    Button("Done") { isNotesFocused = false }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
+                        .tint(AppTheme.accent)
+                        .transition(.opacity)
                 }
             }
-            
-            if isEditingNotes {
+            .frame(minHeight: 30)
+            .animation(.easeInOut(duration: 0.15), value: isNotesFocused)
+
+            ZStack(alignment: .topLeading) {
+                // Invisible copy of the text sizes the box to its content
+                Text(sessionNotes.isEmpty ? " " : sessionNotes + " ")
+                    .font(.body)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+
                 TextEditor(text: $sessionNotes)
                     .font(.body)
                     .focused($isNotesFocused)
                     .scrollContentBackground(.hidden)
-                    .frame(minHeight: 120, maxHeight: 320)
-                    .padding(8)
-                    .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(alignment: .topLeading) {
-                        if sessionNotes.isEmpty {
-                            Text("Add anything the recording missed.")
-                                .font(.body)
-                                .foregroundStyle(AppTheme.textSecondary)
-                                .padding(.horizontal, 13)
-                                .padding(.vertical, 16)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .onAppear { isNotesFocused = true }
-                    // Save a moment after typing or dictation pauses, so nothing is lost if the user leaves
-                    .task(id: sessionNotes) {
-                        try? await Task.sleep(for: .seconds(1))
-                        guard !Task.isCancelled else { return }
-                        saveNotes()
-                    }
-            } else if sessionNotes.isEmpty {
-                Text("Add anything the recording missed.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .italic()
-            } else {
-                Text(sessionNotes)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-            }
-            
-            // Subtle button to append notes to summary
-            if shouldShowRegenerateWithNotesButton {
-                Button {
-                    Task {
-                        await regenerateSummaryWithNotes()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus.circle")
-                            .font(.caption)
-                        Text("Append to Summary")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                    }
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
+                    .accessibilityLabel("Notes")
+
+                if sessionNotes.isEmpty {
+                    Text("Add anything the recording missed.")
+                        .font(.body)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
             }
+            .frame(maxHeight: 320)
+            .padding(.horizontal, 6)
+            .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isNotesFocused ? AppTheme.textSecondary.opacity(0.6) : .clear, lineWidth: 1)
+            )
+            // Save a moment after typing or dictation pauses, so nothing is lost if the user leaves
+            .task(id: sessionNotes) {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                saveNotes()
+            }
+            .onChange(of: isNotesFocused) { _, focused in
+                if !focused { saveNotes() }
+            }
+
+            Text("Kept with this recording and included in your month summary.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
         }
         .graphiteCard()
-    }
-    
-    /// Show regenerate button only if: notes exist, summary exists, and notes changed after summary
-    private var shouldShowRegenerateWithNotesButton: Bool {
-        !sessionNotes.isEmpty &&
-        sessionSummary != nil &&
-        sessionNotes != initialSessionNotes
     }
     
     // MARK: - Helper Methods
@@ -1175,6 +1068,8 @@ struct SessionDetailView: View {
                 try await coordinator.updateSessionCategory(sessionId: session.sessionId, category: newCategory)
                 print("✅ Category updated to: \(newCategory.displayName)")
                 movedToJournal = newCategory
+                try? await Task.sleep(for: .seconds(4))
+                if movedToJournal == newCategory { movedToJournal = nil }
             } catch {
                 print("❌ Failed to update category: \(error)")
                 // Revert on error
@@ -1220,32 +1115,6 @@ struct SessionDetailView: View {
         }
     }
     
-    private func regenerateSummaryWithNotes() async {
-        guard !sessionNotes.isEmpty else { return }
-        
-        print("📝 [SessionDetailView] Appending notes to existing summary...")
-        
-        do {
-            // Call coordinator to append notes
-            try await coordinator.appendNotesToSessionSummary(sessionId: session.sessionId, notes: sessionNotes)
-            
-            print("✅ [SessionDetailView] Successfully appended notes to summary")
-            
-            // Reload summary to show changes
-            await loadSessionSummary()
-            
-            // Mark that notes were incorporated and appended
-            initialSessionNotes = sessionNotes
-            notesWereAppended = true
-            
-            coordinator.showSuccess("Notes appended to summary")
-        } catch {
-            print("❌ [SessionDetailView] Failed to append notes to summary: \(error)")
-            summaryLoadError = error.localizedDescription
-            coordinator.showError("Failed to append notes")
-        }
-    }
-    
     private func saveTitle() {
         Task {
             do {
@@ -1258,7 +1127,7 @@ struct SessionDetailView: View {
         }
     }
     
-    private func regenerateSummary(reappendNotes: Bool = false) async {
+    private func regenerateSummary() async {
         isRegeneratingSummary = true
         summaryLoadError = nil
         
@@ -1367,14 +1236,6 @@ struct SessionDetailView: View {
                 forceRegenerate: true,
                 includeNotes: false
             )
-            
-            // If requested, re-append notes after regeneration
-            if reappendNotes && !sessionNotes.isEmpty {
-                try? await coordinator.appendNotesToSessionSummary(sessionId: session.sessionId, notes: sessionNotes)
-                notesWereAppended = true
-            } else {
-                notesWereAppended = false
-            }
             
             generationProgress = 1.0
             generationPhase = "Done"
