@@ -148,8 +148,9 @@ struct ExcludedWordsView: View {
             }
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("Excluded words")
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .navigationBarBackButtonHidden(hasUnsavedChanges)
         .toolbar {
             if hasUnsavedChanges {

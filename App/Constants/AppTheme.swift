@@ -198,6 +198,78 @@ extension View {
     }
 }
 
+// MARK: - Readable Width (iPad)
+
+extension AppTheme {
+    /// Widest a column of text or settings rows gets on iPad; longer lines are hard to read
+    static let readableWidth: CGFloat = 720
+    /// Screens this wide or wider lay content out in two columns (recording, Overview, Year Wrap)
+    static let twoColumnWidth: CGFloat = 900
+}
+
+extension View {
+    /// Caps content inside a ScrollView at a readable width, centered. No effect at iPhone widths.
+    func readableColumn(_ maxWidth: CGFloat = AppTheme.readableWidth) -> some View {
+        frame(maxWidth: maxWidth).frame(maxWidth: .infinity)
+    }
+
+    /// For a List, Form or ScrollView: widens the side margins so rows stay at a readable width
+    /// on iPad, while the whole screen still scrolls. No effect at iPhone widths.
+    func readableMargins(_ maxWidth: CGFloat = AppTheme.readableWidth) -> some View {
+        modifier(ReadableMargins(maxWidth: maxWidth))
+    }
+
+    /// Reports the view's width, for layouts that switch to two columns when there's room
+    func onWidthChange(_ action: @escaping (CGFloat) -> Void) -> some View {
+        onGeometryChange(for: CGFloat.self) { $0.size.width } action: { action($0) }
+    }
+}
+
+/// Large serif screen title placed in the content. On iPad, screens whose content sits in a
+/// centered column use it instead of the navigation bar title, which would sit far to the left.
+struct ColumnTitle: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .scaledFont(size: 34, design: .serif)
+            .foregroundStyle(AppTheme.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension View {
+    /// Large title on iPhone. On iPad, where the content sits in a centered column, the title
+    /// goes in the middle of the bar so it lines up with the content instead of the screen edge.
+    func columnScreenTitleDisplayMode() -> some View {
+        modifier(ColumnScreenTitleDisplayMode())
+    }
+}
+
+private struct ColumnScreenTitleDisplayMode: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    func body(content: Content) -> some View {
+        content.navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
+    }
+}
+
+private struct ReadableMargins: ViewModifier {
+    let maxWidth: CGFloat
+    @State private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        // Safe area padding, not content margins: setting a List's content margins (even to 0)
+        // replaces its inset-grouped inset on iPhone, and content margins also reach nested scroll views
+        content
+            .safeAreaPadding(.horizontal, max((width - maxWidth) / 2, 0))
+            .onWidthChange { width = $0 }
+    }
+}
+
 // MARK: - Navigation Bar Appearance
 
 enum AppAppearance {

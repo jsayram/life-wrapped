@@ -159,7 +159,7 @@ struct OverviewSummaryCard: View {
     private func engineDisplayName(for tier: String) -> String {
         switch tier.lowercased() {
         case "apple": return "Apple Intelligence"
-        case "basic": return "Basic"
+        case "basic": return "Key Sentences"
         case "external": return "Year Wrapped Pro AI"
         case "rollup": return "Rollup"
         case "year wrap": return "Year Wrap"

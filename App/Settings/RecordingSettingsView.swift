@@ -69,8 +69,9 @@ struct RecordingSettingsView: View {
             }
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("Recording")
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .onAppear {
             let codes = (UserDefaults.standard.array(forKey: "enabledLanguages") as? [String]) ?? ["en", "es"]
             let names = codes.map { LanguageDetector.displayName(for: $0) }.sorted()

@@ -133,7 +133,7 @@ struct PermissionsView: View {
                                 Text("Private by design")
                                     .font(.subheadline.bold())
                                 
-                                Text("Transcription happens on your \(DeviceName.current). Nothing is sent to the cloud unless you choose Smartest.")
+                                Text("Transcription happens on your \(DeviceName.current). Nothing is sent to the cloud unless you choose Cloud AI.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -200,7 +200,7 @@ struct PermissionsView: View {
                                     HStack {
                                         Image(systemName: "sparkles")
                                             .foregroundColor(AppTheme.accent)
-                                        Text("Smartest")
+                                        Text("Cloud AI")
                                             .font(.subheadline.bold())
                                         Spacer()
                                     }

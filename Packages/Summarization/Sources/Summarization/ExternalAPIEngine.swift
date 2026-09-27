@@ -91,13 +91,12 @@ public actor ExternalAPIEngine: SummarizationEngine {
     }
     
     public func isAvailable() async -> Bool {
-        // Check if API key is configured
-        let hasAPIKey = await keychainManager.hasAPIKey(for: selectedProvider)
-        
+        // Check if API key is configured. Without one, stay offline: the privacy policy
+        // promises no network use unless Cloud AI is set up.
+        guard await keychainManager.hasAPIKey(for: selectedProvider) else { return false }
+
         // Check internet connectivity (simple check)
-        let hasInternet = await checkInternetConnectivity()
-        
-        return hasAPIKey && hasInternet
+        return await checkInternetConnectivity()
     }
     
     public func summarizeSession(

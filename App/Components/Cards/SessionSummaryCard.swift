@@ -68,6 +68,8 @@ struct SessionSummaryCard: View {
                 .lineLimit(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Fills its row when cards sit two-up on iPad, so paired cards match in height
+        .frame(maxHeight: .infinity, alignment: .top)
         .graphiteCard(padding: 16, radius: 16)
         .overlay {
             if isLoadingSession {

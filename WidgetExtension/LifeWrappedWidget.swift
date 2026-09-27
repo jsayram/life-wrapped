@@ -87,7 +87,7 @@ struct RecordWidget: Widget {
             RecordWidgetView(entry: entry)
         }
         .configurationDisplayName("Quick Record")
-        .description("Start recording with Work or Personal category.")
+        .description("Start a Work or Personal recording, and see your streak.")
         .supportedFamilies([
             .systemSmall,
             .systemMedium,
@@ -226,7 +226,7 @@ struct RecordMediumView: View {
                         .font(.caption2)
                         .foregroundStyle(.primary)
                 } else {
-                    Label("\(entry.todaySessions) sessions today", systemImage: "waveform")
+                    Label("\(entry.todaySessions) \(entry.todaySessions == 1 ? "recording" : "recordings") today", systemImage: "waveform")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -264,8 +264,8 @@ struct SessionsWidget: Widget {
         StaticConfiguration(kind: kind, provider: LifeWrappedProvider()) { entry in
             SessionsWidgetView(entry: entry)
         }
-        .configurationDisplayName("Today's Sessions")
-        .description("Quick view of your session count for today.")
+        .configurationDisplayName("Today's Recordings")
+        .description("How many recordings you made today, and your streak.")
         .supportedFamilies([
             .systemSmall,
             .accessoryCircular,
@@ -304,7 +304,7 @@ struct SessionsSmallView: View {
             Text("\(entry.todaySessions)")
                 .font(.system(size: 48, weight: .regular, design: .serif))
             
-            Text(entry.todaySessions == 1 ? "session today" : "sessions today")
+            Text(entry.todaySessions == 1 ? "recording today" : "recordings today")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
@@ -346,7 +346,7 @@ struct SessionsInlineView: View {
     let entry: LifeWrappedEntry
     
     var body: some View {
-        Text("\(entry.todaySessions) sessions today")
+        Text("\(entry.todaySessions) \(entry.todaySessions == 1 ? "recording" : "recordings") today")
             .widgetURL(WidgetDeepLink.history)
     }
 }

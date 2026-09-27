@@ -12,6 +12,10 @@ struct RecordingButton: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var recordingDuration: TimeInterval = 0
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// Bigger on iPad so the button holds the larger screen
+    private var faceScale: CGFloat { sizeClass == .regular ? 1.35 : 1 }
     
     // Timer that fires every 0.1 seconds to update the recording duration
     private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
@@ -90,27 +94,27 @@ struct RecordingButton: View {
             Circle()
                 .fill(AppTheme.card)
                 .overlay(Circle().strokeBorder(AppTheme.hairline, lineWidth: 1))
-                .frame(width: 168, height: 168)
+                .frame(width: 168 * faceScale, height: 168 * faceScale)
 
             Circle()
                 .fill(AppTheme.accent)
-                .frame(width: 132, height: 132)
+                .frame(width: 132 * faceScale, height: 132 * faceScale)
 
             if coordinator.recordingState.isRecording {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 8 * faceScale, style: .continuous)
                     .fill(AppTheme.recording)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 36 * faceScale, height: 36 * faceScale)
             } else if coordinator.recordingState.isProcessing {
                 ProgressView()
                     .tint(AppTheme.onAccent)
                     .controlSize(.large)
             } else {
                 Image(systemName: "mic")
-                    .scaledFont(size: 40, weight: .regular)
+                    .scaledFont(size: 40 * faceScale, weight: .regular)
                     .foregroundStyle(AppTheme.onAccent)
             }
         }
-        .frame(width: 168, height: 168)
+        .frame(width: 168 * faceScale, height: 168 * faceScale)
     }
 
     // MARK: - Helpers

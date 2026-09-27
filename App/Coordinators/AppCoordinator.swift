@@ -8,6 +8,7 @@ import UIKit
 import AVFoundation
 import Speech
 import CryptoKit
+import Combine
 import SharedModels
 import Summarization
 import Storage
@@ -134,8 +135,10 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var yearWrapProgress: YearWrapProgress?
     @Published public private(set) var isGeneratingYearWrap: Bool = false
     
-    /// Store manager for in-app purchases
-    @Published public private(set) var storeManager = StoreManager()
+    /// Store manager for in-app purchases. Views read it through the coordinator, so its changes are
+    /// forwarded below; a nested ObservableObject doesn't refresh them on its own.
+    public let storeManager = StoreManager()
+    private var storeChanges: AnyCancellable?
     
     // MARK: - Dependencies
     
@@ -178,6 +181,11 @@ public final class AppCoordinator: ObservableObject {
         
         // Setup chunk completion callback
         setupAudioCaptureCallback()
+        
+        // StoreManager publishes on the main actor, so the forward stays there
+        storeChanges = storeManager.objectWillChange.sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
     }
     
     private func setupAudioCaptureCallback() {
@@ -665,6 +673,15 @@ public final class AppCoordinator: ObservableObject {
         return sessions
     }
     
+    /// Today's recordings, newest first, with titles and journals (for the Record screen)
+    public func fetchTodaysSessions() async throws -> [RecordingSession] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        let ids = try await dbManager.fetchSessionsByDate(date: Date()).map(\.sessionId)
+        return try await fetchSessions(ids: ids)
+    }
+
     /// Fetch specific sessions by IDs
     public func fetchSessions(ids: [UUID]) async throws -> [RecordingSession] {
         guard let dbManager = databaseManager else {
@@ -1222,6 +1239,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         try await data.updateSessionTitle(sessionId: sessionId, title: title)
         print("📝 [AppCoordinator] Updated session title: \(title ?? "nil")")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
     }
     
     /// Update session notes
@@ -1229,6 +1247,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         try await data.updateSessionNotes(sessionId: sessionId, notes: notes)
         print("📝 [AppCoordinator] Updated session notes")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
     }
     
     /// Toggle session favorite status
@@ -1236,6 +1255,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         let isFavorite = try await data.toggleSessionFavorite(sessionId: sessionId)
         print("⭐ [AppCoordinator] Session favorite: \(isFavorite)")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
         return isFavorite
     }
     
@@ -1244,6 +1264,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         try await data.updateSessionCategory(sessionId: sessionId, category: category)
         print("🏷️ [AppCoordinator] Updated session category: \(category?.displayName ?? "None")")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
     }
     
     /// Fetch session metadata
@@ -1559,6 +1580,8 @@ public final class AppCoordinator: ObservableObject {
 extension Notification.Name {
     static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
     static let recordingTitlesUpdated = Notification.Name("RecordingTitlesUpdated")
+    /// A recording's title, notes, star or journal changed; the object is its session ID
+    static let sessionMetadataChanged = Notification.Name("SessionMetadataChanged")
     /// A recording's summary was saved. `object` is the session's UUID.
     static let sessionSummaryUpdated = Notification.Name("SessionSummaryUpdated")
     /// Writing a recording's summary in the background failed. `object` is the session's UUID;

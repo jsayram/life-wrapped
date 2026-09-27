@@ -59,7 +59,7 @@ struct DataSettingsView: View {
                     
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Local AI model")
+                            Text("Offline AI model")
                                 .font(.body)
                         }
                         Spacer()
@@ -88,8 +88,9 @@ struct DataSettingsView: View {
             }
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("Data")
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .sheet(isPresented: $showDataManagement) {
             DataManagementView()
                 .environmentObject(coordinator)

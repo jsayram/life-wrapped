@@ -49,41 +49,75 @@ struct SessionDetailView: View {
     @State private var activeEngineForGeneration: EngineTier?
     /// Set once the user moves this recording to the other journal, to explain what that changes
     @State private var movedToJournal: SessionCategory?
-    
+    /// Screen width, to switch to two columns when there's room
+    @State private var contentWidth: CGFloat = 0
+
+    private var usesTwoColumns: Bool { contentWidth >= AppTheme.twoColumnWidth }
+
+    /// The summary, a real failure (with Retry), or where it is on its way
+    @ViewBuilder
+    private var summarySection: some View {
+        if let summary = sessionSummary {
+            sessionSummarySection(summary: summary)
+        } else if let error = summaryLoadError {
+            sessionSummaryErrorSection(error: error)
+        } else {
+            summaryPendingSection
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Title and meta line (editable title)
-                sessionTitleSection
-
-                // Work / Personal
-                sessionInfoSection
-
-                // Transcription Processing Banner
-                processingBannerSection
-
-                // Summary: the summary, a real failure (with Retry), or where it is on its way
-                if let summary = sessionSummary {
-                    sessionSummarySection(summary: summary)
-                } else if let error = summaryLoadError {
-                    sessionSummaryErrorSection(error: error)
+            Group {
+                if usesTwoColumns {
+                    // Wide screens (iPad): read the summary and notes while the transcript sits beside them
+                    VStack(alignment: .leading, spacing: 16) {
+                        sessionTitleSection
+                        processingBannerSection
+                        HStack(alignment: .top, spacing: 20) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                sessionInfoSection
+                                summarySection
+                                personalNotesSection
+                            }
+                            .frame(maxWidth: .infinity, alignment: .top)
+                            VStack(alignment: .leading, spacing: 16) {
+                                playbackControlsSection
+                                transcriptionSection
+                            }
+                            .frame(maxWidth: .infinity, alignment: .top)
+                        }
+                    }
                 } else {
-                    summaryPendingSection
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Title and meta line (editable title)
+                        sessionTitleSection
+
+                        // Work / Personal
+                        sessionInfoSection
+
+                        // Transcription Processing Banner
+                        processingBannerSection
+
+                        summarySection
+
+                        // Notes
+                        personalNotesSection
+
+                        // Playback Controls
+                        playbackControlsSection
+
+                        // Transcription Section
+                        transcriptionSection
+                    }
                 }
-
-                // Notes
-                personalNotesSection
-
-                // Playback Controls
-                playbackControlsSection
-
-                // Transcription Section
-                transcriptionSection
             }
             .padding(.horizontal, 24)
             .padding(.top, 4)
             .padding(.bottom, 24)
+            .readableColumn(usesTwoColumns ? 1240 : AppTheme.readableWidth)
         }
+        .onWidthChange { contentWidth = $0 }
         .themedScreen()
         .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -1045,8 +1079,8 @@ struct SessionDetailView: View {
     private func engineDisplayName(for tier: String) -> String {
         switch tier.lowercased() {
         case "apple": return "Apple Intelligence"
-        case "basic": return "Basic"
-        case "external": return "Smartest Engine AI"
+        case "basic": return "Key Sentences"
+        case "external": return "Cloud AI"
         case "rollup": return "Rollup"
         case "year wrap": return "Year Wrap"
         default: return tier.capitalized
@@ -1243,7 +1277,7 @@ struct SessionDetailView: View {
             
             // Show success with engine used
             if let summary = sessionSummary {
-                // engineTier is stored raw ("apple"); show the tier name people see in Settings ("Smarter")
+                // engineTier is stored raw ("apple"); show the tier name people see in Settings ("Apple Intelligence")
                 let engineName = summary.engineTier.flatMap { EngineTier(rawValue: $0)?.displayName } ?? "AI"
                 coordinator.showSuccess("Summary generated with \(engineName)")
             } else {

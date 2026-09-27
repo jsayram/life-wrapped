@@ -209,8 +209,9 @@ struct DataManagementView: View {
                 }
             }
             .themedScreen()
+            .readableMargins()
             .navigationTitle("Export & backup")
-            .navigationBarTitleDisplayMode(.large)
+            .columnScreenTitleDisplayMode()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -275,6 +276,7 @@ struct DataManagementView: View {
                         }
                     }
                     .themedScreen()
+                    .readableMargins()
                     .navigationTitle("Import Details")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -299,7 +301,7 @@ struct DataManagementView: View {
                 }
             } message: {
                 if let stats = deleteStats {
-                    Text("This will permanently delete:\n\n• \(stats.chunks) recordings\n• \(stats.transcripts) transcripts\n• \(stats.summaries) summaries\n• API keys (OpenAI/Anthropic)\n• Local AI model (\(stats.modelSize))\n\nThis action cannot be undone.")
+                    Text("This will permanently delete:\n\n• \(stats.chunks) recordings\n• \(stats.transcripts) transcripts\n• \(stats.summaries) summaries\n• API keys (OpenAI/Anthropic)\n• Offline AI model (\(stats.modelSize))\n\nThis action cannot be undone.")
                 } else {
                     Text("This action cannot be undone. All your recordings, transcriptions, and summaries will be permanently deleted.")
                 }

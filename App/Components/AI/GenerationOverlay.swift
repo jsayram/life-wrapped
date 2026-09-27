@@ -112,14 +112,14 @@ struct GenerationOverlay: View {
     private func explanation(for tier: EngineTier) -> String {
         switch tier {
         case .basic:
-            return "Basic picks out the key sentences on your \(DeviceName.current). It's fast and works offline."
+            return "Key Sentences picks out the most important sentences on your \(DeviceName.current). It's fast and works offline."
         case .local:
-            return "Smart runs \(LocalEngine.modelDisplayName) on your \(DeviceName.current). Your transcript never leaves it."
+            return "Offline AI runs \(LocalEngine.modelDisplayName) on your \(DeviceName.current). Your transcript never leaves it."
         case .apple:
-            return "Smarter uses Apple Intelligence on your \(DeviceName.current). Your transcript never leaves it."
+            return "Apple Intelligence runs on your \(DeviceName.current). Your transcript never leaves it."
         case .external:
             let provider = UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
-            return "Smartest sends this transcript to \(provider) with your API key, then saves the summary here."
+            return "Cloud AI sends this transcript to \(provider) with your API key, then saves the summary here."
         }
     }
 }

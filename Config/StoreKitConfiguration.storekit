@@ -10,13 +10,13 @@
       "internalID" : "smartest_ai_001",
       "localizations" : [
         {
-          "description" : "Unlock GPT-4, Claude, and other external AI providers for the highest quality summaries. Bring your own API keys.",
-          "displayName" : "Smartest AI",
+          "description" : "Detailed summaries with your own AI key",
+          "displayName" : "Cloud AI",
           "locale" : "en_US"
         }
       ],
       "productID" : "com.jsayram.lifewrapped.smartestai",
-      "referenceName" : "Smartest AI",
+      "referenceName" : "Cloud AI",
       "type" : "NonConsumable"
     }
   ],

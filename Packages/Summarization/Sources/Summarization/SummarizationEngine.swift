@@ -25,10 +25,10 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     
     public var displayName: String {
         switch self {
-        case .basic: return "Basic"
-        case .local: return "Smart"
-        case .apple: return "Smarter"
-        case .external: return "Smartest"
+        case .basic: return "Key Sentences"
+        case .local: return "Offline AI"
+        case .apple: return "Apple Intelligence"
+        case .external: return "Cloud AI"
         }
     }
     
@@ -59,7 +59,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .apple:
             return "Advanced AI using Apple's on-device Foundation Models (iOS 26+, Apple Intelligence enabled). Works offline."
         case .external:
-            return "Premium AI using external services (OpenAI or Anthropic). Requires your API key and internet connection. Automatically falls back to Basic when offline."
+            return "Premium AI using external services (OpenAI or Anthropic). Requires your API key and internet connection. Automatically falls back to Key Sentences when offline."
         }
     }
     

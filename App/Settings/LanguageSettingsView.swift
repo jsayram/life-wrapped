@@ -44,8 +44,9 @@ struct LanguageSettingsView: View {
             }
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("Languages")
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .task {
             loadLanguages()
         }

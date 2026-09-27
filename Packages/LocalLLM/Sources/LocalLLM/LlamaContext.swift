@@ -247,7 +247,7 @@ public enum LlamaError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .modelNotFound:
-            return "The Smart model isn't downloaded. Download it in Settings, AI & Summaries."
+            return "The Offline AI model isn't downloaded. Download it in Settings, AI & Summaries."
         case .invalidModelSize(let expected, let actual):
             return "Model file size \(actual)MB outside expected range \(expected)MB"
         case .failedToLoadModel:
@@ -255,7 +255,7 @@ public enum LlamaError: Error, LocalizedError {
         case .failedToCreateContext:
             return "Failed to create inference context"
         case .modelNotLoaded:
-            return "The Smart model isn't loaded. Download it in Settings, AI & Summaries."
+            return "The Offline AI model isn't loaded. Download it in Settings, AI & Summaries."
         case .tokenizationFailed:
             return "Failed to tokenize input"
         case .contextOverflow(let prompt, let ctx):
@@ -269,11 +269,11 @@ public enum LlamaError: Error, LocalizedError {
         case .generationFailed(let error):
             return "Text generation failed: \(error.localizedDescription)"
         case .metalNotAvailable:
-            return "Smart needs a real iPhone or iPad. It doesn't run in the Simulator."
+            return "Offline AI needs a real iPhone or iPad. It doesn't run in the Simulator."
         case .deviceNotSupported:
-            return "This device doesn't have enough memory to run Smart."
+            return "This device doesn't have enough memory to run Offline AI."
         case .notEnoughMemory:
-            return "There isn't enough free memory to run Smart right now. Close some apps and try again."
+            return "There isn't enough free memory to run Offline AI right now. Close some apps and try again."
         }
     }
 }

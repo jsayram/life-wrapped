@@ -23,6 +23,7 @@ struct OverviewTab: View {
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     @State private var showPurchaseSheet = false
+    @State private var reopenYearWrapAfterPurchase = false
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
@@ -32,11 +33,27 @@ struct OverviewTab: View {
     // Navigation state for session detail
     @State private var selectedSession: RecordingSession?
     @State private var showSessionDetail = false
+
+    /// Overview's width, to put summary cards two-up when there's room (iPad)
+    @State private var contentWidth: CGFloat = 0
+    /// On iPad the Overview stays in one centered column instead of spanning the screen
+    private let columnWidth: CGFloat = 860
+    private var cardsTwoUp: Bool { min(contentWidth, columnWidth) >= 760 }
+    @Environment(\.horizontalSizeClass) private var sizeClass
     
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // iPad: the title sits over the centered column, not at the screen's left edge
+                if sizeClass == .regular {
+                    ColumnTitle("Overview")
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                        .readableColumn(columnWidth)
+                }
+
                 // Time Range Picker - ALWAYS show so users can switch periods
                 GraphiteSegmentedControl(
                     options: TimeRange.allCases.map { .init(value: $0, title: $0.rawValue) },
@@ -45,6 +62,7 @@ struct OverviewTab: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .disabled(isLoading)
+                .readableColumn(columnWidth)
                 
                 // Which journal: one switch for every range, so the choice carries between them
                 GraphiteSegmentedControl(
@@ -53,6 +71,7 @@ struct OverviewTab: View {
                 )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+                .readableColumn(columnWidth)
                 
                 // Content area
                 Group {
@@ -88,6 +107,7 @@ struct OverviewTab: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
+                            .readableColumn(columnWidth)
                         }
                         
                         // New Feed Layout
@@ -139,7 +159,28 @@ struct OverviewTab: View {
                                         .animation(.easeInOut, value: coordinator.isGeneratingYearWrap)
                                 }
                             }
-                            
+                            .readableColumn(columnWidth)
+
+                            // Wide screens: the day's cards two-up. Each card shows its time, so the
+                            // hour headers are left out there.
+                            if cardsTwoUp && [.today, .yesterday].contains(selectedTimeRange) && !visibleSessionSummaries.isEmpty {
+                                let cards = groupSessionsByTimeBucket().flatMap(\.summaries)
+                                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                                    ForEach(Array(stride(from: 0, to: cards.count, by: 2)), id: \.self) { index in
+                                        GridRow(alignment: .top) {
+                                            summaryCard(cards[index])
+                                            if index + 1 < cards.count {
+                                                summaryCard(cards[index + 1])
+                                            } else {
+                                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .readableColumn(columnWidth)
+                            } else {
                             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                                 // Only buckets with summaries; empty hours add noise
                                 let timeBuckets = groupSessionsByTimeBucket().filter { !$0.isEmpty }
@@ -200,13 +241,17 @@ struct OverviewTab: View {
                                     }
                                 }
                             }
+                            .readableColumn(columnWidth)
+                            }
                         }
                     }
                 }
             }
             .background(AppTheme.background)
+            .onWidthChange { contentWidth = $0 }
             .themedScreen()
             .navigationTitle("Overview")
+            .toolbar(sizeClass == .regular ? .hidden : .automatic, for: .navigationBar)
             .navigationDestination(isPresented: $showSessionDetail) {
                 if let session = selectedSession {
                     SessionDetailView(session: session)
@@ -258,37 +303,19 @@ struct OverviewTab: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showPurchaseSheet) {
+            .sheet(isPresented: $showPurchaseSheet, onDismiss: {
+                // Back to the wrap choices, where Cloud AI is now ready or asks for an API key
+                if reopenYearWrapAfterPurchase {
+                    reopenYearWrapAfterPurchase = false
+                    showYearWrapConfirmation = true
+                }
+            }) {
                 SmartestPurchaseSheet(
-                    price: coordinator.storeManager.smartestAIProduct?.displayPrice,
-                    isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
-                    isRestoring: coordinator.storeManager.purchaseState == .restoring,
-                    onPurchase: {
-                        Task {
-                            let success = await coordinator.storeManager.purchaseSmartestAI()
-                            if success {
-                                showPurchaseSheet = false
-                                coordinator.showSuccess("Smartest AI unlocked! Configure your API key in Settings.")
-                            }
-                        }
-                    },
-                    onRestore: {
-                        Task {
-                            await coordinator.storeManager.restorePurchases()
-                            if coordinator.storeManager.isSmartestAIUnlocked {
-                                showPurchaseSheet = false
-                                coordinator.showSuccess("Purchases restored!")
-                            }
-                        }
-                    },
-                    onRedeem: {
-                        Task {
-                            await coordinator.storeManager.presentRedeemCode()
-                            if coordinator.storeManager.isSmartestAIUnlocked {
-                                showPurchaseSheet = false
-                                coordinator.showSuccess("Code redeemed!")
-                            }
-                        }
+                    store: coordinator.storeManager,
+                    onUnlocked: {
+                        reopenYearWrapAfterPurchase = true
+                        showPurchaseSheet = false
+                        coordinator.showSuccess("Cloud AI unlocked")
                     },
                     onCancel: {
                         showPurchaseSheet = false
@@ -610,6 +637,13 @@ struct OverviewTab: View {
         }
     }
     
+    private func summaryCard(_ summary: Summary) -> some View {
+        SessionSummaryCard(summary: summary, coordinator: coordinator) { session in
+            selectedSession = session
+            showSessionDetail = true
+        }
+    }
+
     private func groupSessionsByTimeBucket() -> [TimeBucket] {
         let calendar = Calendar.current
         let dateRange = getDateRange(for: selectedTimeRange)
@@ -792,7 +826,7 @@ struct YearWrapGenerationSheet: View {
         if smartestReady {
             engineButton(
                 icon: "cloud",
-                title: "Smartest (\(provider))",
+                title: "Cloud AI (\(provider))",
                 detail: "Best quality. Sends your month notes, not recordings, to \(provider).",
                 trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
             ) {
@@ -801,7 +835,7 @@ struct YearWrapGenerationSheet: View {
         } else if isSmartestAIUnlocked {
             engineButton(
                 icon: "cloud",
-                title: "Smartest",
+                title: "Cloud AI",
                 detail: "Add your API key in Settings to use it",
                 trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
             ) {
@@ -811,7 +845,7 @@ struct YearWrapGenerationSheet: View {
         } else {
             engineButton(
                 icon: "cloud",
-                title: "Smartest",
+                title: "Cloud AI",
                 detail: "OpenAI or Anthropic. Best quality.",
                 trailing: AnyView(purchaseBadge)
             ) {
@@ -827,7 +861,7 @@ struct YearWrapGenerationSheet: View {
             engineButton(
                 icon: "apple.logo",
                 title: "Apple Intelligence",
-                detail: "Free and private. Runs on this iPhone.",
+                detail: "Free and private. Runs on this \(DeviceName.current).",
                 trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
             ) {
                 onGenerate(.apple)
@@ -840,7 +874,7 @@ struct YearWrapGenerationSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Apple Intelligence")
                         .font(.headline)
-                    Text("Not available on this device. It needs a supported iPhone with Apple Intelligence turned on.")
+                    Text("Not available on this device. It needs a supported \(DeviceName.current) with Apple Intelligence turned on.")
                         .font(.caption)
                         .fixedSize(horizontal: false, vertical: true)
                 }

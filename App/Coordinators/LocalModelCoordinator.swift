@@ -135,7 +135,7 @@ public final class LocalModelCoordinator: ObservableObject {
                 await MainActor.run {
                     self.clearModelReplacedNotice()
                     self.isDownloadingLocalModel = false
-                    self.onSuccess?("Local AI model downloaded and activated")
+                    self.onSuccess?("Offline AI is ready and turned on")
                 }
                 
                 // Notify that engine changed
@@ -169,7 +169,7 @@ public final class LocalModelCoordinator: ObservableObject {
         await summarizationCoordinator.setPreferredEngine(.local)
         clearModelReplacedNotice()
         
-        onSuccess?("Local AI model downloaded and activated")
+        onSuccess?("Offline AI is ready and turned on")
         
         // Notify that engine changed
         NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
@@ -216,6 +216,6 @@ public final class LocalModelCoordinator: ObservableObject {
             await summarizationCoordinator.setPreferredEngine(.basic)
         }
         
-        onSuccess?("Local AI model deleted")
+        onSuccess?("Offline AI model deleted")
     }
 }

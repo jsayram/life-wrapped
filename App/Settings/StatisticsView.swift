@@ -274,8 +274,9 @@ struct StatisticsView: View {
             }
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("Statistics")
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .overlay {
             if isLoadingStats {
                 LoadingView(size: .medium)

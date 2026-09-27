@@ -11,44 +11,45 @@ struct PrivacyPolicyView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     PrivacyPoint(
                         icon: "waveform",
-                        title: "Transcription: 100% On-Device",
-                        description: "All audio recording and speech-to-text happens on your \(DeviceName.current) using Apple's Speech framework, set to on-device recognition only. Your audio is never uploaded."
+                        title: "Transcription on your \(DeviceName.current)",
+                        description: "All recording and speech-to-text happens on your \(DeviceName.current) with Apple's Speech framework, set to on-device recognition only. Your audio is never uploaded."
                     )
                     
                     PrivacyPoint(
                         icon: "sparkles",
-                        title: "AI Summaries: User-Controlled",
-                        description: "Uses OpenAI or Anthropic APIs only if you provide your own API keys. Otherwise, summaries are made on your \(DeviceName.current) with Basic, the Smart model, or Apple Intelligence."
+                        title: "Summaries, your choice",
+                        description: "Key Sentences, Offline AI and Apple Intelligence make summaries on your \(DeviceName.current), and nothing is sent. Cloud AI uses OpenAI or Anthropic with your own API key."
                     )
                     
                     PrivacyPoint(
-                        icon: "exclamationmark.shield",
-                        title: "BYOK: Your Data, Your Responsibility",
-                        description: "When using External API with your keys, YOU are responsible for the data you send to third-party providers and any API costs. We are not responsible for how OpenAI or Anthropic handle your data."
+                        icon: "arrow.up.right",
+                        title: "What Cloud AI sends",
+                        description: "Text only, never audio: a recording's transcript and Work or Personal label for its summary, the start of its summary for its title, and your recording summaries and notes for month summaries and Year Wrap. You're responsible for what you send and for your API costs. We don't control how OpenAI or Anthropic handle it."
                     )
                     
                     PrivacyPoint(
                         icon: "network",
-                        title: "Network Calls: Transparent",
-                        description: "The app only goes online to: download the optional Smart model from Hugging Face (huggingface.co), handle purchases through the App Store, and, if you choose Smartest, send transcripts to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) with your own key, after a quick connection check to apple.com. Everything else works offline."
+                        title: "When the app goes online",
+                        description: "Only to download the optional Offline AI model from Hugging Face (huggingface.co), to handle purchases through the App Store, and, once you save an API key for Cloud AI, to reach OpenAI (api.openai.com) or Anthropic (api.anthropic.com) after a quick connection check to apple.com. Everything else works offline."
                     )
                     
                     PrivacyPoint(
                         icon: "eye.slash",
-                        title: "No Tracking",
-                        description: "We don't collect analytics, telemetry, or usage data. Your API keys are stored securely in Keychain."
+                        title: "No tracking",
+                        description: "No account, analytics, crash reporting, ads or tracking. Your API keys are stored in the Keychain on this \(DeviceName.current)."
                     )
                     
                     PrivacyPoint(
                         icon: "square.and.arrow.up",
-                        title: "Your Data, Your Control",
-                        description: "Export or delete your data anytime. Audio files never leave your \(DeviceName.current). Transcripts leave it only when you use Smartest, and only go to the provider you connect. If you back up your \(DeviceName.current) with iCloud or a computer, iOS includes the app's data in that backup. The full policy is at jsayram.github.io/life-wrapped/privacy."
+                        title: "Your data, your control",
+                        description: "Export or delete your data anytime in Settings, then Data. If you back up your \(DeviceName.current) with iCloud or a computer, iOS includes the app's data in that backup. The full policy is at jsayram.github.io/life-wrapped/privacy."
                     )
                 }
             }
             .padding()
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("Privacy policy")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

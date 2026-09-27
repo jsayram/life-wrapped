@@ -12,10 +12,22 @@ struct SettingsTab: View {
     @State private var databasePath: String?
     @State private var navigateToAISettings: Bool = false
     @State private var fromYearWrap: Bool = false
+    @State private var showPurchaseSheet = false
+    @State private var openCloudAISetupAfterPurchase = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
     
     var body: some View {
         NavigationStack {
             List {
+                // iPad: the title sits over the centered rows, not at the screen's left edge
+                if sizeClass == .regular {
+                    Section {
+                        ColumnTitle("Settings")
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 0, trailing: 0))
+                    }
+                }
+
                 // Main settings
                 Section {
                     NavigationLink(destination: RecordingSettingsView()) {
@@ -34,18 +46,22 @@ struct SettingsTab: View {
 
                 // Purchases Section
                 Section {
-                    SettingsRowLabel(
-                        icon: "cloud",
-                        title: "Smartest",
-                        value: coordinator.storeManager.isSmartestAIUnlocked
-                            ? "Unlocked"
-                            : (coordinator.storeManager.smartestAIProduct?.displayPrice ?? "Locked")
-                    )
+                    if coordinator.storeManager.isSmartestAIUnlocked {
+                        SettingsRowLabel(icon: "cloud", title: "Cloud AI", value: "Unlocked")
+                    } else {
+                        Button {
+                            showPurchaseSheet = true
+                        } label: {
+                            SettingsRowLabel(
+                                icon: "cloud",
+                                title: "Cloud AI",
+                                value: coordinator.storeManager.smartestAIProduct?.displayPrice ?? "Unlock"
+                            )
+                        }
+                    }
 
                     Button {
-                        Task {
-                            await coordinator.storeManager.restorePurchases()
-                        }
+                        restorePurchases()
                     } label: {
                         HStack {
                             SettingsRowLabel(icon: "arrow.clockwise", title: "Restore purchases")
@@ -54,7 +70,7 @@ struct SettingsTab: View {
                             }
                         }
                     }
-                    .disabled(coordinator.storeManager.purchaseState == .restoring)
+                    .disabled(coordinator.storeManager.isBusy)
                 } header: {
                     Text("Purchases")
                 }
@@ -136,7 +152,9 @@ struct SettingsTab: View {
                 }
             }
             .themedScreen()
+            .readableMargins()
             .navigationTitle("Settings")
+            .toolbar(sizeClass == .regular ? .hidden : .automatic, for: .navigationBar)
             .task {
                 await loadActiveEngine()
                 databasePath = await coordinator.getDatabasePath()
@@ -150,6 +168,28 @@ struct SettingsTab: View {
                 fromYearWrap = true
                 navigateToAISettings = true
             }
+            .sheet(isPresented: $showPurchaseSheet, onDismiss: {
+                // Straight to adding an API key, the one step left before Cloud AI works
+                if openCloudAISetupAfterPurchase {
+                    openCloudAISetupAfterPurchase = false
+                    fromYearWrap = true
+                    navigateToAISettings = true
+                }
+            }) {
+                SmartestPurchaseSheet(
+                    store: coordinator.storeManager,
+                    onUnlocked: {
+                        openCloudAISetupAfterPurchase = true
+                        showPurchaseSheet = false
+                        coordinator.showSuccess("Cloud AI unlocked")
+                    },
+                    onCancel: {
+                        showPurchaseSheet = false
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
             .navigationDestination(isPresented: $navigateToAISettings) {
                 AISettingsView(fromYearWrap: fromYearWrap)
                     .onDisappear {
@@ -159,6 +199,24 @@ struct SettingsTab: View {
         }
     }
     
+    /// Restore from the Settings row, with a toast for the outcome since there's no sheet to show it
+    private func restorePurchases() {
+        let store = coordinator.storeManager
+        Task {
+            await store.restorePurchases()
+            if let notice = store.notice {
+                if notice.isError {
+                    coordinator.showError(notice.text)
+                } else {
+                    coordinator.showInfo(notice.text)
+                }
+                store.clearNotice()
+            } else if store.isSmartestAIUnlocked {
+                coordinator.showSuccess("Cloud AI restored")
+            }
+        }
+    }
+
     private var chunkLabel: String {
         let seconds = Int(UserDefaults.standard.autoChunkDuration)
         if seconds % 60 == 0 { return "\(seconds / 60) min parts" }
@@ -195,16 +253,30 @@ struct SettingsRowLabel: View {
                 .scaledFont(size: 17, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 24)
-            Text(title)
-                .foregroundStyle(AppTheme.textPrimary)
-            Spacer(minLength: 8)
-            if let value {
-                Text(value)
-                    .font(monospacedValue ? .system(.subheadline, design: .monospaced) : .subheadline)
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .lineLimit(1)
+            // Title and value share the line when they fit; with large text the value moves
+            // under the title instead of being cut off ("Apple Intelligen…")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .foregroundStyle(AppTheme.textPrimary)
+                    Spacer(minLength: 0)
+                    if let value { valueText(value) }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .foregroundStyle(AppTheme.textPrimary)
+                    if let value { valueText(value) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .font(monospacedValue ? .system(.subheadline, design: .monospaced) : .subheadline)
+            .foregroundStyle(AppTheme.textSecondary)
+            .lineLimit(1)
     }
 }
 

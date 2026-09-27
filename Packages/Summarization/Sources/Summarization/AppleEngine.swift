@@ -481,7 +481,7 @@ public actor AppleEngineLegacy: SummarizationEngine {
         duration: TimeInterval,
         languageCodes: [String]
     ) async throws -> SessionIntelligence {
-        throw SummarizationError.summarizationFailed("Apple Intelligence API requires iOS 26.0+. Please use Local AI or External API instead.")
+        throw SummarizationError.summarizationFailed("Apple Intelligence needs iOS 26 or later. Use Offline AI or Cloud AI instead instead.")
     }
     
     public func summarizePeriod(
@@ -491,7 +491,7 @@ public actor AppleEngineLegacy: SummarizationEngine {
         periodEnd: Date,
         categoryContext: String? = nil
     ) async throws -> PeriodIntelligence {
-        throw SummarizationError.summarizationFailed("Apple Intelligence API requires iOS 26.0+. Please use Local AI or External API instead.")
+        throw SummarizationError.summarizationFailed("Apple Intelligence needs iOS 26 or later. Use Offline AI or Cloud AI instead instead.")
     }
     
     public func getStatistics() async -> (summariesGenerated: Int, averageTime: TimeInterval, totalTime: TimeInterval) {

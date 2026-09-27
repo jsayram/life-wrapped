@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 import Summarization
 
 struct AISettingsView: View {
@@ -55,23 +56,23 @@ struct AISettingsView: View {
             List {
                 // MARK: - Summary Quality Picker
                 Section {
-                // Basic (Quick word-based)
+                // Key Sentences (extractive, internal tier .basic)
                 SummaryQualityCard(
                     systemImage: "bolt",
-                    title: "Basic",
-                    subtitle: "Functional, extractive only",
-                    detail: "Always available • Works offline • Free",
+                    title: "Key Sentences",
+                    subtitle: "Picks out your most important sentences",
+                    detail: "Free • Offline • Always available",
                     tier: .basic,
                     isSelected: activeEngine == .basic,
                     isAvailable: true,
                     onSelect: { selectEngine(.basic) }
                 )
                 
-                // Smart (on-device model, downloaded once)
+                // Offline AI (downloaded model, internal tier .local)
                 SummaryQualityCard(
                     systemImage: "cpu",
-                    title: "Smart",
-                    subtitle: "Decent quality • 100% private",
+                    title: "Offline AI",
+                    subtitle: "A model you download • Free • Private",
                     detail: coordinator.isLocalModelSupported ? localModelStatus : "Not available on this device",
                     tier: .local,
                     isSelected: activeEngine == .local,
@@ -83,28 +84,28 @@ struct AISettingsView: View {
                     }
                 )
                 
-                // Smarter (Apple Intelligence)
+                // Apple Intelligence (internal tier .apple)
                 SummaryQualityCard(
                     systemImage: "sparkle",
-                    title: "Smarter",
-                    subtitle: "Good quality • 100% private • Free",
-                    detail: availableEngines.contains(.apple) ? "Apple Intelligence • On-device" : "Needs Apple Intelligence turned on (iOS 26+)",
+                    title: "Apple Intelligence",
+                    subtitle: "Built into your \(DeviceName.current) • Free • Private",
+                    detail: availableEngines.contains(.apple) ? "Good quality • On-device" : "Needs Apple Intelligence turned on (iOS 26+)",
                     tier: .apple,
                     isSelected: activeEngine == .apple,
                     isAvailable: availableEngines.contains(.apple),
                     onSelect: { selectEngine(.apple) }
                 )
                 
-                // Smartest (External API) - Requires Purchase
+                // Cloud AI (external API, internal tier .external) - requires purchase
                 SummaryQualityCard(
                     systemImage: "cloud",
-                    title: "Smartest",
+                    title: "Cloud AI",
                     subtitle: coordinator.storeManager.isSmartestAIUnlocked 
-                        ? (hasValidAPIKey() ? "Best quality • \(selectedProvider)" : "Best quality • Cloud")
-                        : "Best quality • Cloud",
+                        ? (hasValidAPIKey() ? "Best quality • \(selectedProvider)" : "Best quality • OpenAI or Anthropic")
+                        : "Best quality • OpenAI or Anthropic",
                     detail: coordinator.storeManager.isSmartestAIUnlocked 
                         ? (hasValidAPIKey() ? "\(selectedModel) • Requires internet" : "Tap to configure your API key")
-                        : "Tap to unlock • \(coordinator.storeManager.smartestAIProduct?.displayPrice ?? "Purchase required")",
+                        : "One-time \(coordinator.storeManager.smartestAIProduct?.displayPrice ?? "purchase") • Tap to unlock",
                     tier: .external,
                     isSelected: activeEngine == .external,
                     isAvailable: true,
@@ -114,7 +115,7 @@ struct AISettingsView: View {
             } header: {
                 Text("Summary quality")
             } footer: {
-                Text("Basic, Smart and Smarter never leave your \(DeviceName.current). Smartest sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
+                Text("Key Sentences, Offline AI and Apple Intelligence never leave your \(DeviceName.current). Cloud AI sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
             }
             
             // MARK: - Smartest Configuration (only show if purchased)
@@ -242,7 +243,7 @@ struct AISettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(testSuccess ? AppTheme.accent : AppTheme.destructive)
                         } else if !hasValidAPIKey() {
-                            Label("Save your API key to activate Smartest summaries", systemImage: "exclamationmark.circle")
+                            Label("Save your API key to activate Cloud AI summaries", systemImage: "exclamationmark.circle")
                                 .font(.caption)
                                 .foregroundStyle(AppTheme.textSecondary)
                         }
@@ -273,12 +274,12 @@ struct AISettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Smartest")
+                    Text("Cloud AI")
                 } footer: {
                     if hasValidAPIKey() {
                         Text("Your API key connects to \(selectedProvider == "OpenAI" ? "api.openai.com" : "api.anthropic.com"). Keys are stored securely and never shared.")
                     } else {
-                        Text("Add your own OpenAI or Anthropic API key to unlock the Smartest summaries. Keys are stored securely in your device's Keychain.")
+                        Text("Add your own OpenAI or Anthropic API key to unlock Cloud AI summaries. Keys are stored securely in your device's Keychain.")
                     }
                 }
                 .id("smartestConfig")
@@ -287,27 +288,31 @@ struct AISettingsView: View {
             // MARK: - Smartest Purchase Prompt (show if selected but not purchased)
             if activeEngine == .external && !coordinator.storeManager.isSmartestAIUnlocked {
                 Section {
-                    VStack(spacing: 16) {
-                        Image(systemName: "lock")
-                            .scaledFont(size: 32)
-                            .foregroundStyle(AppTheme.purple)
-                        
-                        Text("Purchase required")
-                            .font(.headline)
-                        
-                        Text("Unlock Smartest AI to configure your OpenAI or Anthropic API keys.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                        
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Pay once. Your data, your key.")
+                                .font(.headline)
+                            Text("A one-time purchase, not a subscription. Cloud AI then runs on your own OpenAI or Anthropic account, so you stay in control of where your transcripts go.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            SmartestPoint(icon: "checkmark.seal", text: "One-time purchase. No subscription, nothing to renew.")
+                            SmartestPoint(icon: "key", text: "Your own API key. You pick the provider and model, see what you use, and can revoke the key anytime.")
+                            SmartestPoint(icon: "arrow.up.right", text: "Transcripts go straight from your \(DeviceName.current) to that provider, never through our servers.")
+                            SmartestPoint(icon: "lock", text: "Your key is stored only in this \(DeviceName.current)'s Keychain.")
+                        }
+
                         Button {
                             showPurchaseSheet = true
                         } label: {
                             HStack {
                                 Image(systemName: "lock.open")
-                                Text(coordinator.storeManager.smartestAIProduct?.displayPrice != nil 
-                                    ? "Unlock for \(coordinator.storeManager.smartestAIProduct!.displayPrice)" 
-                                    : "Unlock Smartest AI")
+                                Text(coordinator.storeManager.smartestAIProduct?.displayPrice != nil
+                                    ? "Unlock for \(coordinator.storeManager.smartestAIProduct!.displayPrice), once"
+                                    : "Unlock Cloud AI")
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -319,10 +324,10 @@ struct AISettingsView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
                 } header: {
-                    Text("Smartest")
+                    Text("Cloud AI")
                 }
                 .id("smartestConfig")
             }
@@ -395,21 +400,21 @@ struct AISettingsView: View {
                     }
                 }
             } header: {
-                Text("Local AI model")
+                Text("Offline AI model")
             } footer: {
                 if !coordinator.isLocalModelSupported {
-                    Text("This device doesn't have enough memory to run Smart. Delete the model to free up space.")
+                    Text("This device doesn't have enough memory to run Offline AI. Delete the model to free up space.")
                 } else if coordinator.isDownloadingLocalModel {
-                    Text("Download continues in the background. You'll receive a notification when complete.")
+                    Text("You can use the rest of the app while it downloads. Keep Life Wrapped open until it finishes.")
                 } else if !isLocalModelDownloaded && coordinator.showsLocalModelReplacedNotice {
-                    Text("Smart now uses \(coordinator.localModelDisplayName). The old model was removed to free up space. Download the new one to keep using Smart.")
+                    Text("Offline AI now uses \(coordinator.localModelDisplayName). The old model was removed to free up space. Download the new one to keep using Offline AI.")
                 } else if !isLocalModelDownloaded {
-                    Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
+                    Text("Download the Offline AI model to make summaries on your \(DeviceName.current). It runs entirely on your device, and nothing is sent anywhere.")
                 } else {
-                    Text("The local AI model enables on-device summarization. It runs entirely on your device for maximum privacy.")
+                    Text("The Offline AI model makes summaries on your \(DeviceName.current). It runs entirely on your device, and nothing is sent anywhere.")
                 }
             }
-            .alert("Delete Local AI Model?", isPresented: $showDeleteConfirmation) {
+            .alert("Delete the Offline AI model?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     deleteLocalModel()
@@ -421,28 +426,21 @@ struct AISettingsView: View {
             } // End of if activeEngine == .local
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle("AI & Summaries")
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .task {
             await loadEngineStatus()
             loadAPIKey()
+            // Sent here to set up Cloud AI (from Year Wrap or right after unlocking). This runs after
+            // the saved engine loads, which would otherwise replace the selection.
+            if fromYearWrap && coordinator.storeManager.isSmartestAIUnlocked {
+                selectEngine(.external)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("EngineDidChange"))) { _ in
             Task {
                 await loadEngineStatus()
-            }
-        }
-        .onAppear {
-            // If coming from Year Wrap, expand Smartest section and scroll to it
-            if fromYearWrap {
-                activeEngine = .external
-                showingSmartestConfig = true
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    withAnimation {
-                        scrollProxy?.scrollTo("smartestConfig", anchor: .top)
-                    }
-                }
             }
         }
         .onChange(of: coordinator.isDownloadingLocalModel) { wasDownloading, isDownloading in
@@ -460,45 +458,23 @@ struct AISettingsView: View {
             // Store proxy for scrolling
             scrollProxy = proxy
         }
-        .sheet(isPresented: $showPurchaseSheet) {
+        .sheet(isPresented: $showPurchaseSheet, onDismiss: {
+            // Closed without buying: go back to the engine summaries really use, so a locked
+            // Cloud AI never looks selected
+            guard !coordinator.storeManager.isSmartestAIUnlocked else { return }
+            Task {
+                if let summCoord = coordinator.summarizationCoordinator {
+                    activeEngine = await summCoord.getActiveEngine()
+                }
+            }
+        }) {
             SmartestPurchaseSheet(
-                price: coordinator.storeManager.smartestAIProduct?.displayPrice,
-                isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
-                isRestoring: coordinator.storeManager.purchaseState == .restoring,
-                onPurchase: {
-                    Task {
-                        let success = await coordinator.storeManager.purchaseSmartestAI()
-                        if success {
-                            showPurchaseSheet = false
-                            coordinator.showSuccess("Smartest AI unlocked!")
-                            // Now show the API configuration
-                            activeEngine = .external
-                            showingSmartestConfig = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                withAnimation {
-                                    scrollProxy?.scrollTo("smartestConfig", anchor: .top)
-                                }
-                            }
-                        }
-                    }
-                },
-                onRestore: {
-                    Task {
-                        await coordinator.storeManager.restorePurchases()
-                        if coordinator.storeManager.isSmartestAIUnlocked {
-                            showPurchaseSheet = false
-                            coordinator.showSuccess("Purchases restored!")
-                        }
-                    }
-                },
-                onRedeem: {
-                    Task {
-                        await coordinator.storeManager.presentRedeemCode()
-                        if coordinator.storeManager.isSmartestAIUnlocked {
-                            showPurchaseSheet = false
-                            coordinator.showSuccess("Code redeemed!")
-                        }
-                    }
+                store: coordinator.storeManager,
+                onUnlocked: {
+                    showPurchaseSheet = false
+                    coordinator.showSuccess("Cloud AI unlocked")
+                    // Opens the API key setup, or switches to Cloud AI when a key is already saved
+                    selectEngine(.external)
                 },
                 onCancel: {
                     showPurchaseSheet = false
@@ -525,7 +501,7 @@ struct AISettingsView: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
             
-            Text("You can leave this screen. We'll notify you when the download is complete.")
+            Text("You can leave this screen. Keep Life Wrapped open until the download finishes.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -706,10 +682,10 @@ struct AISettingsView: View {
     
     private func tierDisplayName(_ tier: EngineTier) -> String {
         switch tier {
-        case .basic: return "Basic"
-        case .local: return "Smart"
-        case .apple: return "Smarter"
-        case .external: return "Smartest"
+        case .basic: return "Key Sentences"
+        case .local: return "Offline AI"
+        case .apple: return "Apple Intelligence"
+        case .external: return "Cloud AI"
         }
     }
     
@@ -739,7 +715,7 @@ struct AISettingsView: View {
                 await summCoord.setPreferredEngine(.external)
                 await loadEngineStatus()
                 NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-                coordinator.showSuccess("API key saved - Switched to Smartest")
+                coordinator.showSuccess("API key saved - Switched to Cloud AI")
             }
         } else {
             coordinator.showError("Failed to save API key")
@@ -810,14 +786,19 @@ struct AISettingsView: View {
 
 // MARK: - Smartest Purchase Sheet
 
+/// Buy, restore or redeem Cloud AI. The sheet runs all three itself and calls `onUnlocked` once
+/// Cloud AI is unlocked by any of them, including an Ask to Buy approval that lands while it's open.
 struct SmartestPurchaseSheet: View {
-    let price: String?
-    let isPurchasing: Bool
-    let isRestoring: Bool
-    let onPurchase: () -> Void
-    let onRestore: () -> Void
-    let onRedeem: () -> Void
+    @ObservedObject var store: StoreManager
+    let onUnlocked: () -> Void
     let onCancel: () -> Void
+    
+    @Environment(\.purchase) private var purchase
+    @State private var showRedeemSheet = false
+    
+    private var price: String? { store.smartestAIProduct?.displayPrice }
+    private var isPurchasing: Bool { store.purchaseState == .purchasing }
+    private var isRestoring: Bool { store.purchaseState == .restoring }
     
     var body: some View {
         ScrollView {
@@ -834,11 +815,11 @@ struct SmartestPurchaseSheet: View {
                         )
                         .accessibilityHidden(true)
 
-                    Text("Unlock Smartest")
+                    Text("Unlock Cloud AI")
                         .scaledFont(size: 30, design: .serif)
                         .foregroundStyle(AppTheme.textPrimary)
 
-                    Text("The most detailed summaries, using OpenAI or Anthropic with your own API key.")
+                    Text("Pay once for the most detailed summaries, using your own OpenAI or Anthropic API key. You stay in control of your data.")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -847,13 +828,15 @@ struct SmartestPurchaseSheet: View {
 
                 // Features
                 VStack(spacing: 0) {
+                    FeatureRow(icon: "checkmark.seal", text: "One-time purchase, no subscription")
+                    Divider().overlay(AppTheme.hairline)
                     FeatureRow(icon: "sparkle", text: "Best quality summaries and Year Wrap")
                     Divider().overlay(AppTheme.hairline)
-                    FeatureRow(icon: "key", text: "Bring your own key, any current model")
+                    FeatureRow(icon: "key", text: "Your own key: you choose the provider and can revoke it anytime")
                     Divider().overlay(AppTheme.hairline)
-                    FeatureRow(icon: "arrow.clockwise", text: "One-time purchase")
+                    FeatureRow(icon: "arrow.up.right", text: "Transcripts go straight to your provider, never through our servers")
                     Divider().overlay(AppTheme.hairline)
-                    FeatureRow(icon: "lock", text: "Keys stay in your Keychain")
+                    FeatureRow(icon: "lock", text: "Your key stays in this \(DeviceName.current)'s Keychain")
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -862,13 +845,15 @@ struct SmartestPurchaseSheet: View {
                 )
 
                 // Purchase button
-                Button(action: onPurchase) {
+                Button {
+                    Task { await store.purchaseSmartestAI { try await purchase($0) } }
+                } label: {
                     Group {
                         if isPurchasing {
                             ProgressView()
                                 .tint(AppTheme.onAccent)
                         } else {
-                            Text(price != nil ? "Unlock for \(price!)" : "Unlock Smartest")
+                            Text(price != nil ? "Unlock for \(price!), once" : "Unlock Cloud AI")
                                 .fontWeight(.semibold)
                         }
                     }
@@ -881,7 +866,17 @@ struct SmartestPurchaseSheet: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(isPurchasing)
+                .disabled(store.isBusy)
+
+                // Why the last attempt didn't unlock, or that it's waiting for approval
+                if let notice = store.notice {
+                    Text(notice.text)
+                        .font(.footnote)
+                        .foregroundStyle(notice.isError ? AppTheme.destructive : AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
 
                 // Cancel button
                 Button("Not now", action: onCancel)
@@ -889,7 +884,9 @@ struct SmartestPurchaseSheet: View {
 
                 // Restore (App Store Guideline 3.1.1) and redeem
                 HStack(spacing: 32) {
-                    Button(action: onRestore) {
+                    Button {
+                        Task { await store.restorePurchases() }
+                    } label: {
                         HStack(spacing: 4) {
                             if isRestoring {
                                 ProgressView()
@@ -898,10 +895,14 @@ struct SmartestPurchaseSheet: View {
                             Text("Restore purchases")
                         }
                     }
-                    Button("Redeem code", action: onRedeem)
+                    Button("Redeem code") {
+                        store.clearNotice()
+                        showRedeemSheet = true
+                    }
                 }
                 .font(.footnote)
                 .foregroundStyle(AppTheme.textSecondary)
+                .disabled(store.isBusy)
 
                 // Purchase disclaimer
                 Text("All sales are final. Refunds are handled by Apple under App Store policies.")
@@ -913,6 +914,44 @@ struct SmartestPurchaseSheet: View {
             .padding(.horizontal, 24)
         }
         .background(AppTheme.background.ignoresSafeArea())
+        // Apple's code sheet, presented from this sheet so it shows on top of it
+        .offerCodeRedemption(isPresented: $showRedeemSheet) { result in
+            Task { await store.codeRedemptionFinished(result) }
+        }
+        .onChange(of: store.isSmartestAIUnlocked) { _, unlocked in
+            if unlocked { onUnlocked() }
+        }
+        .task {
+            store.clearNotice()
+            if store.isSmartestAIUnlocked {
+                onUnlocked()
+                return
+            }
+            // Try again if the price didn't load at launch
+            if store.smartestAIProduct == nil {
+                await store.loadProducts()
+            }
+        }
+    }
+}
+
+/// One reason to unlock Smartest, in the purchase card
+private struct SmartestPoint: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

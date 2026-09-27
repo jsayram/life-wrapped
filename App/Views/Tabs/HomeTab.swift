@@ -12,6 +12,10 @@ struct HomeTab: View {
     /// The just-saved recording, opened from the confirmation
     @State private var openedRecording: RecordingSession?
     @State private var isDeletingSilentRecording = false
+    /// Today's recordings, newest first
+    @State private var todaySessions: [RecordingSession] = []
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     /// The journal the current recording goes to, or nil when there's no recording in progress
     private var recordingJournal: SessionCategory? {
@@ -88,40 +92,52 @@ struct HomeTab: View {
                     // Subtle Local AI reminder (only shows when on Basic tier and model not downloaded)
                     if shouldShowDownloadPrompt && !coordinator.isDownloadingLocalModel && !coordinator.recordingState.isRecording {
                         VStack(spacing: 6) {
-                            Text("Summaries use Basic mode. Download the AI model (\(coordinator.expectedLocalModelSizeMB)) for smarter summaries.")
+                            Text("Summaries use Key Sentences. Download Offline AI (\(coordinator.expectedLocalModelSizeMB)) for smarter summaries.")
                                 .font(.footnote)
                                 .foregroundStyle(AppTheme.textSecondary)
                                 .multilineTextAlignment(.center)
                         }
                     }
 
-                    // What just happened to the recording that was stopped; replaces the engine card meanwhile
-                    if let saved = coordinator.lastSavedRecording, !coordinator.recordingState.isRecording {
-                        SavedRecordingBanner(
-                            saved: saved,
-                            isDeleting: isDeletingSilentRecording,
-                            onOpen: { Task { await open(saved) } },
-                            onDelete: { Task { await deleteSilent(saved) } },
-                            onDismiss: { withAnimation { coordinator.dismissLastSavedRecording() } }
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        // A normal save confirmation fades after a while; a silent recording waits for an answer
-                        .task(id: saved.sessionId) {
-                            guard !saved.heardNothing else { return }
-                            try? await Task.sleep(for: .seconds(15))
-                            guard !Task.isCancelled, coordinator.lastSavedRecording == saved else { return }
-                            withAnimation { coordinator.dismissLastSavedRecording() }
+                    VStack(spacing: 10) {
+                        // Today's recordings with the latest one tap away. Hidden right after a stop,
+                        // when the saved banner already says where the recording went.
+                        if !todaySessions.isEmpty && coordinator.lastSavedRecording == nil && !coordinator.recordingState.isRecording {
+                            TodayCard(sessions: todaySessions) { openedRecording = $0 }
+                                .transition(.opacity)
                         }
-                    } else if let tier = activeTier, !coordinator.recordingState.isRecording {
-                        NavigationLink(destination: AISettingsView()) {
-                            SummaryEngineCard(tier: tier)
+
+                        // What just happened to the recording that was stopped; replaces the engine card meanwhile
+                        if let saved = coordinator.lastSavedRecording, !coordinator.recordingState.isRecording {
+                            SavedRecordingBanner(
+                                saved: saved,
+                                isDeleting: isDeletingSilentRecording,
+                                onOpen: { Task { await open(saved) } },
+                                onDelete: { Task { await deleteSilent(saved) } },
+                                onDismiss: { withAnimation { coordinator.dismissLastSavedRecording() } }
+                            )
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            // A normal save confirmation fades after a while; a silent recording waits for an answer
+                            .task(id: saved.sessionId) {
+                                guard !saved.heardNothing else { return }
+                                try? await Task.sleep(for: .seconds(15))
+                                guard !Task.isCancelled, coordinator.lastSavedRecording == saved else { return }
+                                withAnimation { coordinator.dismissLastSavedRecording() }
+                            }
+                        } else if let tier = activeTier, !coordinator.recordingState.isRecording {
+                            NavigationLink(destination: AISettingsView()) {
+                                SummaryEngineCard(tier: tier)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
-                .containerRelativeFrame(.vertical, alignment: .top)
+                // On iPad the controls stay together in a centered block instead of spanning the screen
+                .readableColumn(640)
+                .frame(maxHeight: sizeClass == .regular ? 900 : .infinity)
+                .containerRelativeFrame(.vertical, alignment: sizeClass == .regular ? .center : .top)
             }
             .scrollBounceBehavior(.basedOnSize)
             .onAppear {
@@ -129,6 +145,21 @@ struct HomeTab: View {
                     category = recordingCoord.selectedCategory
                 }
                 Task { await loadActiveTier() }
+                Task { await loadToday() }
+            }
+            // A new recording, or the saved banner going away, changes today's list
+            .onChange(of: coordinator.lastSavedRecording) { _, _ in
+                Task { await loadToday() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .recordingTitlesUpdated)) { _ in
+                Task { await loadToday() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .sessionMetadataChanged)) { _ in
+                Task { await loadToday() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Also catches the day changing while the app was in the background
+                if phase == .active { Task { await loadToday() } }
             }
             .onChange(of: category) { _, newValue in
                 coordinator.recordingCoordinator?.selectedCategory = newValue
@@ -194,6 +225,11 @@ struct HomeTab: View {
         }
     }
     
+    private func loadToday() async {
+        guard let sessions = try? await coordinator.fetchTodaysSessions() else { return }
+        withAnimation { todaySessions = sessions }
+    }
+
     private func loadActiveTier() async {
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         activeTier = await summCoord.getActiveEngine()
@@ -324,15 +360,86 @@ private struct RecordingJournalLabel: View {
     }
 }
 
+/// Record screen: how much was recorded today, with the latest recording one tap away.
+private struct TodayCard: View {
+    /// Newest first; never empty
+    let sessions: [RecordingSession]
+    let onOpen: (RecordingSession) -> Void
+
+    private var totals: String {
+        let count = sessions.count == 1 ? "1 recording" : "\(sessions.count) recordings"
+        let seconds = sessions.reduce(0) { $0 + $1.totalDuration }
+        let length = seconds < 60 ? "\(Int(seconds)) sec" : "\(Int((seconds / 60).rounded())) min"
+        return "\(count) · \(length)"
+    }
+
+    var body: some View {
+        let latest = sessions[0]
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("TODAY")
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(AppTheme.textSecondary)
+                Spacer(minLength: 8)
+                Text(totals)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+
+            Button { onOpen(latest) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: latest.journal.outlineSymbol)
+                        .scaledFont(size: 17, weight: .regular)
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(latest.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .lineLimit(1)
+                        Text("Latest · \(latest.startTime.formatted(date: .omitted, time: .shortened)) · \(latest.totalDuration.formattedClock)")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textSecondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens the latest recording")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(AppTheme.card)
+                .stroke(AppTheme.hairline, lineWidth: 1)
+        )
+    }
+}
+
+private extension TimeInterval {
+    /// 1:36, or 1:02:05 past an hour
+    var formattedClock: String {
+        let total = Int(self.rounded())
+        let (h, m, s) = (total / 3600, total % 3600 / 60, total % 60)
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+}
+
 /// Bottom card on the Record screen showing which summary engine is active.
 private struct SummaryEngineCard: View {
     let tier: EngineTier
 
     private var detail: String {
         switch tier {
-        case .basic: return "Key sentences · On-device"
-        case .local: return "Local model · On-device"
-        case .apple: return "Apple Intelligence · On-device"
+        case .basic: return "On-device · Offline"
+        case .local: return "Downloaded model · On-device"
+        case .apple: return "Built in · On-device"
         case .external: return "\(ExternalModelSettings.provider().rawValue) · Cloud"
         }
     }

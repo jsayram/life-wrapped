@@ -67,6 +67,10 @@ struct YearWrapDetailView: View {
         parsedData?.redacted(people: redactPeople, places: redactPlaces)
     }
     
+    /// Sheet width, to show the sections two-up when there's room (iPad)
+    @State private var contentWidth: CGFloat = 0
+    private var sectionsTwoUp: Bool { contentWidth >= 760 }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -75,13 +79,10 @@ struct YearWrapDetailView: View {
                     statsSection
                     
                     if let data = displayData {
-                        VStack(spacing: 24) {
-                            insightSections(data)
-                            peopleMentionedSection(data.peopleMentioned)
-                            placesVisitedSection(data.placesVisited)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 32)
+                        // Wide sheet (iPad): sections side by side instead of one long column
+                        sectionCards(data, twoUp: sectionsTwoUp)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 32)
                     } else if let activeSummary {
                         // Fallback: show raw text if parsing fails
                         Text(activeSummary.text)
@@ -91,6 +92,7 @@ struct YearWrapDetailView: View {
                     }
                 }
             }
+            .onWidthChange { contentWidth = $0 }
             .background(AppTheme.background)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -245,7 +247,7 @@ struct YearWrapDetailView: View {
                 switch hasOwnWrap ? .all : displayFilter {
                 case .all:
                     HStack(spacing: 16) {
-                        statCard(title: "Sessions", value: "\(stats.sessionCount)", icon: "mic.fill")
+                        statCard(title: "Recordings", value: "\(stats.sessionCount)", icon: "mic.fill")
                         statCard(title: "Hours", value: String(format: "%.1f", Double(stats.totalMinutes) / 60), icon: "clock.fill")
                         statCard(title: "Words", value: formatNumber(stats.wordCount), icon: "text.bubble.fill")
                     }
@@ -259,13 +261,13 @@ struct YearWrapDetailView: View {
                     let count = isWork ? stats.workCount : stats.personalCount
                     let share = stats.sessionCount > 0 ? Int((Double(count) / Double(stats.sessionCount) * 100).rounded()) : 0
                     HStack(spacing: 16) {
-                        statCard(title: isWork ? "Work sessions" : "Personal sessions", value: "\(count)", icon: isWork ? "briefcase.fill" : "house.fill")
-                        statCard(title: "Of all sessions", value: "\(share)%", icon: "chart.pie.fill")
+                        statCard(title: isWork ? "Work recordings" : "Personal recordings", value: "\(count)", icon: isWork ? "briefcase.fill" : "house.fill")
+                        statCard(title: "Of all recordings", value: "\(share)%", icon: "chart.pie.fill")
                     }
                 }
             } else if let counted = countedStats {
                 HStack(spacing: 16) {
-                    statCard(title: "Sessions", value: "\(counted.sessions)", icon: "mic.fill")
+                    statCard(title: "Recordings", value: "\(counted.sessions)", icon: "mic.fill")
                     statCard(title: "Hours", value: String(format: "%.1f", counted.duration / 3600), icon: "clock.fill")
                     statCard(title: "Words", value: formatNumber(counted.words), icon: "text.bubble.fill")
                 }
@@ -343,21 +345,71 @@ struct YearWrapDetailView: View {
     
     /// Sections with something to show under the current filter. Empty ones are left out,
     /// like in the PDF export.
-    @ViewBuilder
-    private func insightSections(_ data: YearWrapData) -> some View {
-        let visible = sections(data).compactMap { section -> InsightSection? in
+    private func visibleSections(_ data: YearWrapData) -> [InsightSection] {
+        sections(data).compactMap { section -> InsightSection? in
             let items = filterItems(section.items, by: displayFilter)
             return items.isEmpty ? nil : InsightSection(title: section.title, icon: section.icon, color: section.color, items: items)
         }
-        if visible.isEmpty {
-            Text(displayFilter == .all ? "Nothing to show for this year yet." : "Nothing tagged \(displayFilter.displayName.lowercased()) this year.")
-                .font(.body)
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-        } else {
-            ForEach(visible, id: \.title) { section in
-                insightSection(section)
+    }
+
+    /// One card in the list of sections
+    private enum WrapCard: Identifiable {
+        case insight(InsightSection)
+        case people([PersonMention])
+        case places([PlaceVisit])
+
+        var id: String {
+            switch self {
+            case .insight(let section): return section.title
+            case .people: return "people"
+            case .places: return "places"
+            }
+        }
+    }
+
+    private func wrapCards(_ data: YearWrapData) -> [WrapCard] {
+        var cards = visibleSections(data).map(WrapCard.insight)
+        if !data.peopleMentioned.isEmpty { cards.append(.people(data.peopleMentioned)) }
+        if !data.placesVisited.isEmpty { cards.append(.places(data.placesVisited)) }
+        return cards
+    }
+
+    @ViewBuilder
+    private func wrapCard(_ card: WrapCard) -> some View {
+        switch card {
+        case .insight(let section): insightSection(section)
+        case .people(let people): peopleMentionedSection(people)
+        case .places(let places): placesVisitedSection(places)
+        }
+    }
+
+    /// The sections as cards: one column, or two-up with each pair sharing a row height
+    @ViewBuilder
+    private func sectionCards(_ data: YearWrapData, twoUp: Bool) -> some View {
+        let cards = wrapCards(data)
+        VStack(spacing: 24) {
+            if visibleSections(data).isEmpty {
+                Text(displayFilter == .all ? "Nothing to show for this year yet." : "Nothing tagged \(displayFilter.displayName.lowercased()) this year.")
+                    .font(.body)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            }
+            if twoUp {
+                Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                    ForEach(Array(stride(from: 0, to: cards.count, by: 2)), id: \.self) { index in
+                        GridRow(alignment: .top) {
+                            wrapCard(cards[index])
+                            if index + 1 < cards.count {
+                                wrapCard(cards[index + 1])
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                        }
+                    }
+                }
+            } else {
+                ForEach(cards) { wrapCard($0) }
             }
         }
     }
@@ -407,7 +459,8 @@ struct YearWrapDetailView: View {
                 }
             }
             .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // maxHeight lets paired cards in the iPad grid share their row's height
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
@@ -460,7 +513,8 @@ struct YearWrapDetailView: View {
                 }
             }
             .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // maxHeight lets paired cards in the iPad grid share their row's height
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
@@ -511,7 +565,8 @@ struct YearWrapDetailView: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // maxHeight lets paired cards in the iPad grid share their row's height
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)

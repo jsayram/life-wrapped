@@ -14,12 +14,12 @@ struct FilteredSessionsView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView("Loading sessions...")
+                ProgressView("Loading recordings…")
             } else if sessions.isEmpty {
                 GraphiteEmptyState(
-                    "No sessions",
+                    "No recordings",
                     systemImage: "waveform",
-                    description: Text("No sessions found for this filter.")
+                    description: Text("No recordings match this filter.")
                 )
             } else {
                 List {
@@ -74,8 +74,9 @@ struct FilteredSessionsView: View {
             }
         }
         .themedScreen()
+        .readableMargins()
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.large)
+        .columnScreenTitleDisplayMode()
         .task {
             await loadSessions()
         }

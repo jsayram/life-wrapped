@@ -16,6 +16,9 @@ struct HistoryTab: View {
     @State private var transcriptMatchingSessionIds: Set<UUID> = []
     @State private var isSearchingTranscripts = false
     @State private var searchDebounceTask: Task<Void, Never>?
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The recording shown beside the list on iPad
+    @State private var selectedSessionId: UUID?
     
     private var filteredSessions: [RecordingSession] {
         var result = sessions
@@ -59,9 +62,44 @@ struct HistoryTab: View {
         return result
     }
     
+    /// iPad (regular width): list on the left, the chosen recording on the right
+    private var usesSplitView: Bool { sizeClass == .regular }
+
+    private var selectedSession: RecordingSession? {
+        sessions.first { $0.sessionId == selectedSessionId }
+    }
+
     var body: some View {
-        NavigationStack {
-            contentView
+        if usesSplitView {
+            NavigationSplitView {
+                listScreen
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 460)
+            } detail: {
+                NavigationStack {
+                    if let session = selectedSession {
+                        SessionDetailView(session: session)
+                            .id(session.sessionId)
+                    } else {
+                        GraphiteEmptyState(
+                            "No recording selected",
+                            systemImage: "waveform",
+                            description: Text("Choose a recording to read its summary and transcript.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .themedScreen()
+                    }
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            NavigationStack {
+                listScreen
+            }
+        }
+    }
+
+    private var listScreen: some View {
+        contentView
                 .themedScreen()
                 .navigationTitle("History")
                 .searchable(text: $searchText, prompt: "Search recordings")
@@ -104,6 +142,11 @@ struct HistoryTab: View {
                 .onReceive(NotificationCenter.default.publisher(for: .recordingTitlesUpdated)) { _ in
                     Task { await loadSessions() }
                 }
+                // Keep the row in step with edits made in the recording (side by side on iPad)
+                .onReceive(NotificationCenter.default.publisher(for: .sessionMetadataChanged)) { note in
+                    guard let id = note.object as? UUID else { return }
+                    Task { await refreshSession(id) }
+                }
                 .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
                     Button("OK") {
                         playbackError = nil
@@ -113,7 +156,6 @@ struct HistoryTab: View {
                         Text(error)
                     }
                 }
-        }
     }
     
     @ViewBuilder
@@ -201,14 +243,7 @@ struct HistoryTab: View {
             ForEach(sortedDates, id: \.self) { date in
                 Section {
                     ForEach(sessionsForDate(date), id: \.id) { session in
-                        NavigationLink(destination: sessionDetailView(for: session)) {
-                            SessionRowClean(
-                                session: session,
-                                wordCount: sessionWordCounts[session.sessionId],
-                                hasSummary: sessionHasSummary[session.sessionId] ?? false
-                            )
-                        }
-                        .hidesNavigationChevron()
+                        sessionRow(session)
                     }
                     .onDelete { offsets in
                         deleteSession(at: offsets, in: date)
@@ -242,8 +277,38 @@ struct HistoryTab: View {
         }
     }
 
-    private func sessionDetailView(for session: RecordingSession) -> some View {
-        SessionDetailView(session: session)
+    /// iPhone pushes the recording; iPad selects it and shows it beside the list
+    @ViewBuilder
+    private func sessionRow(_ session: RecordingSession) -> some View {
+        let row = SessionRowClean(
+            session: session,
+            wordCount: sessionWordCounts[session.sessionId],
+            hasSummary: sessionHasSummary[session.sessionId] ?? false
+        )
+        if usesSplitView {
+            let isSelected = selectedSessionId == session.sessionId
+            Button {
+                selectedSessionId = session.sessionId
+            } label: {
+                row.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // White rows with the chosen one in grey; the sidebar's default row color hides the selection
+            .listRowBackground(isSelected ? AppTheme.fill : AppTheme.card)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+        } else {
+            NavigationLink(destination: SessionDetailView(session: session)) {
+                row
+            }
+            .hidesNavigationChevron()
+        }
+    }
+
+    /// Reload one recording after its title, notes, star or journal changed
+    private func refreshSession(_ id: UUID) async {
+        guard let index = sessions.firstIndex(where: { $0.sessionId == id }),
+              let updated = try? await coordinator.fetchSessions(ids: [id]).first else { return }
+        sessions[index] = updated
     }
     
     private func sessionsForDate(_ date: Date) -> [RecordingSession] {
@@ -282,11 +347,17 @@ struct HistoryTab: View {
     }
     
     private func loadSessions() async {
-        isLoading = true
+        // Only the first load shows the spinner; later reloads update the list in place
+        if sessions.isEmpty { isLoading = true }
         do {
             sessions = try await coordinator.fetchRecentSessions(limit: 100)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
-            
+
+            // On iPad, open the newest recording so the right side isn't empty
+            if usesSplitView && selectedSession == nil {
+                selectedSessionId = sessions.max(by: { $0.startTime < $1.startTime })?.sessionId
+            }
+
             // Load word counts and summary status in parallel
             guard let dbManager = coordinator.getDatabaseManager() else { return }
             await withTaskGroup(of: (UUID, Int, Bool).self) { group in
@@ -341,6 +412,7 @@ struct HistoryTab: View {
                 }
                 do {
                     try await coordinator.deleteSession(session.sessionId)
+                    if selectedSessionId == session.sessionId { selectedSessionId = nil }
                     sessions.removeAll { $0.sessionId == session.sessionId }
                     sessionWordCounts.removeValue(forKey: session.sessionId)
                     sessionHasSummary.removeValue(forKey: session.sessionId)

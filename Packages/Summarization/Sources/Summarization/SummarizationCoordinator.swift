@@ -79,7 +79,7 @@ public actor SummarizationCoordinator {
         if await localEngine.removeRetiredModels() {
             UserDefaults.standard.set(true, forKey: LocalEngine.modelReplacedNoticeKey)
             #if DEBUG
-            print("🧹 [SummarizationCoordinator] Removed a Smart model this device does not use")
+            print("🧹 [SummarizationCoordinator] Removed a local model this device does not use")
             #endif
         }
         
@@ -114,7 +114,7 @@ public actor SummarizationCoordinator {
             } else {
                 preferredTier = .basic
                 #if DEBUG
-                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Basic")
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Key Sentences")
                 #endif
             }
         }
@@ -464,7 +464,7 @@ public actor SummarizationCoordinator {
         switch tier {
         case .external:
             guard let external = await availableGenerator(for: .external) else {
-                throw SummarizationError.summarizationFailed("Smartest AI needs an API key. Add one in Settings.")
+                throw SummarizationError.summarizationFailed("Cloud AI needs an API key. Add one in Settings.")
             }
             return external
         case .apple:
@@ -473,7 +473,7 @@ public actor SummarizationCoordinator {
             }
             return apple
         case .local, .basic:
-            throw SummarizationError.summarizationFailed("Year Wrap needs Apple Intelligence or Smartest AI.")
+            throw SummarizationError.summarizationFailed("Year Wrap needs Apple Intelligence or Cloud AI.")
         }
     }
 
