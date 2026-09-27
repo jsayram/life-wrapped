@@ -625,7 +625,8 @@ struct AppStoreGuideline423ComplianceTests {
         // All download UI must show the size before user initiates download.
         // This is the exact string every download button and prompt uses.
         let shownSize = LocalEngine.modelDownloadSize
-        #expect(shownSize == "~2.3 GB", "Shown size must match the Qwen3 4B download (2.28 GB)")
+        // Qwen3 4B (2.28 GB) on 6 GB devices, Qwen3 1.7B (0.98 GB) on 4 GB phones
+        #expect(["~2.3 GB", "~1.0 GB"].contains(shownSize), "Shown size must match the model this device downloads")
     }
     
     @Test("4.2.3(ii): User must explicitly initiate download")

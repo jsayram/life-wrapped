@@ -72,11 +72,15 @@ struct AISettingsView: View {
                     systemImage: "cpu",
                     title: "Smart",
                     subtitle: "Decent quality • 100% private",
-                    detail: localModelStatus,
+                    detail: coordinator.isLocalModelSupported ? localModelStatus : "Not available on this device",
                     tier: .local,
                     isSelected: activeEngine == .local,
-                    isAvailable: isLocalModelDownloaded,
-                    onSelect: { selectEngine(.local) }
+                    isAvailable: coordinator.isLocalModelSupported && isLocalModelDownloaded,
+                    onSelect: {
+                        if coordinator.isLocalModelSupported {
+                            selectEngine(.local)
+                        }
+                    }
                 )
                 
                 // Smarter (Apple Intelligence)
@@ -324,7 +328,9 @@ struct AISettingsView: View {
             }
             
             // MARK: - Local AI Model Management
-            if activeEngine == .local {
+            // Also shown when an earlier version downloaded the model on a device that can't run it,
+            // so the space can be freed
+            if activeEngine == .local || (!coordinator.isLocalModelSupported && isLocalModelDownloaded) {
                 Section {
                     if coordinator.isDownloadingLocalModel {
                         downloadingModelView
@@ -391,10 +397,12 @@ struct AISettingsView: View {
             } header: {
                 Text("Local AI model")
             } footer: {
-                if coordinator.isDownloadingLocalModel {
+                if !coordinator.isLocalModelSupported {
+                    Text("This device doesn't have enough memory to run Smart. Delete the model to free up space.")
+                } else if coordinator.isDownloadingLocalModel {
                     Text("Download continues in the background. You'll receive a notification when complete.")
                 } else if !isLocalModelDownloaded && coordinator.showsLocalModelReplacedNotice {
-                    Text("Smart now uses \(coordinator.localModelDisplayName), a more capable model. The old model was removed to free up space. Download the new one to keep using Smart.")
+                    Text("Smart now uses \(coordinator.localModelDisplayName). The old model was removed to free up space. Download the new one to keep using Smart.")
                 } else if !isLocalModelDownloaded {
                     Text("Download the local AI model to enable on-device summarization. It runs entirely on your device for maximum privacy.")
                 } else {

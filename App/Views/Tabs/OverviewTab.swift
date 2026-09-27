@@ -1111,50 +1111,52 @@ struct YearWrapGenerationSheet: View {
             
             // Options
             VStack(spacing: 12) {
-                // Local AI - Always available as primary option
-                Button(action: {
-                    onCancel()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showLocalAIConfirmation = true
-                    }
-                }) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "cpu")
-                            .font(.title3)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Smart (Local AI)")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                            Text("Privacy-first • No internet needed")
-                                .font(.caption)
-                                .foregroundStyle(AppTheme.onAccent.opacity(0.9))
+                // Local AI - primary option on devices that can run it
+                if coordinator.isLocalModelSupported {
+                    Button(action: {
+                        onCancel()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showLocalAIConfirmation = true
                         }
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "cpu")
+                                .font(.title3)
                         
-                        Spacer()
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Smart (Local AI)")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                Text("Privacy-first • No internet needed")
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.onAccent.opacity(0.9))
+                            }
                         
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Free")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(AppTheme.onAccent.opacity(0.15))
-                                .clipShape(Capsule())
-                            Text("2-3 min")
-                                .font(.caption2)
-                                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                            Spacer()
+                        
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("Free")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(AppTheme.onAccent.opacity(0.15))
+                                    .clipShape(Capsule())
+                                Text("2-3 min")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                            }
                         }
+                        .foregroundStyle(AppTheme.onAccent)
+                        .padding()
+                        .background(
+                            AppTheme.purple
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    .foregroundStyle(AppTheme.onAccent)
-                    .padding()
-                    .background(
-                        AppTheme.purple
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                
+
                 // Smartest AI - Purchase required
                 if isSmartestAIUnlocked && hasExternalAPIConfigured {
                     // Unlocked AND API configured - can use directly

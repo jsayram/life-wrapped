@@ -5,6 +5,7 @@
 import SwiftUI
 import AVFoundation
 import Speech
+import Summarization
 
 /// Permission request view shown on first launch or when permissions are needed
 struct PermissionsView: View {
@@ -15,7 +16,8 @@ struct PermissionsView: View {
     @State private var isRequestingPermissions = false
     
     // Model download state
-    @State private var setupStep: SetupStep = .modelDownload  // Start with AI download
+    // Start with the AI download, unless this device can't run the model
+    @State private var setupStep: SetupStep = LocalEngine.isSupportedOnThisDevice ? .modelDownload : .permissions
     @State private var downloadProgress: Double = 0.0
     @State private var isDownloading = false
     @State private var downloadError: String? = nil
@@ -41,6 +43,11 @@ struct PermissionsView: View {
             .navigationBarHidden(true)
         }
         .task {
+            // Devices that can't run Smart start on the permissions step, so check them right away
+            if setupStep == .permissions {
+                proceedToPermissions()
+            }
+
             // Initialize minimal components needed for model download
             print("🔧 [PermissionsView] Initializing AppCoordinator for model download...")
             await coordinator.initializeForModelDownload()

@@ -40,7 +40,7 @@ Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS 
 | ------------------ | ----------- | ---------------------- | -------- | ----------------------------- |
 | Basic              | 15.0+       | Any iPhone             | Offline  | Always available              |
 | Apple Intelligence | 18.1+       | A17 Pro / M1+, 8GB RAM | Offline  | Placeholder (APIs not public) |
-| Local AI (Qwen3 4B) | 18.0+      | 6GB+ RAM (estimate)    | Offline  | ~2.3 GB model download        |
+| Local AI (Qwen3)   | 18.0+       | 6GB+ RAM for 4B, 4GB for 1.7B | Offline  | ~2.3 GB (4B) or ~1.0 GB (1.7B) download |
 | External API       | 15.0+       | Any iPhone             | Required | User API key required         |
 
 ---

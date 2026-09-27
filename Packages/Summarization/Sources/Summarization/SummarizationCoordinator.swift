@@ -72,13 +72,14 @@ public actor SummarizationCoordinator {
     /// Restore saved preference and select appropriate engine
     /// Call this after initialization to properly set up the active engine
     public func restoreSavedPreference() async {
-        // Smart used Phi-3.5 before it moved to Qwen3 4B. Delete the old download (about 2.1 GB).
+        // Delete Smart models this device doesn't use: Phi-3.5 from before Qwen3 (about 2.1 GB), or the
+        // Qwen3 size meant for other devices (4 GB phones used to get the 2.3 GB Qwen3 4B).
         // If Smart was selected, it falls back to the next tier until the new model is downloaded,
         // and Settings explains why.
         if await localEngine.removeRetiredModels() {
             UserDefaults.standard.set(true, forKey: LocalEngine.modelReplacedNoticeKey)
             #if DEBUG
-            print("🧹 [SummarizationCoordinator] Removed the retired Phi-3.5 model")
+            print("🧹 [SummarizationCoordinator] Removed a Smart model this device does not use")
             #endif
         }
         

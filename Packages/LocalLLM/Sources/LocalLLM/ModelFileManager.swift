@@ -171,21 +171,26 @@ public actor ModelFileManager: NSObject {
         return LocalModelType.allCases.filter { isModelDownloaded($0) }
     }
     
-    /// Delete models that earlier versions of the app downloaded (Phi-3.5) and no longer use.
+    /// Delete models this device doesn't use: ones earlier versions of the app downloaded (Phi-3.5),
+    /// and the other Smart model, for example Qwen3 4B downloaded before 4 GB phones moved to
+    /// Qwen3 1.7B, or a model restored from a backup of a different device.
+    /// - Parameter current: The model this device runs, which is kept
     /// - Returns: true if anything was deleted
     @discardableResult
-    public func deleteRetiredModels() -> Bool {
+    public func deleteRetiredModels(keeping current: LocalModelType) -> Bool {
         let hub = HubApi()
+        let unusedRepos = RetiredLocalModel.allCases.map(\.huggingFaceRepo)
+            + LocalModelType.allCases.filter { $0 != current }.map(\.huggingFaceRepo)
         var deletedAny = false
-        for retired in RetiredLocalModel.allCases {
-            let localPath = hub.localRepoLocation(HubApi.Repo(id: retired.huggingFaceRepo))
+        for repo in unusedRepos {
+            let localPath = hub.localRepoLocation(HubApi.Repo(id: repo))
             guard fileManager.fileExists(atPath: localPath.path) else { continue }
             do {
                 try fileManager.removeItem(at: localPath)
                 deletedAny = true
-                print("🗑️ [ModelFileManager] Deleted retired model \(retired.huggingFaceRepo)")
+                print("🗑️ [ModelFileManager] Deleted unused model \(repo)")
             } catch {
-                print("⚠️ [ModelFileManager] Could not delete retired model \(retired.huggingFaceRepo): \(error)")
+                print("⚠️ [ModelFileManager] Could not delete unused model \(repo): \(error)")
             }
         }
         return deletedAny

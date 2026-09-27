@@ -1374,6 +1374,9 @@ public final class AppCoordinator: ObservableObject {
         
         // Don't show if user has External AI, Apple Intelligence, or Local AI selected
         guard activeEngine == .basic else { return false }
+
+        // Don't suggest a download this device can't run
+        guard isLocalModelSupported else { return false }
         
         // Only show if local model is not downloaded
         let isDownloaded = await isLocalModelDownloaded()
@@ -1391,6 +1394,11 @@ public final class AppCoordinator: ObservableObject {
         localModelCoordinator?.expectedLocalModelSizeMB ?? LocalEngine.modelDownloadSize
     }
     
+    /// Whether this device has enough memory to run Smart (6 GB or more)
+    public var isLocalModelSupported: Bool {
+        LocalEngine.isSupportedOnThisDevice
+    }
+
     /// Get the local model display name
     public var localModelDisplayName: String {
         localModelCoordinator?.localModelDisplayName ?? LocalEngine.modelDisplayName

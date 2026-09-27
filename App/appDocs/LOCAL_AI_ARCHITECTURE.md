@@ -1,8 +1,8 @@
-# Local AI Architecture (MLX + Qwen3 4B)
+# Local AI Architecture (MLX + Qwen3)
 
 ## Overview
 
-The Local AI engine (the Smart tier) provides on-device summarization using Apple's MLX framework with Qwen3-4B-Instruct-2507, 4-bit. It replaced Phi-3.5 Mini in September 2026. This document covers model requirements, performance optimizations, and quality improvements.
+The Local AI engine (the Smart tier) provides on-device summarization using Apple's MLX framework with Qwen3-4B-Instruct-2507, 4-bit. It replaced Phi-3.5 Mini in September 2026. Devices with 4 GB of memory run Qwen3 1.7B instead (see [Smaller Model for 4 GB Devices](#smaller-model-for-4-gb-devices)). This document covers model requirements, performance optimizations, and quality improvements.
 
 **Key Features:**
 
@@ -36,6 +36,22 @@ The Local AI engine (the Smart tier) provides on-device summarization using Appl
 - **Defined in:** `Packages/LocalLLM/Sources/LocalLLM/LocalModelType.swift` (the only place to change to switch models)
 
 **Memory:** the KV cache costs about 144 KB per token (2 × 36 layers × 8 heads × 128 dims × 2 bytes), so a full 4,096-token window is about 0.6 GB. Phi-3.5 had no grouped-query attention and needed about 0.8 GB for 2,048 tokens.
+
+### Smaller Model for 4 GB Devices
+
+Qwen3 4B needs about 2.9 GB of free memory, which iOS doesn't give one app on a 4 GB phone (iPhone 12, 12 mini, 13, 13 mini, SE 3rd gen). `LocalModelType.current` picks the model from `ProcessInfo.physicalMemory`:
+
+| Device RAM (reported) | Model | Download |
+| --- | --- | --- |
+| 5 GiB or more (6 GB devices and up) | Qwen3-4B-Instruct-2507, 4-bit | ~2.3 GB |
+| 3 to 5 GiB (4 GB devices) | Qwen3-1.7B, 4-bit (`mlx-community/Qwen3-1.7B-4bit`, commit `3b1b1768f8f8cf8351c712464f906e86c2b8269e`, 984,015,687 bytes) | ~1.0 GB |
+| Under 3 GiB (iPhone XR, SE 2nd gen) | None, Smart isn't offered | |
+
+- Qwen3 1.7B is a hybrid thinking model. `chatTemplateContext` passes `enable_thinking: false` so its chat template skips reasoning.
+- KV cache for 1.7B: 2 × 28 layers × 8 heads × 128 dims × 2 bytes ≈ 112 KB per token, about 0.5 GB for 4,096 tokens.
+- Before loading, `LlamaContext` compares `os_proc_available_memory()` with `requiredFreeMemoryBytes` (weights plus full cache) and throws `LlamaError.notEnoughMemory` instead of letting iOS end the app. The thresholds are estimates; the load logs print both numbers so they can be checked on a real device.
+- The app has the `com.apple.developer.kernel.increased-memory-limit` entitlement.
+- On launch, `ModelFileManager.deleteRetiredModels(keeping:)` removes the Qwen3 size the device doesn't use, for example the 4B that 4 GB phones downloaded before this change.
 
 ### Critical: Never Hand-Write Chat Tags
 

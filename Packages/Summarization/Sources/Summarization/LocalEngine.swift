@@ -10,7 +10,7 @@ import SharedModels
 import LocalLLM
 import CryptoKit
 
-/// Smart tier: on-device summarization with a local model (Qwen3 4B, 4-bit, run with MLX).
+/// Smart tier: on-device summarization with a local model (Qwen3 4B, or Qwen3 1.7B on 4 GB phones; 4-bit, run with MLX).
 /// Processes each chunk through the local model, then aggregates for session summary
 public actor LocalEngine: SummarizationEngine {
     
@@ -280,9 +280,9 @@ public actor LocalEngine: SummarizationEngine {
     
     /// Check if local AI is available (model downloaded and ready)
     public func isAvailable() async -> Bool {
-        // Check if model file exists
-        let isDownloaded = await modelFileManager.isModelDownloaded(Self.model)
-        return isDownloaded
+        // A model downloaded by an earlier version on a phone that can't run it doesn't count
+        guard Self.isSupportedOnThisDevice else { return false }
+        return await modelFileManager.isModelDownloaded(Self.model)
     }
     
     /// Check if the model is loaded and ready for inference
@@ -1860,6 +1860,10 @@ public actor LocalEngine: SummarizationEngine {
     /// Download the local AI model with progress tracking
     /// - Parameter progress: Closure called with download progress (0.0-1.0)
     public func downloadModel(progress: (@Sendable (Double) -> Void)? = nil) async throws {
+        // Never download 2.3 GB the device can't run
+        guard Self.isSupportedOnThisDevice else {
+            throw LlamaError.deviceNotSupported
+        }
         try await modelFileManager.downloadModel(Self.model, progress: progress)
     }
     
@@ -1874,7 +1878,7 @@ public actor LocalEngine: SummarizationEngine {
     /// Safe to call on every launch; does nothing if there's nothing to remove.
     /// - Returns: true if an old model was deleted
     public func removeRetiredModels() async -> Bool {
-        return await modelFileManager.deleteRetiredModels()
+        return await modelFileManager.deleteRetiredModels(keeping: Self.model)
     }
     
     /// Get the size of the downloaded model in bytes, or nil if not downloaded
@@ -1899,6 +1903,11 @@ public actor LocalEngine: SummarizationEngine {
     /// Name of the model Smart runs, for display
     public static var modelDisplayName: String {
         LocalModelType.current.displayName
+    }
+
+    /// Whether this device has enough memory to run Smart. When false, Smart isn't offered.
+    public static var isSupportedOnThisDevice: Bool {
+        DeviceMemory.canRun(model)
     }
     
     /// UserDefaults key set when an old model was removed and the new one hasn't been downloaded yet

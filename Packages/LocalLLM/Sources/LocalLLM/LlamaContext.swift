@@ -61,9 +61,23 @@ public actor LlamaContext {
             unloadModel()
         }
 
+        guard DeviceMemory.canRun(modelType) else {
+            throw LlamaError.deviceNotSupported
+        }
+
         let modelPath = getModelPath(for: modelType)
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaError.modelNotFound(path: modelPath)
+        }
+
+        // Loading with too little free memory gets the app ended by iOS, so fail cleanly instead
+        // and let the caller fall back to Basic
+        if let available = DeviceMemory.availableToAppBytes {
+            let required = modelType.requiredFreeMemoryBytes
+            print("🧠 [LlamaContext] Memory before load: \(DeviceMemory.describe(available)) free, \(DeviceMemory.describe(required)) needed")
+            guard available >= required else {
+                throw LlamaError.notEnoughMemory
+            }
         }
 
         print("🔄 [LlamaContext] Loading \(modelType.displayName) with MLX from \(modelPath)")
@@ -127,6 +141,7 @@ public actor LlamaContext {
         print("🔄 [LlamaContext] Generating: \(systemText.count + contentText.count) chars in, up to \(maxTokensToGenerate) tokens out")
 
         let stopSequences = modelType.stopSequences
+        let templateContext = modelType.chatTemplateContext
         // Safety net in case the token limit is ever misconfigured
         let maxCharacters = max(4000, maxTokensToGenerate * 8)
 
@@ -139,7 +154,9 @@ public actor LlamaContext {
                 messages.append(.user(contentText))
 
                 // The processor applies the model's chat template exactly once
-                let input = try await context.processor.prepare(input: UserInput(chat: messages))
+                let input = try await context.processor.prepare(
+                    input: UserInput(chat: messages, additionalContext: templateContext)
+                )
 
                 let parameters = GenerateParameters(
                     maxTokens: maxTokensToGenerate,
@@ -187,8 +204,8 @@ public actor LlamaContext {
 
     // MARK: - Helpers
 
-    /// Qwen3-4B-Instruct-2507 never "thinks" out loud, but if a <think> block ever appears
-    /// it must not end up in a summary.
+    /// Qwen3-4B-Instruct-2507 never "thinks" out loud and Qwen3 1.7B is told not to, but if a
+    /// <think> block ever appears it must not end up in a summary.
     static func removeReasoning(from text: String) -> String {
         var cleaned = text.replacingOccurrences(
             of: #"<think>[\s\S]*?</think>"#,
@@ -224,6 +241,8 @@ public enum LlamaError: Error, LocalizedError {
     case notImplemented
     case generationFailed(underlying: Error)
     case metalNotAvailable  // MLX requires Metal GPU (not available on simulator)
+    case deviceNotSupported  // Not enough RAM in the device for the model
+    case notEnoughMemory     // Enough RAM in the device, but not free right now
 
     public var errorDescription: String? {
         switch self {
@@ -251,6 +270,10 @@ public enum LlamaError: Error, LocalizedError {
             return "Text generation failed: \(error.localizedDescription)"
         case .metalNotAvailable:
             return "Smart needs a real iPhone or iPad. It doesn't run in the Simulator."
+        case .deviceNotSupported:
+            return "This device doesn't have enough memory to run Smart."
+        case .notEnoughMemory:
+            return "There isn't enough free memory to run Smart right now. Close some apps and try again."
         }
     }
 }

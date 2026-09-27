@@ -7,13 +7,14 @@
 
 import Foundation
 import SharedModels
+import LocalLLM
 
 // MARK: - Engine Tier
 
 /// Tiers of summarization engines, ordered by capability
 public enum EngineTier: String, Codable, Sendable, CaseIterable {
     case basic      // Simple extractive + keyword extraction
-    case local      // Local LLM (Qwen3 4B via MLX)
+    case local      // Local LLM (Qwen3 4B or 1.7B via MLX)
     case apple      // Apple Intelligence / Foundation Models (iOS 26+)
     case external   // External API (OpenAI, Anthropic with user keys)
     
@@ -54,7 +55,7 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .basic:
             return "Fast on-device extractive summarization using sentence scoring and keyword analysis. Works offline."
         case .local:
-            return "On-device model (Qwen3 4B) for chunk-by-chunk processing. Each audio chunk is cleaned up by local AI, then combined. Works offline."
+            return "On-device model (\(LocalModelType.current.displayName)) for chunk-by-chunk processing. Each audio chunk is cleaned up by local AI, then combined. Works offline."
         case .apple:
             return "Advanced AI using Apple's on-device Foundation Models (iOS 26+, Apple Intelligence enabled). Works offline."
         case .external:
