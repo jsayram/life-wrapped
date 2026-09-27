@@ -275,7 +275,7 @@ public actor SessionRepository {
                 SELECT 
                     session_id,
                     SUM(end_time - start_time) as total_duration,
-                    MIN(created_at) as session_date
+                    MIN(start_time) as session_date
                 FROM audio_chunks
                 GROUP BY session_id
                 ORDER BY total_duration DESC
@@ -312,8 +312,8 @@ public actor SessionRepository {
             
             let sql = """
                 SELECT 
-                    CAST(strftime('%Y', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as year,
-                    CAST(strftime('%m', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as month,
+                    CAST(strftime('%Y', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as year,
+                    CAST(strftime('%m', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as month,
                     session_id
                 FROM audio_chunks
                 WHERE chunk_index = 0
@@ -396,7 +396,7 @@ public actor SessionRepository {
             // SQLite strftime('%w') returns day of week: 0 = Sunday, 6 = Saturday
             let sql = """
                 SELECT 
-                    CAST(strftime('%w', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as day_of_week,
+                    CAST(strftime('%w', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as day_of_week,
                     session_id
                 FROM audio_chunks
                 WHERE chunk_index = 0

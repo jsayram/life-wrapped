@@ -1,12 +1,9 @@
 import SwiftUI
 import SharedModels
-import Transcription
 
 struct StatisticsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var wordLimit: Double = 20
-    @State private var dateFormat: String = UserDefaults.standard.rollupDateFormat
-    @State private var timeFormat: String = UserDefaults.standard.rollupTimeFormat
     
     // Statistics data
     @State private var sessionsByHour: [(hour: Int, count: Int, sessionIds: [UUID])] = []
@@ -14,25 +11,10 @@ struct StatisticsView: View {
     @State private var longestSession: (sessionId: UUID, duration: TimeInterval, date: Date)?
     @State private var mostActiveMonth: (year: Int, month: Int, count: Int, sessionIds: [UUID])?
     @State private var topWords: [WordFrequency] = []
-    @State private var dailySentiment: [(date: Date, sentiment: Double)] = []
-    @State private var languageDistribution: [(language: String, wordCount: Int)] = []
     @State private var isLoadingStats = false
     
     private let wordLimitKey = "insightsWordLimit"
-    
-    private let dateFormatOptions = [
-        ("MM/dd/yyyy", "12/22/2025"),
-        ("dd/MM/yyyy", "22/12/2025"),
-        ("yyyy-MM-dd", "2025-12-22"),
-        ("MMM d, yyyy", "Dec 22, 2025"),
-        ("MMMM d, yyyy", "December 22, 2025")
-    ]
-    
-    private let timeFormatOptions = [
-        ("HH:mm", "14:30 (24-hour)"),
-        ("hh:mm a", "02:30 PM (12-hour)"),
-        ("h:mm a", "2:30 PM (12-hour)")
-    ]
+
     
     var body: some View {
         List {
@@ -42,7 +24,7 @@ struct StatisticsView: View {
                     if let longest = longestSession {
                         NavigationLink {
                             FilteredSessionsView(
-                                title: "Longest session",
+                                title: "Longest recording",
                                 sessionIds: [longest.sessionId]
                             )
                         } label: {
@@ -53,7 +35,7 @@ struct StatisticsView: View {
                                     .frame(width: 28)
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Longest session")
+                                    Text("Longest recording")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     HStack {
@@ -93,7 +75,7 @@ struct StatisticsView: View {
                                             .font(.title3)
                                             .fontWeight(.semibold)
                                         Spacer()
-                                        Text("\(mostActive.count) session\(mostActive.count == 1 ? "" : "s")")
+                                        Text("\(mostActive.count) recording\(mostActive.count == 1 ? "" : "s")")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -127,7 +109,7 @@ struct StatisticsView: View {
                                         Text("\(data.count)")
                                             .font(.title3)
                                             .fontWeight(.bold)
-                                        Text(data.count == 1 ? "session" : "sessions")
+                                        Text(data.count == 1 ? "recording" : "recordings")
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
@@ -144,7 +126,7 @@ struct StatisticsView: View {
                         .padding(.horizontal, 4)
                     }
                 } header: {
-                    Text("Sessions by time of day")
+                    Text("Recordings by time of day")
                 }
             }
             
@@ -168,7 +150,7 @@ struct StatisticsView: View {
                                         Text("\(data.count)")
                                             .font(.title3)
                                             .fontWeight(.bold)
-                                        Text(data.count == 1 ? "session" : "sessions")
+                                        Text(data.count == 1 ? "recording" : "recordings")
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
@@ -185,7 +167,7 @@ struct StatisticsView: View {
                         .padding(.horizontal, 4)
                     }
                 } header: {
-                    Text("Sessions by day of week")
+                    Text("Recordings by day of week")
                 }
             }
             
@@ -230,82 +212,6 @@ struct StatisticsView: View {
                 }
             }
             
-            // Emotional Trends Section (Stats only, no chart)
-            if !dailySentiment.isEmpty {
-                Section {
-                    HStack(spacing: 16) {
-                        sentimentStatBox(
-                            label: "Positive",
-                            count: dailySentiment.filter { $0.sentiment > 0.3 }.count,
-                            color: AppTheme.accent
-                        )
-                        sentimentStatBox(
-                            label: "Neutral",
-                            count: dailySentiment.filter { abs($0.sentiment) <= 0.3 }.count,
-                            color: AppTheme.textSecondary
-                        )
-                        sentimentStatBox(
-                            label: "Negative",
-                            count: dailySentiment.filter { $0.sentiment < -0.3 }.count,
-                            color: AppTheme.destructive
-                        )
-                    }
-                    .padding(.vertical, 8)
-                } header: {
-                    Text("Mood")
-                } footer: {
-                    Text("Daily sentiment analysis from your journal entries")
-                }
-            }
-            
-            // Languages Section
-            if !languageDistribution.isEmpty {
-                Section {
-                    let totalWords = languageDistribution.reduce(0) { $0 + $1.wordCount }
-                    
-                    ForEach(languageDistribution.prefix(5), id: \.language) { item in
-                        let percentage = totalWords > 0 ? (Double(item.wordCount) / Double(totalWords)) * 100 : 0
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(LanguageDetector.displayName(for: item.language))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text("\(Int(percentage))%")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
-                            
-                            GeometryReader { geometry in
-                                ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.secondary.opacity(0.2))
-                                    
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(languageColor(index: languageDistribution.firstIndex(where: { $0.language == item.language }) ?? 0))
-                                        .frame(width: geometry.size.width * (percentage / 100))
-                                }
-                            }
-                            .frame(height: 8)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    
-                    if languageDistribution.count > 1 {
-                        Text("You speak \(languageDistribution.count) language\(languageDistribution.count == 1 ? "" : "s") in your recordings")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 8)
-                    }
-                } header: {
-                    Text("Languages")
-                } footer: {
-                    Text("Distribution of languages in your recordings")
-                }
-            }
-            
             // Settings Sections
             Section {
                 VStack(alignment: .leading, spacing: 12) {
@@ -317,15 +223,13 @@ struct StatisticsView: View {
                             .monospacedDigit()
                     }
                     
+                    // Apply when the slider is let go, not on every step
                     Slider(value: $wordLimit, in: 10...200, step: 10) {
                         Text("Word limit")
-                    }
-                    .onChange(of: wordLimit) { oldValue, newValue in
-                        UserDefaults.standard.set(Int(newValue), forKey: wordLimitKey)
-                        coordinator.showSuccess("Word limit updated to \(Int(newValue))")
-                        Task {
-                            await loadStatistics()
-                        }
+                    } onEditingChanged: { editing in
+                        guard !editing else { return }
+                        UserDefaults.standard.set(Int(wordLimit), forKey: wordLimitKey)
+                        Task { await loadWords() }
                     }
                 }
                 .padding(.vertical, 4)
@@ -333,32 +237,6 @@ struct StatisticsView: View {
                 Text("Settings")
             } footer: {
                 Text("Number of most-used words to display in the Statistics tab.")
-            }
-            
-            Section {
-                Picker("Date format", selection: $dateFormat) {
-                    ForEach(dateFormatOptions, id: \.0) { format, example in
-                        Text(example).tag(format)
-                    }
-                }
-                .onChange(of: dateFormat) { oldValue, newValue in
-                    UserDefaults.standard.rollupDateFormat = newValue
-                    coordinator.showSuccess("Date format updated")
-                }
-                
-                Picker("Time format", selection: $timeFormat) {
-                    ForEach(timeFormatOptions, id: \.0) { format, example in
-                        Text(example).tag(format)
-                    }
-                }
-                .onChange(of: timeFormat) { oldValue, newValue in
-                    UserDefaults.standard.rollupTimeFormat = newValue
-                    coordinator.showSuccess("Time format updated")
-                }
-            } header: {
-                Text("Summary date and time format")
-            } footer: {
-                Text("Date and time format used in period rollups (hour, day, week, month, year).")
             }
             
             Section {
@@ -389,57 +267,42 @@ struct StatisticsView: View {
         }
     }
     
+    /// Load every section on its own, so one failing query doesn't blank the rest
     private func loadStatistics() async {
         isLoadingStats = true
-        do {
-            // Load key statistics
-            longestSession = try await coordinator.fetchLongestSession()
-            mostActiveMonth = try await coordinator.fetchMostActiveMonth()
-            
-            // Load sessions by hour
-            sessionsByHour = try await coordinator.fetchSessionsByHour()
-            
-            // Load sessions by day of week
-            sessionsByDayOfWeek = try await coordinator.fetchSessionsByDayOfWeek()
-            
-            // Load word frequency analysis (all time)
-            let transcriptTexts = try await coordinator.fetchTranscriptText(
-                startDate: Date.distantPast,
-                endDate: Date()
-            )
-            
-            let customExcludedWords: Set<String> = {
-                if let savedWords = UserDefaults.standard.stringArray(forKey: "customExcludedWords") {
-                    return Set(savedWords)
-                }
-                return []
-            }()
-            
-            topWords = WordAnalyzer.analyzeWords(
-                from: transcriptTexts,
-                limit: Int(wordLimit),
-                customExcludedWords: customExcludedWords
-            )
-            
-            // Load daily sentiment data (all time)
-            dailySentiment = try await coordinator.fetchDailySentiment(from: Date.distantPast, to: Date())
-            
-            // Load language distribution
-            languageDistribution = try await coordinator.fetchLanguageDistribution()
-        } catch {
-            print("❌ [StatisticsView] Failed to load statistics: \(error)")
+        defer { isLoadingStats = false }
+
+        longestSession = try? await coordinator.fetchLongestSession()
+        mostActiveMonth = try? await coordinator.fetchMostActiveMonth()
+        sessionsByHour = (try? await coordinator.fetchSessionsByHour()) ?? []
+        sessionsByDayOfWeek = (try? await coordinator.fetchSessionsByDayOfWeek()) ?? []
+        await loadWords()
+    }
+
+    private func loadWords() async {
+        guard let transcriptTexts = try? await coordinator.fetchTranscriptText(startDate: .distantPast, endDate: Date()) else {
+            topWords = []
+            return
         }
-        isLoadingStats = false
+        let customExcludedWords = Set(UserDefaults.standard.stringArray(forKey: "customExcludedWords") ?? [])
+        topWords = WordAnalyzer.analyzeWords(
+            from: transcriptTexts,
+            limit: Int(wordLimit),
+            customExcludedWords: customExcludedWords
+        )
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
         let hours = Int(duration) / 3600
         let minutes = (Int(duration) % 3600) / 60
+        let seconds = Int(duration) % 60
         
         if hours > 0 {
             return "\(hours)h \(minutes)m"
+        } else if minutes > 0 {
+            return seconds > 0 ? "\(minutes)m \(seconds)s" : "\(minutes)m"
         } else {
-            return "\(minutes)m"
+            return "\(seconds)s"
         }
     }
     
@@ -452,24 +315,14 @@ struct StatisticsView: View {
         return "\(month)/\(year)"
     }
     
+    /// "9 AM" or "09", following the phone's 12/24-hour setting
     private func formatHour(_ hour: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h a"
-        let calendar = Calendar.current
-        let date = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
-        return formatter.string(from: date)
+        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
+        return date.formatted(.dateTime.hour())
     }
-    
+
     private func formatHourShort(_ hour: Int) -> String {
-        if hour == 0 {
-            return "12 AM"
-        } else if hour < 12 {
-            return "\(hour) AM"
-        } else if hour == 12 {
-            return "12 PM"
-        } else {
-            return "\(hour - 12) PM"
-        }
+        formatHour(hour)
     }
     
     private func formatDayOfWeek(_ dayOfWeek: Int) -> String {
@@ -491,42 +344,8 @@ struct StatisticsView: View {
         }
     }
     
+    /// Top words in full ink, the rest in secondary ink; both read in light and dark mode
     private func colorForRank(_ rank: Int) -> Color {
-        switch rank {
-        case 0: return AppTheme.skyBlue
-        case 1: return AppTheme.purple
-        case 2: return AppTheme.magenta
-        case 3: return AppTheme.emerald
-        case 4: return AppTheme.lightPurple
-        default: return AppTheme.darkPurple
-        }
-    }
-    
-    private func sentimentStatBox(label: String, count: Int, color: Color) -> some View {
-        VStack(spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-            
-            Text("\(count)")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundStyle(color)
-            
-            Text("days")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-    
-    private func languageColor(index: Int) -> Color {
-        let colors: [Color] = [AppTheme.skyBlue, AppTheme.emerald, AppTheme.purple, AppTheme.magenta, AppTheme.lightPurple]
-        return colors[index % colors.count]
+        rank < 3 ? AppTheme.textPrimary : AppTheme.textSecondary
     }
 }
-
