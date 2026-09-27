@@ -10,6 +10,16 @@ struct HomeTab: View {
     @State private var category: SessionCategory = .personal
     @State private var activeTier: EngineTier?
 
+    /// The journal the current recording goes to, or nil when there's no recording in progress
+    private var recordingJournal: SessionCategory? {
+        switch coordinator.recordingState {
+        case .recording, .processing, .completed:
+            return coordinator.recordingCoordinator?.currentCategory ?? category
+        case .idle, .failed:
+            return nil
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -54,8 +64,10 @@ struct HomeTab: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
-                    // Category selector
-                    if coordinator.recordingCoordinator != nil {
+                    // Category selector. While a recording is in progress, say plainly which journal it goes to.
+                    if let journal = recordingJournal {
+                        RecordingJournalLabel(journal: journal, state: coordinator.recordingState)
+                    } else if coordinator.recordingCoordinator != nil {
                         GraphiteSegmentedControl(
                             options: [
                                 .init(value: SessionCategory.work, title: "Work", systemImage: SessionCategory.work.outlineSymbol),
@@ -64,7 +76,6 @@ struct HomeTab: View {
                             selection: $category
                         )
                         .disabled(coordinator.recordingState != .idle)
-                        .opacity(coordinator.recordingState != .idle ? 0.5 : 1.0)
                     }
 
                     // Recording button fills the middle of the screen
@@ -167,6 +178,39 @@ private struct RecordingIndicatorPill: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
+    }
+}
+
+/// Takes the category switch's place during a recording: which journal it's going to.
+private struct RecordingJournalLabel: View {
+    let journal: SessionCategory
+    let state: RecordingState
+
+    private var verb: String {
+        switch state {
+        case .recording: return "Recording to"
+        case .processing: return "Saving to"
+        default: return "Saved to"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: journal.systemImage)
+                .font(.body.weight(.semibold))
+            (Text(verb + " ").foregroundStyle(AppTheme.textSecondary)
+                + Text(journal.displayName).fontWeight(.semibold))
+                .font(.body)
+        }
+        .foregroundStyle(AppTheme.textPrimary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
+                .strokeBorder(AppTheme.hairline, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -683,6 +683,74 @@ public actor SessionRepository {
         }
     }
     
+    // MARK: - Change Times
+
+    /// Record that a recording changed. `content`: its journal, notes or summary, which a Year Wrap is
+    /// built from. `transcript`: its transcript was edited. Creates the metadata row if there is none.
+    public func markSessionChanged(sessionId: UUID, content: Bool, transcript: Bool, at date: Date = Date()) async throws {
+        var columns: [String] = []
+        if content { columns.append("content_changed_at = ?1") }
+        if transcript { columns.append("transcript_edited_at = ?1") }
+        guard !columns.isEmpty else { return }
+
+        let statements = [
+            "INSERT OR IGNORE INTO session_metadata (session_id, is_favorite, created_at, updated_at) VALUES (?2, 0, ?1, ?1)",
+            "UPDATE session_metadata SET \(columns.joined(separator: ", ")) WHERE session_id = ?2"
+        ]
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            for sql in statements {
+                var stmt: OpaquePointer?
+                defer { sqlite3_finalize(stmt) }
+                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                    throw StorageError.prepareFailed(await connection.lastError())
+                }
+                sqlite3_bind_double(stmt, 1, date.timeIntervalSince1970)
+                sqlite3_bind_text(stmt, 2, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+                guard sqlite3_step(stmt) == SQLITE_DONE else {
+                    throw StorageError.stepFailed(await connection.lastError())
+                }
+            }
+        }
+    }
+
+    /// When the recording's transcript was last edited, or nil if never
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = "SELECT transcript_edited_at FROM session_metadata WHERE session_id = ?"
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+            guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
+            return Date(timeIntervalSince1970: sqlite3_column_double(stmt, 0))
+        }
+    }
+
+    /// Recordings whose journal, notes or summary changed after `date`
+    public func fetchSessionIdsContentChanged(since date: Date) async throws -> Set<UUID> {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = "SELECT session_id FROM session_metadata WHERE content_changed_at > ?"
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            sqlite3_bind_double(stmt, 1, date.timeIntervalSince1970)
+            var ids: Set<UUID> = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let text = sqlite3_column_text(stmt, 0), let id = UUID(uuidString: String(cString: text)) {
+                    ids.insert(id)
+                }
+            }
+            return ids
+        }
+    }
+
     /// Delete session metadata
     public func deleteSessionMetadata(sessionId: UUID) async throws {
         try await connection.withDatabase { db in

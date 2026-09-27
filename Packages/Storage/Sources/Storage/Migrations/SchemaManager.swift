@@ -13,7 +13,7 @@ public actor SchemaManager {
     private let connection: DatabaseConnection
     
     /// Current database schema version
-    private static let currentSchemaVersion = 2
+    private static let currentSchemaVersion = 3
     
     public init(connection: DatabaseConnection) {
         self.connection = connection
@@ -70,6 +70,8 @@ public actor SchemaManager {
                     try await applySchema()
                 case 2:
                     try await addSummaryCategory()
+                case 3:
+                    try await addSessionChangeTimes()
                 default:
                     throw StorageError.unknownMigrationVersion(version)
                 }
@@ -98,6 +100,15 @@ public actor SchemaManager {
             """)
     }
     
+    /// v3: when a recording last changed in ways that matter to summaries.
+    /// `content_changed_at`: its journal, notes or summary changed, so a Year Wrap built earlier is out of date.
+    /// `transcript_edited_at`: its transcript was edited; its summary is out of date if older than this.
+    /// Existing rows stay NULL, which means "no change recorded".
+    private func addSessionChangeTimes() async throws {
+        try await connection.execute("ALTER TABLE session_metadata ADD COLUMN content_changed_at REAL")
+        try await connection.execute("ALTER TABLE session_metadata ADD COLUMN transcript_edited_at REAL")
+    }
+
     private func applySchema() async throws {
         // Audio chunks table
         try await connection.execute("""

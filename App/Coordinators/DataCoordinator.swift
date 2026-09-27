@@ -301,6 +301,7 @@ public final class DataCoordinator {
     /// Update session notes
     public func updateSessionNotes(sessionId: UUID, notes: String?) async throws {
         try await databaseManager.updateSessionNotes(sessionId: sessionId, notes: notes)
+        try await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         print("📝 [DataCoordinator] Updated session notes")
     }
     
@@ -314,6 +315,7 @@ public final class DataCoordinator {
     /// Update session category
     public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
         try await databaseManager.updateSessionCategory(sessionId: sessionId, category: category)
+        try await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         print("🏷️ [DataCoordinator] Session category updated: \(category?.displayName ?? "None")")
     }
     
@@ -324,10 +326,23 @@ public final class DataCoordinator {
     
     // MARK: - Transcript Editing
     
-    /// Update transcript segment text (for user edits)
-    public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
+    /// Replace a transcript part's text with the user's edit. The edit holds the whole part, so the
+    /// part's other segments (older recordings were stored one per word) are removed instead of
+    /// showing up again after the edited text.
+    public func updateTranscriptText(sessionId: UUID, segmentId: UUID, newText: String) async throws {
         try await databaseManager.updateTranscriptSegmentText(id: segmentId, newText: newText)
+        if let segment = try await databaseManager.fetchTranscriptSegment(id: segmentId) {
+            for other in try await databaseManager.fetchTranscriptSegments(audioChunkID: segment.audioChunkID) where other.id != segmentId {
+                try await databaseManager.deleteTranscriptSegment(id: other.id)
+            }
+        }
+        try await databaseManager.markSessionChanged(sessionId: sessionId, transcript: true)
         print("✏️ [DataCoordinator] Updated transcript segment: \(segmentId)")
+    }
+
+    /// When the recording's transcript was last edited, or nil if never
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        try await databaseManager.fetchTranscriptEditedAt(sessionId: sessionId)
     }
     
     /// Search for sessions by transcript text

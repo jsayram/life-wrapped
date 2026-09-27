@@ -42,6 +42,32 @@ struct DatabaseManagerTests {
         await manager.close()
     }
     
+    @Test("Change times: content changes and transcript edits are recorded separately")
+    func testSessionChangeTimes() async throws {
+        let manager = try await createTestDatabase()
+        let edited = UUID()
+        let untouched = UUID()
+        try await manager.upsertSessionMetadata(.init(sessionId: untouched, title: "Old", category: .work))
+        let before = Date().addingTimeInterval(-1)
+
+        #expect(try await manager.fetchTranscriptEditedAt(sessionId: edited) == nil)
+
+        // Creates the row when there is none, and keeps the journal and notes of one that exists
+        try await manager.markSessionChanged(sessionId: edited, transcript: true)
+        #expect(try await manager.fetchTranscriptEditedAt(sessionId: edited) != nil)
+        #expect(try await manager.fetchSessionIdsContentChanged(since: before).isEmpty)
+
+        try await manager.updateSessionNotes(sessionId: untouched, notes: "More")
+        try await manager.markSessionChanged(sessionId: untouched, content: true)
+        #expect(try await manager.fetchSessionIdsContentChanged(since: before) == [untouched])
+        #expect(try await manager.fetchSessionIdsContentChanged(since: Date().addingTimeInterval(1)).isEmpty)
+        let metadata = try await manager.fetchSessionMetadata(sessionId: untouched)
+        #expect(metadata?.category == .work)
+        #expect(metadata?.notes == "More")
+
+        await manager.close()
+    }
+
     @Test("A summary's journal survives saving, export and import")
     func testJournalRoundTrip() async throws {
         let manager = try await createTestDatabase()

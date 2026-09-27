@@ -174,6 +174,18 @@ public actor DatabaseManager {
         try await sessionRepository.updateSessionCategory(sessionId: sessionId, category: category)
     }
     
+    public func markSessionChanged(sessionId: UUID, content: Bool = false, transcript: Bool = false) async throws {
+        try await sessionRepository.markSessionChanged(sessionId: sessionId, content: content, transcript: transcript)
+    }
+
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        try await sessionRepository.fetchTranscriptEditedAt(sessionId: sessionId)
+    }
+
+    public func fetchSessionIdsContentChanged(since date: Date) async throws -> Set<UUID> {
+        try await sessionRepository.fetchSessionIdsContentChanged(since: date)
+    }
+
     public func fetchSessionsByCategory(category: SessionCategory, limit: Int? = nil) async throws -> [RecordingSession] {
         try await sessionRepository.fetchSessionsByCategory(category: category, limit: limit)
     }

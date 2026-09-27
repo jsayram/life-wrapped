@@ -240,6 +240,7 @@ public final class SummaryCoordinator {
         // Save session summary
         print("💾 [SummaryCoordinator] Saving summary to database...")
         try await databaseManager.insertSummary(generatedSummary)
+        try? await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         print("✅ [SummaryCoordinator] Session summary saved successfully!")
         print("📊 [SummaryCoordinator] Summary details - topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none")")
         
@@ -288,6 +289,7 @@ public final class SummaryCoordinator {
         // Delete old and insert updated
         try await databaseManager.deleteSummary(id: existingSummary.id)
         try await databaseManager.insertSummary(updatedSummary)
+        try? await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         
         print("✅ [SummaryCoordinator] Appended notes to session summary")
     }
@@ -787,36 +789,30 @@ public final class SummaryCoordinator {
         )
     }
     
-    /// Get count of new sessions created after Year Wrap generation
+    /// How many of the year's recordings are new or changed since the Year Wrap was built.
+    /// Changed means its journal, notes or summary changed, all of which feed the wrap.
     public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
-        // Fetch all years with their session IDs
         let yearlyData = try await databaseManager.fetchSessionsByYear()
-        
-        // Find the specified year
         guard let yearData = yearlyData.first(where: { $0.year == year }) else {
             print("⚠️ [SummaryCoordinator] No sessions found for year \(year)")
             return 0
         }
-        
-        print("🔍 [SummaryCoordinator] Checking \(yearData.sessionIds.count) sessions against Year Wrap createdAt: \(yearWrap.createdAt)")
-        
-        // For each session ID, fetch its first chunk time and compare with Year Wrap's createdAt
-        // This ensures we count sessions created AFTER the wrap was last generated
-        var newCount = 0
-        for sessionId in yearData.sessionIds {
-            if let firstChunk = try? await databaseManager.fetchChunksBySession(sessionId: sessionId).first {
-                if firstChunk.createdAt > yearWrap.createdAt {
-                    newCount += 1
-                    print("  ✅ Session \(sessionId.uuidString.prefix(8)): \(firstChunk.createdAt) > \(yearWrap.createdAt) = NEW")
-                } else {
-                    print("  ⏭️ Session \(sessionId.uuidString.prefix(8)): \(firstChunk.createdAt) <= \(yearWrap.createdAt) = OLD")
-                }
+        let yearSessions = Set(yearData.sessionIds)
+
+        // Recorded after the wrap was built
+        var outdated: Set<UUID> = []
+        for sessionId in yearSessions {
+            if let firstChunk = try? await databaseManager.fetchChunksBySession(sessionId: sessionId).first,
+               firstChunk.createdAt > yearWrap.createdAt {
+                outdated.insert(sessionId)
             }
         }
-        
-        print("📊 [SummaryCoordinator] Year Wrap staleness check: \(newCount) new sessions since \(yearWrap.createdAt)")
-        
-        return newCount
+        // Changed after the wrap was built
+        let changed = try await databaseManager.fetchSessionIdsContentChanged(since: yearWrap.createdAt)
+        outdated.formUnion(changed.intersection(yearSessions))
+
+        print("📊 [SummaryCoordinator] Year Wrap staleness check: \(outdated.count) recordings new or changed since \(yearWrap.createdAt)")
+        return outdated.count
     }
     
     // MARK: - Helpers

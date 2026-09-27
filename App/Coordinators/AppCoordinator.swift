@@ -1214,10 +1214,16 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Transcript Editing
     
     /// Update transcript segment text (for user edits)
-    public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
+    public func updateTranscriptText(sessionId: UUID, segmentId: UUID, newText: String) async throws {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
-        try await data.updateTranscriptText(segmentId: segmentId, newText: newText)
+        try await data.updateTranscriptText(sessionId: sessionId, segmentId: segmentId, newText: newText)
         print("✏️ [AppCoordinator] Updated transcript segment: \(segmentId)")
+    }
+
+    /// When the recording's transcript was last edited, or nil if never
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchTranscriptEditedAt(sessionId: sessionId)
     }
     
     /// Search for sessions by transcript text

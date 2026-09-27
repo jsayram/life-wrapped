@@ -15,6 +15,7 @@ struct SessionDetailView: View {
     @State private var currentlyPlayingChunkIndex: Int?
     @State private var playbackUpdateTimer: Timer?
     @State private var forceUpdateTrigger = false
+    @State private var playbackTick = PlaybackTick()
     @State private var isTranscriptionComplete = false
     @State private var transcriptionCheckTimer: Timer?
     @State private var sessionSummary: Summary?
@@ -29,6 +30,8 @@ struct SessionDetailView: View {
     @State private var sessionCategory: SessionCategory? = nil
     @State private var isEditingTitle: Bool = false
     @State private var isEditingNotes: Bool = false
+    @State private var lastSavedNotes: String = ""
+    @FocusState private var isNotesFocused: Bool
     
     // Transcript editing
     @State private var editingSegmentId: UUID?
@@ -45,6 +48,8 @@ struct SessionDetailView: View {
     @State private var activeEngineForGeneration: EngineTier?
     @State private var showRegenerateWithNotesAlert: Bool = false
     @State private var notesWereAppended: Bool = false
+    /// Set once the user moves this recording to the other journal, to explain what that changes
+    @State private var movedToJournal: SessionCategory?
     
     var body: some View {
         ScrollView {
@@ -96,6 +101,7 @@ struct SessionDetailView: View {
             await loadSessionMetadata()
             await loadTranscription()
             await loadSessionSummary()
+            await checkTranscriptEditedSinceSummary()
             checkTranscriptionStatus()
         }
         .onAppear {
@@ -105,6 +111,7 @@ struct SessionDetailView: View {
         .onDisappear {
             stopPlaybackUpdateTimer()
             stopTranscriptionCheckTimer()
+            saveNotes()
             if isPlayingThisSession {
                 coordinator.audioPlayback.stop()
             }
@@ -178,16 +185,33 @@ struct SessionDetailView: View {
     // MARK: - Session Info Section
     
     private var sessionInfoSection: some View {
-        GraphiteSegmentedControl(
-            options: [
-                .init(value: SessionCategory.work, title: "Work", systemImage: SessionCategory.work.outlineSymbol),
-                .init(value: SessionCategory.personal, title: "Personal", systemImage: SessionCategory.personal.outlineSymbol)
-            ],
-            selection: Binding(
-                get: { sessionCategory ?? .personal },
-                set: { updateCategory($0) }
+        VStack(alignment: .leading, spacing: 8) {
+            GraphiteSegmentedControl(
+                options: [
+                    .init(value: SessionCategory.work, title: "Work", systemImage: SessionCategory.work.outlineSymbol),
+                    .init(value: SessionCategory.personal, title: "Personal", systemImage: SessionCategory.personal.outlineSymbol)
+                ],
+                selection: Binding(
+                    get: { sessionCategory ?? .personal },
+                    set: { updateCategory($0) }
+                )
             )
-        )
+
+            Text(journalFootnote)
+                .font(.footnote)
+                .foregroundStyle(AppTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .animation(.easeInOut(duration: 0.2), value: movedToJournal)
+        }
+    }
+
+    /// Month digests pick up a move the next time the month is opened (their input hash changes).
+    /// Year Wraps are only built on request, so they keep the old journal until rebuilt.
+    private var journalFootnote: String {
+        if let journal = movedToJournal {
+            return "Moved to \(journal.displayName). This month's summary updates the next time you open it. Rebuild your Year Wrap to include the change."
+        }
+        return "Sets which journal this recording belongs to. Month summaries and your Year Wrap use it."
     }
 
     // MARK: - Toolbar Buttons
@@ -557,7 +581,7 @@ struct SessionDetailView: View {
                         .fontWeight(.medium)
                 }
                 
-                Text("The summary may be outdated. Would you like to regenerate it?")
+                Text("The summary still reflects the old text. Regenerate it to update this recording's summary. The month summary follows the next time you open it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -613,7 +637,7 @@ struct SessionDetailView: View {
     private func saveTranscriptEdit(segmentId: UUID, newText: String) {
         Task {
             do {
-                try await coordinator.updateTranscriptText(segmentId: segmentId, newText: newText)
+                try await coordinator.updateTranscriptText(sessionId: session.sessionId, segmentId: segmentId, newText: newText)
                 transcriptWasEdited = true
                 await loadTranscription()  // Refresh the segments
                 coordinator.showSuccess("Transcript updated")
@@ -624,6 +648,16 @@ struct SessionDetailView: View {
         }
     }
     
+    /// Bring back the regenerate prompt when the transcript was edited after the summary was
+    /// written, including edits made on an earlier visit
+    private func checkTranscriptEditedSinceSummary() async {
+        guard let summary = sessionSummary,
+              let editedAt = try? await coordinator.fetchTranscriptEditedAt(sessionId: session.sessionId) else { return }
+        if editedAt > summary.createdAt {
+            transcriptWasEdited = true
+        }
+    }
+
     private func seekToChunk(_ chunkIndex: Int) {
         var targetTime: TimeInterval = 0
         for i in 0..<chunkIndex {
@@ -635,9 +669,16 @@ struct SessionDetailView: View {
     private func startPlaybackUpdateTimer() {
         stopPlaybackUpdateTimer()
         // Update at 30fps for smooth visual feedback (matches waveform animation)
+        // Only redraw while audio plays, plus one tick after it stops to show where it ended.
+        // Redrawing the whole screen 30 times a second otherwise gets in the way of typing,
+        // dictation and the copy/paste menu in the notes and transcript editors.
         playbackUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1/30, repeats: true) { _ in
             Task { @MainActor in
-                self.forceUpdateTrigger.toggle()
+                let playing = self.coordinator.audioPlayback.isPlaying
+                if playing || self.playbackTick.wasPlaying {
+                    self.forceUpdateTrigger.toggle()
+                }
+                self.playbackTick.wasPlaying = playing
             }
         }
         // Add timer to common run loop mode to ensure it fires during UI interactions
@@ -1010,6 +1051,7 @@ struct SessionDetailView: View {
                 
                 if isEditingNotes {
                     Button("Done") {
+                        isNotesFocused = false
                         isEditingNotes = false
                         saveNotes()
                     }
@@ -1033,10 +1075,29 @@ struct SessionDetailView: View {
             
             if isEditingNotes {
                 TextEditor(text: $sessionNotes)
-                    .frame(minHeight: 100)
+                    .font(.body)
+                    .focused($isNotesFocused)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 120, maxHeight: 320)
                     .padding(8)
-                    .background(AppTheme.fill)
-                    .cornerRadius(8)
+                    .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(alignment: .topLeading) {
+                        if sessionNotes.isEmpty {
+                            Text("Add anything the recording missed.")
+                                .font(.body)
+                                .foregroundStyle(AppTheme.textSecondary)
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 16)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .onAppear { isNotesFocused = true }
+                    // Save a moment after typing or dictation pauses, so nothing is lost if the user leaves
+                    .task(id: sessionNotes) {
+                        try? await Task.sleep(for: .seconds(1))
+                        guard !Task.isCancelled else { return }
+                        saveNotes()
+                    }
             } else if sessionNotes.isEmpty {
                 Text("Add anything the recording missed.")
                     .font(.subheadline)
@@ -1107,11 +1168,13 @@ struct SessionDetailView: View {
     
     private func updateCategory(_ newCategory: SessionCategory) {
         let previousCategory = sessionCategory
+        guard newCategory != (previousCategory ?? .personal) else { return }
         sessionCategory = newCategory
         Task {
             do {
                 try await coordinator.updateSessionCategory(sessionId: session.sessionId, category: newCategory)
                 print("✅ Category updated to: \(newCategory.displayName)")
+                movedToJournal = newCategory
             } catch {
                 print("❌ Failed to update category: \(error)")
                 // Revert on error
@@ -1130,6 +1193,7 @@ struct SessionDetailView: View {
                 sessionTitle = metadata?.title ?? ""
                 sessionNotes = metadata?.notes ?? ""
                 initialSessionNotes = metadata?.notes ?? ""  // Track initial state
+                lastSavedNotes = initialSessionNotes
                 isFavorite = metadata?.isFavorite ?? false
                 sessionCategory = metadata?.category ?? .personal  // Default to personal if none
             }
@@ -1138,15 +1202,20 @@ struct SessionDetailView: View {
         }
     }
     
+    /// Save the notes if they changed since the last save
     private func saveNotes() {
+        let notes = sessionNotes
+        guard notes != lastSavedNotes else { return }
+        lastSavedNotes = notes
         Task {
             do {
                 try await coordinator.updateSessionNotes(
                     sessionId: session.sessionId,
-                    notes: sessionNotes.isEmpty ? nil : sessionNotes
+                    notes: notes.isEmpty ? nil : notes
                 )
             } catch {
                 print("❌ [SessionDetailView] Failed to save notes: \(error)")
+                coordinator.showError("Couldn't save your notes")
             }
         }
     }
@@ -1408,6 +1477,7 @@ struct SessionDetailView: View {
                    session.chunks[index].fileURL == currentURL {
                     // Same chunk - just seek within it
                     coordinator.audioPlayback.seek(to: remainingTime)
+                    forceUpdateTrigger.toggle()  // show the new position even while paused
                 } else {
                     // Different chunk - restart playback from this chunk
                     let chunkURLs = session.chunks.map { $0.fileURL }
@@ -1571,4 +1641,9 @@ struct SessionDetailView: View {
             return "\(seconds)s"
         }
     }
+}
+
+/// Whether audio was playing at the last redraw tick. A class so the timer can update it without redrawing.
+private final class PlaybackTick {
+    var wasPlaying = false
 }

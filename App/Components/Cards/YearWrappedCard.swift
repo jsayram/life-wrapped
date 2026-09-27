@@ -128,7 +128,7 @@ struct YearWrappedCard: View {
             // Staleness note
             if coordinator.yearWrapNewSessionCount > 0 {
                 Label(
-                    "\(coordinator.yearWrapNewSessionCount) new \(coordinator.yearWrapNewSessionCount == 1 ? "session" : "sessions") since this wrap",
+                    "\(coordinator.yearWrapNewSessionCount) \(coordinator.yearWrapNewSessionCount == 1 ? "recording" : "recordings") new or changed since this wrap",
                     systemImage: "exclamationmark.circle"
                 )
                 .font(.footnote)

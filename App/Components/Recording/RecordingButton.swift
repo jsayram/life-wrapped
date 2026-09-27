@@ -3,6 +3,7 @@
 // =============================================================================
 
 import SwiftUI
+import AudioCapture
 
 // MARK: - Recording Button
 
@@ -26,9 +27,10 @@ struct RecordingButton: View {
                         .monospacedDigit()
                         .foregroundStyle(AppTheme.textPrimary)
                         .accessibilityLabel("Recording time \(formatDuration(recordingDuration))")
-                    LevelBars()
+                    LevelBars(audio: coordinator.audioCapture)
                         .frame(height: 48)
                         .accessibilityHidden(true)
+                    InputWarning(audio: coordinator.audioCapture)
                 }
                 .transition(.opacity)
             }
@@ -182,32 +184,47 @@ struct RecordingButton: View {
 
 // MARK: - Level Bars
 
-/// Minimal animated level meter shown while recording.
+/// Scrolling level meter driven by the microphone: newest reading on the right.
 private struct LevelBars: View {
-    private let count = 14
+    @ObservedObject var audio: AudioCaptureManager
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.15)) { context in
-            let seed = Int(context.date.timeIntervalSinceReferenceDate / 0.15)
-            HStack(alignment: .center, spacing: 4) {
-                ForEach(0..<count, id: \.self) { index in
-                    let edge = index < 2 || index >= count - 3
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(edge ? AppTheme.textSecondary : AppTheme.textPrimary)
-                        .frame(width: 3, height: height(for: index, seed: seed))
-                }
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(Array(audio.levelHistory.enumerated()), id: \.offset) { index, level in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(index < 4 ? AppTheme.textSecondary : AppTheme.textPrimary)
+                    .frame(width: 3, height: max(4, 46 * CGFloat(level)))
             }
-            .animation(.linear(duration: 0.15), value: seed)
         }
+        .animation(.easeOut(duration: 0.08), value: audio.levelHistory)
+    }
+}
+
+// MARK: - Input Warning
+
+/// Tells the user when the mic isn't picking them up, so a silent recording isn't a surprise later.
+private struct InputWarning: View {
+    let audio: AudioCaptureManager
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            let message = message(for: audio.inputStatus(at: context.date))
+            Label(message ?? " ", systemImage: "mic.slash")
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .opacity(message == nil ? 0 : 1)
+                .animation(.easeInOut(duration: 0.25), value: message)
+                .accessibilityHidden(message == nil)
+        }
+        .frame(minHeight: 40)
     }
 
-    private func height(for index: Int, seed: Int) -> CGFloat {
-        var hasher = Hasher()
-        hasher.combine(index)
-        hasher.combine(seed)
-        let value = abs(hasher.finalize() % 1000)
-        let fraction = CGFloat(value) / 1000
-        let taper: CGFloat = (index < 2 || index >= count - 3) ? 0.45 : 1
-        return max(6, 46 * fraction * taper)
+    private func message(for status: AudioCaptureManager.InputStatus) -> String? {
+        switch status {
+        case .hearing: return nil
+        case .quiet: return "Can't hear you. Move closer or speak up."
+        case .noSignal: return "The mic isn't picking up any sound. It may be blocked or in use by another app."
+        }
     }
 }
