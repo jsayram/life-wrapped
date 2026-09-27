@@ -18,6 +18,10 @@ public final class SummaryCoordinator {
     
     /// Track which period summaries are currently being generated (prevent duplicates)
     private var generatingPeriodSummaries: Set<String> = []
+
+    /// Sessions whose summary is being written right now. The end of a recording and its last
+    /// chunk's transcription can both ask for the summary; only the first request runs.
+    private var summarizingSessions: Set<UUID> = []
     
     // MARK: - Callbacks
     
@@ -45,7 +49,13 @@ public final class SummaryCoordinator {
     public func checkAndGenerateSessionSummary(for sessionId: UUID) async {
         print("🔔 [SummaryCoordinator] === CHECK AND GENERATE SESSION SUMMARY TRIGGERED ===")
         print("📌 [SummaryCoordinator] Session ID: \(sessionId)")
-        
+
+        guard summarizingSessions.insert(sessionId).inserted else {
+            print("ℹ️ [SummaryCoordinator] Summary for session \(sessionId) already in progress")
+            return
+        }
+        defer { summarizingSessions.remove(sessionId) }
+
         do {
             // Check if all chunks are transcribed
             print("1️⃣ [SummaryCoordinator] Checking if session transcription is complete...")

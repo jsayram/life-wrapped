@@ -101,7 +101,36 @@ struct ExternalAPIRequestTests {
     func anthropicBody() {
         let body = ExternalAPIEngine.buildRequestBody(provider: .anthropic, model: "claude-sonnet-5", systemPrompt: "sys", userMessage: "u")
         #expect(body["system"] as? String == "sys")
-        #expect(body["max_tokens"] as? Int == 2000)
+        #expect(body["max_tokens"] as? Int == ExternalAPIEngine.anthropicMinOutputTokens)
+    }
+
+    @Test("Anthropic text skips thinking blocks and joins text blocks")
+    func anthropicTextSkipsThinking() throws {
+        let response: [String: Any] = [
+            "stop_reason": "end_turn",
+            "content": [
+                ["type": "thinking", "thinking": "", "signature": "x"],
+                ["type": "text", "text": "{\"a\":"],
+                ["type": "text", "text": "1}"]
+            ]
+        ]
+        #expect(try ExternalAPIEngine.anthropicText(from: response) == "{\"a\":1}")
+    }
+
+    @Test("Anthropic refusal and truncation are errors, not answers", arguments: ["refusal", "max_tokens"])
+    func anthropicTextStopReasons(stopReason: String) {
+        let response: [String: Any] = [
+            "stop_reason": stopReason,
+            "content": [["type": "text", "text": "partial"]]
+        ]
+        #expect(throws: SummarizationError.self) { try ExternalAPIEngine.anthropicText(from: response) }
+    }
+
+    @Test("Token usage reads OpenAI totals and Anthropic input plus output")
+    func tokenUsage() {
+        #expect(ExternalAPIEngine.tokensUsed(["usage": ["total_tokens": 42]]) == 42)
+        #expect(ExternalAPIEngine.tokensUsed(["usage": ["input_tokens": 30, "output_tokens": 12]]) == 42)
+        #expect(ExternalAPIEngine.tokensUsed([:]) == 0)
     }
 
     @Test("Test request uses the typed model")

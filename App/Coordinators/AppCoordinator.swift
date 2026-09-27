@@ -135,6 +135,11 @@ public final class AppCoordinator: ObservableObject {
     private var dataCoordinator: DataCoordinator?
     private var summaryCoordinator: SummaryCoordinator?
     public var recordingCoordinator: RecordingCoordinator?
+
+    /// The session being recorded right now. Its chunks are transcribed while recording goes on,
+    /// so "every saved chunk has a transcript" can be true long before the recording ends.
+    /// Its summary waits until recording stops, or it would cover only the first chunks.
+    private var sessionStillRecording: UUID?
     private var widgetCoordinator: WidgetCoordinator?
     private var permissionsCoordinator: PermissionsCoordinator?
     private var localModelCoordinator: LocalModelCoordinator?
@@ -179,6 +184,11 @@ public final class AppCoordinator: ObservableObject {
             }
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
+
+            // Auto-chunks arrive while still recording; the final chunk arrives during stop
+            if recordingCoordinator?.isRecording == true {
+                sessionStillRecording = chunk.sessionId
+            }
             
             // If this is the first chunk (index 0), create/update session metadata with category
             if chunk.chunkIndex == 0, let category = recordingCoordinator?.currentCategory {
@@ -842,13 +852,28 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         
-        // Delegate to RecordingCoordinator
-        try await recordingCoordinator?.stopRecording()
+        // Delegate to RecordingCoordinator. Its stop waits for the final chunk to be saved.
+        do {
+            try await recordingCoordinator?.stopRecording()
+        } catch {
+            await recordingEnded()
+            throw error
+        }
+        await recordingEnded()
     }
-    
+
     /// Cancel the current recording without saving
     public func cancelRecording() async {
         await recordingCoordinator?.cancelRecording()
+        await recordingEnded()
+    }
+
+    /// Recording is over (stopped, cancelled or failed): let its summary run. If every chunk is
+    /// already transcribed this writes it now; otherwise the last chunk's transcription will.
+    private func recordingEnded() async {
+        guard let sessionId = sessionStillRecording else { return }
+        sessionStillRecording = nil
+        await checkAndGenerateSessionSummary(for: sessionId)
     }
     
     /// Set the recording category from a deep link string
@@ -887,7 +912,12 @@ public final class AppCoordinator: ObservableObject {
     private func checkAndGenerateSessionSummary(for sessionId: UUID) async {
         print("🔔 [AppCoordinator] === CHECK AND GENERATE SESSION SUMMARY TRIGGERED ===")
         print("📌 [AppCoordinator] Session ID: \(sessionId)")
-        
+
+        guard sessionId != sessionStillRecording else {
+            print("⏳ [AppCoordinator] Session \(sessionId) is still recording, summary waits until it stops")
+            return
+        }
+
         do {
             // Check if all chunks are transcribed
             print("1️⃣ [AppCoordinator] Checking if session transcription is complete...")

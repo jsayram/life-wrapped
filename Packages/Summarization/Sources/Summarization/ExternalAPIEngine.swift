@@ -142,10 +142,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
         let intelligence = try parseSessionResponse(response, sessionId: sessionId, duration: duration, languageCodes: languageCodes)
         
         // Update token usage
-        if let tokens = response["usage"] as? [String: Any],
-           let totalTokens = tokens["total_tokens"] as? Int {
-            totalTokensUsed += totalTokens
-        }
+        totalTokensUsed += Self.tokensUsed(response)
         
         return intelligence
     }
@@ -212,10 +209,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
         let intelligence = try parsePeriodResponse(response, periodType: periodType, periodStart: periodStart, periodEnd: periodEnd, sessionSummaries: sessionSummaries)
         
         // Update token usage
-        if let tokens = response["usage"] as? [String: Any],
-           let totalTokens = tokens["total_tokens"] as? Int {
-            totalTokensUsed += totalTokens
-        }
+        totalTokensUsed += Self.tokensUsed(response)
         
         return intelligence
     }
@@ -382,12 +376,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
             contentText = content
             
         case .anthropic:
-            guard let content = response["content"] as? [[String: Any]],
-                  let firstContent = content.first,
-                  let text = firstContent["text"] as? String else {
-                throw SummarizationError.decodingFailed("Failed to extract content from Anthropic response")
-            }
-            contentText = text
+            contentText = try Self.anthropicText(from: response)
         }
         
         // Parse JSON content
@@ -542,12 +531,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
             contentText = content
             
         case .anthropic:
-            guard let content = response["content"] as? [[String: Any]],
-                  let firstContent = content.first,
-                  let text = firstContent["text"] as? String else {
-                throw SummarizationError.decodingFailed("Failed to extract content from Anthropic response")
-            }
-            contentText = text
+            contentText = try Self.anthropicText(from: response)
         }
         
         // Parse JSON content
@@ -716,6 +700,10 @@ public actor ExternalAPIEngine: SummarizationEngine {
     // MARK: - Request building and response interpretation (pure, unit tested)
     
     static let anthropicVersion = "2023-06-01"
+
+    /// Thinking counts toward `max_tokens`, so the small caps sized for on-device models
+    /// would leave a thinking model no room to answer. Only the Anthropic request uses this floor.
+    static let anthropicMinOutputTokens = 16_000
     
     /// Body for a summary request. No `temperature`: newer models (GPT-6 and later)
     /// reject it, and the default works well for summaries.
@@ -737,11 +725,39 @@ public actor ExternalAPIEngine: SummarizationEngine {
                 "messages": [
                     ["role": "user", "content": userMessage]
                 ],
-                "max_tokens": maxTokens
+                "max_tokens": max(maxTokens, anthropicMinOutputTokens)
             ]
         }
     }
     
+    /// Text of an Anthropic reply. Newer models put `thinking` blocks before the answer,
+    /// so read every `text` block rather than the first block.
+    static func anthropicText(from response: [String: Any]) throws -> String {
+        switch response["stop_reason"] as? String {
+        case "refusal":
+            throw SummarizationError.summarizationFailed("Anthropic declined this request")
+        case "max_tokens":
+            throw SummarizationError.summarizationFailed("Anthropic reply was cut off at the token limit")
+        default:
+            break
+        }
+        let blocks = response["content"] as? [[String: Any]] ?? []
+        let text = blocks.filter { $0["type"] as? String == "text" }
+            .compactMap { $0["text"] as? String }
+            .joined()
+        guard !text.isEmpty else {
+            throw SummarizationError.decodingFailed("Failed to extract content from Anthropic response")
+        }
+        return text
+    }
+
+    /// OpenAI reports `total_tokens`; Anthropic reports `input_tokens` and `output_tokens`.
+    static func tokensUsed(_ response: [String: Any]) -> Int {
+        guard let usage = response["usage"] as? [String: Any] else { return 0 }
+        if let total = usage["total_tokens"] as? Int { return total }
+        return (usage["input_tokens"] as? Int ?? 0) + (usage["output_tokens"] as? Int ?? 0)
+    }
+
     /// Smallest possible request that still proves the key and model work.
     static func buildTestRequestBody(provider: Provider, model: String) -> [String: Any] {
         switch provider {
@@ -857,10 +873,7 @@ extension ExternalAPIEngine: TextGenerating {
             throw SummarizationError.configurationError("No API key configured for \(selectedProvider.displayName)")
         }
         let response = try await callAPI(systemPrompt: system, userMessage: user, apiKey: apiKey, maxTokens: maxTokens)
-        if let tokens = response["usage"] as? [String: Any],
-           let totalTokens = tokens["total_tokens"] as? Int {
-            totalTokensUsed += totalTokens
-        }
+        totalTokensUsed += Self.tokensUsed(response)
         switch selectedProvider {
         case .openai:
             guard let choices = response["choices"] as? [[String: Any]],
@@ -870,11 +883,7 @@ extension ExternalAPIEngine: TextGenerating {
             }
             return content
         case .anthropic:
-            guard let content = response["content"] as? [[String: Any]],
-                  let text = content.first?["text"] as? String else {
-                throw SummarizationError.decodingFailed("Failed to extract content from Anthropic response")
-            }
-            return text
+            return try Self.anthropicText(from: response)
         }
     }
 }

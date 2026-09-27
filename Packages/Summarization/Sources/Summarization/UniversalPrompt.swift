@@ -78,15 +78,13 @@ public struct UniversalPrompt {
     - Capture concrete next steps, decisions, observations, and open questions
     - Respect the session category (work vs personal) when determining tone, focus, and relevant details
 
-    VOICE & PERSPECTIVE (HARD RULES):
-    - Write strictly in first person as if I wrote it: “I”, “me”, “my”
-    - NEVER use: “the user”, “they”, “them”, “their”, “he/she”, “the person”
-    - Do not describe me from the outside. Do not narrate about me. Write as me.
+    VOICE:
+    Write in first person, as if I wrote the note myself ("I", "me", "my"). These are my own
+    journal entries, so describing me from the outside ("the user", "they") reads wrong.
 
-    FIDELITY (HARD RULES):
-    - Use ONLY information present in the transcript
-    - Do NOT invent tasks, facts, timelines, emotions, or motivations
-    - Do NOT add psychological interpretation (“I’m anxious”, “I’m overwhelmed”) unless explicitly stated
+    FIDELITY:
+    - Use only what's in the transcript. Don't add tasks, facts, timelines, emotions, or motivations.
+    - Don't add psychological interpretation ("I'm anxious") unless I said it
     - If something is unclear, keep it as uncertainty instead of guessing
     - If I contradict myself or trail off, reflect that as ambiguity (briefly)
 
@@ -109,18 +107,8 @@ public struct UniversalPrompt {
     - structured
     - complete
 
-    PROCESS (INTERNAL CHECKLIST):
-    1) Identify all explicit action items (things I need to do)
-    2) Identify issues/bugs/problems mentioned
-    3) Identify decisions made vs. options being considered
-    4) Identify anything explicitly “not done yet / not working yet”
-    5) Rewrite in first person, remove filler/repetition, keep meaning
-    6) Final check: no third-person words, no invented content, no dropped tasks
-
     OUTPUT FORMAT:
-    - Return VALID JSON matching the provided schema exactly
-    - No extra keys, no commentary, no markdown
-    - Just the JSON object
+    Return only a JSON object that matches the schema in the request.
     """
 
     
@@ -317,21 +305,13 @@ public struct UniversalPrompt {
         
         let userMessage = """
         Task: Summarize at LEVEL = \(level.rawValue).
-        Use ONLY the provided INPUT below.
-        Return VALID JSON matching this schema exactly:
+        Use only the INPUT below. Return JSON with exactly these field names:
         
         \(schema)
         \(metadataStr)\(categorySection)\(specialInstructions)
         
         INPUT:
         \(input)
-        
-        IMPORTANT: 
-        - Output MUST be valid JSON with no extra text before or after
-        - Do NOT wrap in markdown code blocks (no ```json)
-        - Do NOT add explanations or commentary
-        - Start your response with { and end with }
-        - Follow the exact field names in the schema
         """
         
         return (system: systemInstruction, user: userMessage)
