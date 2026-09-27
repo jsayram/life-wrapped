@@ -435,6 +435,48 @@ public actor SummarizationCoordinator {
         }
     }
     
+    // MARK: - Digest and Year Wrap models
+
+    /// The model to build month digests with: the user's chosen engine, or the next
+    /// on-device one if it isn't available. Nil means Basic (no model).
+    /// Follows the same chain as session summaries, so it never falls back to the cloud.
+    public func digestGenerator() async -> (any TextGenerating)? {
+        for tier in Self.fallbackChain(for: preferredTier) {
+            if let generator = await availableGenerator(for: tier) {
+                return generator
+            }
+        }
+        return nil
+    }
+
+    /// The model for Year Wrap: Local AI when asked for, otherwise External.
+    public func yearWrapGenerator(useLocalAI: Bool) async throws -> any TextGenerating {
+        if useLocalAI {
+            guard let local = await availableGenerator(for: .local) else {
+                throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
+            }
+            return local
+        }
+        guard let external = await availableGenerator(for: .external) else {
+            throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
+        }
+        return external
+    }
+
+    private func availableGenerator(for tier: EngineTier) async -> (any TextGenerating)? {
+        let engine: (any SummarizationEngine)?
+        switch tier {
+        case .basic: return nil
+        case .local: engine = localEngine
+        case .apple: engine = appleEngine
+        case .external: engine = externalEngine
+        }
+        guard let engine, let generator = engine as? any TextGenerating, await engine.isAvailable() else {
+            return nil
+        }
+        return generator
+    }
+
     /// Engines to try, in order, for a session summary.
     /// Starts with the user's choice; falls back to on-device engines only, so a
     /// transcript is never sent to a cloud API unless the user selected External.
@@ -546,103 +588,6 @@ public actor SummarizationCoordinator {
         )
     }
 
-    /// Generate a Year Wrap summary using the specified engine (External or Local AI)
-    public func generateYearWrapSummary(
-        startOfYear: Date,
-        endOfYear: Date,
-        sourceSummaries: [Summary],
-        workSessionCount: Int,
-        personalSessionCount: Int,
-        useLocalAI: Bool = false
-    ) async throws -> Summary {
-        guard !sourceSummaries.isEmpty else {
-            throw SummarizationError.noTranscriptData
-        }
-
-        // Select engine based on user choice
-        let engine: any SummarizationEngine
-        
-        if useLocalAI {
-            // Use Local AI (Smart tier)
-            guard await localEngine.isAvailable() else {
-                throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
-            }
-            engine = localEngine
-            #if DEBUG
-            print("🤖 [SummarizationCoordinator] Using Local AI for Year Wrap")
-            #endif
-        } else {
-            // Use External API (OpenAI/Anthropic)
-            guard let external = externalEngine else {
-                throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
-            }
-            guard await external.isAvailable() else {
-                throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
-            }
-            engine = external
-            #if DEBUG
-            print("☁️ [SummarizationCoordinator] Using External API for Year Wrap")
-            #endif
-        }
-
-        let previousEngine = activeEngine
-        activeEngine = engine
-        defer { activeEngine = previousEngine }
-
-        let intelligences = sourceSummaries.map { summary -> SessionIntelligence in
-            let topics = (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? []
-            let entities = (try? [Entity].fromEntitiesJSON(summary.entitiesJSON)) ?? []
-            let wordCount = summary.text.split(separator: " ").count
-
-            return SessionIntelligence(
-                sessionId: summary.id,
-                summary: summary.text,
-                topics: topics,
-                entities: entities,
-                sentiment: 0.0,
-                duration: summary.periodEnd.timeIntervalSince(summary.periodStart),
-                wordCount: wordCount,
-                languageCodes: ["en-US"],
-                category: nil  // Monthly summaries don't have single category
-            )
-        }
-
-        // Build category context from session counts
-        let categoryContext = buildCategoryContext(workCount: workSessionCount, personalCount: personalSessionCount)
-
-        let intelligence = try await engine.summarizePeriod(
-            periodType: .yearWrap,
-            sessionSummaries: intelligences,
-            periodStart: startOfYear,
-            periodEnd: endOfYear,
-            categoryContext: categoryContext
-        )
-
-        return try convertToSummary(periodIntelligence: intelligence)
-    }
-    
-    /// Build category context string for AI prompt
-    private func buildCategoryContext(workCount: Int, personalCount: Int) -> String? {
-        guard workCount > 0 || personalCount > 0 else { return nil }
-        
-        let total = workCount + personalCount
-        let workPercent = total > 0 ? Int((Double(workCount) / Double(total)) * 100) : 0
-        let personalPercent = total > 0 ? Int((Double(personalCount) / Double(total)) * 100) : 0
-        
-        return """
-        SESSION CATEGORY DISTRIBUTION:
-        - Work sessions: \(workCount) (\(workPercent)%)
-        - Personal sessions: \(personalCount) (\(personalPercent)%)
-        
-        CLASSIFICATION RULES (MANDATORY):
-        1. Classify ~\(workPercent)% of items as "work" and ~\(personalPercent)% as "personal"
-        2. Work items: professional topics, projects, meetings, career-related
-        3. Personal items: hobbies, family, health, personal goals, non-work activities
-        4. Use "both" ONLY if an item genuinely spans both domains (rare, <10% of items)
-        5. When uncertain, use the proportional split as a guide
-        """
-    }
-    
     /// Generate a period summary by aggregating session-level summaries
     private func generatePeriodSummary(
         periodType: PeriodType,
@@ -650,12 +595,8 @@ public actor SummarizationCoordinator {
         endDate: Date
     ) async throws -> Summary {
         // Fetch all session summaries for this period from database
-        let sessionSummaries = try await storage.fetchSummaries(periodType: .session)
-            .filter { summary in
-                guard summary.sessionId != nil else { return false }
-                // Check if session's period overlaps with our date range
-                return summary.periodStart >= startDate && summary.periodStart < endDate
-            }
+        let sessionSummaries = try await storage.fetchSummaries(periodType: .session, from: startDate, to: endDate)
+            .filter { $0.sessionId != nil }
         
         guard !sessionSummaries.isEmpty else {
             throw SummarizationError.noTranscriptData

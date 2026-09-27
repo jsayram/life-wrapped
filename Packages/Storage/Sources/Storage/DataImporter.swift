@@ -122,9 +122,16 @@ public actor DataImporter {
                     continue
                 }
                 
+                // A type from a newer version of the app: skip it rather than
+                // storing it as a session summary it isn't
+                guard let periodType = PeriodType(rawValue: jsonSummary.periodType) else {
+                    skippedItems.append((jsonSummary.id.uuidString, "Unknown summary type \(jsonSummary.periodType)"))
+                    continue
+                }
+                
                 let summary = Summary(
                     id: jsonSummary.id,
-                    periodType: PeriodType(rawValue: jsonSummary.periodType) ?? .session,
+                    periodType: periodType,
                     periodStart: jsonSummary.periodStart,
                     periodEnd: jsonSummary.periodEnd,
                     text: jsonSummary.text,

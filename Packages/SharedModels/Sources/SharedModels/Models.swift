@@ -282,6 +282,7 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case yearWrap
     case yearWrapWork
     case yearWrapPersonal
+    case monthDigest  // Structured month record (MonthDigest JSON) that Year Wrap is built from
 
     public var displayName: String {
         switch self {
@@ -305,6 +306,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Year Wrap (Work)"
         case .yearWrapPersonal:
             return "Year Wrap (Personal)"
+        case .monthDigest:
+            return "Month Digest"
         }
     }
     
@@ -441,10 +444,13 @@ public enum ItemFilter: String, Codable, Sendable, CaseIterable, Identifiable {
 public struct ClassifiedItem: Codable, Sendable, Hashable {
     public let text: String
     public let category: ItemCategory
+    /// Recordings this item came from. Nil for wraps made before digests existed.
+    public let sessionIds: [UUID]?
     
-    public init(text: String, category: ItemCategory) {
+    public init(text: String, category: ItemCategory, sessionIds: [UUID]? = nil) {
         self.text = text
         self.category = category
+        self.sessionIds = sessionIds
     }
 }
 
@@ -464,6 +470,8 @@ public struct YearWrapData: Codable, Sendable {
     public let opportunitiesMissed: [ClassifiedItem]
     public let peopleMentioned: [PersonMention]
     public let placesVisited: [PlaceVisit]
+    /// Numbers computed in code from the month digests. Nil for older wraps.
+    public let stats: YearWrapStats?
     
     public init(
         yearTitle: String,
@@ -479,7 +487,8 @@ public struct YearWrapData: Codable, Sendable {
         valuableActionsTaken: [ClassifiedItem],
         opportunitiesMissed: [ClassifiedItem],
         peopleMentioned: [PersonMention],
-        placesVisited: [PlaceVisit]
+        placesVisited: [PlaceVisit],
+        stats: YearWrapStats? = nil
     ) {
         self.yearTitle = yearTitle
         self.yearSummary = yearSummary
@@ -495,6 +504,29 @@ public struct YearWrapData: Codable, Sendable {
         self.opportunitiesMissed = opportunitiesMissed
         self.peopleMentioned = peopleMentioned
         self.placesVisited = placesVisited
+        self.stats = stats
+    }
+}
+
+/// Year-level numbers for the Wrapped screen, computed without the LLM
+public struct YearWrapStats: Codable, Sendable, Hashable {
+    public let sessionCount: Int
+    public let totalMinutes: Int
+    public let wordCount: Int
+    public let activeDays: Int
+    public let workCount: Int
+    public let personalCount: Int
+    /// Month number (1-12) with the most recordings
+    public let busiestMonth: Int?
+    
+    public init(sessionCount: Int, totalMinutes: Int, wordCount: Int, activeDays: Int, workCount: Int, personalCount: Int, busiestMonth: Int?) {
+        self.sessionCount = sessionCount
+        self.totalMinutes = totalMinutes
+        self.wordCount = wordCount
+        self.activeDays = activeDays
+        self.workCount = workCount
+        self.personalCount = personalCount
+        self.busiestMonth = busiestMonth
     }
 }
 
@@ -503,11 +535,13 @@ public struct PersonMention: Codable, Sendable {
     public let name: String
     public let relationship: String?
     public let impact: String?
+    public let sessionIds: [UUID]?
     
-    public init(name: String, relationship: String? = nil, impact: String? = nil) {
+    public init(name: String, relationship: String? = nil, impact: String? = nil, sessionIds: [UUID]? = nil) {
         self.name = name
         self.relationship = relationship
         self.impact = impact
+        self.sessionIds = sessionIds
     }
 }
 
@@ -516,10 +550,12 @@ public struct PlaceVisit: Codable, Sendable {
     public let name: String
     public let frequency: String?
     public let context: String?
+    public let sessionIds: [UUID]?
     
-    public init(name: String, frequency: String? = nil, context: String? = nil) {
+    public init(name: String, frequency: String? = nil, context: String? = nil, sessionIds: [UUID]? = nil) {
         self.name = name
         self.frequency = frequency
         self.context = context
+        self.sessionIds = sessionIds
     }
 }

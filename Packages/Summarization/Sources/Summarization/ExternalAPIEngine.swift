@@ -235,7 +235,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
     
     // MARK: - API Calls
     
-    private func callAPI(systemPrompt: String, userMessage: String, apiKey: String) async throws -> [String: Any] {
+    private func callAPI(systemPrompt: String, userMessage: String, apiKey: String, maxTokens: Int = 2000) async throws -> [String: Any] {
         let url = URL(string: selectedProvider.endpoint)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -253,7 +253,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
             provider: selectedProvider,
             model: selectedModel,
             systemPrompt: systemPrompt,
-            userMessage: userMessage
+            userMessage: userMessage,
+            maxTokens: maxTokens
         )
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
@@ -717,7 +718,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
     
     /// Body for a summary request. No `temperature`: newer models (GPT-6 and later)
     /// reject it, and the default works well for summaries.
-    static func buildRequestBody(provider: Provider, model: String, systemPrompt: String, userMessage: String) -> [String: Any] {
+    static func buildRequestBody(provider: Provider, model: String, systemPrompt: String, userMessage: String, maxTokens: Int = 2000) -> [String: Any] {
         switch provider {
         case .openai:
             return [
@@ -735,7 +736,7 @@ public actor ExternalAPIEngine: SummarizationEngine {
                 "messages": [
                     ["role": "user", "content": userMessage]
                 ],
-                "max_tokens": 2000
+                "max_tokens": maxTokens
             ]
         }
     }
@@ -843,6 +844,40 @@ public actor ExternalAPIEngine: SummarizationEngine {
         #endif
     }
 }
+
+// MARK: - TextGenerating
+
+extension ExternalAPIEngine: TextGenerating {
+    public nonisolated var inputTokenBudget: Int { 60_000 }
+    public nonisolated var outputTokenBudget: Int { 4_000 }
+
+    public func generateText(system: String, user: String, maxTokens: Int) async throws -> String {
+        guard let apiKey = await keychainManager.getAPIKey(for: selectedProvider) else {
+            throw SummarizationError.configurationError("No API key configured for \(selectedProvider.displayName)")
+        }
+        let response = try await callAPI(systemPrompt: system, userMessage: user, apiKey: apiKey, maxTokens: maxTokens)
+        if let tokens = response["usage"] as? [String: Any],
+           let totalTokens = tokens["total_tokens"] as? Int {
+            totalTokensUsed += totalTokens
+        }
+        switch selectedProvider {
+        case .openai:
+            guard let choices = response["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                throw SummarizationError.decodingFailed("Failed to extract content from OpenAI response")
+            }
+            return content
+        case .anthropic:
+            guard let content = response["content"] as? [[String: Any]],
+                  let text = content.first?["text"] as? String else {
+                throw SummarizationError.decodingFailed("Failed to extract content from Anthropic response")
+            }
+            return text
+        }
+    }
+}
+
 
 // MARK: - Keychain Manager
 

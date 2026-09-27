@@ -414,6 +414,20 @@ public final class AppCoordinator: ObservableObject {
         // Resume any paused operations if needed
         // Widget updates happen here since they need to be current
         await updateWidgetData()
+        
+        // Finalize one ended month's digest in the background, without blocking the UI
+        Task { await finalizeMonthDigestIfIdle() }
+    }
+    
+    /// True while a foreground digest check is running, so quick app switches don't stack them
+    private var isFinalizingMonthDigest = false
+    
+    private func finalizeMonthDigestIfIdle() async {
+        guard isInitialized, !isFinalizingMonthDigest, !isGeneratingYearWrap,
+              !recordingState.isRecording, !recordingState.isProcessing else { return }
+        isFinalizingMonthDigest = true
+        defer { isFinalizingMonthDigest = false }
+        await summaryCoordinator?.finalizeNextClosedMonthDigest()
     }
     
     /// Handle app becoming inactive (transition state)
@@ -1201,13 +1215,7 @@ public final class AppCoordinator: ObservableObject {
         await summaryCoordinator?.updateDailySummary(date: date, forceRegenerate: forceRegenerate)
     }
     
-    /// Update or create weekly summary by concatenating daily rollups
-    public func updateWeeklySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateWeeklySummary(date: date, forceRegenerate: forceRegenerate)
-    }
-    
-    /// Update or create monthly summary by concatenating weekly rollups (or daily when needed)
+    /// Update or create monthly summary by concatenating daily rollups
     public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
         // Delegate to SummaryCoordinator
         await summaryCoordinator?.updateMonthlySummary(date: date, forceRegenerate: forceRegenerate)
@@ -1223,6 +1231,22 @@ public final class AppCoordinator: ObservableObject {
     public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
         // Delegate to SummaryCoordinator
         await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
+    }
+    
+    /// Build or refresh the digest for the month containing `date`
+    @discardableResult
+    public func updateMonthDigest(date: Date, forceRegenerate: Bool = false) async -> MonthDigest? {
+        await summaryCoordinator?.updateMonthDigest(date: date, forceRegenerate: forceRegenerate)
+    }
+    
+    /// First day of every month that has recordings, newest first
+    public func monthsWithRecordings() async -> [Date] {
+        await summaryCoordinator?.monthsWithRecordings() ?? []
+    }
+    
+    /// The stored digest for the month containing `date`
+    public func fetchMonthDigest(date: Date) async -> MonthDigest? {
+        await summaryCoordinator?.fetchMonthDigest(date: date)
     }
     
     /// Get count of new sessions created after Year Wrap generation
@@ -1260,6 +1284,11 @@ public final class AppCoordinator: ObservableObject {
         
         // Delete entire session - cascade delete handles transcript segments
         try await dbManager.deleteSession(sessionId: sessionId)
+        
+        // Its summary goes too, so it doesn't linger in rollups, digests and Year Wrap
+        if let summary = try? await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+            try? await dbManager.deleteSummary(id: summary.id)
+        }
         
         // Refresh stats
         await updateRollupsAndStats()

@@ -71,6 +71,7 @@
 		92F04A416F06955D1E5A250D /* SummaryQualityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB02CFABA61FDA9DAAB74597 /* SummaryQualityCard.swift */; };
 		96B4C27EA7FA74A00E5C71A5 /* TopicTagsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7267DD1EAEA5D508663E0A17 /* TopicTagsView.swift */; };
 		972B613561146CFA5388F126 /* PeriodSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9582D460ACABF96F259D38 /* PeriodSummaryCard.swift */; };
+		A1D1E5700000000000000001 /* MonthDigestCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D1E5700000000000000002 /* MonthDigestCard.swift */; };
 		98BB882CAF69936BE54A6DC6 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7137BB35107AD90AB431B6D2 /* SessionRowView.swift */; };
 		9EDDEAA04C184D4724FFC0BF /* InfoRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75199834B9D84B5F280BCBA /* InfoRow.swift */; };
 		A1BD9638FF3E137E174DB433 /* MonthInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02C3706BBE26E274F89CA4EF /* MonthInsightsView.swift */; };
@@ -152,6 +153,7 @@
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
 		372AB55C1C346C295788E7A9 /* TimeRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRange.swift; sourceTree = "<group>"; };
 		3C9582D460ACABF96F259D38 /* PeriodSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodSummaryCard.swift; sourceTree = "<group>"; };
+		A1D1E5700000000000000002 /* MonthDigestCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthDigestCard.swift; sourceTree = "<group>"; };
 		3C95B298DE0C9B26176BF5D8 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		41A525C5C2A6B8993B3979E6 /* StreakDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakDisplay.swift; sourceTree = "<group>"; };
 		45F56452C81B17084F3EEC88 /* StatCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatCard.swift; sourceTree = "<group>"; };
@@ -330,6 +332,7 @@
 				310036F5C73A5C1662F95F6D /* GeneratePeriodSummaryCard.swift */,
 				B8C1EB7682DDDD26B839FF34 /* GenerateYearWrapCard.swift */,
 				E075703BA63467E041B06A7D /* OverviewSummaryCard.swift */,
+				A1D1E5700000000000000002 /* MonthDigestCard.swift */,
 				3C9582D460ACABF96F259D38 /* PeriodSummaryCard.swift */,
 				D9BF0A84EFA77115EE53D4E4 /* SessionSummaryCard.swift */,
 				45F56452C81B17084F3EEC88 /* StatCard.swift */,
@@ -726,6 +729,7 @@
 				81BCA54639DC53173D8002A1 /* OverviewSummaryCard.swift in Sources */,
 				33199FDEDECBE5D103236437 /* OverviewTab.swift in Sources */,
 				972B613561146CFA5388F126 /* PeriodSummaryCard.swift in Sources */,
+				A1D1E5700000000000000001 /* MonthDigestCard.swift in Sources */,
 				8B7DCB0F1E11C0BA863A78EF /* PermissionsCoordinator.swift in Sources */,
 				5BADCDC2211908AD5EAA196D /* PermissionsView.swift in Sources */,
 				1C6527C4C5568B884C3700E6 /* PrivacyPolicyView.swift in Sources */,

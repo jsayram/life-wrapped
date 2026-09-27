@@ -38,10 +38,7 @@ struct YearWrapDetailView: View {
     @State private var isGeneratingPDF = false
     @State private var showingShareSheet = false
     
-    // Cached summaries for each filter
     @State private var combinedSummary: Summary?
-    @State private var workSummary: Summary?
-    @State private var personalSummary: Summary?
     @State private var isLoadingSummary = false
     
     init(yearWrap: Summary, coordinator: AppCoordinator, initialFilter: ItemFilter = .all) {
@@ -52,16 +49,9 @@ struct YearWrapDetailView: View {
         _displayFilter = State(initialValue: initialFilter)
     }
     
-    /// The currently active summary based on filter selection
-    private var activeSummary: Summary? {
-        switch displayFilter {
-        case .all:
-            return combinedSummary ?? yearWrap
-        case .workOnly:
-            return workSummary
-        case .personalOnly:
-            return personalSummary
-        }
+    /// One wrap for everything; Work and Personal filter its items by category
+    private var activeSummary: Summary {
+        combinedSummary ?? yearWrap
     }
     
     /// Title for the current filter
@@ -115,17 +105,9 @@ struct YearWrapDetailView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 24)
-                    } else if activeSummary == nil {
-                        // No summary available for this filter
-                        GraphiteEmptyState(
-                            "No \(filterTitle) Available",
-                            systemImage: displayFilter == .workOnly ? "briefcase" : "house",
-                            description: Text("Generate a Year Wrap with \(displayFilter == .workOnly ? "work" : "personal") sessions to see insights here.")
-                        )
-                        .padding(.vertical, 60)
-                    } else if let summary = activeSummary {
+                    } else {
                         // Fallback: show raw text if parsing fails
-                        Text(summary.text)
+                        Text(activeSummary.text)
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .padding(16)
@@ -195,52 +177,7 @@ struct YearWrapDetailView: View {
             parsedData = parseYearWrapJSON(from: yearWrap.text)
             Task {
                 await loadYearStats()
-                await loadAllSummaries()
             }
-        }
-        .onChange(of: displayFilter) { _, newFilter in
-            updateParsedDataForFilter(newFilter)
-        }
-    }
-    
-    // MARK: - Summary Loading
-    
-    private func loadAllSummaries() async {
-        let calendar = Calendar.current
-        let year = calendar.component(.year, from: yearWrap.periodStart)
-        var startComponents = DateComponents()
-        startComponents.year = year
-        startComponents.month = 1
-        startComponents.day = 1
-        guard let startOfYear = calendar.date(from: startComponents) else { return }
-        
-        // Load work and personal summaries
-        do {
-            workSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: startOfYear)
-            personalSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: startOfYear)
-            print("📊 [YearWrapDetailView] Loaded summaries - Work: \(workSummary != nil), Personal: \(personalSummary != nil)")
-        } catch {
-            print("❌ [YearWrapDetailView] Failed to load category summaries: \(error)")
-        }
-    }
-    
-    private func updateParsedDataForFilter(_ filter: ItemFilter) {
-        let summary: Summary?
-        switch filter {
-        case .all:
-            summary = combinedSummary
-        case .workOnly:
-            summary = workSummary
-        case .personalOnly:
-            summary = personalSummary
-        }
-        
-        if let text = summary?.text {
-            parsedData = parseYearWrapJSON(from: text)
-            print("📊 [YearWrapDetailView] Switched to \(filter.displayName) summary")
-        } else {
-            parsedData = nil
-            print("⚠️ [YearWrapDetailView] No summary available for \(filter.displayName)")
         }
     }
     
@@ -492,6 +429,10 @@ struct YearWrapDetailView: View {
                                     .foregroundStyle(.secondary)
                                     .italic()
                             }
+                            
+                            if let sessionIds = person.sessionIds, !sessionIds.isEmpty {
+                                recordingsLink(title: redactPeople ? "Person" : person.name, sessionIds: sessionIds)
+                            }
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -541,6 +482,10 @@ struct YearWrapDetailView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .italic()
+                            }
+                            
+                            if let sessionIds = place.sessionIds, !sessionIds.isEmpty {
+                                recordingsLink(title: redactPlaces ? "Place" : place.name, sessionIds: sessionIds)
                             }
                         }
                         .padding(12)
@@ -607,7 +552,12 @@ struct YearWrapDetailView: View {
                                     .font(.body)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 
-                                categoryBadge(for: item.category)
+                                HStack(spacing: 8) {
+                                    categoryBadge(for: item.category)
+                                    if let sessionIds = item.sessionIds, !sessionIds.isEmpty {
+                                        recordingsLink(title: item.text, sessionIds: sessionIds)
+                                    }
+                                }
                             }
                         }
                     }
@@ -619,6 +569,23 @@ struct YearWrapDetailView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
         )
+    }
+    
+    /// "3 recordings ›", opening the recordings an item came from
+    private func recordingsLink(title: String, sessionIds: [UUID]) -> some View {
+        NavigationLink {
+            FilteredSessionsView(title: title, sessionIds: sessionIds)
+                .environmentObject(coordinator)
+        } label: {
+            HStack(spacing: 2) {
+                Text(sessionIds.count == 1 ? "1 recording" : "\(sessionIds.count) recordings")
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+            }
+            .font(.caption)
+            .foregroundStyle(AppTheme.textSecondary)
+        }
+        .accessibilityHint("Shows the recordings this came from")
     }
     
     // Category badge view

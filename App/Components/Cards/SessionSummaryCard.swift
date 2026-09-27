@@ -88,7 +88,7 @@ struct SessionSummaryCard: View {
             return start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
         case .week:
             return "Week of " + start.formatted(.dateTime.month(.abbreviated).day())
-        case .month:
+        case .month, .monthDigest:
             return start.formatted(.dateTime.month(.wide).year())
         case .quarter:
             return start.formatted(.dateTime.quarter().year())

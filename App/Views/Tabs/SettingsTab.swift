@@ -327,12 +327,6 @@ enum ScreenshotSampleData {
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: today) ?? today
         try await db.insertSummary(Summary(periodType: .day, periodStart: today, periodEnd: dayEnd,
             text: "An early run by the river, a launch-focused morning with Sarah and a clearing walk at lunch. Stress about the deadline eased as the day went on.", engineTier: "local"))
-        var weekCalendar = calendar
-        weekCalendar.firstWeekday = 2 // The app's weeks start on Monday
-        if let week = weekCalendar.dateInterval(of: .weekOfYear, for: Date()) {
-            try await db.insertSummary(Summary(periodType: .week, periodStart: week.start, periodEnd: week.end,
-                text: "A launch-focused week. Most entries were about getting the beta ready, balanced by runs, a call with Maya and a slow afternoon in the garden. The mood lifted toward the weekend.", engineTier: "local"))
-        }
         if let month = calendar.dateInterval(of: .month, for: Date()) {
             try await db.insertSummary(Summary(periodType: .month, periodStart: month.start, periodEnd: month.end,
                 text: "This month was about shipping: design reviews, pricing and the release checklist. Outside work, running became a habit and weekends stayed slow and social.", engineTier: "local"))

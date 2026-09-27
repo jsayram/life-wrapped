@@ -429,6 +429,27 @@ public actor AppleEngine: SummarizationEngine {
     }
 }
 
+// MARK: - TextGenerating
+
+@available(iOS 26.0, macOS 26.0, *)
+extension AppleEngine: TextGenerating {
+    // Apple's on-device model has a 4,096-token window, like Smart
+    public nonisolated var inputTokenBudget: Int { 1_900 }
+    public nonisolated var outputTokenBudget: Int { 700 }
+
+    public func generateText(system: String, user: String, maxTokens: Int) async throws -> String {
+        #if canImport(FoundationModels)
+        // Fresh session per request so earlier prompts don't fill the context window
+        let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: system)
+        let options = GenerationOptions(maximumResponseTokens: maxTokens)
+        let response = try await session.respond(to: user, options: options)
+        return String(response.content)
+        #else
+        throw SummarizationError.summarizationFailed("Apple Intelligence requires iOS 26")
+        #endif
+    }
+}
+
 // MARK: - Fallback for iOS 18.1-25.x (placeholder)
 
 /// Legacy Apple Engine for iOS 18.1-25.x

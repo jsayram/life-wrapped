@@ -594,6 +594,39 @@ public actor SessionRepository {
         }
     }
     
+    /// Which of these sessions still have audio. A deleted recording loses its audio chunks,
+    /// but summaries made from it can outlive it.
+    public func existingSessionIds(among sessionIds: [UUID]) async throws -> Set<UUID> {
+        var result: Set<UUID> = []
+        // Stay well under SQLite's bound-variable limit
+        for start in stride(from: 0, to: sessionIds.count, by: 500) {
+            let batch = Array(sessionIds[start..<min(start + 500, sessionIds.count)])
+            let found: Set<UUID> = try await connection.withDatabase { db in
+                guard let db = db else { throw StorageError.notOpen }
+                let placeholders = batch.map { _ in "?" }.joined(separator: ", ")
+                let sql = "SELECT DISTINCT session_id FROM audio_chunks WHERE session_id IN (\(placeholders))"
+                
+                var stmt: OpaquePointer?
+                defer { sqlite3_finalize(stmt) }
+                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                    throw StorageError.prepareFailed(await connection.lastError())
+                }
+                for (index, sessionId) in batch.enumerated() {
+                    sqlite3_bind_text(stmt, Int32(index + 1), sessionId.uuidString, -1, SQLITE_TRANSIENT)
+                }
+                var ids: Set<UUID> = []
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    if let text = sqlite3_column_text(stmt, 0), let id = UUID(uuidString: String(cString: text)) {
+                        ids.insert(id)
+                    }
+                }
+                return ids
+            }
+            result.formUnion(found)
+        }
+        return result
+    }
+    
     /// Update session title
     public func updateSessionTitle(sessionId: UUID, title: String?) async throws {
         // First check if metadata exists

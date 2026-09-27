@@ -39,6 +39,23 @@ struct FilteredSessionsView: View {
                                     }
                                 }
                                 
+                                if session.title != nil || session.category != nil {
+                                    HStack(spacing: 8) {
+                                        if let category = session.category {
+                                            Label(category.displayName, systemImage: category == .work ? "briefcase" : "house")
+                                                .font(.caption.weight(.medium))
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(AppTheme.fill, in: Capsule())
+                                        }
+                                        if let title = session.title, !title.isEmpty {
+                                            Text(title)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
                                 HStack {
                                     Text("\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
                                         .font(.caption)

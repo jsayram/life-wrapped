@@ -142,6 +142,83 @@ struct DatabaseManagerTests {
         await manager.close()
     }
     
+    @Test("Ranged summary fetch is not cut off by the default row limit")
+    func testRangedSummaryFetchPastDefaultLimit() async throws {
+        let manager = try await createTestDatabase()
+
+        // 150 session summaries, one per day, going back from today
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        for dayOffset in 0..<150 {
+            let start = calendar.date(byAdding: .day, value: -dayOffset, to: today)!.addingTimeInterval(3600)
+            try await manager.insertSummary(Summary(
+                periodType: .session,
+                periodStart: start,
+                periodEnd: start.addingTimeInterval(600),
+                text: "Session \(dayOffset)",
+                sessionId: UUID()
+            ))
+        }
+
+        // The unranged fetch only sees the newest 100, so the oldest day is missing
+        let limited = try await manager.fetchSummaries(periodType: .session)
+        #expect(limited.count == 100)
+
+        let oldestDay = calendar.date(byAdding: .day, value: -149, to: today)!
+        let oldestDayEnd = calendar.date(byAdding: .day, value: 1, to: oldestDay)!
+        let oldest = try await manager.fetchSummaries(periodType: .session, from: oldestDay, to: oldestDayEnd)
+        #expect(oldest.count == 1)
+        #expect(oldest.first?.text == "Session 149")
+
+        // A range covering everything returns all rows, oldest first
+        let all = try await manager.fetchSummaries(periodType: .session, from: oldestDay, to: today.addingTimeInterval(86400))
+        #expect(all.count == 150)
+        #expect(all.first?.text == "Session 149")
+
+        // Other period types are excluded
+        let days = try await manager.fetchSummaries(periodType: .day, from: oldestDay, to: today.addingTimeInterval(86400))
+        #expect(days.isEmpty)
+
+        await manager.close()
+    }
+
+    #if canImport(UIKit)
+    @Test("PDF export reads Year Wraps whose items link to recordings")
+    func exporterReadsLinkedWrap() async throws {
+        let manager = try await createTestDatabase()
+        let exporter = DataExporter(databaseManager: manager)
+        let id = UUID()
+        let json = """
+        {"year_title":"T","year_summary":"S",
+         "biggest_wins":[{"text":"Ran a 10k","category":"personal","session_ids":["\(id.uuidString)"]}],
+         "major_arcs":[{"text":"Old style item","category":"work"}],
+         "people_mentioned":[{"name":"Sarah","impact":"Mentioned in 2 recordings","session_ids":["\(id.uuidString)"]}],
+         "places_visited":[{"name":"Lisbon","frequency":"once"}],
+         "stats":{"session_count":3}}
+        """
+        let wrap = await exporter.parseYearWrapJSON(from: json)
+        #expect(wrap?.biggestWins.first?.text == "Ran a 10k")
+        #expect(wrap?.biggestWins.first?.sessionIds == [id])
+        #expect(wrap?.majorArcs.first?.text == "Old style item")
+        #expect(wrap?.peopleMentioned.first?.sessionIds == [id])
+        #expect(wrap?.placesVisited.first?.name == "Lisbon")
+        await manager.close()
+    }
+    #endif
+    
+    @Test("Deleted recordings are told apart from ones that still have audio")
+    func existingSessionIds() async throws {
+        let manager = try await createTestDatabase()
+        let kept = UUID(), deleted = UUID()
+        for sessionId in [kept, deleted] {
+            try await manager.insertAudioChunk(AudioChunk(fileURL: URL(fileURLWithPath: "/tmp/\(sessionId).m4a"), startTime: Date(), endTime: Date().addingTimeInterval(30), format: .m4a, sampleRate: 44100, sessionId: sessionId))
+        }
+        try await manager.deleteSession(sessionId: deleted)
+        let existing = try await manager.existingSessionIds(among: [kept, deleted, UUID()])
+        #expect(existing == [kept])
+        await manager.close()
+    }
+    
     @Test("InsightsRollup CRUD operations")
     func testInsightsRollupCRUD() async throws {
         let manager = try await createTestDatabase()

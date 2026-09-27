@@ -260,7 +260,7 @@ public actor InsightsManager {
             let end = calendar.date(byAdding: .day, value: 7, to: start) ?? date
             return (start, end)
             
-        case .month:
+        case .month, .monthDigest:
             let components = calendar.dateComponents([.year, .month], from: date)
             let start = calendar.date(from: components) ?? date
             let end = calendar.date(byAdding: .month, value: 1, to: start) ?? date
@@ -301,7 +301,7 @@ public actor InsightsManager {
             return calendar.date(byAdding: .day, value: 1, to: date) ?? date
         case .week:
             return calendar.date(byAdding: .day, value: 7, to: date) ?? date
-        case .month:
+        case .month, .monthDigest:
             return calendar.date(byAdding: .month, value: 1, to: date) ?? date
         case .quarter:
             return calendar.date(byAdding: .month, value: 3, to: date) ?? date

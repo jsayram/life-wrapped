@@ -403,6 +403,42 @@ public actor SummaryRepository {
         }
     }
     
+    /// Fetch every summary of one type whose period starts in [startDate, endDate), oldest first.
+    /// Unlike fetchSummaries(periodType:limit:), this has no row limit, so older periods are never cut off.
+    public func fetchSummaries(periodType: PeriodType, from startDate: Date, to endDate: Date) async throws -> [Summary] {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+
+            let sql = """
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                FROM summaries
+                WHERE period_type = ?
+                AND period_start >= ? AND period_start < ?
+                ORDER BY period_start ASC
+                """
+
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await self.connection.lastError())
+            }
+
+            sqlite3_bind_text(stmt, 1, periodType.rawValue, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(stmt, 2, startDate.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 3, endDate.timeIntervalSince1970)
+
+            var summaries: [Summary] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let summary = try? self.parseSummary(from: stmt) {
+                    summaries.append(summary)
+                }
+            }
+
+            return summaries
+        }
+    }
+
     /// Fetch all weekly summaries for a date range
     public func fetchWeeklySummaries(from startDate: Date, to endDate: Date) async throws -> [Summary] {
         try await connection.withDatabase { db in

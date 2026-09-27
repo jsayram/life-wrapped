@@ -35,15 +35,23 @@ struct YearWrapLoadingOverlay: View {
                         .animation(.easeInOut, value: statusMessage)
                 }
 
-                if let current = currentStep {
-                    HStack(spacing: 8) {
-                        ForEach(1...3, id: \.self) { step in
-                            Capsule()
-                                .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
-                                .frame(width: 24, height: 4)
+                if let progress = stepProgress {
+                    let current = progress.current, total = progress.total
+                    if total <= 6 {
+                        HStack(spacing: 8) {
+                            ForEach(1...total, id: \.self) { step in
+                                Capsule()
+                                    .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
+                                    .frame(width: 24, height: 4)
+                            }
                         }
+                        .accessibilityLabel("Step \(current) of \(total)")
+                    } else {
+                        ProgressView(value: Double(current), total: Double(total))
+                            .tint(AppTheme.accent)
+                            .frame(maxWidth: 200)
+                            .accessibilityLabel("Step \(current) of \(total)")
                     }
-                    .accessibilityLabel("Step \(current) of 3")
                 }
 
                 ProgressView()
@@ -61,14 +69,15 @@ struct YearWrapLoadingOverlay: View {
         }
     }
 
-    /// Reads the step from messages like "Step 2 of 3: Work Year Wrap"
-    private var currentStep: Int? {
-        guard let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
-              let number = statusMessage[range].split(separator: " ").last else { return nil }
-        return Int(number)
+    /// Reads the step from messages like "Step 2 of 5: March digest"
+    private var stepProgress: (current: Int, total: Int)? {
+        guard let range = statusMessage.range(of: "Step \\d+ of \\d+", options: .regularExpression) else { return nil }
+        let numbers = statusMessage[range].split(separator: " ").compactMap { Int($0) }
+        guard numbers.count == 2, numbers[1] > 0 else { return nil }
+        return (min(numbers[0], numbers[1]), numbers[1])
     }
 }
 
 #Preview {
-    YearWrapLoadingOverlay(statusMessage: "Step 2 of 3: Work Year Wrap")
+    YearWrapLoadingOverlay(statusMessage: "Step 2 of 5: February digest")
 }

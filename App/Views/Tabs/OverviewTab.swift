@@ -32,15 +32,23 @@ fileprivate struct YearWrapLoadingOverlay: View {
                         .animation(.easeInOut, value: statusMessage)
                 }
 
-                if let current = currentStep {
-                    HStack(spacing: 8) {
-                        ForEach(1...3, id: \.self) { step in
-                            Capsule()
-                                .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
-                                .frame(width: 24, height: 4)
+                if let progress = stepProgress {
+                    let current = progress.current, total = progress.total
+                    if total <= 6 {
+                        HStack(spacing: 8) {
+                            ForEach(1...total, id: \.self) { step in
+                                Capsule()
+                                    .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
+                                    .frame(width: 24, height: 4)
+                            }
                         }
+                        .accessibilityLabel("Step \(current) of \(total)")
+                    } else {
+                        ProgressView(value: Double(current), total: Double(total))
+                            .tint(AppTheme.accent)
+                            .frame(maxWidth: 200)
+                            .accessibilityLabel("Step \(current) of \(total)")
                     }
-                    .accessibilityLabel("Step \(current) of 3")
                 }
 
                 ProgressView()
@@ -58,11 +66,12 @@ fileprivate struct YearWrapLoadingOverlay: View {
         }
     }
 
-    /// Reads the step from messages like "Step 2 of 3: Work Year Wrap"
-    private var currentStep: Int? {
-        guard let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
-              let number = statusMessage[range].split(separator: " ").last else { return nil }
-        return Int(number)
+    /// Reads the step from messages like "Step 2 of 5: March digest"
+    private var stepProgress: (current: Int, total: Int)? {
+        guard let range = statusMessage.range(of: "Step \\d+ of \\d+", options: .regularExpression) else { return nil }
+        let numbers = statusMessage[range].split(separator: " ").compactMap { Int($0) }
+        guard numbers.count == 2, numbers[1] > 0 else { return nil }
+        return (min(numbers[0], numbers[1]), numbers[1])
     }
 }
 
@@ -73,12 +82,17 @@ struct OverviewTab: View {
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
     @State private var yearWrapSummary: Summary?
-    @State private var yearWrapWorkSummary: Summary?
-    @State private var yearWrapPersonalSummary: Summary?
-    @State private var yearWrapFilter: ItemFilter = .all
+    /// All / Work / Personal, shared by Month and Year so the choice carries between them
+    @State private var categoryFilter: ItemFilter = .all
     @State private var isWrappingUpYear = false
     @State private var yearWrapGenerationStatus: String = ""
     @State private var isRegeneratingPeriodSummary = false
+    @State private var monthDigest: MonthDigest?
+    /// First day of the month the Month view shows; starts on the current month
+    @State private var selectedMonth: Date = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+    /// Months with recordings, newest first, for the month switcher
+    @State private var availableMonths: [Date] = []
+    @State private var isUpdatingMonthDigest = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
@@ -94,25 +108,13 @@ struct OverviewTab: View {
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
-    // Period rollups for Week/Month/Year feed
+    // Period rollups for Month/Year feed
     @State private var periodRollups: [Summary] = []
     
     // Navigation state for session detail
     @State private var selectedSession: RecordingSession?
     @State private var showSessionDetail = false
     
-    /// The currently active Year Wrap based on filter selection
-    private var activeYearWrap: Summary? {
-        switch yearWrapFilter {
-        case .all:
-            return yearWrapSummary
-        case .workOnly:
-            return yearWrapWorkSummary
-        case .personalOnly:
-            return yearWrapPersonalSummary
-        }
-    }
-
     
     var body: some View {
         NavigationStack {
@@ -165,9 +167,50 @@ struct OverviewTab: View {
                         // New Feed Layout
                         ScrollView {
                             LazyVStack(spacing: 16) {
-                                // Local period summary card for Today/Week/Month
-                                if [.today, .week, .month].contains(selectedTimeRange) {
-                                    if let periodSummary {
+                                if selectedTimeRange == .month {
+                                    monthSwitcher
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                }
+                                
+                                // Month digest while it's being built for the first time
+                                if selectedTimeRange == .month && monthDigest == nil && isUpdatingMonthDigest {
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                        Text("Building the \(selectedMonth.formatted(.dateTime.month(.wide))) digest…")
+                                            .font(.footnote)
+                                            .foregroundStyle(AppTheme.textSecondary)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 8)
+                                }
+                                
+                                // Local period summary card for Today/Month; Month shows its digest once there is one
+                                if [.today, .month].contains(selectedTimeRange) {
+                                    if selectedTimeRange == .month, let monthDigest {
+                                        GraphiteSegmentedControl(
+                                            options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
+                                            selection: $categoryFilter
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                        
+                                        MonthDigestCard(
+                                            digest: monthDigest,
+                                            filter: categoryFilter,
+                                            isUpdating: isUpdatingMonthDigest,
+                                            onCopy: {
+                                                UIPasteboard.general.string = monthDigest.plainText(filter: categoryFilter)
+                                                coordinator.showSuccess("Month copied")
+                                            },
+                                            onRegenerate: {
+                                                Task { await refreshMonthDigest(force: true) }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
+                                    } else if let periodSummary {
                                         PeriodSummaryCard(
                                             title: periodSummaryTitle(for: selectedTimeRange),
                                             subtitle: "Generated on this \(DeviceName.current)",
@@ -205,52 +248,21 @@ struct OverviewTab: View {
                                     // Filter picker for Year Wrap
                                     GraphiteSegmentedControl(
                                         options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
-                                        selection: $yearWrapFilter
+                                        selection: $categoryFilter
                                     )
                                     .padding(.horizontal, 16)
                                     .padding(.top, 8)
                                     
-                                    if let yearWrap = activeYearWrap {
+                                    // One wrap; Work and Personal filter its items
+                                    if let yearWrap = yearWrapSummary {
                                         YearWrappedCard(
                                             summary: yearWrap,
                                             coordinator: coordinator,
-                                            filter: yearWrapFilter,
+                                            filter: categoryFilter,
                                             onRegenerate: {
                                                 showYearWrapConfirmation = true
                                             },
                                             isRegenerating: isWrappingUpYear
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                    } else if yearWrapFilter != .all && yearWrapSummary != nil {
-                                        // Show message if category-specific wrap doesn't exist yet
-                                        VStack(spacing: 12) {
-                                            Image(systemName: yearWrapFilter == .workOnly ? "briefcase" : "house")
-                                                .font(.title)
-                                                .foregroundStyle(.secondary)
-                                            Text("No \(yearWrapFilter.displayName) Year Wrap")
-                                                .font(.headline)
-                                                .foregroundStyle(.secondary)
-                                            Text("Add Category in a session for Year Wrap to create category-specific summaries")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                                .multilineTextAlignment(.center)
-                                            Button {
-                                                showYearWrapConfirmation = true
-                                            } label: {
-                                                Label("Generate", systemImage: "sparkles")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                            }
-                                            .buttonStyle(.borderedProminent)
-                                            .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
-                                            .tint(filterColor(for: yearWrapFilter))
-                                        }
-                                        .padding(24)
-                                        .frame(maxWidth: .infinity)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 16)
-                                                .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -270,8 +282,8 @@ struct OverviewTab: View {
                             
                             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                                 // Only buckets with summaries; empty hours/days add noise.
-                                // Skip the summary already shown in the card above, so Week and Month don't repeat it.
-                                let shownSummaryId = [.today, .week, .month].contains(selectedTimeRange) ? periodSummary?.id : nil
+                                // Skip the summary already shown in the card above, so Month doesn't repeat it.
+                                let shownSummaryId = [.today, .month].contains(selectedTimeRange) ? periodSummary?.id : nil
                                 let timeBuckets = groupSessionsByTimeBucket()
                                     .map { bucket in
                                         let summaries = bucket.summaries.filter { $0.id != shownSummaryId }
@@ -352,6 +364,12 @@ struct OverviewTab: View {
                 await loadInsights()
             }
             .onReceive(NotificationCenter.default.publisher(for: .periodSummariesUpdated)) { _ in
+                Task {
+                    await loadInsights()
+                }
+            }
+            .onChange(of: selectedMonth) { _, _ in
+                monthDigest = nil
                 Task {
                     await loadInsights()
                 }
@@ -462,17 +480,6 @@ struct OverviewTab: View {
         }
     }
     
-    private func filterColor(for filter: ItemFilter) -> Color {
-        switch filter {
-        case .all:
-            return AppTheme.purple
-        case .workOnly:
-            return AppTheme.accent
-        case .personalOnly:
-            return AppTheme.accent
-        }
-    }
-    
     private func loadInsights() async {
         isLoading = true
         
@@ -484,7 +491,6 @@ struct OverviewTab: View {
             switch selectedTimeRange {
             case .yesterday: return .day
             case .today: return .day
-            case .week: return .week
             case .month: return .month
             case .allTime: return .year // Show yearly summary for current year
             }
@@ -501,7 +507,7 @@ struct OverviewTab: View {
             if selectedTimeRange == .today || selectedTimeRange == .yesterday {
                 sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
             } else {
-                // For week/month/all, fetch ALL sessions and filter by date range
+                // For month/year, fetch ALL sessions and filter by date range
                 let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
                 sessionsInPeriod = allSessions?.filter { session in
                     session.startTime >= dateRange.start && session.startTime < dateRange.end
@@ -518,14 +524,6 @@ struct OverviewTab: View {
                     to: dateRange.end
                 )) ?? []
                 print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
-                
-            case .week:
-                // Load weekly rollup summaries (one card per week)
-                periodRollups = (try? await dbManager.fetchWeeklySummaries(
-                    from: dateRange.start,
-                    to: dateRange.end
-                )) ?? []
-                print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
                 
             case .month:
                 // Load monthly rollup summaries (one card per month)
@@ -546,16 +544,25 @@ struct OverviewTab: View {
         }
         
         // Try to fetch existing period summary (don't auto-generate on view load)
-        // For week/month/year, use Date() to get current period, for day use startDate
-        let dateForFetch = (periodType == .day) ? dateRange.start : Date()
+        // Day and month use their own range; year uses today
+        let dateForFetch = (periodType == .day || periodType == .month) ? dateRange.start : Date()
         periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+
+        if selectedTimeRange == .month {
+            availableMonths = await coordinator.monthsWithRecordings()
+            monthDigest = await coordinator.fetchMonthDigest(date: selectedMonth)
+            // Build or refresh in the background; returns right away when nothing changed
+            if !sessionsInPeriod.isEmpty || monthDigest == nil {
+                Task { await refreshMonthDigest(force: false) }
+            }
+        } else {
+            monthDigest = nil
+        }
 
         if selectedTimeRange == .allTime {
             yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
-            yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForFetch)
-            yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForFetch)
             
-            print("📊 [OverviewTab] Year Wraps loaded - Combined: \(yearWrapSummary != nil), Work: \(yearWrapWorkSummary != nil), Personal: \(yearWrapPersonalSummary != nil)")
+            print("📊 [OverviewTab] Year Wrap loaded: \(yearWrapSummary != nil)")
             
             // Check for staleness after fetching Year Wrap
             if let yearWrap = yearWrapSummary {
@@ -573,8 +580,6 @@ struct OverviewTab: View {
             }
         } else {
             yearWrapSummary = nil
-            yearWrapWorkSummary = nil
-            yearWrapPersonalSummary = nil
             // Reset staleness count when not viewing Year
             coordinator.updateYearWrapNewSessionCount(0)
         }
@@ -589,6 +594,18 @@ struct OverviewTab: View {
         }
         
         isLoading = false
+    }
+    
+    private func refreshMonthDigest(force: Bool) async {
+        guard !isUpdatingMonthDigest else { return }
+        isUpdatingMonthDigest = true
+        defer { isUpdatingMonthDigest = false }
+        let month = selectedMonth
+        let digest = await coordinator.updateMonthDigest(date: month, forceRegenerate: force)
+        // Ignore a result for a month the user has already moved away from
+        if selectedTimeRange == .month, month == selectedMonth, let digest {
+            monthDigest = digest
+        }
     }
     
     private func regenerateAndReloadPeriodSummary() async {
@@ -606,22 +623,19 @@ struct OverviewTab: View {
             switch selectedTimeRange {
             case .yesterday: return .day
             case .today: return .day
-            case .week: return .week
             case .month: return .month
             case .allTime: return .year
             }
         }()
         
-        // Use Date() (today) for week/month/year calculations, startDate for day
-        let dateForGeneration = (periodType == .day) ? startDate : Date()
+        // Day and month use their own range; year uses today
+        let dateForGeneration = (periodType == .day || periodType == .month) ? startDate : Date()
         
         print("🔄 [OverviewTab] Regenerating \(periodType.rawValue) summary...")
         
         switch periodType {
         case .day:
             await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
-        case .week:
-            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
         case .month:
             await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
         case .year:
@@ -671,8 +685,6 @@ struct OverviewTab: View {
         // Fetch all Year Wrap summaries (with error handling)
         do {
             yearWrapSummary = try await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
-            yearWrapWorkSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
-            yearWrapPersonalSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
         } catch {
             print("⚠️ [OverviewTab] Failed to fetch Year Wrap summaries: \(error)")
             // Non-fatal - just log it
@@ -732,6 +744,62 @@ struct OverviewTab: View {
         return days[dayOfWeek]
     }
     
+    // MARK: - Month switcher
+    
+    /// Current month plus every month with recordings, newest first
+    private var switchableMonths: [Date] {
+        let current = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+        return Array(Set(availableMonths + [current, selectedMonth])).sorted(by: >)
+    }
+    
+    /// ‹ September 2026 › — steps through months with recordings; tap the name to jump to any of them
+    private var monthSwitcher: some View {
+        let months = switchableMonths
+        let index = months.firstIndex(of: selectedMonth)
+        let older = index.flatMap { months.indices.contains($0 + 1) ? months[$0 + 1] : nil }
+        let newer = index.flatMap { $0 > 0 ? months[$0 - 1] : nil }
+        return HStack {
+            Button {
+                if let older { selectedMonth = older }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(older == nil ? AppTheme.hairline : AppTheme.textPrimary)
+            }
+            .disabled(older == nil)
+            .accessibilityLabel("Previous month")
+            
+            Spacer()
+            
+            Menu {
+                ForEach(months, id: \.self) { month in
+                    Button(month.formatted(.dateTime.month(.wide).year())) { selectedMonth = month }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selectedMonth.formatted(.dateTime.month(.wide).year()))
+                        .font(.headline)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundStyle(AppTheme.textPrimary)
+            }
+            .accessibilityLabel("Choose month, \(selectedMonth.formatted(.dateTime.month(.wide).year()))")
+            
+            Spacer()
+            
+            Button {
+                if let newer { selectedMonth = newer }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(newer == nil ? AppTheme.hairline : AppTheme.textPrimary)
+            }
+            .disabled(newer == nil)
+            .accessibilityLabel("Next month")
+        }
+    }
+    
     private func getDateRange(for timeRange: TimeRange) -> (start: Date, end: Date) {
         let calendar = Calendar.current
         let now = Date()
@@ -746,16 +814,9 @@ struct OverviewTab: View {
         case .today:
             let start = calendar.startOfDay(for: now)
             return (start, now)
-        case .week:
-            // Current week: Monday to Sunday (or today if mid-week)
-            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-            components.weekday = 2 // Monday
-            let startOfWeek = calendar.date(from: components) ?? now
-            let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) ?? now
-            return (startOfWeek, endOfWeek)
         case .month:
-            // Current month: 1st of month to end of month
-            let components = calendar.dateComponents([.year, .month], from: now)
+            // The month picked in the switcher: 1st of month to end of month
+            let components = calendar.dateComponents([.year, .month], from: selectedMonth)
             let startOfMonth = calendar.date(from: components) ?? now
             let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) ?? now
             return (startOfMonth, endOfMonth)
@@ -771,8 +832,7 @@ struct OverviewTab: View {
     private func periodSummaryTitle(for range: TimeRange) -> String {
         switch range {
         case .today: return "Today's Recordings"
-        case .week: return "This Week's Recordings"
-        case .month: return "This Month's Recordings"
+        case .month: return "\(selectedMonth.formatted(.dateTime.month(.wide))) Recordings"
         default: return "Recordings"
         }
     }
@@ -841,10 +901,6 @@ struct OverviewTab: View {
             // Show individual session summaries grouped by hour
             return groupByHour(dateRange: dateRange, calendar: calendar)
             
-        case .week:
-            // Show weekly rollup summaries (one card per week)
-            return groupByWeekRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
-            
         case .month:
             // Show monthly rollup summaries (one card per month)
             return groupByMonthRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
@@ -911,43 +967,6 @@ struct OverviewTab: View {
             buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
             
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
-        }
-        
-        return buckets.reversed() // Most recent first
-    }
-    
-    private func groupByWeekRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByWeek: [Date: [Summary]] = [:]
-        for summary in rollups {
-            let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: summary.periodStart)
-            if let weekStartDate = calendar.date(from: weekStart) {
-                summariesByWeek[weekStartDate, default: []].append(summary)
-            }
-        }
-        
-        // Create buckets for all weeks in range
-        let currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
-        let endWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.end)
-        
-        guard var currentWeekDate = calendar.date(from: currentWeekStart),
-              let endWeekDate = calendar.date(from: endWeekStart) else {
-            return buckets
-        }
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMM d"
-        
-        while currentWeekDate <= endWeekDate {
-            let weekEnd = calendar.date(byAdding: .day, value: 6, to: currentWeekDate) ?? currentWeekDate
-            // Format: "Monday, Dec 16 - Sunday, Dec 22"
-            let header = "Monday, \(dateFormatter.string(from: currentWeekDate)) - Sunday, \(dateFormatter.string(from: weekEnd))"
-            
-            let summaries = summariesByWeek[currentWeekDate] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-            
-            currentWeekDate = calendar.date(byAdding: .weekOfYear, value: 1, to: currentWeekDate) ?? currentWeekDate
         }
         
         return buckets.reversed() // Most recent first

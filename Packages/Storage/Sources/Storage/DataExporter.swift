@@ -178,7 +178,8 @@ public actor DataExporter {
             // Group summaries by period type
             // Largest periods first: Year Wraps, then years down to single sessions
             let order: [PeriodType] = [.yearWrap, .yearWrapWork, .yearWrapPersonal, .year, .quarter, .month, .week, .day, .hour, .session]
-            let groupedSummaries = Dictionary(grouping: summaries) { $0.periodType }
+            // Month digests are structured JSON used to build Year Wrap, not readable text
+            let groupedSummaries = Dictionary(grouping: summaries.filter { $0.periodType != .monthDigest }) { $0.periodType }
             let sortedGroups = groupedSummaries.sorted {
                 (order.firstIndex(of: $0.key) ?? order.count) < (order.firstIndex(of: $1.key) ?? order.count)
             }
@@ -303,7 +304,7 @@ public actor DataExporter {
 
     // MARK: - Helpers
     
-    private func parseYearWrapJSON(from text: String) -> YearWrapData? {
+    func parseYearWrapJSON(from text: String) -> YearWrapData? {
         guard let data = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -321,12 +322,12 @@ public actor DataExporter {
             guard let array = json[key] as? [Any] else { return [] }
             
             return array.compactMap { item in
-                // New format: {"text": "...", "category": "work|personal|both"}
-                if let dict = item as? [String: String],
-                   let text = dict["text"],
-                   let categoryStr = dict["category"],
+                // New format: {"text": "...", "category": "work|personal|both", "session_ids": [...]}
+                if let dict = item as? [String: Any],
+                   let text = dict["text"] as? String,
+                   let categoryStr = dict["category"] as? String,
                    let category = ItemCategory(rawValue: categoryStr) {
-                    return ClassifiedItem(text: text, category: category)
+                    return ClassifiedItem(text: text, category: category, sessionIds: Self.uuids(dict["session_ids"]))
                 }
                 // Old format: just strings - default to "both"
                 else if let text = item as? String {
@@ -377,15 +378,21 @@ public actor DataExporter {
             topTalkedAboutThings: parseClassifiedItems("top_talked_about_things"),
             valuableActionsTaken: parseClassifiedItems("valuable_actions_taken"),
             opportunitiesMissed: parseClassifiedItems("opportunities_missed"),
-            peopleMentioned: (json["people_mentioned"] as? [[String: String]] ?? []).compactMap { dict in
-                guard let name = dict["name"] else { return nil }
-                return PersonMention(name: name, relationship: dict["relationship"], impact: dict["impact"])
+            peopleMentioned: (json["people_mentioned"] as? [[String: Any]] ?? []).compactMap { dict in
+                guard let name = dict["name"] as? String else { return nil }
+                return PersonMention(name: name, relationship: dict["relationship"] as? String, impact: dict["impact"] as? String,
+                                     sessionIds: Self.uuids(dict["session_ids"]))
             },
-            placesVisited: (json["places_visited"] as? [[String: String]] ?? []).compactMap { dict in
-                guard let name = dict["name"] else { return nil }
-                return PlaceVisit(name: name, frequency: dict["frequency"], context: dict["context"])
+            placesVisited: (json["places_visited"] as? [[String: Any]] ?? []).compactMap { dict in
+                guard let name = dict["name"] as? String else { return nil }
+                return PlaceVisit(name: name, frequency: dict["frequency"] as? String, context: dict["context"] as? String,
+                                  sessionIds: Self.uuids(dict["session_ids"]))
             }
         )
+    }
+    
+    private static func uuids(_ value: Any?) -> [UUID]? {
+        (value as? [String]).map { $0.compactMap(UUID.init(uuidString:)) }
     }
     
     private func fetchYearStats(year: Int) async throws -> (sessions: Int, duration: TimeInterval, words: Int) {
@@ -462,6 +469,9 @@ public actor DataExporter {
         case .yearWrapPersonal:
             formatter.dateFormat = "yyyy"
             return "Personal Year Wrap \(formatter.string(from: start))"
+        case .monthDigest:
+            formatter.dateFormat = "MMMM yyyy"
+            return "\(formatter.string(from: start)) digest"
         }
     }
 

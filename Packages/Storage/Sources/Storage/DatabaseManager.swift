@@ -182,6 +182,10 @@ public actor DatabaseManager {
         try await sessionRepository.fetchSessionMetadataBatch(sessionIds: sessionIds)
     }
     
+    public func existingSessionIds(among sessionIds: [UUID]) async throws -> Set<UUID> {
+        try await sessionRepository.existingSessionIds(among: sessionIds)
+    }
+    
     public func deleteSessionMetadata(sessionId: UUID) async throws {
         try await sessionRepository.deleteSessionMetadata(sessionId: sessionId)
     }
@@ -302,6 +306,10 @@ public actor DatabaseManager {
         )
     }
     
+    public func fetchSummaries(periodType: PeriodType, from startDate: Date, to endDate: Date) async throws -> [Summary] {
+        try await summaryRepository.fetchSummaries(periodType: periodType, from: startDate, to: endDate)
+    }
+
     public func fetchDailySummaries(from startDate: Date, to endDate: Date) async throws -> [Summary] {
         try await summaryRepository.fetchDailySummaries(from: startDate, to: endDate)
     }
