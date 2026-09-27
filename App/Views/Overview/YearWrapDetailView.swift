@@ -23,98 +23,72 @@ extension ItemFilter {
 }
 
 struct YearWrapDetailView: View {
-    let yearWrap: Summary  // Initial combined summary
+    /// This year's wraps by filter. All is always there; Work and Personal when they had recordings.
+    let wraps: [ItemFilter: Summary]
     let coordinator: AppCoordinator
-    let initialFilter: ItemFilter
     @Environment(\.dismiss) private var dismiss
     @State private var redactPeople = false
     @State private var redactPlaces = false
-    @State private var displayFilter: ItemFilter = .all
-    @State private var parsedData: YearWrapData?
-    @State private var totalSessions: Int = 0
-    @State private var totalDuration: TimeInterval = 0
-    @State private var totalWords: Int = 0
+    @State private var displayFilter: ItemFilter
+    @State private var parsedWraps: [ItemFilter: YearWrapData] = [:]
+    /// Counted from the database, only for older wraps that don't carry their own stats
+    @State private var countedStats: (sessions: Int, duration: TimeInterval, words: Int)?
     @State private var pdfData: Data?
     @State private var isGeneratingPDF = false
     @State private var showingShareSheet = false
     
-    @State private var combinedSummary: Summary?
-    @State private var isLoadingSummary = false
-    
-    init(yearWrap: Summary, coordinator: AppCoordinator, initialFilter: ItemFilter = .all) {
-        self.yearWrap = yearWrap
+    init(wraps: [ItemFilter: Summary], coordinator: AppCoordinator, initialFilter: ItemFilter = .all) {
+        self.wraps = wraps
         self.coordinator = coordinator
-        self.initialFilter = initialFilter
-        // Initialize displayFilter with initialFilter
         _displayFilter = State(initialValue: initialFilter)
     }
     
-    /// One wrap for everything; Work and Personal filter its items by category
-    private var activeSummary: Summary {
-        combinedSummary ?? yearWrap
+    /// True when the chosen filter has a wrap of its own. Older years only have the All wrap;
+    /// Work and Personal then show its items for that category.
+    private var hasOwnWrap: Bool {
+        wraps[displayFilter] != nil
     }
     
-    /// Title for the current filter
-    private var filterTitle: String {
-        switch displayFilter {
-        case .all:
-            return "Year Wrap"
-        case .workOnly:
-            return "Work Year Wrap"
-        case .personalOnly:
-            return "Personal Year Wrap"
-        }
+    private var activeSummary: Summary? {
+        wraps[displayFilter] ?? wraps[.all]
+    }
+    
+    private var year: Int {
+        let start = activeSummary?.periodStart ?? wraps.values.first?.periodStart ?? Date()
+        return Calendar.current.component(.year, from: start)
+    }
+    
+    private var parsedData: YearWrapData? {
+        parsedWraps[displayFilter] ?? parsedWraps[.all]
+    }
+    
+    /// The parsed wrap with any redaction applied
+    private var displayData: YearWrapData? {
+        parsedData?.redacted(people: redactPeople, places: redactPlaces)
     }
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    // Hero Section
                     heroSection
-                    
-                    // Stats Grid
                     statsSection
                     
-                    // Loading state
-                    if isLoadingSummary {
-                        VStack(spacing: 16) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            Text("Loading \(filterTitle)...")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 60)
-                    } else if let data = parsedData {
-                        // Insights Sections
+                    if let data = displayData {
                         VStack(spacing: 24) {
-                            majorArcsSection(data.majorArcs)
-                            biggestWinsSection(data.biggestWins)
-                            biggestLossesSection(data.biggestLosses)
-                            biggestChallengesSection(data.biggestChallenges)
-                            finishedProjectsSection(data.finishedProjects)
-                            unfinishedProjectsSection(data.unfinishedProjects)
-                            topWorkedOnSection(data.topWorkedOnTopics)
-                            topTalkedAboutSection(data.topTalkedAboutThings)
-                            valuableActionsSection(data.valuableActionsTaken)
-                            opportunitiesMissedSection(data.opportunitiesMissed)
+                            insightSections(data)
                             peopleMentionedSection(data.peopleMentioned)
                             placesVisitedSection(data.placesVisited)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                    } else {
+                        .padding(.bottom, 32)
+                    } else if let activeSummary {
                         // Fallback: show raw text if parsing fails
                         Text(activeSummary.text)
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .padding(16)
                     }
-                    
-                    // Footer
-                    footerSection
                 }
             }
             .background(AppTheme.background)
@@ -139,11 +113,11 @@ struct YearWrapDetailView: View {
                         
                         Section("Privacy") {
                             Toggle(isOn: $redactPeople) {
-                                Label("Redact people", systemImage: "person.slash")
+                                Label("Hide top people", systemImage: "person.slash")
                             }
                             
                             Toggle(isOn: $redactPlaces) {
-                                Label("Redact places", systemImage: "mappin.slash")
+                                Label("Hide top places", systemImage: "mappin.slash")
                             }
                         }
                         
@@ -172,46 +146,32 @@ struct YearWrapDetailView: View {
                 ActivityViewController(activityItems: [data])
             }
         }
-        .onAppear {
-            combinedSummary = yearWrap
-            parsedData = parseYearWrapJSON(from: yearWrap.text)
-            Task {
-                await loadYearStats()
+        .task {
+            // .task runs once per presentation, not again when coming back from a recordings list
+            guard parsedWraps.isEmpty else { return }
+            parsedWraps = wraps.compactMapValues { YearWrapData.parse($0.text) }
+            if parsedWraps[.all]?.stats == nil {
+                await countYearStats()
             }
         }
     }
     
     // MARK: - Data Loading
     
-    private func loadYearStats() async {
+    /// Totals for wraps made before stats were stored with the wrap
+    private func countYearStats() async {
         guard let dbManager = coordinator.getDatabaseManager() else { return }
-        
-        let calendar = Calendar.current
-        let year = calendar.component(.year, from: yearWrap.periodStart)
-        
-        // Fetch sessions for the year
         do {
             let yearlyData = try await dbManager.fetchSessionsByYear()
-            if let yearData = yearlyData.first(where: { $0.year == year }) {
-                totalSessions = yearData.count
-                
-                // Calculate total duration and words
-                var duration: TimeInterval = 0
-                var words: Int = 0
-                
-                for sessionId in yearData.sessionIds {
-                    let chunks = try? await dbManager.fetchChunksBySession(sessionId: sessionId)
-                    duration += chunks?.reduce(0) { $0 + $1.duration } ?? 0
-                    
-                    let wordCount = try? await dbManager.fetchSessionWordCount(sessionId: sessionId)
-                    words += wordCount ?? 0
-                }
-                
-                await MainActor.run {
-                    totalDuration = duration
-                    totalWords = words
-                }
+            guard let yearData = yearlyData.first(where: { $0.year == year }) else { return }
+            var duration: TimeInterval = 0
+            var words = 0
+            for sessionId in yearData.sessionIds {
+                let chunks = try? await dbManager.fetchChunksBySession(sessionId: sessionId)
+                duration += chunks?.reduce(0) { $0 + $1.duration } ?? 0
+                words += (try? await dbManager.fetchSessionWordCount(sessionId: sessionId)) ?? 0
             }
+            countedStats = (yearData.count, duration, words)
         } catch {
             print("❌ Failed to load year stats: \(error)")
         }
@@ -221,24 +181,27 @@ struct YearWrapDetailView: View {
     
     private var heroSection: some View {
         ZStack {
-            // Background gradient
             YearWrapTheme.electricPurple
             
             VStack(spacing: 16) {
-                // Sparkles icon
                 Image(systemName: "sparkles")
                     .font(.system(size: 44, weight: .light))
                     .foregroundStyle(AppTheme.onAccent)
+                    .accessibilityHidden(true)
                 
-                // Year title
-                if let data = parsedData {
+                Text(displayFilter == .all ? String(year) : "\(year) · \(displayFilter.displayName.capitalized)")
+                    .font(.caption)
+                    .tracking(0.8)
+                    .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                
+                if let data = displayData {
                     Text(data.yearTitle)
                         .font(AppTheme.titleFont(size: 30))
                         .foregroundStyle(AppTheme.onAccent)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
+                        .accessibilityAddTraits(.isHeader)
                     
-                    // Year summary
                     Text(data.yearSummary)
                         .font(.body)
                         .foregroundStyle(AppTheme.onAccent.opacity(0.9))
@@ -253,21 +216,68 @@ struct YearWrapDetailView: View {
     
     // MARK: - Stats Section
     
+    @ViewBuilder
     private var statsSection: some View {
-        HStack(spacing: 16) {
-            statCard(title: "Sessions", value: "\(totalSessions)", icon: "mic.fill", color: YearWrapTheme.spotifyGreen)
-            statCard(title: "Hours", value: String(format: "%.1f", totalDuration / 3600), icon: "clock.fill", color: YearWrapTheme.hotPink)
-            statCard(title: "Words", value: formatNumber(totalWords), icon: "text.bubble.fill", color: YearWrapTheme.vibrantOrange)
+        VStack(spacing: 12) {
+            if let stats = parsedData?.stats {
+                // A wrap's own stats already cover just its category
+                switch hasOwnWrap ? .all : displayFilter {
+                case .all:
+                    HStack(spacing: 16) {
+                        statCard(title: "Sessions", value: "\(stats.sessionCount)", icon: "mic.fill")
+                        statCard(title: "Hours", value: String(format: "%.1f", Double(stats.totalMinutes) / 60), icon: "clock.fill")
+                        statCard(title: "Words", value: formatNumber(stats.wordCount), icon: "text.bubble.fill")
+                    }
+                    if let line = activityLine(stats) {
+                        Text(line)
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textSecondary)
+                    }
+                case .workOnly, .personalOnly:
+                    let isWork = displayFilter == .workOnly
+                    let count = isWork ? stats.workCount : stats.personalCount
+                    let share = stats.sessionCount > 0 ? Int((Double(count) / Double(stats.sessionCount) * 100).rounded()) : 0
+                    HStack(spacing: 16) {
+                        statCard(title: isWork ? "Work sessions" : "Personal sessions", value: "\(count)", icon: isWork ? "briefcase.fill" : "house.fill")
+                        statCard(title: "Of all sessions", value: "\(share)%", icon: "chart.pie.fill")
+                    }
+                }
+            } else if let counted = countedStats {
+                HStack(spacing: 16) {
+                    statCard(title: "Sessions", value: "\(counted.sessions)", icon: "mic.fill")
+                    statCard(title: "Hours", value: String(format: "%.1f", counted.duration / 3600), icon: "clock.fill")
+                    statCard(title: "Words", value: formatNumber(counted.words), icon: "text.bubble.fill")
+                }
+                if displayFilter != .all {
+                    Text("Totals cover all recordings. Regenerate the wrap to see work and personal counts.")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 24)
     }
     
-    private func statCard(title: String, value: String, icon: String, color: Color) -> some View {
+    /// "Recorded on 143 days · Busiest month: March"
+    private func activityLine(_ stats: YearWrapStats) -> String? {
+        var parts: [String] = []
+        if stats.activeDays > 0 {
+            parts.append(stats.activeDays == 1 ? "Recorded on 1 day" : "Recorded on \(stats.activeDays) days")
+        }
+        if let month = stats.busiestMonth, (1...12).contains(month) {
+            parts.append("Busiest month: \(Calendar.current.monthSymbols[month - 1])")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+    
+    private func statCard(title: String, value: String, icon: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundStyle(color)
+                .foregroundStyle(AppTheme.accent)
+                .accessibilityHidden(true)
             
             Text(value)
                 .font(.title2)
@@ -283,137 +293,64 @@ struct YearWrapDetailView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
     
     // MARK: - Insight Sections
     
-    @ViewBuilder
-    private func majorArcsSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Major arcs",
-            icon: "book",
-            items: items,
-            color: AppTheme.accent,
-            emptyMessage: "None"
-        )
+    private struct InsightSection {
+        let title: String
+        let icon: String
+        let color: Color
+        let items: [ClassifiedItem]
     }
     
-    @ViewBuilder
-    private func biggestWinsSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Biggest wins",
-            icon: "trophy",
-            items: items,
-            color: YearWrapTheme.winsColor,
-            emptyMessage: "None"
-        )
+    private func sections(_ data: YearWrapData) -> [InsightSection] {
+        [
+            InsightSection(title: "Major arcs", icon: "book", color: AppTheme.accent, items: data.majorArcs),
+            InsightSection(title: "Biggest wins", icon: "trophy", color: YearWrapTheme.winsColor, items: data.biggestWins),
+            InsightSection(title: "Biggest losses", icon: "heart.slash", color: YearWrapTheme.lossesColor, items: data.biggestLosses),
+            InsightSection(title: "Biggest challenges", icon: "bolt", color: YearWrapTheme.challengesColor, items: data.biggestChallenges),
+            InsightSection(title: "Finished projects", icon: "checkmark.circle", color: YearWrapTheme.finishedProjectsColor, items: data.finishedProjects),
+            InsightSection(title: "Unfinished projects", icon: "pause.circle", color: YearWrapTheme.unfinishedProjectsColor, items: data.unfinishedProjects),
+            InsightSection(title: "Top worked-on topics", icon: "hammer", color: YearWrapTheme.topicsColor, items: data.topWorkedOnTopics),
+            InsightSection(title: "Top talked-about things", icon: "bubble.left", color: YearWrapTheme.peopleColor, items: data.topTalkedAboutThings),
+            InsightSection(title: "Valuable actions taken", icon: "diamond", color: YearWrapTheme.actionsColor, items: data.valuableActionsTaken),
+            InsightSection(title: "Opportunities missed", icon: "scope", color: YearWrapTheme.opportunitiesColor, items: data.opportunitiesMissed),
+        ]
     }
     
+    /// Sections with something to show under the current filter. Empty ones are left out,
+    /// like in the PDF export.
     @ViewBuilder
-    private func biggestLossesSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Biggest losses",
-            icon: "heart.slash",
-            items: items,
-            color: YearWrapTheme.lossesColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func biggestChallengesSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Biggest challenges",
-            icon: "bolt",
-            items: items,
-            color: YearWrapTheme.challengesColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func finishedProjectsSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Finished projects",
-            icon: "checkmark.circle",
-            items: items,
-            color: YearWrapTheme.finishedProjectsColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func unfinishedProjectsSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Unfinished projects",
-            icon: "pause.circle",
-            items: items,
-            color: YearWrapTheme.unfinishedProjectsColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func topWorkedOnSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Top worked-on topics",
-            icon: "hammer",
-            items: items,
-            color: YearWrapTheme.topicsColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func topTalkedAboutSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Top talked-about things",
-            icon: "bubble.left",
-            items: items,
-            color: YearWrapTheme.peopleColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func valuableActionsSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Valuable actions taken",
-            icon: "diamond",
-            items: items,
-            color: YearWrapTheme.actionsColor,
-            emptyMessage: "None"
-        )
-    }
-    
-    @ViewBuilder
-    private func opportunitiesMissedSection(_ items: [ClassifiedItem]) -> some View {
-        insightSection(
-            title: "Opportunities missed",
-            icon: "scope",
-            items: items,
-            color: YearWrapTheme.opportunitiesColor,
-            emptyMessage: "None"
-        )
+    private func insightSections(_ data: YearWrapData) -> some View {
+        let visible = sections(data).compactMap { section -> InsightSection? in
+            let items = filterItems(section.items, by: displayFilter)
+            return items.isEmpty ? nil : InsightSection(title: section.title, icon: section.icon, color: section.color, items: items)
+        }
+        if visible.isEmpty {
+            Text(displayFilter == .all ? "Nothing to show for this year yet." : "Nothing tagged \(displayFilter.displayName.lowercased()) this year.")
+                .font(.body)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+        } else {
+            ForEach(visible, id: \.title) { section in
+                insightSection(section)
+            }
+        }
     }
     
     @ViewBuilder
     private func peopleMentionedSection(_ people: [PersonMention]) -> some View {
-        if people.isEmpty {
-            insightSection(title: "People mentioned", icon: "person.2", items: [] as [ClassifiedItem], color: AppTheme.accent, emptyMessage: "None")
-        } else {
+        if !people.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                // Header
-                HStack {
-                    sectionHeader("People mentioned", icon: "person.2")
-                    Spacer()
-                }
+                sectionHeader("People mentioned", icon: "person.2")
                 
-                // People list
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(people, id: \.name) { person in
+                    ForEach(Array(people.enumerated()), id: \.offset) { _, person in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(redactPeople ? "[Person]" : person.name)
+                            Text(person.name)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                             
@@ -431,7 +368,7 @@ struct YearWrapDetailView: View {
                             }
                             
                             if let sessionIds = person.sessionIds, !sessionIds.isEmpty {
-                                recordingsLink(title: redactPeople ? "Person" : person.name, sessionIds: sessionIds)
+                                recordingsLink(title: person.name, sessionIds: sessionIds)
                             }
                         }
                         .padding(12)
@@ -444,6 +381,7 @@ struct YearWrapDetailView: View {
                 }
             }
             .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
@@ -453,21 +391,14 @@ struct YearWrapDetailView: View {
     
     @ViewBuilder
     private func placesVisitedSection(_ places: [PlaceVisit]) -> some View {
-        if places.isEmpty {
-            insightSection(title: "Places visited", icon: "mappin.and.ellipse", items: [] as [ClassifiedItem], color: AppTheme.accent, emptyMessage: "None")
-        } else {
+        if !places.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                // Header
-                HStack {
-                    sectionHeader("Places visited", icon: "mappin.and.ellipse")
-                    Spacer()
-                }
+                sectionHeader("Places visited", icon: "mappin.and.ellipse")
                 
-                // Places list
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(places, id: \.name) { place in
+                    ForEach(Array(places.enumerated()), id: \.offset) { _, place in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(redactPlaces ? "[Location]" : place.name)
+                            Text(place.name)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                             
@@ -485,7 +416,7 @@ struct YearWrapDetailView: View {
                             }
                             
                             if let sessionIds = place.sessionIds, !sessionIds.isEmpty {
-                                recordingsLink(title: redactPlaces ? "Place" : place.name, sessionIds: sessionIds)
+                                recordingsLink(title: place.name, sessionIds: sessionIds)
                             }
                         }
                         .padding(12)
@@ -498,6 +429,7 @@ struct YearWrapDetailView: View {
                 }
             }
             .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
@@ -518,45 +450,28 @@ struct YearWrapDetailView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    // Generic insight section builder
-    @ViewBuilder
-    private func insightSection(title: String, icon: String, items: [ClassifiedItem], color: Color, emptyMessage: String) -> some View {
-        let filteredItems = filterItems(items, by: displayFilter)
-        
+    private func insightSection(_ section: InsightSection) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                sectionHeader(title, icon: icon)
-                Spacer()
-            }
+            sectionHeader(section.title, icon: section.icon)
             
-            // Content
-            if filteredItems.isEmpty {
-                Text(emptyMessage)
-                    .font(.body)
-                    .foregroundStyle(.tertiary)
-                    .italic()
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(filteredItems.enumerated()), id: \.offset) { index, item in
-                        HStack(alignment: .top, spacing: 12) {
-                            Circle()
-                                .fill(color)
-                                .frame(width: 6, height: 6)
-                                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(section.items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 12) {
+                        Circle()
+                            .fill(section.color)
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 6)
+                            .accessibilityHidden(true)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.text)
+                                .font(.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.text)
-                                    .font(.body)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                
-                                HStack(spacing: 8) {
-                                    categoryBadge(for: item.category)
-                                    if let sessionIds = item.sessionIds, !sessionIds.isEmpty {
-                                        recordingsLink(title: item.text, sessionIds: sessionIds)
-                                    }
+                            HStack(spacing: 8) {
+                                categoryBadge(for: item.category)
+                                if let sessionIds = item.sessionIds, !sessionIds.isEmpty {
+                                    recordingsLink(title: item.text, sessionIds: sessionIds)
                                 }
                             }
                         }
@@ -565,6 +480,7 @@ struct YearWrapDetailView: View {
             }
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
@@ -588,47 +504,27 @@ struct YearWrapDetailView: View {
         .accessibilityHint("Shows the recordings this came from")
     }
     
-    // Category badge view
-    @ViewBuilder
     private func categoryBadge(for category: ItemCategory) -> some View {
         HStack(spacing: 4) {
-            switch category {
-            case .work:
-                Label("Work", systemImage: "briefcase.fill")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.onAccent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(AppTheme.accent)
-                    .clipShape(Capsule())
-            case .personal:
-                Label("Personal", systemImage: "house.fill")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.onAccent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(AppTheme.accent)
-                    .clipShape(Capsule())
-            case .both:
-                HStack(spacing: 4) {
-                    Label("Work", systemImage: "briefcase.fill")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.onAccent)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(AppTheme.accent)
-                        .clipShape(Capsule())
-                    
-                    Label("Personal", systemImage: "house.fill")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.onAccent)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(AppTheme.accent)
-                        .clipShape(Capsule())
-                }
+            if category != .personal {
+                badge("Work", icon: "briefcase.fill")
+            }
+            if category != .work {
+                badge("Personal", icon: "house.fill")
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(category == .both ? "Work and personal" : (category == .work ? "Work" : "Personal"))
+    }
+    
+    private func badge(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption)
+            .foregroundStyle(AppTheme.onAccent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(AppTheme.accent)
+            .clipShape(Capsule())
     }
     
     // MARK: - Filtering Helper
@@ -646,133 +542,11 @@ struct YearWrapDetailView: View {
         }
     }
     
-    // MARK: - Footer
-    
-    private var footerSection: some View {
-        Text("Showing high-confidence entities (≥70%)")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .multilineTextAlignment(.center)
-            .padding(.vertical, 16)
-            .padding(.horizontal, 32)
-    }
-    
     // MARK: - Helpers
     
-    private func parseYearWrapJSON(from text: String) -> YearWrapData? {
-        guard let data = text.data(using: .utf8) else {
-            print("❌ [YearWrapDetailView] Failed to convert text to data")
-            return nil
-        }
-        
-        do {
-            // Try new format first (ClassifiedItem arrays)
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let decoded = try decoder.decode(YearWrapData.self, from: data)
-            print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (new format)")
-            
-            // Debug: Log category distribution
-            let allItems = decoded.majorArcs + decoded.biggestWins + decoded.biggestLosses + 
-                          decoded.biggestChallenges + decoded.finishedProjects + decoded.unfinishedProjects +
-                          decoded.topWorkedOnTopics + decoded.topTalkedAboutThings + 
-                          decoded.valuableActionsTaken + decoded.opportunitiesMissed
-            let workCount = allItems.filter { $0.category == .work }.count
-            let personalCount = allItems.filter { $0.category == .personal }.count
-            let bothCount = allItems.filter { $0.category == .both }.count
-            print("📊 [YearWrapDetailView] Category distribution: \(workCount) work, \(personalCount) personal, \(bothCount) both (total: \(allItems.count))")
-            
-            return decoded
-        } catch let newFormatError {
-            // If new format fails, try parsing old format (string arrays) and convert
-            print("⚠️ [YearWrapDetailView] New format decode failed, trying old format: \(newFormatError)")
-            
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                print("❌ [YearWrapDetailView] Failed to parse as JSON object")
-                return nil
-            }
-            
-            // Check for year_summary - required field for all formats
-            guard let yearSummary = json["year_summary"] as? String else {
-                print("❌ [YearWrapDetailView] No year_summary field found")
-                return nil
-            }
-            
-            let yearTitle = json["year_title"] as? String ?? "Year in Review"
-            
-            // Helper to convert old string arrays to ClassifiedItem arrays
-            func parseStringArray(_ key: String) -> [ClassifiedItem] {
-                guard let strings = json[key] as? [String] else { return [] }
-                return strings.map { ClassifiedItem(text: $0, category: .both) }
-            }
-            
-            // Check if this is simplified Local AI format (has top_highlights instead of detailed fields)
-            let isSimplifiedFormat = json["top_highlights"] != nil
-            
-            if isSimplifiedFormat {
-                print("🤖 [YearWrapDetailView] Detected simplified Local AI format")
-                
-                // Parse Local AI simplified format
-                let topHighlights = parseStringArray("top_highlights")
-                let challenges = parseStringArray("biggest_challenges")
-                let topics = parseStringArray("top_topics")
-                
-                // Create Year Wrap with available data, using highlights as wins
-                let yearWrap = YearWrapData(
-                    yearTitle: yearTitle,
-                    yearSummary: yearSummary,
-                    majorArcs: [],
-                    biggestWins: topHighlights,
-                    biggestLosses: [],
-                    biggestChallenges: challenges,
-                    finishedProjects: [],
-                    unfinishedProjects: [],
-                    topWorkedOnTopics: topics,
-                    topTalkedAboutThings: [],
-                    valuableActionsTaken: [],
-                    opportunitiesMissed: [],
-                    peopleMentioned: [],
-                    placesVisited: []
-                )
-                
-                print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (Local AI simplified format)")
-                return yearWrap
-            }
-            
-            // Standard old format with detailed fields
-            let yearWrap = YearWrapData(
-                yearTitle: yearTitle,
-                yearSummary: yearSummary,
-                majorArcs: parseStringArray("major_arcs"),
-                biggestWins: parseStringArray("biggest_wins"),
-                biggestLosses: parseStringArray("biggest_losses"),
-                biggestChallenges: parseStringArray("biggest_challenges"),
-                finishedProjects: parseStringArray("finished_projects"),
-                unfinishedProjects: parseStringArray("unfinished_projects"),
-                topWorkedOnTopics: parseStringArray("top_worked_on_topics"),
-                topTalkedAboutThings: parseStringArray("top_talked_about_things"),
-                valuableActionsTaken: parseStringArray("valuable_actions_taken"),
-                opportunitiesMissed: parseStringArray("opportunities_missed"),
-                peopleMentioned: (json["people_mentioned"] as? [[String: String]] ?? []).compactMap { dict in
-                    guard let name = dict["name"] else { return nil }
-                    return PersonMention(name: name, relationship: dict["relationship"], impact: dict["impact"])
-                },
-                placesVisited: (json["places_visited"] as? [[String: String]] ?? []).compactMap { dict in
-                    guard let name = dict["name"] else { return nil }
-                    return PlaceVisit(name: name, frequency: dict["frequency"], context: dict["context"])
-                }
-            )
-            
-            print("✅ [YearWrapDetailView] Successfully parsed Year Wrap data (old format, converted)")
-            return yearWrap
-        }
-    }
-    
+    /// 850, 12.4K, 1.2M
     private func formatNumber(_ number: Int) -> String {
-        if number >= 1000 {
-            return String(format: "%.1fK", Double(number) / 1000)
-        }
-        return "\(number)"
+        number.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
     }
     
     private func generatePDF() async {
@@ -785,16 +559,10 @@ struct YearWrapDetailView: View {
         }
         
         do {
-            let calendar = Calendar.current
-            let year = calendar.component(.year, from: yearWrap.periodStart)
-            
             let exporter = DataExporter(databaseManager: dbManager)
             let data = try await exporter.exportToPDF(year: year, redactPeople: redactPeople, redactPlaces: redactPlaces, filter: displayFilter)
-            
-            await MainActor.run {
-                pdfData = data
-                showingShareSheet = true
-            }
+            pdfData = data
+            showingShareSheet = true
         } catch {
             coordinator.showError("Failed to generate PDF: \(error.localizedDescription)")
         }

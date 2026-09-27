@@ -10,6 +10,8 @@ struct MonthDigestCard: View {
     /// All, or only the Work or Personal side of the month
     let filter: ItemFilter
     let isUpdating: Bool
+    /// The month was saved before work and personal were separate and is being split now
+    var isSplitting: Bool = false
     let onCopy: () -> Void
     let onRegenerate: () -> Void
     private static let collapsedCount = 5
@@ -23,6 +25,13 @@ struct MonthDigestCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
+
+            if isSplitting {
+                Label("Separating this month into work and personal. It only happens once.", systemImage: "arrow.triangle.branch")
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let stats = digest.stats(for: filter) {
                 content(stats: stats)
@@ -56,6 +65,23 @@ struct MonthDigestCard: View {
                 .foregroundStyle(AppTheme.textPrimary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+
+        // A month with both journals has no single story under All; show each journal's own
+        if filter == .all, story.headline == nil, story.narrative == nil {
+            ForEach(digest.journalStories, id: \.title) { journal in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(journal.title.uppercased())
+                        .font(.caption)
+                        .tracking(0.8)
+                        .foregroundStyle(AppTheme.textSecondary)
+                    Text(journal.story)
+                        .font(.body)
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
 
         statsRow(stats)

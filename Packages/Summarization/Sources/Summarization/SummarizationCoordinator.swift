@@ -449,18 +449,32 @@ public actor SummarizationCoordinator {
         return nil
     }
 
-    /// The model for Year Wrap: Local AI when asked for, otherwise External.
-    public func yearWrapGenerator(useLocalAI: Bool) async throws -> any TextGenerating {
-        if useLocalAI {
-            guard let local = await availableGenerator(for: .local) else {
-                throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
+    /// Engines that can write a Year Wrap on this device right now: Smartest (External) and
+    /// Apple Intelligence. Local models are too slow for it and Basic has no model.
+    public func yearWrapEngines() async -> [EngineTier] {
+        var engines: [EngineTier] = []
+        for tier in [EngineTier.external, .apple] where await availableGenerator(for: tier) != nil {
+            engines.append(tier)
+        }
+        return engines
+    }
+
+    /// The model for Year Wrap. Only Smartest (External) or Apple Intelligence.
+    public func yearWrapGenerator(tier: EngineTier) async throws -> any TextGenerating {
+        switch tier {
+        case .external:
+            guard let external = await availableGenerator(for: .external) else {
+                throw SummarizationError.summarizationFailed("Smartest AI needs an API key. Add one in Settings.")
             }
-            return local
+            return external
+        case .apple:
+            guard let apple = await availableGenerator(for: .apple) else {
+                throw SummarizationError.summarizationFailed("Apple Intelligence isn't available on this device.")
+            }
+            return apple
+        case .local, .basic:
+            throw SummarizationError.summarizationFailed("Year Wrap needs Apple Intelligence or Smartest AI.")
         }
-        guard let external = await availableGenerator(for: .external) else {
-            throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
-        }
-        return external
     }
 
     private func availableGenerator(for tier: EngineTier) async -> (any TextGenerating)? {

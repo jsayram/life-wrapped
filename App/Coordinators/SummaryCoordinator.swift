@@ -24,8 +24,8 @@ public final class SummaryCoordinator {
     /// Called when period summaries are updated (for widget refresh, etc.)
     public var onPeriodSummariesUpdated: (() async -> Void)?
     
-    /// Called to update Year Wrap generation progress
-    public var onYearWrapProgressUpdate: ((String) -> Void)?
+    /// Called as Year Wrap generation moves through its steps
+    public var onYearWrapProgressUpdate: ((YearWrapProgress) -> Void)?
     
     // MARK: - Initialization
     
@@ -686,14 +686,21 @@ public final class SummaryCoordinator {
     }
 
     // MARK: - Month Digests
+    //
+    // Work and Personal are two journals. Each has its own digest per month, built only from its
+    // own recordings, so nothing from one journal ends up in the other. The All view is the two
+    // put together in code (MonthDigest.combining). A recording without a category belongs to
+    // Personal, the recorder's default. Digests from before the split (stored without a category)
+    // stay readable, split per journal, until the month is rebuilt.
 
     /// Bump when the digest format or extraction changes, so existing digests are rebuilt
-    private static let digestVersion = "digest-v5"
+    private static let digestVersion = "digest-v6"
 
-    /// Session summaries and metadata for one month, plus a hash of everything that shapes the digest
+    /// One journal's session summaries and metadata for a month, plus a hash of everything that shapes its digest
     private struct DigestInputs {
         let monthStart: Date
         let monthEnd: Date
+        let journal: SessionCategory
         let summaries: [Summary]
         let metadata: [UUID: DatabaseManager.SessionMetadata]
         let inputHash: String
@@ -706,19 +713,31 @@ public final class SummaryCoordinator {
         return (start, end)
     }
 
-    private func loadDigestInputs(for date: Date) async throws -> DigestInputs? {
-        guard let bounds = monthBounds(for: date) else { return nil }
+    /// The journal a recording belongs to
+    private static func journal(of metadata: DatabaseManager.SessionMetadata?) -> SessionCategory {
+        metadata?.category ?? .personal
+    }
+
+    /// The month's recordings grouped by journal. Journals with no recordings that month are left out.
+    private func loadDigestInputs(for date: Date) async throws -> [SessionCategory: DigestInputs] {
+        guard let bounds = monthBounds(for: date) else { return [:] }
         let summaries = try await liveSessionSummaries(from: bounds.start, to: bounds.end)
-        guard !summaries.isEmpty else { return nil }
+        guard !summaries.isEmpty else { return [:] }
 
         let metadata = try await databaseManager.fetchSessionMetadataBatch(sessionIds: summaries.compactMap { $0.sessionId })
-        let hashLines = summaries.map { summary -> String in
-            let meta = summary.sessionId.flatMap { metadata[$0] }
-            return [summary.sessionId?.uuidString ?? "", meta?.category?.rawValue ?? "", summary.text,
-                    summary.topicsJSON ?? "", meta?.notes ?? ""].joined(separator: "|")
+        var result: [SessionCategory: DigestInputs] = [:]
+        for journal in SessionCategory.allCases {
+            let own = summaries.filter { Self.journal(of: $0.sessionId.flatMap { metadata[$0] }) == journal }
+            guard !own.isEmpty else { continue }
+            let hashLines = own.map { summary -> String in
+                let meta = summary.sessionId.flatMap { metadata[$0] }
+                return [summary.sessionId?.uuidString ?? "", summary.text, summary.topicsJSON ?? "", meta?.notes ?? ""].joined(separator: "|")
+            }
+            let inputHash = await databaseManager.computeInputHash([Self.digestVersion, journal.rawValue] + hashLines)
+            result[journal] = DigestInputs(monthStart: bounds.start, monthEnd: bounds.end, journal: journal,
+                                           summaries: own, metadata: metadata, inputHash: inputHash)
         }
-        let inputHash = await databaseManager.computeInputHash([Self.digestVersion] + hashLines)
-        return DigestInputs(monthStart: bounds.start, monthEnd: bounds.end, summaries: summaries, metadata: metadata, inputHash: inputHash)
+        return result
     }
 
     /// First day of every month that has recordings, newest first
@@ -727,16 +746,63 @@ public final class SummaryCoordinator {
         return Set(summaries.compactMap { monthBounds(for: $0.periodStart)?.start }).sorted(by: >)
     }
     
-    /// The stored digest for the month containing `date`, if any
-    public func fetchMonthDigest(date: Date) async -> MonthDigest? {
-        guard let row = try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: date) else { return nil }
-        return MonthDigest.fromJSON(row.text)
+    /// What is saved for a month: each journal's row and digest, and whether an older mixed digest remains
+    private struct StoredMonth {
+        var journals: [SessionCategory: (row: Summary, digest: MonthDigest?)] = [:]
+        var hasLegacy = false
+
+        var plannerView: [SessionCategory: JournalDigests.Stored] {
+            journals.mapValues { JournalDigests.Stored(inputHash: $0.row.inputHash, isFinal: $0.digest?.isFinal ?? false) }
+        }
     }
 
-    /// Build or refresh the digest for the month containing `date`.
-    /// Returns quickly with the stored digest when nothing changed. A month that has ended is marked final.
+    private func storedMonth(_ monthStart: Date) async -> StoredMonth {
+        var stored = StoredMonth()
+        for journal in SessionCategory.allCases {
+            if let row = try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: monthStart, category: journal) {
+                stored.journals[journal] = (row, MonthDigest.fromJSON(row.text))
+            }
+        }
+        stored.hasLegacy = (try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: monthStart)) != nil
+        return stored
+    }
+
+    /// The month's plan: what to reuse, rebuild or delete (see JournalDigests.plan)
+    private func planMonth(_ monthStart: Date, inputs: [SessionCategory: DigestInputs], stored: StoredMonth, force: Bool = false) -> JournalDigests.Plan {
+        let monthEnded = (Calendar.current.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart) <= Date()
+        return JournalDigests.plan(currentHashes: inputs.mapValues(\.inputHash), stored: stored.plannerView,
+                                   hasLegacy: stored.hasLegacy, monthEnded: monthEnded, force: force)
+    }
+
+    /// Delete the month's older mixed digest. There is normally one; a restored backup can leave more.
+    private func removeLegacyDigests(_ monthStart: Date) async {
+        for _ in 0..<5 {
+            guard let row = try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: monthStart) else { return }
+            try? await databaseManager.deleteSummary(id: row.id)
+        }
+    }
+
+    /// The stored digests for the month containing `date`, both journals combined.
+    public func fetchMonthDigest(date: Date) async -> MonthDigest? {
+        await fetchMonthDigestStatus(date: date)?.digest
+    }
+
+    /// Like `fetchMonthDigest`, plus whether part of it still comes from an older mixed digest
+    /// (the month hasn't been split into work and personal yet)
+    public func fetchMonthDigestStatus(date: Date) async -> (digest: MonthDigest, usesLegacy: Bool)? {
+        guard let bounds = monthBounds(for: date) else { return nil }
+        let stored = await storedMonth(bounds.start)
+        let legacy = stored.hasLegacy
+            ? (try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: bounds.start)).flatMap { MonthDigest.fromJSON($0.text) }
+            : nil
+        return JournalDigests.combined(stored: stored.journals.compactMapValues(\.digest), legacy: legacy)
+    }
+
+    /// Build or refresh both journals' digests for the month containing `date`, and return them combined.
+    /// Returns quickly with the stored digests when nothing changed. A month that has ended is marked final.
+    /// Once every journal is current, the month's older mixed digest is deleted.
     @discardableResult
-    public func updateMonthDigest(date: Date, forceRegenerate: Bool = false) async -> MonthDigest? {
+    public func updateMonthDigest(date: Date, forceRegenerate: Bool = false, generator override: (any TextGenerating)? = nil) async -> MonthDigest? {
         guard let bounds = monthBounds(for: date) else { return nil }
         let periodKey = "digest-\(bounds.start.timeIntervalSince1970)"
         guard !generatingPeriodSummaries.contains(periodKey) else {
@@ -747,43 +813,68 @@ public final class SummaryCoordinator {
         defer { generatingPeriodSummaries.remove(periodKey) }
 
         do {
-            guard let inputs = try await loadDigestInputs(for: date) else {
+            let inputs = try await loadDigestInputs(for: date)
+            let stored = await storedMonth(bounds.start)
+            let plan = planMonth(bounds.start, inputs: inputs, stored: stored, force: forceRegenerate)
+            let isFinal = bounds.end <= Date()
+
+            var digests: [MonthDigest] = []
+            for journal in plan.reuse {
+                if let digest = stored.journals[journal]?.digest {
+                    print("💾 [SummaryCoordinator] ✅ CACHE HIT - \(journal.displayName) digest unchanged")
+                    digests.append(digest)
+                }
+            }
+            for journal in plan.markFinal {
+                guard let digest = stored.journals[journal]?.digest, let journalInputs = inputs[journal] else { continue }
+                // Same content, the month just ended: mark it final without running the model again
+                let finalized = digest.withFinal(isFinal)
+                try await saveMonthDigest(finalized, inputs: journalInputs)
+                digests.append(finalized)
+            }
+            if !plan.rebuild.isEmpty {
+                let generator: (any TextGenerating)?
+                if let override {
+                    generator = override
+                } else {
+                    generator = await summarizationEngine.digestGenerator()
+                }
+                for journal in plan.rebuild {
+                    guard let journalInputs = inputs[journal] else { continue }
+                    let sources = await digestSources(from: journalInputs)
+                    print("🧩 [SummaryCoordinator] Building \(isFinal ? "final" : "draft") \(journal.displayName) digest for \(bounds.start.formatted(.dateTime.month().year())) from \(sources.count) recordings with \(generator?.tier.displayName ?? "Basic")")
+                    let digest = await MonthDigestBuilder.build(
+                        monthStart: bounds.start,
+                        sources: sources,
+                        isFinal: isFinal,
+                        generator: generator,
+                        journal: journal
+                    )
+                    try await saveMonthDigest(digest, inputs: journalInputs)
+                    digests.append(digest)
+                    print("✅ [SummaryCoordinator] \(journal.displayName) digest saved: \(digest.items.count) items")
+                }
+                if generator?.tier == .local {
+                    await summarizationEngine.getLocalEngine().unloadModel()
+                }
+            }
+            // Recordings moved to the other journal, or deleted: their old digest no longer applies
+            for journal in plan.remove {
+                if let row = stored.journals[journal]?.row {
+                    try? await databaseManager.deleteSummary(id: row.id)
+                }
+            }
+            // Only reached when every step above succeeded, so each journal now has its own digest
+            if plan.removeLegacy {
+                await removeLegacyDigests(bounds.start)
+                print("🧹 [SummaryCoordinator] Replaced the mixed digest for \(bounds.start.formatted(.dateTime.month().year())) with journal digests")
+            }
+
+            if inputs.isEmpty {
                 print("ℹ️ [SummaryCoordinator] No session summaries for \(bounds.start.formatted(.dateTime.month().year())), no digest to build")
                 return nil
             }
-            let isFinal = inputs.monthEnd <= Date()
-
-            if !forceRegenerate,
-               let existingRow = try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: inputs.monthStart),
-               existingRow.inputHash == inputs.inputHash,
-               let existing = MonthDigest.fromJSON(existingRow.text) {
-                if existing.isFinal == isFinal {
-                    print("💾 [SummaryCoordinator] ✅ CACHE HIT - Month digest unchanged")
-                    return existing
-                }
-                // Same content, the month just ended: mark it final without running the model again
-                let finalized = existing.withFinal(isFinal)
-                try await saveMonthDigest(finalized, inputs: inputs)
-                return finalized
-            }
-
-            let sources = await digestSources(from: inputs)
-            let generator = await summarizationEngine.digestGenerator()
-            print("🧩 [SummaryCoordinator] Building \(isFinal ? "final" : "draft") digest for \(inputs.monthStart.formatted(.dateTime.month().year())) from \(sources.count) recordings with \(generator?.tier.displayName ?? "Basic")")
-
-            let digest = await MonthDigestBuilder.build(
-                monthStart: inputs.monthStart,
-                sources: sources,
-                isFinal: isFinal,
-                generator: generator
-            )
-            try await saveMonthDigest(digest, inputs: inputs)
-
-            if generator?.tier == .local {
-                await summarizationEngine.getLocalEngine().unloadModel()
-            }
-            print("✅ [SummaryCoordinator] Month digest saved: \(digest.items.count) items")
-            return digest
+            return MonthDigest.combining(digests.sorted { ($0.journal == .work ? 0 : 1) < ($1.journal == .work ? 0 : 1) })
         } catch {
             print("❌ [SummaryCoordinator] Failed to build month digest: \(error)")
             return nil
@@ -804,7 +895,7 @@ public final class SummaryCoordinator {
                 summary: summary.text,
                 keyPoints: (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? [],
                 entities: (try? [Entity].fromEntitiesJSON(summary.entitiesJSON)) ?? [],
-                category: meta?.category,
+                category: inputs.journal,
                 notes: meta?.notes
             ))
         }
@@ -823,12 +914,14 @@ public final class SummaryCoordinator {
             entitiesJSON: nil,
             engineTier: digest.engineTier,
             sourceIds: await databaseManager.sourceIdsToJSON(inputs.summaries.compactMap { $0.sessionId }),
-            inputHash: inputs.inputHash
+            inputHash: inputs.inputHash,
+            category: inputs.journal
         )
     }
 
-    /// Finalize at most one ended month whose digest is missing, still a draft, or out of date.
-    /// Called when the app comes to the foreground; doing one month at a time keeps each launch light.
+    /// Bring at most one ended month up to date: both its journal digests are built if missing,
+    /// out of date or still drafts. Called when the app comes to the foreground; one month at a
+    /// time keeps each launch light, and older mixed digests get replaced this way over time.
     /// Looks back to the start of last year; Year Wrap builds anything older it needs.
     public func finalizeNextClosedMonthDigest() async {
         let calendar = Calendar.current
@@ -841,12 +934,10 @@ public final class SummaryCoordinator {
             let months = Set(summaries.compactMap { monthBounds(for: $0.periodStart)?.start }).sorted(by: >)
 
             for month in months {
-                guard let inputs = try await loadDigestInputs(for: month) else { continue }
-                let existingRow = try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: month)
-                let existing = existingRow.flatMap { MonthDigest.fromJSON($0.text) }
-                if existingRow?.inputHash == inputs.inputHash, existing?.isFinal == true { continue }
+                let inputs = try await loadDigestInputs(for: month)
+                guard planMonth(month, inputs: inputs, stored: await storedMonth(month)).needsWork else { continue }
 
-                print("🗓️ [SummaryCoordinator] Finalizing digest for \(month.formatted(.dateTime.month().year()))")
+                print("🗓️ [SummaryCoordinator] Finalizing digests for \(month.formatted(.dateTime.month().year()))")
                 await updateMonthDigest(date: month)
                 return
             }
@@ -856,12 +947,14 @@ public final class SummaryCoordinator {
     }
 
     /// Bump when Year Wrap generation changes, so a cached wrap is rebuilt
-    private static let yearWrapVersion = "yearwrap-v2"
+    private static let yearWrapVersion = "yearwrap-v3"
     
-    /// Year Wrap, built from the year's month digests.
-    /// Makes sure every month with recordings has an up-to-date digest, then builds one wrap whose
-    /// items carry their recordings and work/personal category (Work and Personal are filters on it).
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
+    /// Year Wrap, built from the year's month digests with Apple Intelligence or Smartest AI.
+    /// Brings every month's digest up to date, then writes three wraps: All, Work and Personal.
+    /// Work and Personal are built only from that category's recordings, so each has its own
+    /// title, summary and numbers. A category with no recordings this year gets no wrap.
+    /// Throws when the engine isn't available or nothing could be built.
+    public func wrapUpYear(date: Date, engine: EngineTier, forceRegenerate: Bool = false) async throws {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: date)
         guard let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
@@ -875,65 +968,105 @@ public final class SummaryCoordinator {
         generatingPeriodSummaries.insert(periodKey)
         defer { generatingPeriodSummaries.remove(periodKey) }
 
-        do {
-            // 1. Month digests
-            let sessionSummaries = try await liveSessionSummaries(from: startOfYear, to: endOfYear)
-            let months = Set(sessionSummaries.compactMap { monthBounds(for: $0.periodStart)?.start }).sorted()
-            guard !months.isEmpty else {
-                print("ℹ️ [SummaryCoordinator] No recordings in \(year), nothing to wrap")
-                return
+        let generator = try await summarizationEngine.yearWrapGenerator(tier: engine)
+        let sessionSummaries = try await liveSessionSummaries(from: startOfYear, to: endOfYear)
+        let months = Set(sessionSummaries.compactMap { monthBounds(for: $0.periodStart)?.start }).sorted()
+        guard !months.isEmpty else {
+            throw SummarizationError.summarizationFailed("There are no summarized recordings from \(year) yet.")
+        }
+
+        // Only months whose digest is missing or out of date take real work; count just those as steps.
+        // Regenerating rewrites the wraps but keeps up-to-date digests.
+        var staleMonths: Set<Date> = []
+        var splittingOldMonths = false
+        for month in months {
+            let plan = planMonth(month, inputs: try await loadDigestInputs(for: month), stored: await storedMonth(month))
+            if !plan.rebuild.isEmpty {
+                staleMonths.insert(month)
+                if plan.removeLegacy { splittingOldMonths = true }
             }
-            let totalSteps = months.count + 1
-            var digests: [MonthDigest] = []
-            for (index, month) in months.enumerated() {
-                let name = month.formatted(.dateTime.month(.wide))
-                onYearWrapProgressUpdate?("Step \(index + 1) of \(totalSteps): \(name) digest\nGathering what you said this month...")
-                if let digest = await updateMonthDigest(date: month) {
-                    digests.append(digest)
+        }
+        // The first wrap after journals arrived rereads months saved the old way; say why it's slower
+        let firstRunNote = splittingOldMonths && staleMonths.count > 1
+            ? "This first wrap separates each month into work and personal, so it takes longer than usual."
+            : nil
+        let wrapFilters: [ItemFilter] = [.all, .workOnly, .personalOnly]
+        let totalSteps = staleMonths.count + wrapFilters.count
+        var step = 0
+
+        // 1. Month digests, rebuilt with the same engine so a slow local model never runs here
+        var digests: [MonthDigest] = []
+        for month in months {
+            if staleMonths.contains(month) {
+                step += 1
+                onYearWrapProgressUpdate?(YearWrapProgress(step: step, total: totalSteps,
+                    label: "Reading \(month.formatted(.dateTime.month(.wide)))", note: firstRunNote))
+            }
+            if let digest = await updateMonthDigest(date: month, generator: generator) {
+                digests.append(digest)
+            }
+        }
+        guard !digests.isEmpty else {
+            throw SummarizationError.summarizationFailed("Couldn't read your months. Try again in a moment.")
+        }
+
+        // 2. One wrap per filter
+        var built = 0
+        for filter in wrapFilters {
+            step += 1
+            let label: String
+            switch filter {
+            case .all: label = "Writing your year"
+            case .workOnly: label = "Writing your work year"
+            case .personalOnly: label = "Writing your personal year"
+            }
+            onYearWrapProgressUpdate?(YearWrapProgress(step: step, total: totalSteps, label: label))
+
+            let slices = digests.compactMap { $0.slice(for: filter) }
+            let type = filter.yearWrapType
+            guard !slices.isEmpty else {
+                // No recordings in this category: remove a wrap left from an earlier run
+                if let old = try? await databaseManager.fetchPeriodSummary(type: type, date: startOfYear) {
+                    try? await databaseManager.deleteSummary(id: old.id)
                 }
-            }
-            guard !digests.isEmpty else {
-                print("⚠️ [SummaryCoordinator] No month digests could be built for \(year)")
-                return
+                continue
             }
 
-            // 2. Cache check: the wrap only changes when a digest or the chosen engine changes
-            let digestTexts = digests.compactMap { try? $0.jsonString() }
-            let inputHash = await databaseManager.computeInputHash([Self.yearWrapVersion, useLocalAI ? "local" : "external"] + digestTexts)
+            // The wrap only changes when its months or the engine change
+            let sliceTexts = slices.compactMap { try? $0.jsonString() }
+            let inputHash = await databaseManager.computeInputHash([Self.yearWrapVersion, generator.tier.rawValue, filter.rawValue] + sliceTexts)
             if !forceRegenerate,
-               let existing = try? await databaseManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear),
+               let existing = try? await databaseManager.fetchPeriodSummary(type: type, date: startOfYear),
                existing.inputHash == inputHash {
-                print("💾 [SummaryCoordinator] ✅ CACHE HIT - Year Wrap unchanged")
-                return
+                print("💾 [SummaryCoordinator] ✅ CACHE HIT - \(type.displayName) unchanged")
+                built += 1
+                continue
             }
 
-            // 3. Year Wrap
-            onYearWrapProgressUpdate?("Step \(totalSteps) of \(totalSteps): Year Wrap\nPutting your year together...")
-            let generator = try await summarizationEngine.yearWrapGenerator(useLocalAI: useLocalAI)
-            print("🎁 [SummaryCoordinator] Building Year Wrap for \(year) from \(digests.count) month digests with \(generator.tier.displayName)")
-            let wrap = await YearWrapBuilder.build(year: year, digests: digests, generator: generator)
-
-            let topics = wrap.topWorkedOnTopics.map { $0.text }
-            let topicsJSON = (try? JSONEncoder().encode(topics)).map { String(decoding: $0, as: UTF8.self) }
+            print("🎁 [SummaryCoordinator] Building \(type.displayName) for \(year) from \(slices.count) months with \(generator.tier.displayName)")
+            let wrap = await YearWrapBuilder.build(year: year, digests: slices, generator: generator, scope: filter)
+            let sessionIds = Set(slices.flatMap { $0.items.flatMap(\.sessionIds) })
+            let sources = filter == .all
+                ? sessionSummaries.compactMap { $0.sessionId }
+                : sessionSummaries.compactMap { $0.sessionId }.filter { sessionIds.contains($0) }
+            let topicsJSON = (try? JSONEncoder().encode(wrap.topWorkedOnTopics.map { $0.text })).map { String(decoding: $0, as: UTF8.self) }
             try await databaseManager.upsertPeriodSummary(
-                type: .yearWrap,
+                type: type,
                 text: try YearWrapBuilder.jsonString(wrap),
                 start: startOfYear,
                 end: endOfYear,
                 topicsJSON: topicsJSON,
                 entitiesJSON: nil,
                 engineTier: generator.tier.rawValue,
-                sourceIds: await databaseManager.sourceIdsToJSON(sessionSummaries.compactMap { $0.sessionId }),
+                sourceIds: await databaseManager.sourceIdsToJSON(sources),
                 inputHash: inputHash
             )
-
-            if generator.tier == .local {
-                await summarizationEngine.getLocalEngine().unloadModel()
-            }
-            print("✅ [SummaryCoordinator] Year Wrap saved")
-        } catch {
-            print("❌ [SummaryCoordinator] Failed to generate Year Wrap: \(error)")
+            built += 1
         }
+        guard built > 0 else {
+            throw SummarizationError.summarizationFailed("Year Wrap couldn't be built. Try again in a moment.")
+        }
+        print("✅ [SummaryCoordinator] Year Wraps saved")
     }
     
     /// Get count of new sessions created after Year Wrap generation
@@ -979,5 +1112,19 @@ public final class SummaryCoordinator {
     /// Build formatted rollup text with header and bullet points
     private func buildRollupText(header: String, lines: [String]) -> String {
         return "\(header)\n\n" + lines.map { "• \($0)" }.joined(separator: "\n")
+    }
+}
+
+/// Where a Year Wrap run is: step `step` of `total` is in progress
+public struct YearWrapProgress: Equatable, Sendable {
+    public let step: Int
+    public let total: Int
+    public let label: String
+    /// Extra context for a slower-than-usual run, shown under the progress bar
+    public var note: String? = nil
+
+    /// Share of the work done before this step, for a progress bar
+    public var fractionDone: Double {
+        total > 0 ? Double(step - 1) / Double(total) : 0
     }
 }

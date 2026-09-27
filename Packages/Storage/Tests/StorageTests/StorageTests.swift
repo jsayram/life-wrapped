@@ -21,6 +21,47 @@ struct DatabaseManagerTests {
         await manager.close()
     }
     
+    @Test("Each journal keeps its own period summary, apart from the unscoped one")
+    func testJournalSummaries() async throws {
+        let manager = try await createTestDatabase()
+        let start = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let end = Calendar.current.date(byAdding: .month, value: 1, to: start)!
+        let middle = start.addingTimeInterval(86_400 * 10)
+
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "old combined", start: start, end: end)
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "work", start: start, end: end, category: .work)
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "personal", start: start, end: end, category: .personal)
+        // Upserting again updates the journal's row instead of adding one
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "work v2", start: start, end: end, category: .work)
+
+        #expect(try await manager.fetchPeriodSummary(type: .monthDigest, date: middle)?.text == "old combined")
+        #expect(try await manager.fetchPeriodSummary(type: .monthDigest, date: middle, category: .work)?.text == "work v2")
+        #expect(try await manager.fetchPeriodSummary(type: .monthDigest, date: middle, category: .personal)?.text == "personal")
+        #expect(try await manager.fetchSummaries(periodType: .monthDigest, from: start, to: end).count == 3)
+
+        await manager.close()
+    }
+    
+    @Test("A summary's journal survives saving, export and import")
+    func testJournalRoundTrip() async throws {
+        let manager = try await createTestDatabase()
+        let start = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let summary = Summary(periodType: .monthDigest, periodStart: start, periodEnd: start.addingTimeInterval(86_400 * 31),
+                              text: "{}", category: .work)
+        try await manager.insertSummary(summary)
+        #expect(try await manager.fetchSummary(id: summary.id)?.category == .work)
+
+        // Export writes it; an older export without the field still decodes
+        let encoder = JSONEncoder()
+        let exported = try encoder.encode(JSONSummary(from: summary))
+        #expect(String(decoding: exported, as: UTF8.self).contains("\"category\":\"work\""))
+        let old = #"{"id":"\#(UUID().uuidString)","periodType":"monthDigest","periodStart":0,"periodEnd":10,"text":"{}","createdAt":0}"#
+        let decoded = try JSONDecoder().decode(JSONSummary.self, from: Data(old.utf8))
+        #expect(decoded.category == nil)
+
+        await manager.close()
+    }
+    
     @Test("AudioChunk CRUD operations")
     func testAudioChunkCRUD() async throws {
         let manager = try await createTestDatabase()

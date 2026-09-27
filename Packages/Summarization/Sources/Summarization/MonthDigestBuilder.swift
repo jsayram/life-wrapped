@@ -54,11 +54,14 @@ public enum MonthDigestBuilder {
 
     // MARK: - Build
 
+    /// Build a digest. With a `journal`, the sources are that journal's recordings only and the
+    /// story is written about that side of life; nothing from the other journal is involved.
     public static func build(
         monthStart: Date,
         sources: [DigestSource],
         isFinal: Bool,
-        generator: (any TextGenerating)?
+        generator: (any TextGenerating)?,
+        journal: SessionCategory? = nil
     ) async -> MonthDigest {
         let sorted = sources.sorted { $0.start < $1.start }
         let categories = categoryMap(sorted)
@@ -100,7 +103,8 @@ public enum MonthDigestBuilder {
         let items = merge(extracted, categories: categories)
 
         let modelForStories = usedModel ? generator : nil
-        let story = await writeStory(items: items, stats: stats, monthStart: monthStart, focus: nil, generator: modelForStories)
+        let story = await writeStory(items: items, stats: stats, monthStart: monthStart,
+                                     focus: journal?.displayName.lowercased(), generator: modelForStories)
         var headline = story.headline
         let narrative = story.narrative
         // The plain "14 recordings · topics" headline is only for months without a written story
@@ -134,7 +138,8 @@ public enum MonthDigestBuilder {
             narrative: narrative,
             items: items,
             engineTier: usedModel ? (generator?.tier.rawValue ?? EngineTier.basic.rawValue) : EngineTier.basic.rawValue,
-            sections: sections
+            sections: sections,
+            journal: journal
         )
     }
 
@@ -174,7 +179,8 @@ public enum MonthDigestBuilder {
             wordCount: sources.reduce(0) { $0 + $1.wordCount },
             activeDays: days.count,
             workCount: sources.filter { $0.category == .work }.count,
-            personalCount: sources.filter { $0.category == .personal }.count
+            personalCount: sources.filter { $0.category == .personal }.count,
+            days: Set(sources.map { calendar.component(.day, from: $0.start) }).sorted()
         )
     }
 

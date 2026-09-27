@@ -24,8 +24,8 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO summaries (id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
             
             var stmt: OpaquePointer?
@@ -78,6 +78,12 @@ public actor SummaryRepository {
                 sqlite3_bind_null(stmt, 12)
             }
             
+            if let category = summary.category {
+                sqlite3_bind_text(stmt, 13, category.rawValue, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 13)
+            }
+            
             guard sqlite3_step(stmt) == SQLITE_DONE else {
                 throw StorageError.stepFailed(await self.connection.lastError())
             }
@@ -89,7 +95,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE id = ?
                 """
@@ -116,7 +122,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             var sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 """
             
@@ -180,7 +186,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE session_id = ?
                 ORDER BY created_at DESC
@@ -210,7 +216,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE period_type = 'session'
                 AND period_start >= ?
@@ -239,18 +245,20 @@ public actor SummaryRepository {
     
     // MARK: - Period Summary Queries
     
-    /// Fetch period summary for a specific date and type
-    public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
+    /// Fetch period summary for a specific date and type.
+    /// `category` picks a journal's own summary; nil means one not tied to a journal.
+    public func fetchPeriodSummary(type: PeriodType, date: Date, category: SessionCategory? = nil) async throws -> Summary? {
         try await connection.withDatabase { db in
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE period_type = ?
                 AND ? >= period_start
                 AND ? < period_end
                 AND session_id IS NULL
+                AND category IS ?
                 LIMIT 1
                 """
             
@@ -264,6 +272,11 @@ public actor SummaryRepository {
             sqlite3_bind_text(stmt, 1, type.rawValue, -1, SQLITE_TRANSIENT)
             sqlite3_bind_double(stmt, 2, date.timeIntervalSince1970)
             sqlite3_bind_double(stmt, 3, date.timeIntervalSince1970)
+            if let category {
+                sqlite3_bind_text(stmt, 4, category.rawValue, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 4)
+            }
             
             if sqlite3_step(stmt) == SQLITE_ROW {
                 return try self.parseSummary(from: stmt)
@@ -283,10 +296,11 @@ public actor SummaryRepository {
         entitiesJSON: String? = nil,
         engineTier: String? = nil,
         sourceIds: String? = nil,
-        inputHash: String? = nil
+        inputHash: String? = nil,
+        category: SessionCategory? = nil
     ) async throws {
         // Check if summary exists
-        if let existing = try await fetchPeriodSummary(type: type, date: start) {
+        if let existing = try await fetchPeriodSummary(type: type, date: start, category: category) {
             // Update existing with structured data AND update created_at to current time (for staleness detection)
             try await connection.withDatabase { db in
                 guard let db = db else { throw StorageError.notOpen }
@@ -360,7 +374,8 @@ public actor SummaryRepository {
                 entitiesJSON: entitiesJSON,
                 engineTier: engineTier,
                 sourceIds: sourceIds,
-                inputHash: inputHash
+                inputHash: inputHash,
+                category: category
             )
             try await insert(summary)
         }
@@ -374,7 +389,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE period_type = 'day'
                 AND period_start >= ? AND period_start < ?
@@ -410,7 +425,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
 
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE period_type = ?
                 AND period_start >= ? AND period_start < ?
@@ -445,7 +460,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE period_type = 'week'
                 AND period_start >= ? AND period_start < ?
@@ -480,7 +495,7 @@ public actor SummaryRepository {
             guard let db = db else { throw StorageError.notOpen }
             
             let sql = """
-                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash
+                SELECT id, period_type, period_start, period_end, text, created_at, session_id, topics_json, entities_json, engine_tier, source_ids, input_hash, category
                 FROM summaries
                 WHERE period_type = 'month'
                 AND period_start >= ? AND period_start < ?
@@ -576,6 +591,9 @@ public actor SummaryRepository {
             inputHash = nil
         }
         
+        // Parse optional category (the journal a period summary was built for)
+        let category = sqlite3_column_text(stmt, 12).flatMap { SessionCategory(rawValue: String(cString: $0)) }
+        
         return Summary(
             id: id,
             periodType: periodType,
@@ -588,7 +606,8 @@ public actor SummaryRepository {
             entitiesJSON: entitiesJSON,
             engineTier: engineTier,
             sourceIds: sourceIds,
-            inputHash: inputHash
+            inputHash: inputHash,
+            category: category
         )
     }
 }

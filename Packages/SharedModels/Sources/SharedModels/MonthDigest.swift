@@ -106,14 +106,33 @@ public struct DigestStats: Codable, Sendable, Hashable {
     public let activeDays: Int
     public let workCount: Int
     public let personalCount: Int
+    /// Days of the month (1-31) with recordings, so two journals' days can be combined
+    /// without counting a shared day twice. Nil in digests made before journals.
+    public let days: [Int]?
 
-    public init(sessionCount: Int, totalMinutes: Int, wordCount: Int, activeDays: Int, workCount: Int, personalCount: Int) {
+    public init(sessionCount: Int, totalMinutes: Int, wordCount: Int, activeDays: Int, workCount: Int, personalCount: Int, days: [Int]? = nil) {
         self.sessionCount = sessionCount
         self.totalMinutes = totalMinutes
         self.wordCount = wordCount
         self.activeDays = activeDays
         self.workCount = workCount
         self.personalCount = personalCount
+        self.days = days
+    }
+
+    /// Two journals' numbers added up. Shared days count once when both know their days.
+    public static func combining(_ stats: [DigestStats]) -> DigestStats {
+        let dayLists = stats.compactMap(\.days)
+        let days = dayLists.count == stats.count ? Array(Set(dayLists.flatMap { $0 })).sorted() : nil
+        return DigestStats(
+            sessionCount: stats.reduce(0) { $0 + $1.sessionCount },
+            totalMinutes: stats.reduce(0) { $0 + $1.totalMinutes },
+            wordCount: stats.reduce(0) { $0 + $1.wordCount },
+            activeDays: days?.count ?? stats.map(\.activeDays).max() ?? 0,
+            workCount: stats.reduce(0) { $0 + $1.workCount },
+            personalCount: stats.reduce(0) { $0 + $1.personalCount },
+            days: days
+        )
     }
 }
 
@@ -158,6 +177,8 @@ public struct MonthDigest: Codable, Sendable, Hashable {
     public let engineTier: String
     /// One per category that had recordings this month. Nil in digests made before the split.
     public let sections: [CategorySection]?
+    /// The journal this digest was built from. Nil for older digests that mixed both.
+    public let journal: SessionCategory?
 
     public init(
         monthStart: Date,
@@ -167,7 +188,8 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         narrative: String?,
         items: [DigestItem],
         engineTier: String,
-        sections: [CategorySection]? = nil
+        sections: [CategorySection]? = nil,
+        journal: SessionCategory? = nil
     ) {
         self.monthStart = monthStart
         self.isFinal = isFinal
@@ -177,6 +199,7 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         self.items = items
         self.engineTier = engineTier
         self.sections = sections
+        self.journal = journal
     }
 
     public func items(of kind: DigestItemKind, filter: ItemFilter = .all) -> [DigestItem] {
@@ -210,6 +233,15 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         return (section.headline, section.narrative)
     }
 
+    /// Each journal's headline and narrative as one piece of text, for a month combined from both
+    public var journalStories: [(title: String, story: String)] {
+        (sections ?? []).compactMap { section in
+            let story = [section.headline, section.narrative].compactMap { $0 }.joined(separator: ". ")
+            guard !story.isEmpty else { return nil }
+            return (section.category == .work ? "Work" : "Personal", story)
+        }
+    }
+
     /// The month as readable text for copying: title, story, numbers and every item, for one filter
     public func plainText(filter: ItemFilter) -> String {
         var title = monthStart.formatted(.dateTime.month(.wide).year())
@@ -226,6 +258,9 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         let story = story(for: filter)
         if let headline = story.headline { blocks.append(headline) }
         if let narrative = story.narrative { blocks.append(narrative) }
+        if filter == .all, story.headline == nil, story.narrative == nil {
+            blocks += journalStories.map { "\($0.title): \($0.story)" }
+        }
         let recordings = stats.sessionCount == 1 ? "1 recording" : "\(stats.sessionCount) recordings"
         let days = stats.activeDays == 1 ? "1 day" : "\(stats.activeDays) days"
         blocks.append("\(recordings) · \(days) · \(stats.totalMinutes) min")
@@ -243,9 +278,47 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         return blocks.joined(separator: "\n\n")
     }
 
+    /// The month as seen by one filter: that category's numbers, story and items.
+    /// Nil when the category had no recordings this month. All returns the digest unchanged.
+    public func slice(for filter: ItemFilter) -> MonthDigest? {
+        guard filter != .all else { return self }
+        guard let stats = stats(for: filter) else { return nil }
+        let story = story(for: filter)
+        let category: ItemCategory = filter == .workOnly ? .work : .personal
+        return MonthDigest(monthStart: monthStart, isFinal: isFinal, stats: stats, headline: story.headline,
+                           narrative: story.narrative, items: items.filter { $0.matches(filter) }, engineTier: engineTier,
+                           sections: sections?.filter { $0.category == category },
+                           journal: filter == .workOnly ? .work : .personal)
+    }
+
     public func withFinal(_ isFinal: Bool) -> MonthDigest {
         MonthDigest(monthStart: monthStart, isFinal: isFinal, stats: stats, headline: headline,
-                    narrative: narrative, items: items, engineTier: engineTier, sections: sections)
+                    narrative: narrative, items: items, engineTier: engineTier, sections: sections, journal: journal)
+    }
+
+    /// The month across both journals, put together in code: numbers added up, each journal's
+    /// items and story kept as its own section. Nothing is merged across journals, so an item
+    /// stays Work or Personal. With one journal, that journal's digest is returned as is.
+    public static func combining(_ digests: [MonthDigest]) -> MonthDigest? {
+        guard let first = digests.first else { return nil }
+        guard digests.count > 1 else { return first }
+        let ordered = digests.sorted { ($0.journal == .work ? 0 : 1) < ($1.journal == .work ? 0 : 1) }
+        let sections = ordered.compactMap { digest -> CategorySection? in
+            guard let journal = digest.journal else { return nil }
+            return CategorySection(category: journal == .work ? .work : .personal, stats: digest.stats,
+                                   headline: digest.headline, narrative: digest.narrative)
+        }
+        let tiers = Set(ordered.map(\.engineTier))
+        return MonthDigest(
+            monthStart: first.monthStart,
+            isFinal: ordered.allSatisfy(\.isFinal),
+            stats: DigestStats.combining(ordered.map(\.stats)),
+            headline: nil,
+            narrative: nil,
+            items: ordered.flatMap(\.items),
+            engineTier: tiers.count == 1 ? first.engineTier : ordered.map(\.engineTier).joined(separator: "+"),
+            sections: sections
+        )
     }
 
     // MARK: - JSON

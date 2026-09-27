@@ -1,79 +1,6 @@
 import SwiftUI
 import SharedModels
-
-/// Shown while a Year Wrap is being generated.
-/// (App/Components/Loading/YearWrapLoadingOverlay.swift is not in the app target; this copy is the one that ships.)
-/// Graphite style: dimmed backdrop, one flat card, system spinner, step dots in ink.
-fileprivate struct YearWrapLoadingOverlay: View {
-    let statusMessage: String
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-
-            VStack(spacing: 18) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 28, weight: .regular))
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .symbolEffect(.pulse)
-
-                Text("Wrapping up your year")
-                    .font(AppTheme.titleFont(size: 24))
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                if !statusMessage.isEmpty {
-                    Text(statusMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(AppTheme.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .animation(.easeInOut, value: statusMessage)
-                }
-
-                if let progress = stepProgress {
-                    let current = progress.current, total = progress.total
-                    if total <= 6 {
-                        HStack(spacing: 8) {
-                            ForEach(1...total, id: \.self) { step in
-                                Capsule()
-                                    .fill(step <= current ? AppTheme.accent : AppTheme.hairline)
-                                    .frame(width: 24, height: 4)
-                            }
-                        }
-                        .accessibilityLabel("Step \(current) of \(total)")
-                    } else {
-                        ProgressView(value: Double(current), total: Double(total))
-                            .tint(AppTheme.accent)
-                            .frame(maxWidth: 200)
-                            .accessibilityLabel("Step \(current) of \(total)")
-                    }
-                }
-
-                ProgressView()
-                    .tint(AppTheme.textPrimary)
-                    .padding(.top, 4)
-            }
-            .padding(28)
-            .frame(maxWidth: 400)
-            .background(
-                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
-                    .fill(AppTheme.card)
-                    .stroke(AppTheme.hairline, lineWidth: 1)
-            )
-            .padding(.horizontal, 32)
-        }
-    }
-
-    /// Reads the step from messages like "Step 2 of 5: March digest"
-    private var stepProgress: (current: Int, total: Int)? {
-        guard let range = statusMessage.range(of: "Step \\d+ of \\d+", options: .regularExpression) else { return nil }
-        let numbers = statusMessage[range].split(separator: " ").compactMap { Int($0) }
-        guard numbers.count == 2, numbers[1] > 0 else { return nil }
-        return (min(numbers[0], numbers[1]), numbers[1])
-    }
-}
+import Summarization
 
 struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
@@ -81,13 +8,14 @@ struct OverviewTab: View {
     @State private var periodSummary: Summary?
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
-    @State private var yearWrapSummary: Summary?
+    /// This year's wraps: All, Work and Personal each have their own
+    @State private var yearWraps: [ItemFilter: Summary] = [:]
     /// All / Work / Personal, shared by Month and Year so the choice carries between them
     @State private var categoryFilter: ItemFilter = .all
-    @State private var isWrappingUpYear = false
-    @State private var yearWrapGenerationStatus: String = ""
     @State private var isRegeneratingPeriodSummary = false
     @State private var monthDigest: MonthDigest?
+    /// The shown month still comes from a digest saved before work and personal were separate
+    @State private var monthDigestIsOld = false
     /// First day of the month the Month view shows; starts on the current month
     @State private var selectedMonth: Date = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
     /// Months with recordings, newest first, for the month switcher
@@ -97,14 +25,6 @@ struct OverviewTab: View {
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     @State private var showPurchaseSheet = false
-    @State private var showLocalAIConfirmation = false
-    @State private var showExternalAIConfirmation = false
-    @State private var pendingAIEngine: AIEngine?
-    
-    enum AIEngine {
-        case local
-        case external
-    }
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
@@ -200,6 +120,7 @@ struct OverviewTab: View {
                                             digest: monthDigest,
                                             filter: categoryFilter,
                                             isUpdating: isUpdatingMonthDigest,
+                                            isSplitting: monthDigestIsOld && isUpdatingMonthDigest,
                                             onCopy: {
                                                 UIPasteboard.general.string = monthDigest.plainText(filter: categoryFilter)
                                                 coordinator.showSuccess("Month copied")
@@ -253,30 +174,10 @@ struct OverviewTab: View {
                                     .padding(.horizontal, 16)
                                     .padding(.top, 8)
                                     
-                                    // One wrap; Work and Personal filter its items
-                                    if let yearWrap = yearWrapSummary {
-                                        YearWrappedCard(
-                                            summary: yearWrap,
-                                            coordinator: coordinator,
-                                            filter: categoryFilter,
-                                            onRegenerate: {
-                                                showYearWrapConfirmation = true
-                                            },
-                                            isRegenerating: isWrappingUpYear
-                                        )
+                                    yearWrapSection
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
-                                    } else if !sessionsInPeriod.isEmpty {
-                                        // Show generate button if no Year Wrap exists
-                                        GenerateYearWrapCard(
-                                            onGenerate: {
-                                                showYearWrapConfirmation = true
-                                            },
-                                            isGenerating: isWrappingUpYear
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                    }
+                                        .animation(.easeInOut, value: coordinator.isGeneratingYearWrap)
                                 }
                             }
                             
@@ -379,42 +280,14 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
-            .alert("Generate Year Wrap?", isPresented: $showLocalAIConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Generate", role: .destructive) {
-                    Task {
-                        await wrapUpYear(forceRegenerate: true, useLocalAI: true)
-                    }
-                }
-            } message: {
-                Text("This will take 2-3 minutes and cannot be stopped once started.\n\nImportant: Keep the app open and screen unlocked during generation. Don't minimize or switch apps.\n\nAre you sure you want to continue?")
-            }
-            .alert("Generate Year Wrap with External AI?", isPresented: $showExternalAIConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Generate", role: .destructive) {
-                    Task {
-                        await wrapUpYear(forceRegenerate: true, useLocalAI: false)
-                    }
-                }
-            } message: {
-                Text("This will take 1-2 minutes and cannot be stopped once started.\n\nYour transcript will be sent to your configured AI provider for processing.\n\nAre you sure you want to continue?")
-            }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
                     smartestAIPrice: coordinator.storeManager.smartestAIProduct?.displayPrice,
                     isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
-                    onGenerateWithExternal: {
+                    onGenerate: { engine in
                         showYearWrapConfirmation = false
-                        Task {
-                            await wrapUpYear(forceRegenerate: true, useLocalAI: false)
-                        }
-                    },
-                    onGenerateWithLocal: {
-                        showYearWrapConfirmation = false
-                        Task {
-                            await wrapUpYear(forceRegenerate: true, useLocalAI: true)
-                        }
+                        coordinator.startYearWrap(engine: engine)
                     },
                     onPurchaseSmartestAI: {
                         // Close this sheet and show purchase sheet
@@ -425,12 +298,10 @@ struct OverviewTab: View {
                     },
                     onCancel: {
                         showYearWrapConfirmation = false
-                    },
-                    showLocalAIConfirmation: $showLocalAIConfirmation,
-                    showExternalAIConfirmation: $showExternalAIConfirmation
+                    }
                 )
                 .environmentObject(coordinator)
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showPurchaseSheet) {
@@ -471,11 +342,6 @@ struct OverviewTab: View {
                 )
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-            }
-        }
-        .overlay {
-            if isWrappingUpYear {
-                YearWrapLoadingOverlay(statusMessage: coordinator.yearWrapProgress.isEmpty ? yearWrapGenerationStatus : coordinator.yearWrapProgress)
             }
         }
     }
@@ -550,7 +416,9 @@ struct OverviewTab: View {
 
         if selectedTimeRange == .month {
             availableMonths = await coordinator.monthsWithRecordings()
-            monthDigest = await coordinator.fetchMonthDigest(date: selectedMonth)
+            let status = await coordinator.fetchMonthDigestStatus(date: selectedMonth)
+            monthDigest = status?.digest
+            monthDigestIsOld = status?.usesLegacy ?? false
             // Build or refresh in the background; returns right away when nothing changed
             if !sessionsInPeriod.isEmpty || monthDigest == nil {
                 Task { await refreshMonthDigest(force: false) }
@@ -560,26 +428,23 @@ struct OverviewTab: View {
         }
 
         if selectedTimeRange == .allTime {
-            yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
+            var wraps: [ItemFilter: Summary] = [:]
+            for filter in ItemFilter.allCases {
+                wraps[filter] = try? await coordinator.fetchPeriodSummary(type: filter.yearWrapType, date: dateForFetch)
+            }
+            yearWraps = wraps
             
-            print("📊 [OverviewTab] Year Wrap loaded: \(yearWrapSummary != nil)")
-            
-            // Check for staleness after fetching Year Wrap
-            if let yearWrap = yearWrapSummary {
-                let calendar = Calendar.current
-                let year = calendar.component(.year, from: dateForFetch)
-                
+            // Staleness is measured against the All wrap, which every run writes
+            if let yearWrap = wraps[.all] {
+                let year = Calendar.current.component(.year, from: dateForFetch)
                 if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                    await MainActor.run {
-                        coordinator.updateYearWrapNewSessionCount(newCount)
-                    }
+                    coordinator.updateYearWrapNewSessionCount(newCount)
                 }
             } else {
-                // No Year Wrap exists, reset staleness count
                 coordinator.updateYearWrapNewSessionCount(0)
             }
         } else {
-            yearWrapSummary = nil
+            yearWraps = [:]
             // Reset staleness count when not viewing Year
             coordinator.updateYearWrapNewSessionCount(0)
         }
@@ -605,6 +470,7 @@ struct OverviewTab: View {
         // Ignore a result for a month the user has already moved away from
         if selectedTimeRange == .month, month == selectedMonth, let digest {
             monthDigest = digest
+            monthDigestIsOld = false
         }
     }
     
@@ -655,63 +521,31 @@ struct OverviewTab: View {
         }
     }
 
-    private func wrapUpYear(forceRegenerate: Bool, useLocalAI: Bool) async {
-        guard !isWrappingUpYear else { return }
-        
-        // Update UI state on MainActor
-        isWrappingUpYear = true
-        coordinator.isGeneratingYearWrap = true
-        yearWrapGenerationStatus = "Preparing Year Wrap..."
-        
-        let dateForGeneration = Date()
-
-        print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
-        
-        // Update status to show AI processing
-        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\n\nImportant: Keep this app open\nDon't minimize or lock screen\n\nThis takes 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
-        
-        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
-        print("✅ [OverviewTab] Year Wrap generation completed successfully")
-        
-        // Update status to show fetching results
-        yearWrapGenerationStatus = "Finalizing results..."
-        
-        // Wait briefly for database transaction to complete
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        // Update status before fetching
-        yearWrapGenerationStatus = "Loading Year Wrap..."
-        
-        // Fetch all Year Wrap summaries (with error handling)
-        do {
-            yearWrapSummary = try await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
-        } catch {
-            print("⚠️ [OverviewTab] Failed to fetch Year Wrap summaries: \(error)")
-            // Non-fatal - just log it
-        }
-        
-        // Check for staleness after fetching Year Wrap
-        if let yearWrap = yearWrapSummary {
-            let calendar = Calendar.current
-            let year = calendar.component(.year, from: dateForGeneration)
-            
-            print("🔍 [OverviewTab] Year Wrap fetched with createdAt: \(yearWrap.createdAt)")
-            
-            if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                coordinator.updateYearWrapNewSessionCount(newCount)
-                print("📊 [OverviewTab] Updated staleness count to \(newCount)")
+    /// The Year view's wrap for the chosen filter, its progress while generating, or a way to make one
+    @ViewBuilder
+    private var yearWrapSection: some View {
+        let year = Calendar.current.component(.year, from: Date())
+        if coordinator.isGeneratingYearWrap {
+            YearWrapProgressCard(year: year, progress: coordinator.yearWrapProgress)
+                .transition(.opacity)
+        } else if let wrap = yearWraps[categoryFilter] {
+            YearWrappedCard(
+                summary: wrap,
+                wraps: yearWraps,
+                coordinator: coordinator,
+                filter: categoryFilter,
+                onRegenerate: { showYearWrapConfirmation = true }
+            )
+            .transition(.opacity)
+        } else if yearWraps[.all] != nil {
+            MissingCategoryWrapCard(filter: categoryFilter) {
+                showYearWrapConfirmation = true
             }
-        } else {
-            // Reset count if no Year Wrap found
-            coordinator.updateYearWrapNewSessionCount(0)
+        } else if !sessionsInPeriod.isEmpty {
+            GenerateYearWrapCard {
+                showYearWrapConfirmation = true
+            }
         }
-        
-        // Success - clear state
-        isWrappingUpYear = false
-        coordinator.isGeneratingYearWrap = false
-        yearWrapGenerationStatus = ""
-        coordinator.showSuccess("Year Wrap generated successfully!")
-        print("✨ [OverviewTab] Year Wrap UI update completed")
     }
     
     private func formatHour(_ hour: Int) -> String {
@@ -1092,12 +926,12 @@ struct YearWrapGenerationSheet: View {
     let isSmartestAIUnlocked: Bool
     let smartestAIPrice: String?
     let isPurchasing: Bool
-    let onGenerateWithExternal: () -> Void
-    let onGenerateWithLocal: () -> Void
+    let onGenerate: (EngineTier) -> Void
     let onPurchaseSmartestAI: () -> Void
     let onCancel: () -> Void
-    @Binding var showLocalAIConfirmation: Bool
-    @Binding var showExternalAIConfirmation: Bool
+    
+    /// Engines that can run a wrap right now; nil while checking
+    @State private var engines: [EngineTier]?
     
     private var hasExternalAPIConfigured: Bool {
         let openaiKey = KeychainHelper.load(key: "openai_api_key")
@@ -1109,191 +943,38 @@ struct YearWrapGenerationSheet: View {
         UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
     }
     
+    private var appleAvailable: Bool { engines?.contains(.apple) ?? false }
+    private var smartestReady: Bool { isSmartestAIUnlocked && hasExternalAPIConfigured && (engines?.contains(.external) ?? false) }
+    
     var body: some View {
         VStack(spacing: 20) {
-            // Header
             VStack(spacing: 8) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 28, weight: .regular))
                     .foregroundStyle(AppTheme.textPrimary)
                 
-                Text("Generate Year Wrap")
+                Text("Wrap your year")
                     .font(AppTheme.titleFont(size: 24))
                 
-                Text("Choose your AI engine")
+                Text("Makes three wraps: work, personal and everything together")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
             .padding(.top, 8)
             
-            Divider()
-            
-            // Options
             VStack(spacing: 12) {
-                // Local AI - primary option on devices that can run it
-                if coordinator.isLocalModelSupported {
-                    Button(action: {
-                        onCancel()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showLocalAIConfirmation = true
-                        }
-                    }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "cpu")
-                                .font(.title3)
-                        
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Smart (Local AI)")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                Text("Privacy-first • No internet needed")
-                                    .font(.caption)
-                                    .foregroundStyle(AppTheme.onAccent.opacity(0.9))
-                            }
-                        
-                            Spacer()
-                        
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("Free")
-                                    .font(.caption2)
-                                    .fontWeight(.medium)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(AppTheme.onAccent.opacity(0.15))
-                                    .clipShape(Capsule())
-                                Text("2-3 min")
-                                    .font(.caption2)
-                                    .foregroundStyle(AppTheme.onAccent.opacity(0.7))
-                            }
-                        }
-                        .foregroundStyle(AppTheme.onAccent)
-                        .padding()
-                        .background(
-                            AppTheme.purple
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Smartest AI - Purchase required
-                if isSmartestAIUnlocked && hasExternalAPIConfigured {
-                    // Unlocked AND API configured - can use directly
-                    Button(action: {
-                        onCancel()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showExternalAIConfirmation = true
-                        }
-                    }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "cloud")
-                                .font(.title3)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Smartest (\(provider))")
-                                    .font(.headline)
-                                Text("Best quality, most detailed")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "checkmark.circle")
-                                .foregroundStyle(AppTheme.accent)
-                        }
-                        .padding()
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                } else if isSmartestAIUnlocked && !hasExternalAPIConfigured {
-                    // Unlocked but no API key - prompt to configure
-                    Button {
-                        onCancel()
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("NavigateToSmartestConfig"),
-                            object: nil
-                        )
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "cloud")
-                                .font(.title3)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Smartest (External AI)")
-                                    .font(.headline)
-                                Text("Configure API key to use")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding()
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    // Not unlocked - show purchase option
-                    Button(action: onPurchaseSmartestAI) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "cloud")
-                                .font(.title3)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text("Smartest (External AI)")
-                                        .font(.headline)
-                                    Image(systemName: "lock")
-                                        .font(.caption)
-                                }
-                                Text("OpenAI or Anthropic • Best quality")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            if isPurchasing {
-                                ProgressView()
-                            } else if let price = smartestAIPrice {
-                                Text(price)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(AppTheme.onAccent)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(AppTheme.purple)
-                                    .clipShape(Capsule())
-                            } else {
-                                Text("Unlock")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(AppTheme.onAccent)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(AppTheme.purple)
-                                    .clipShape(Capsule())
-                            }
-                        }
-                        .padding()
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isPurchasing)
-                }
+                smartestRow
+                appleRow
             }
+            .opacity(engines == nil ? 0.5 : 1)
+            .disabled(engines == nil)
             
-            // Timing note
-            Text("Smart takes 2 to 3 minutes and Smartest 1 to 2. Keep the app open until it's done.")
+            Text("It runs in the background, so you can keep using the app. Progress shows on the Year screen.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             
-            // Purchase disclaimer (shown when purchase option visible)
             if !isSmartestAIUnlocked {
                 Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")
                     .font(.caption2)
@@ -1302,13 +983,125 @@ struct YearWrapGenerationSheet: View {
                     .padding(.horizontal)
             }
             
-            Spacer()
+            Spacer(minLength: 0)
             
-            // Cancel button
             Button("Cancel", action: onCancel)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 8)
         }
         .padding()
+        .task {
+            engines = await coordinator.yearWrapEngines()
+        }
+    }
+    
+    // MARK: - Rows
+    
+    @ViewBuilder
+    private var smartestRow: some View {
+        if smartestReady {
+            engineButton(
+                icon: "cloud",
+                title: "Smartest (\(provider))",
+                detail: "Best quality. Sends your month notes, not recordings, to \(provider).",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.external)
+            }
+        } else if isSmartestAIUnlocked {
+            engineButton(
+                icon: "cloud",
+                title: "Smartest",
+                detail: "Add your API key in Settings to use it",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onCancel()
+                NotificationCenter.default.post(name: NSNotification.Name("NavigateToSmartestConfig"), object: nil)
+            }
+        } else {
+            engineButton(
+                icon: "cloud",
+                title: "Smartest",
+                detail: "OpenAI or Anthropic. Best quality.",
+                trailing: AnyView(purchaseBadge)
+            ) {
+                onPurchaseSmartestAI()
+            }
+            .disabled(isPurchasing)
+        }
+    }
+    
+    @ViewBuilder
+    private var appleRow: some View {
+        if appleAvailable {
+            engineButton(
+                icon: "apple.logo",
+                title: "Apple Intelligence",
+                detail: "Free and private. Runs on this iPhone.",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.apple)
+            }
+        } else if engines != nil {
+            HStack(spacing: 12) {
+                Image(systemName: "apple.logo")
+                    .font(.title3)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Apple Intelligence")
+                        .font(.headline)
+                    Text("Not available on this device. It needs a supported iPhone with Apple Intelligence turned on.")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+        }
+    }
+    
+    private var purchaseBadge: some View {
+        Group {
+            if isPurchasing {
+                ProgressView()
+            } else {
+                Text(smartestAIPrice ?? "Unlock")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(AppTheme.onAccent)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(AppTheme.purple)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+    
+    private func engineButton(icon: String, title: String, detail: String, trailing: AnyView, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                trailing
+            }
+            .padding()
+            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }

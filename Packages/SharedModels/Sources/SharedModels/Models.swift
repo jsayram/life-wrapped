@@ -239,6 +239,8 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
     public let engineTier: String?  // "basic", "apple", "local", "external"
     public let sourceIds: String?  // JSON array of source UUIDs (session/summary IDs used as input)
     public let inputHash: String?  // SHA256 hash of input content for change detection
+    /// The journal a period summary was built for (Work or Personal). Nil when it isn't tied to one.
+    public let category: SessionCategory?
 
     public init(
         id: UUID = UUID(),
@@ -252,7 +254,8 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         entitiesJSON: String? = nil,
         engineTier: String? = nil,
         sourceIds: String? = nil,
-        inputHash: String? = nil
+        inputHash: String? = nil,
+        category: SessionCategory? = nil
     ) {
         self.id = id
         self.periodType = periodType
@@ -266,6 +269,7 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         self.engineTier = engineTier
         self.sourceIds = sourceIds
         self.inputHash = inputHash
+        self.category = category
     }
 }
 
@@ -438,6 +442,25 @@ public enum ItemFilter: String, Codable, Sendable, CaseIterable, Identifiable {
     case personalOnly
     
     public var id: String { rawValue }
+    
+    /// Each filter has its own Year Wrap: All covers everything, Work and Personal only their recordings
+    public var yearWrapType: PeriodType {
+        switch self {
+        case .all: return .yearWrap
+        case .workOnly: return .yearWrapWork
+        case .personalOnly: return .yearWrapPersonal
+        }
+    }
+}
+
+extension SessionCategory {
+    /// The filter that shows this journal
+    public var itemFilter: ItemFilter {
+        switch self {
+        case .work: return .workOnly
+        case .personal: return .personalOnly
+        }
+    }
 }
 
 /// Classified item with work/personal designation

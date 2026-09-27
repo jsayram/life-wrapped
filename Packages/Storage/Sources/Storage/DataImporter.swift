@@ -136,7 +136,8 @@ public actor DataImporter {
                     periodEnd: jsonSummary.periodEnd,
                     text: jsonSummary.text,
                     createdAt: jsonSummary.createdAt,
-                    sessionId: jsonSummary.sessionId
+                    sessionId: jsonSummary.sessionId,
+                    category: jsonSummary.category.flatMap(SessionCategory.init(rawValue:))
                 )
                 try await databaseManager.insertSummary(summary)
                 importedSummaries += 1

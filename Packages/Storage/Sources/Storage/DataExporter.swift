@@ -142,7 +142,9 @@ public actor DataExporter {
         }
         
         // Check if this is a Year Wrap export
-        let yearWrap = filteredSummaries.first(where: { $0.periodType == .yearWrap })
+        // Work and Personal have their own wraps; older years only have the combined one
+        let yearWrap = filteredSummaries.first(where: { $0.periodType == filter.yearWrapType })
+            ?? filteredSummaries.first(where: { $0.periodType == .yearWrap })
         
         if let yearWrap = yearWrap, let year = year {
             // Render enhanced Year Wrap PDF
@@ -203,13 +205,14 @@ public actor DataExporter {
     // MARK: - Year Wrap PDF Rendering
 
     private func renderYearWrapPDF(yearWrap: Summary, year: Int, redactPeople: Bool, redactPlaces: Bool, filter: ItemFilter) async throws -> Data {
-        guard let parsedData = parseYearWrapJSON(from: yearWrap.text) else {
+        guard let parsed = parseYearWrapJSON(from: yearWrap.text) else {
             // Fallback to standard PDF if parsing fails
             return renderStandardPDF(summaries: [yearWrap], year: year)
         }
-
-        // Fetch session stats for the year
-        let stats = try await fetchYearStats(year: year)
+        let parsedData = parsed.redacted(people: redactPeople, places: redactPlaces)
+        // A category's own wrap has stats for just that category, so it shows them like All
+        let statsFilter: ItemFilter = yearWrap.periodType == filter.yearWrapType ? .all : filter
+        let tiles = try await yearStatTiles(stats: parsedData.stats, year: year, filter: statsFilter)
         let writer = GraphitePDFWriter(title: "Year Wrap \(year)")
 
         return writer.render { page in
@@ -222,11 +225,7 @@ public actor DataExporter {
             page.drawOverline("YEAR WRAPPED \(year)")
             page.drawSerif("Your year in numbers", size: 28)
             page.y += 16
-            page.drawStatTiles([
-                ("mic", "\(stats.sessions)", "entries"),
-                ("clock", String(format: "%.1fh", stats.duration / 3600), "recorded"),
-                ("text.alignleft", stats.words.formatted(), "words")
-            ])
+            page.drawStatTiles(tiles)
             page.y += 28
 
             let sections: [(String, String, [ClassifiedItem])] = [
@@ -252,17 +251,16 @@ public actor DataExporter {
             }
 
             // People & Places
+            // Names are already redacted in parsedData
             if !parsedData.peopleMentioned.isEmpty {
                 let lines = parsedData.peopleMentioned.map { person -> (text: String, detail: String?) in
-                    let name = redactPeople ? "[Person]" : person.name
-                    return (name, redactPeople ? nil : person.relationship)
+                    (person.name, person.relationship)
                 }
                 page.drawListSection(title: "People mentioned", icon: "person.2", items: lines)
             }
             if !parsedData.placesVisited.isEmpty {
                 let lines = parsedData.placesVisited.map { place -> (text: String, detail: String?) in
-                    let name = redactPlaces ? "[Location]" : place.name
-                    return (name, redactPlaces ? nil : place.frequency)
+                    (place.name, place.frequency)
                 }
                 page.drawListSection(title: "Places visited", icon: "mappin.and.ellipse", items: lines)
             }
@@ -271,11 +269,11 @@ public actor DataExporter {
             if redactPeople || redactPlaces {
                 let details: String
                 if redactPeople && redactPlaces {
-                    details = "All people and location names have been redacted in this export."
+                    details = "The most-mentioned people and places are hidden throughout this export. Other names may still appear."
                 } else if redactPeople {
-                    details = "All people names have been redacted in this export."
+                    details = "The most-mentioned people are hidden throughout this export. Other names may still appear."
                 } else {
-                    details = "All location names have been redacted in this export."
+                    details = "The most-mentioned places are hidden throughout this export. Other place names may still appear."
                 }
                 page.ensureSpace(40)
                 page.drawBody("Privacy note: \(details)", size: 10, color: GraphitePDFWriter.ink2)
@@ -305,94 +303,35 @@ public actor DataExporter {
     // MARK: - Helpers
     
     func parseYearWrapJSON(from text: String) -> YearWrapData? {
-        guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        
-        // Check for year_summary - required field for all formats
-        guard let yearSummary = json["year_summary"] as? String else {
-            return nil
-        }
-        
-        let yearTitle = json["year_title"] as? String ?? "Year in Review"
-        
-        // Helper to parse classified items (supports both old string format and new object format)
-        func parseClassifiedItems(_ key: String) -> [ClassifiedItem] {
-            guard let array = json[key] as? [Any] else { return [] }
-            
-            return array.compactMap { item in
-                // New format: {"text": "...", "category": "work|personal|both", "session_ids": [...]}
-                if let dict = item as? [String: Any],
-                   let text = dict["text"] as? String,
-                   let categoryStr = dict["category"] as? String,
-                   let category = ItemCategory(rawValue: categoryStr) {
-                    return ClassifiedItem(text: text, category: category, sessionIds: Self.uuids(dict["session_ids"]))
-                }
-                // Old format: just strings - default to "both"
-                else if let text = item as? String {
-                    return ClassifiedItem(text: text, category: .both)
-                }
-                return nil
-            }
-        }
-        
-        // Check if this is simplified Local AI format (has top_highlights instead of detailed fields)
-        let isSimplifiedFormat = json["top_highlights"] != nil
-        
-        if isSimplifiedFormat {
-            // Parse Local AI simplified format
-            let topHighlights = parseClassifiedItems("top_highlights")
-            let challenges = parseClassifiedItems("biggest_challenges")
-            let topics = parseClassifiedItems("top_topics")
-            
-            return YearWrapData(
-                yearTitle: yearTitle,
-                yearSummary: yearSummary,
-                majorArcs: [],
-                biggestWins: topHighlights,
-                biggestLosses: [],
-                biggestChallenges: challenges,
-                finishedProjects: [],
-                unfinishedProjects: [],
-                topWorkedOnTopics: topics,
-                topTalkedAboutThings: [],
-                valuableActionsTaken: [],
-                opportunitiesMissed: [],
-                peopleMentioned: [],
-                placesVisited: []
-            )
-        }
-        
-        // Standard format with detailed fields
-        return YearWrapData(
-            yearTitle: yearTitle,
-            yearSummary: yearSummary,
-            majorArcs: parseClassifiedItems("major_arcs"),
-            biggestWins: parseClassifiedItems("biggest_wins"),
-            biggestLosses: parseClassifiedItems("biggest_losses"),
-            biggestChallenges: parseClassifiedItems("biggest_challenges"),
-            finishedProjects: parseClassifiedItems("finished_projects"),
-            unfinishedProjects: parseClassifiedItems("unfinished_projects"),
-            topWorkedOnTopics: parseClassifiedItems("top_worked_on_topics"),
-            topTalkedAboutThings: parseClassifiedItems("top_talked_about_things"),
-            valuableActionsTaken: parseClassifiedItems("valuable_actions_taken"),
-            opportunitiesMissed: parseClassifiedItems("opportunities_missed"),
-            peopleMentioned: (json["people_mentioned"] as? [[String: Any]] ?? []).compactMap { dict in
-                guard let name = dict["name"] as? String else { return nil }
-                return PersonMention(name: name, relationship: dict["relationship"] as? String, impact: dict["impact"] as? String,
-                                     sessionIds: Self.uuids(dict["session_ids"]))
-            },
-            placesVisited: (json["places_visited"] as? [[String: Any]] ?? []).compactMap { dict in
-                guard let name = dict["name"] as? String else { return nil }
-                return PlaceVisit(name: name, frequency: dict["frequency"] as? String, context: dict["context"] as? String,
-                                  sessionIds: Self.uuids(dict["session_ids"]))
-            }
-        )
+        YearWrapData.parse(text)
     }
     
-    private static func uuids(_ value: Any?) -> [UUID]? {
-        (value as? [String]).map { $0.compactMap(UUID.init(uuidString:)) }
+    /// The numbers row. Wraps built from month digests carry their own stats, which also
+    /// give work/personal counts; older wraps count every recording in the year.
+    private func yearStatTiles(stats: YearWrapStats?, year: Int, filter: ItemFilter) async throws -> [(icon: String, value: String, label: String)] {
+        guard let stats else {
+            let counted = try await fetchYearStats(year: year)
+            return [
+                ("mic", "\(counted.sessions)", "entries"),
+                ("clock", String(format: "%.1fh", counted.duration / 3600), "recorded"),
+                ("text.alignleft", counted.words.formatted(), "words")
+            ]
+        }
+        switch filter {
+        case .all:
+            return [
+                ("mic", "\(stats.sessionCount)", "entries"),
+                ("clock", String(format: "%.1fh", Double(stats.totalMinutes) / 60), "recorded"),
+                ("text.alignleft", stats.wordCount.formatted(), "words")
+            ]
+        case .workOnly, .personalOnly:
+            let count = filter == .workOnly ? stats.workCount : stats.personalCount
+            let share = stats.sessionCount > 0 ? Int((Double(count) / Double(stats.sessionCount) * 100).rounded()) : 0
+            return [
+                ("mic", "\(count)", filter == .workOnly ? "work entries" : "personal entries"),
+                ("chart.pie", "\(share)%", "of all entries")
+            ]
+        }
     }
     
     private func fetchYearStats(year: Int) async throws -> (sessions: Int, duration: TimeInterval, words: Int) {
@@ -581,6 +520,8 @@ public struct JSONSummary: Codable {
     let text: String
     let createdAt: Date
     let sessionId: UUID?
+    /// The journal a period summary belongs to. Missing in exports made before journals.
+    let category: String?
     
     init(from summary: Summary) {
         self.id = summary.id
@@ -590,6 +531,7 @@ public struct JSONSummary: Codable {
         self.text = summary.text
         self.createdAt = summary.createdAt
         self.sessionId = summary.sessionId
+        self.category = summary.category?.rawValue
     }
 }
 

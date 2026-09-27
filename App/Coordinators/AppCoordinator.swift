@@ -118,8 +118,9 @@ public final class AppCoordinator: ObservableObject {
     @Published public private(set) var isDownloadingLocalModel: Bool = false
     @Published public private(set) var localModelDownloadProgress: Double = 0
     @Published public private(set) var yearWrapNewSessionCount: Int = 0
-    @Published public var yearWrapProgress: String = ""
-    @Published public var isGeneratingYearWrap: Bool = false
+    /// Current step of a running Year Wrap, nil when none is running
+    @Published public private(set) var yearWrapProgress: YearWrapProgress?
+    @Published public private(set) var isGeneratingYearWrap: Bool = false
     
     /// Store manager for in-app purchases
     @Published public private(set) var storeManager = StoreManager()
@@ -336,9 +337,7 @@ public final class AppCoordinator: ObservableObject {
                 await self?.updateWidgetData()
             }
             summaryCoord.onYearWrapProgressUpdate = { [weak self] progress in
-                Task { @MainActor in
-                    self?.yearWrapProgress = progress
-                }
+                self?.yearWrapProgress = progress
             }
             self.summaryCoordinator = summaryCoord
             print("✅ [AppCoordinator] SummaryCoordinator initialized")
@@ -1233,10 +1232,48 @@ public final class AppCoordinator: ObservableObject {
         await summaryCoordinator?.updateYearlySummary(date: date, forceRegenerate: forceRegenerate)
     }
 
-    /// Manual Year Wrap using specified AI engine (keeps deterministic rollup as default)
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
+    /// Engines that can write a Year Wrap here: Smartest (when unlocked and set up) and Apple Intelligence
+    public func yearWrapEngines() async -> [EngineTier] {
+        let engines = await summarizationCoordinator?.yearWrapEngines() ?? []
+        return engines.filter { $0 != .external || storeManager.isSmartestAIUnlocked }
+    }
+
+    /// Start a Year Wrap for this year. It runs on its own, so the user can keep using the app;
+    /// the Year view shows progress and reloads when it's done. Asks iOS for extra time if the
+    /// app is sent to the background mid-run.
+    public func startYearWrap(engine: EngineTier, forceRegenerate: Bool = true) {
+        guard !isGeneratingYearWrap, let summaryCoordinator else { return }
+        isGeneratingYearWrap = true
+        yearWrapProgress = YearWrapProgress(step: 1, total: 1, label: "Getting ready")
+
+        Task { @MainActor in
+            var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "YearWrap") {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
+            defer {
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                }
+                isGeneratingYearWrap = false
+                yearWrapProgress = nil
+            }
+
+            do {
+                try await summaryCoordinator.wrapUpYear(date: Date(), engine: engine, forceRegenerate: forceRegenerate)
+                NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
+                showSuccess("Your Year Wrap is ready")
+            } catch {
+                print("❌ [AppCoordinator] Year Wrap failed: \(error)")
+                // Our own failures carry a readable reason; show that without the "Summarization failed:" prefix
+                if case SummarizationError.summarizationFailed(let reason) = error {
+                    showError(reason)
+                } else {
+                    showError("Year Wrap failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
     
     /// Build or refresh the digest for the month containing `date`
@@ -1253,6 +1290,11 @@ public final class AppCoordinator: ObservableObject {
     /// The stored digest for the month containing `date`
     public func fetchMonthDigest(date: Date) async -> MonthDigest? {
         await summaryCoordinator?.fetchMonthDigest(date: date)
+    }
+    
+    /// The stored digest plus whether the month still has to be split into work and personal
+    public func fetchMonthDigestStatus(date: Date) async -> (digest: MonthDigest, usesLegacy: Bool)? {
+        await summaryCoordinator?.fetchMonthDigestStatus(date: date)
     }
     
     /// Get count of new sessions created after Year Wrap generation

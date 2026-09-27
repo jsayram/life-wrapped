@@ -65,6 +65,28 @@ private func sampleDigests() -> [MonthDigest] {
 @Suite("Year Wrap from digests")
 struct YearWrapBuilderTests {
 
+    @Test("A Work wrap is built from work slices only and told to write about work")
+    func workScope() async throws {
+        let march = MonthDigest(
+            monthStart: month(3), isFinal: true,
+            stats: DigestStats(sessionCount: 3, totalMinutes: 20, wordCount: 900, activeDays: 3, workCount: 1, personalCount: 2),
+            headline: "Getting started", narrative: nil,
+            items: sampleDigests()[0].items, engineTier: "apple",
+            sections: [
+                CategorySection(category: .work, stats: DigestStats(sessionCount: 1, totalMinutes: 5, wordCount: 300, activeDays: 1, workCount: 1, personalCount: 0), headline: "Launch", narrative: nil),
+                CategorySection(category: .personal, stats: DigestStats(sessionCount: 2, totalMinutes: 15, wordCount: 600, activeDays: 2, workCount: 0, personalCount: 2), headline: "Garden", narrative: nil),
+            ])
+        let slice = try #require(march.slice(for: .workOnly))
+        let wrap = await YearWrapBuilder.build(year: 2026, digests: [slice], generator: nil, scope: .workOnly)
+
+        #expect(wrap.yearTitle == "My 2026 at work")
+        #expect(wrap.stats?.sessionCount == 1)
+        #expect(wrap.biggestWins.isEmpty)
+        #expect(wrap.biggestChallenges.map(\.text) == ["Launch deadline stress"])
+        #expect(YearWrapBuilder.systemInstruction(.workOnly).contains("write about work only"))
+        #expect(YearWrapBuilder.systemInstruction(.all) == YearWrapBuilder.systemInstruction)
+    }
+
     @Test("Without a model: numbers, projects, people and picks all come from the digests")
     func noModel() async {
         let wrap = await YearWrapBuilder.build(year: 2026, digests: sampleDigests(), generator: nil)

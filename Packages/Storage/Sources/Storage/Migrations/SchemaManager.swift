@@ -13,7 +13,7 @@ public actor SchemaManager {
     private let connection: DatabaseConnection
     
     /// Current database schema version
-    private static let currentSchemaVersion = 1
+    private static let currentSchemaVersion = 2
     
     public init(connection: DatabaseConnection) {
         self.connection = connection
@@ -68,6 +68,8 @@ public actor SchemaManager {
                 switch version {
                 case 1:
                     try await applySchema()
+                case 2:
+                    try await addSummaryCategory()
                 default:
                     throw StorageError.unknownMigrationVersion(version)
                 }
@@ -84,6 +86,16 @@ public actor SchemaManager {
                 throw error
             }
         }
+    }
+    
+    /// v2: summaries built for one journal (Work or Personal) carry its category.
+    /// Existing rows stay NULL, which means "not tied to a journal".
+    private func addSummaryCategory() async throws {
+        try await connection.execute("ALTER TABLE summaries ADD COLUMN category TEXT")
+        try await connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_summaries_period_category
+            ON summaries(period_type, category, period_start)
+            """)
     }
     
     private func applySchema() async throws {

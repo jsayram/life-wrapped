@@ -39,6 +39,27 @@ private let march = Calendar.current.date(from: DateComponents(year: 2026, month
 @Suite("Month digest")
 struct MonthDigestTests {
 
+    @Test("A journal's digest is written about that journal and records its days")
+    func journalDigest() async {
+        let recordings = [source(3, "Planned the launch", category: .work, keyPoints: ["Launch plan"]),
+                          source(3, "Pricing call", category: .work, keyPoints: ["Pricing"]),
+                          source(17, "Retro", category: .work, keyPoints: ["Retro notes"])]
+        let generator = ScriptedGenerator(tier: .apple) { prompt in
+            if prompt.contains("headline") {
+                // The story prompt must be about work
+                return prompt.contains("my work notes") ? #"{"headline":"Shipping month","narrative":"I shipped."}"# : "{}"
+            }
+            return "not json"
+        }
+        let digest = await MonthDigestBuilder.build(monthStart: march, sources: recordings, isFinal: true,
+                                                    generator: generator, journal: .work)
+        #expect(digest.journal == .work)
+        #expect(digest.stats.days == [3, 17])
+        #expect(digest.stats.activeDays == 2)
+        #expect(digest.sections?.count == 1)
+        #expect(digest.items.allSatisfy { $0.category == .work })
+    }
+
     @Test("Items from different batches merge, with mentions and sources added up")
     func mergeAcrossBatches() {
         let a = UUID(), b = UUID(), c = UUID()

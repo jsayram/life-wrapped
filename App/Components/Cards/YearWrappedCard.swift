@@ -4,11 +4,13 @@ import Summarization
 
 
 struct YearWrappedCard: View {
+    /// The wrap for `filter`
     let summary: Summary
+    /// All of this year's wraps, so the full view can switch between them
+    let wraps: [ItemFilter: Summary]
     let coordinator: AppCoordinator
     let filter: ItemFilter
     let onRegenerate: () -> Void
-    let isRegenerating: Bool
     @Environment(\.colorScheme) var colorScheme
     @State private var showDetailView = false
     
@@ -60,8 +62,7 @@ struct YearWrappedCard: View {
                 Spacer(minLength: 0)
 
                 Button {
-                    let summaryText = extractYearSummary(from: summary.text)
-                    UIPasteboard.general.string = summaryText
+                    UIPasteboard.general.string = yearSummary
                     coordinator.showSuccess("Year Wrapped summary copied")
                 } label: {
                     Image(systemName: "doc.on.doc")
@@ -75,20 +76,12 @@ struct YearWrappedCard: View {
                 Button {
                     onRegenerate()
                 } label: {
-                    Group {
-                        if isRegenerating {
-                            ProgressView()
-                                .tint(AppTheme.onAccent)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 15))
-                        }
-                    }
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 15))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(isRegenerating)
                 .accessibilityLabel("Regenerate Year Wrap")
             }
             .foregroundStyle(AppTheme.onAccent)
@@ -97,7 +90,14 @@ struct YearWrappedCard: View {
                 .font(AppTheme.titleFont(size: 44))
                 .foregroundStyle(AppTheme.onAccent)
 
-            Text(extractYearSummary(from: summary.text))
+            if let title = parsed?.yearTitle {
+                Text(title)
+                    .font(AppTheme.titleFont(size: 22))
+                    .foregroundStyle(AppTheme.onAccent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(yearSummary)
                 .font(.body)
                 .foregroundStyle(AppTheme.onAccent.opacity(0.85))
                 .lineLimit(6)
@@ -135,34 +135,20 @@ struct YearWrappedCard: View {
                 .fill(AppTheme.accent)
         )
         .sheet(isPresented: $showDetailView) {
-            YearWrapDetailView(yearWrap: summary, coordinator: coordinator, initialFilter: filter)
+            YearWrapDetailView(wraps: wraps, coordinator: coordinator, initialFilter: filter)
                 .presentationSizing(.page) // full-page sheet on iPad; no change on iPhone
         }
     }
     
     // MARK: - Helpers
     
-    private func extractYearSummary(from text: String) -> String {
-        // Try to parse JSON and extract year_summary field
-        guard let data = text.data(using: .utf8) else {
-            print("❌ [YearWrappedCard] Failed to convert text to data")
-            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
-        }
-        
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            print("❌ [YearWrappedCard] Failed to parse JSON")
-            print("📄 [YearWrappedCard] First 100 chars: \(String(text.prefix(100)))")
-            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
-        }
-        
-        guard let yearSummary = json["year_summary"] as? String else {
-            print("❌ [YearWrappedCard] No year_summary field found")
-            print("🔑 [YearWrappedCard] Available keys: \(json.keys.joined(separator: ", "))")
-            return String(text.prefix(200)) + (text.count > 200 ? "..." : "")
-        }
-        
-        print("✅ [YearWrappedCard] Extracted year_summary: \(String(yearSummary.prefix(50)))...")
-        return yearSummary
+    private var parsed: YearWrapData? {
+        YearWrapData.parse(summary.text)
+    }
+    
+    /// The wrap's summary, or the start of the raw text if it isn't a Year Wrap
+    private var yearSummary: String {
+        parsed?.yearSummary ?? String(summary.text.prefix(200)) + (summary.text.count > 200 ? "..." : "")
     }
 }
 

@@ -70,7 +70,9 @@ public enum YearWrapBuilder {
 
     // MARK: - Build
 
-    public static func build(year: Int, digests: [MonthDigest], generator: (any TextGenerating)?) async -> YearWrapData {
+    /// Build one wrap. `scope` is Work or Personal when the digests were sliced to that category
+    /// (see `MonthDigest.slice(for:)`); the model is then told to write about that part of life only.
+    public static func build(year: Int, digests: [MonthDigest], generator: (any TextGenerating)?, scope: ItemFilter = .all) async -> YearWrapData {
         let digests = digests.sorted { $0.monthStart < $1.monthStart }
         let stats = computeStats(digests)
         let yearItems = mergeYear(digests)
@@ -83,7 +85,7 @@ public enum YearWrapBuilder {
 
         if let generator {
             if generator.fitsWholeYear {
-                if let result = try? await generateWhole(year: year, digests: digests, stats: stats, pools: pools, generator: generator) {
+                if let result = try? await generateWhole(year: year, digests: digests, stats: stats, pools: pools, generator: generator, scope: scope) {
                     picks = result.picks
                     title = result.title
                     summary = result.summary
@@ -91,11 +93,11 @@ public enum YearWrapBuilder {
             } else {
                 for section in Section.allCases {
                     guard let pool = pools[section], !pool.isEmpty else { continue }
-                    if let items = try? await generateSection(section, pool: pool, year: year, generator: generator) {
+                    if let items = try? await generateSection(section, pool: pool, year: year, generator: generator, scope: scope) {
                         picks[section] = items
                     }
                 }
-                if let result = try? await generateTitleSummary(year: year, digests: digests, stats: stats, candidates: candidates, generator: generator) {
+                if let result = try? await generateTitleSummary(year: year, digests: digests, stats: stats, candidates: candidates, generator: generator, scope: scope) {
                     title = result.title
                     summary = result.summary
                 }
@@ -113,7 +115,7 @@ public enum YearWrapBuilder {
 
         let projects = yearItems.filter { $0.kind == .project }
         return YearWrapData(
-            yearTitle: usableTitle(title, year: year) ?? "My \(year)",
+            yearTitle: usableTitle(title, year: year) ?? defaultTitle(year: year, scope: scope),
             yearSummary: summary ?? basicSummary(stats: stats, items: yearItems),
             majorArcs: picks[.majorArcs] ?? [],
             biggestWins: picks[.biggestWins] ?? [],
@@ -200,6 +202,23 @@ public enum YearWrapBuilder {
     Return only valid JSON, with no markdown and no commentary.
     """
 
+    /// The system instruction, narrowed to work or personal life for those wraps
+    static func systemInstruction(_ scope: ItemFilter) -> String {
+        switch scope {
+        case .all: return systemInstruction
+        case .workOnly: return systemInstruction + "\nThese notes come only from my work recordings. This is my work year: write about work only."
+        case .personalOnly: return systemInstruction + "\nThese notes come only from my personal recordings. This is my personal year: write about my personal life only."
+        }
+    }
+
+    static func defaultTitle(year: Int, scope: ItemFilter) -> String {
+        switch scope {
+        case .all: return "My \(year)"
+        case .workOnly: return "My \(year) at work"
+        case .personalOnly: return "My personal \(year)"
+        }
+    }
+
     /// Candidates that fit the budget, most-mentioned first
     static func capped(_ pool: [Candidate], tokenBudget: Int) -> [Candidate] {
         var result: [Candidate] = []
@@ -213,7 +232,7 @@ public enum YearWrapBuilder {
         return result
     }
 
-    static func generateSection(_ section: Section, pool: [Candidate], year: Int, generator: any TextGenerating) async throws -> [ClassifiedItem] {
+    static func generateSection(_ section: Section, pool: [Candidate], year: Int, generator: any TextGenerating, scope: ItemFilter = .all) async throws -> [ClassifiedItem] {
         let shown = capped(pool, tokenBudget: generator.inputTokenBudget)
         let user = """
         These are notes from my \(year). Each has an id in brackets, how often I mentioned it and when.
@@ -226,7 +245,7 @@ public enum YearWrapBuilder {
 
         Return: {"items":[{"t":"<sentence>","ids":[<ids>]}]}
         """
-        let output = try await generator.generateText(system: systemInstruction, user: user, maxTokens: 500)
+        let output = try await generator.generateText(system: systemInstruction(scope), user: user, maxTokens: 500)
         #if DEBUG
         print("🎁 [YearWrapBuilder] \(section.rawValue) answer: \(output.prefix(300))")
         #endif
@@ -240,7 +259,7 @@ public enum YearWrapBuilder {
         throw SummarizationError.decodingFailed("No JSON for \(section.rawValue)")
     }
 
-    static func generateTitleSummary(year: Int, digests: [MonthDigest], stats: YearWrapStats, candidates: [Candidate], generator: any TextGenerating) async throws -> (title: String?, summary: String?) {
+    static func generateTitleSummary(year: Int, digests: [MonthDigest], stats: YearWrapStats, candidates: [Candidate], generator: any TextGenerating, scope: ItemFilter = .all) async throws -> (title: String?, summary: String?) {
         let months = monthLines(digests)
         let top = capped(candidates.sorted { $0.item.mentions > $1.item.mentions }, tokenBudget: max(generator.inputTokenBudget - estimatedTokens(months), 300))
         let user = """
@@ -255,13 +274,13 @@ public enum YearWrapBuilder {
         Write a title for my year (under 8 words) and a summary of 4 to 6 sentences in first person, using only these notes.
         Return: {"year_title":"<title>","year_summary":"<summary>"}
         """
-        let output = try await generator.generateText(system: systemInstruction, user: user, maxTokens: 400)
+        let output = try await generator.generateText(system: systemInstruction(scope), user: user, maxTokens: 400)
         guard let json = ModelJSON.object(from: output) else { throw SummarizationError.decodingFailed("No JSON for title") }
         return ((json["year_title"] as? String)?.trimmedNonEmpty, (json["year_summary"] as? String)?.trimmedNonEmpty)
     }
 
     /// One request for everything, for models with room for the whole year
-    static func generateWhole(year: Int, digests: [MonthDigest], stats: YearWrapStats, pools: [Section: [Candidate]], generator: any TextGenerating) async throws -> (title: String?, summary: String?, picks: [Section: [ClassifiedItem]]) {
+    static func generateWhole(year: Int, digests: [MonthDigest], stats: YearWrapStats, pools: [Section: [Candidate]], generator: any TextGenerating, scope: ItemFilter = .all) async throws -> (title: String?, summary: String?, picks: [Section: [ClassifiedItem]]) {
         let perSectionBudget = max(generator.inputTokenBudget / (Section.allCases.count + 1), 500)
         var shown: [Section: [Candidate]] = [:]
         var blocks: [String] = []
@@ -288,7 +307,7 @@ public enum YearWrapBuilder {
 
         Return: {"year_title":"<title>","year_summary":"<summary>",\(Section.allCases.map { "\"\($0.rawValue)\":[{\"t\":\"<sentence>\",\"ids\":[<ids>]}]" }.joined(separator: ","))}
         """
-        let output = try await generator.generateText(system: systemInstruction, user: user, maxTokens: generator.outputTokenBudget)
+        let output = try await generator.generateText(system: systemInstruction(scope), user: user, maxTokens: generator.outputTokenBudget)
         guard let json = ModelJSON.object(from: output) else { throw SummarizationError.decodingFailed("No JSON for Year Wrap") }
 
         var picks: [Section: [ClassifiedItem]] = [:]
@@ -353,7 +372,14 @@ public enum YearWrapBuilder {
     static func monthLines(_ digests: [MonthDigest]) -> String {
         digests.map { digest in
             let month = digest.monthStart.formatted(.dateTime.month(.abbreviated))
-            let text = [digest.headline, digest.narrative].compactMap { $0 }.joined(separator: " ")
+            var text = [digest.headline, digest.narrative].compactMap { $0 }.joined(separator: " ")
+            // A month combined from two journals keeps each journal's story in its section
+            if text.isEmpty, let sections = digest.sections {
+                text = sections.compactMap { section -> String? in
+                    let story = [section.headline, section.narrative].compactMap { $0 }.joined(separator: " ")
+                    return story.isEmpty ? nil : "\(section.category.rawValue.capitalized): \(story)"
+                }.joined(separator: " ")
+            }
             return "- \(month) (\(digest.stats.sessionCount) recordings): \(text)"
         }.joined(separator: "\n")
     }
