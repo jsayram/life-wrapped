@@ -66,58 +66,76 @@ public actor DataExporter {
     
     // MARK: - Markdown Export
     
-    /// Export all data to Markdown format
+    /// Export to Markdown: each year's wrap, then month by month the month's digest (both
+    /// journals) and its recordings, newest first. Deleted recordings are left out.
     public func exportToMarkdown(year: Int? = nil) async throws -> String {
-        let allSummaries = try await databaseManager.fetchAllSummaries()
-        
-        // Filter by year if specified
-        let summaries: [Summary]
-        if let year = year {
-            let calendar = Calendar.current
-            let startOfYear = calendar.date(from: DateComponents(year: year, month: 1, day: 1))!
-            let endOfYear = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1))!
-            
-            summaries = allSummaries.filter {
-                $0.periodStart >= startOfYear && $0.periodStart < endOfYear
+        let calendar = Calendar.current
+        let range: (start: Date, end: Date) = {
+            guard let year,
+                  let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1)),
+                  let end = calendar.date(from: DateComponents(year: year + 1, month: 1, day: 1)) else {
+                return (.distantPast, .distantFuture)
             }
-        } else {
-            summaries = allSummaries
-        }
-        
+            return (start, end)
+        }()
+
+        let sessionSummaries = try await databaseManager.fetchSummaries(periodType: .session, from: range.start, to: range.end)
+            .filter { $0.sessionId != nil }
+        let ids = sessionSummaries.compactMap { $0.sessionId }
+        let existing = try await databaseManager.existingSessionIds(among: ids)
+        let recordings = sessionSummaries.filter { $0.sessionId.map(existing.contains) ?? false }
+        let metadata = try await databaseManager.fetchSessionMetadataBatch(sessionIds: ids)
+
         var markdown = "# Life Wrapped Export\n\n"
-        if let year = year {
+        if let year {
             markdown += "**Year:** \(year)\n\n"
         }
         markdown += "**Export Date:** \(DateFormatter.localizedString(from: Date(), dateStyle: .long, timeStyle: .short))\n\n"
         markdown += "---\n\n"
-        
-        // Group by period type
-        let dailySummaries = summaries.filter { $0.periodType == .day }.sorted { $0.periodStart > $1.periodStart }
-        let weeklySummaries = summaries.filter { $0.periodType == .week }.sorted { $0.periodStart > $1.periodStart }
-        let monthlySummaries = summaries.filter { $0.periodType == .month }.sorted { $0.periodStart > $1.periodStart }
-        
-        if !dailySummaries.isEmpty {
-            markdown += "## Daily Summaries\n\n"
-            for summary in dailySummaries {
-                markdown += formatSummaryMarkdown(summary)
+
+        let monthStart: (Date) -> Date = { calendar.date(from: calendar.dateComponents([.year, .month], from: $0)) ?? $0 }
+        let byMonth = Dictionary(grouping: recordings) { monthStart($0.periodStart) }
+        let byYear = Dictionary(grouping: byMonth.keys) { calendar.component(.year, from: $0) }
+
+        for wrapYear in byYear.keys.sorted(by: >) {
+            if let yearStart = calendar.date(from: DateComponents(year: wrapYear, month: 1, day: 1)),
+               let row = try? await databaseManager.fetchPeriodSummary(type: .yearWrap, date: yearStart),
+               let wrap = YearWrapData.parse(row.text) {
+                markdown += "## Year Wrap \(wrapYear)\n\n\(wrap.storyText)\n\n---\n\n"
+            }
+
+            for month in (byYear[wrapYear] ?? []).sorted(by: >) {
+                markdown += "## \(month.formatted(.dateTime.month(.wide).year()))\n\n"
+                if let digest = await monthDigest(for: month) {
+                    // The digest's text starts with the month name, already the heading
+                    let body = digest.plainText(filter: .all).components(separatedBy: "\n\n").dropFirst().joined(separator: "\n\n")
+                    if !body.isEmpty { markdown += "\(body)\n\n" }
+                }
+                markdown += "### Recordings\n\n"
+                for summary in (byMonth[month] ?? []).sorted(by: { $0.periodStart > $1.periodStart }) {
+                    let meta = summary.sessionId.flatMap { metadata[$0] }
+                    let journal = (meta?.category ?? .personal).displayName
+                    var heading = "\(summary.periodStart.formatted(date: .abbreviated, time: .shortened)) · \(journal)"
+                    if let title = meta?.title, !title.isEmpty { heading += " · \(title)" }
+                    markdown += "**\(heading)**\n\n\(summary.text)\n\n"
+                }
+                markdown += "---\n\n"
             }
         }
-        
-        if !weeklySummaries.isEmpty {
-            markdown += "## Weekly Summaries\n\n"
-            for summary in weeklySummaries {
-                markdown += formatSummaryMarkdown(summary)
-            }
-        }
-        
-        if !monthlySummaries.isEmpty {
-            markdown += "## Monthly Summaries\n\n"
-            for summary in monthlySummaries {
-                markdown += formatSummaryMarkdown(summary)
-            }
-        }
-        
         return markdown
+    }
+
+    /// A month's digest across both journals, as the app shows it
+    private func monthDigest(for month: Date) async -> MonthDigest? {
+        var journals: [SessionCategory: MonthDigest] = [:]
+        for journal in SessionCategory.allCases {
+            if let row = try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: month, category: journal),
+               let digest = MonthDigest.fromJSON(row.text) {
+                journals[journal] = digest
+            }
+        }
+        let legacy = (try? await databaseManager.fetchPeriodSummary(type: .monthDigest, date: month)).flatMap { MonthDigest.fromJSON($0.text) }
+        return JournalDigests.combined(stored: journals, legacy: legacy)?.digest
     }
     
     #if canImport(UIKit)
@@ -370,18 +388,6 @@ public actor DataExporter {
     #endif // canImport(UIKit)
     
     // MARK: - Helper Methods
-    
-    private func formatSummaryMarkdown(_ summary: Summary) -> String {
-        var md = "### \(formatPeriod(summary.periodType, start: summary.periodStart, end: summary.periodEnd))\n\n"
-        
-        md += "\(summary.text)\n\n"
-        
-        md += "**Date:** \(DateFormatter.localizedString(from: summary.periodStart, dateStyle: .medium, timeStyle: .none))\n\n"
-        
-        md += "---\n\n"
-        
-        return md
-    }
     
     private func formatPeriod(_ type: PeriodType, start: Date, end: Date) -> String {
         let formatter = DateFormatter()

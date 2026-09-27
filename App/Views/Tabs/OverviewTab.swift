@@ -5,14 +5,12 @@ import Summarization
 struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.colorScheme) var colorScheme
-    @State private var periodSummary: Summary?
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
     /// This year's wraps: All, Work and Personal each have their own
     @State private var yearWraps: [ItemFilter: Summary] = [:]
     /// All / Work / Personal, shared by Month and Year so the choice carries between them
     @State private var categoryFilter: ItemFilter = .all
-    @State private var isRegeneratingPeriodSummary = false
     @State private var monthDigest: MonthDigest?
     /// The shown month still comes from a digest saved before work and personal were separate
     @State private var monthDigestIsOld = false
@@ -61,7 +59,7 @@ struct OverviewTab: View {
                     if isLoading {
                         LoadingView(size: .medium)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if periodSummary == nil && sessionsInPeriod.isEmpty {
+                    } else if sessionsInPeriod.isEmpty && yearWraps.isEmpty {
                         GraphiteEmptyState(
                             "No overview yet",
                             systemImage: "doc.text",
@@ -114,56 +112,23 @@ struct OverviewTab: View {
                                     .padding(.top, 8)
                                 }
                                 
-                                // Local period summary card for Today/Month; Month shows its digest once there is one
-                                if [.today, .month].contains(selectedTimeRange) {
-                                    if selectedTimeRange == .month, let monthDigest {
-                                        MonthDigestCard(
-                                            digest: monthDigest,
-                                            filter: categoryFilter,
-                                            isUpdating: isUpdatingMonthDigest,
-                                            isSplitting: monthDigestIsOld && isUpdatingMonthDigest,
-                                            onCopy: {
-                                                UIPasteboard.general.string = monthDigest.plainText(filter: categoryFilter)
-                                                coordinator.showSuccess("Month copied")
-                                            },
-                                            onRegenerate: {
-                                                Task { await refreshMonthDigest(force: true) }
+                                // The month's digest: both journals, or the one chosen above
+                                if selectedTimeRange == .month, let monthDigest {
+                                    MonthDigestCard(
+                                        digest: monthDigest,
+                                        filter: categoryFilter,
+                                        isUpdating: isUpdatingMonthDigest,
+                                        isSplitting: monthDigestIsOld && isUpdatingMonthDigest,
+                                        onCopy: {
+                                            UIPasteboard.general.string = monthDigest.plainText(filter: categoryFilter)
+                                            coordinator.showSuccess("Month copied")
+                                        },
+                                        onRegenerate: {
+                                            Task { await refreshMonthDigest(force: true) }
                                             }
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
-                                    } else if let periodSummary, categoryFilter == .all {
-                                        // The day's rollup covers both journals, so it only shows under All
-                                        PeriodSummaryCard(
-                                            title: periodSummaryTitle(for: selectedTimeRange),
-                                            subtitle: "Generated on this \(DeviceName.current)",
-                                            summary: periodSummary,
-                                            isRegenerating: isRegeneratingPeriodSummary,
-                                            onCopy: {
-                                                UIPasteboard.general.string = periodSummary.text
-                                                coordinator.showSuccess("Summary copied")
-                                            },
-                                            onRegenerate: {
-                                                Task {
-                                                    await regenerateAndReloadPeriodSummary()
-                                                }
-                                            }
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                    } else if periodSummary == nil, categoryFilter == .all, !sessionsInPeriod.isEmpty {
-                                        GeneratePeriodSummaryCard(
-                                            title: periodSummaryTitle(for: selectedTimeRange),
-                                            isGenerating: isRegeneratingPeriodSummary,
-                                            onGenerate: {
-                                                Task {
-                                                    await regenerateAndReloadPeriodSummary()
-                                                }
-                                            }
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                    }
                                 }
                                 
                                 // Year Wrapped Summary (only show for Year timerange)
@@ -176,15 +141,8 @@ struct OverviewTab: View {
                             }
                             
                             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                                // Only buckets with summaries; empty hours/days add noise.
-                                // Skip the summary already shown in the card above, so Month doesn't repeat it.
-                                let shownSummaryId = [.today, .month].contains(selectedTimeRange) ? periodSummary?.id : nil
-                                let timeBuckets = groupSessionsByTimeBucket()
-                                    .map { bucket in
-                                        let summaries = bucket.summaries.filter { $0.id != shownSummaryId }
-                                        return TimeBucket(header: bucket.header, summaries: summaries, isEmpty: summaries.isEmpty)
-                                    }
-                                    .filter { !$0.isEmpty }
+                                // Only buckets with summaries; empty hours add noise
+                                let timeBuckets = groupSessionsByTimeBucket().filter { !$0.isEmpty }
                                 
                                 if timeBuckets.isEmpty && [.today, .yesterday].contains(selectedTimeRange) {
                                     // Today and Yesterday list session summaries; the other ranges already
@@ -348,16 +306,6 @@ struct OverviewTab: View {
         // Get date range for filtering
         let dateRange = getDateRange(for: selectedTimeRange)
         
-        // Load period summary based on selected time range
-        let periodType: PeriodType = {
-            switch selectedTimeRange {
-            case .yesterday: return .day
-            case .today: return .day
-            case .month: return .month
-            case .allTime: return .year // Show yearly summary for current year
-            }
-        }()
-        
         // Clear previous data to avoid stale counts when DB is unavailable
         sessionsInPeriod = []
         sessionCount = 0
@@ -398,10 +346,8 @@ struct OverviewTab: View {
             }
         }
         
-        // Try to fetch existing period summary (don't auto-generate on view load)
-        // Day and month use their own range; year uses today
-        let dateForFetch = (periodType == .day || periodType == .month) ? dateRange.start : Date()
-        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+        // Year Wraps are for the current year
+        let dateForFetch = Date()
 
         if selectedTimeRange == .month {
             availableMonths = await coordinator.monthsWithRecordings()
@@ -438,15 +384,6 @@ struct OverviewTab: View {
             coordinator.updateYearWrapNewSessionCount(0)
         }
         
-        // Debug logging
-        if periodSummary == nil && !sessionsInPeriod.isEmpty {
-            print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
-            print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
-            print("   Sessions in period: \(sessionsInPeriod.count)")
-        } else if periodSummary != nil {
-            print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
-        }
-        
         isLoading = false
     }
     
@@ -463,53 +400,6 @@ struct OverviewTab: View {
         }
     }
     
-    private func regenerateAndReloadPeriodSummary() async {
-        guard !isRegeneratingPeriodSummary else { return }
-        isRegeneratingPeriodSummary = true
-        defer { isRegeneratingPeriodSummary = false }
-        await regeneratePeriodSummary()
-        await loadInsights()
-    }
-
-    private func regeneratePeriodSummary() async {
-        let (startDate, _) = getDateRange(for: selectedTimeRange)
-        
-        let periodType: PeriodType = {
-            switch selectedTimeRange {
-            case .yesterday: return .day
-            case .today: return .day
-            case .month: return .month
-            case .allTime: return .year
-            }
-        }()
-        
-        // Day and month use their own range; year uses today
-        let dateForGeneration = (periodType == .day || periodType == .month) ? startDate : Date()
-        
-        print("🔄 [OverviewTab] Regenerating \(periodType.rawValue) summary...")
-        
-        switch periodType {
-        case .day:
-            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
-        case .month:
-            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
-        case .year:
-            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: true)
-        default:
-            break
-        }
-        
-        // Fetch again after regeneration
-        try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s
-        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
-        
-        if periodSummary != nil {
-            coordinator.showSuccess("Summary regenerated")
-        } else {
-            coordinator.showError("Failed to regenerate summary")
-        }
-    }
-
     /// The Year view's wrap for the chosen filter, its progress while generating, or a way to make one
     @ViewBuilder
     private var yearWrapSection: some View {
@@ -652,14 +542,6 @@ struct OverviewTab: View {
         }
     }
 
-    private func periodSummaryTitle(for range: TimeRange) -> String {
-        switch range {
-        case .today: return "Today's Recordings"
-        case .month: return "\(selectedMonth.formatted(.dateTime.month(.wide))) Recordings"
-        default: return "Recordings"
-        }
-    }
-    
     private func filterSession(_ session: (sessionId: UUID, duration: TimeInterval, date: Date)?, in range: (start: Date, end: Date)) -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
         guard let session = session else { return nil }
         return session.date >= range.start && session.date <= range.end ? session : nil

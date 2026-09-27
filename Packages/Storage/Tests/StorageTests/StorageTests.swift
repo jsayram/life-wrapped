@@ -62,6 +62,38 @@ struct DatabaseManagerTests {
         await manager.close()
     }
     
+    @Test("Markdown export lists months with their digest and recordings, not deleted ones")
+    func testMarkdownExport() async throws {
+        let manager = try await createTestDatabase()
+        let calendar = Calendar.current
+        let march = calendar.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let recordedAt = calendar.date(from: DateComponents(year: 2026, month: 3, day: 5, hour: 9))!
+        let kept = UUID(), deleted = UUID()
+
+        // Only the kept recording still has audio
+        try await manager.insertAudioChunk(AudioChunk(fileURL: URL(fileURLWithPath: "/tmp/a.m4a"), startTime: recordedAt,
+                                                      endTime: recordedAt.addingTimeInterval(60), format: .m4a, sampleRate: 44100, sessionId: kept))
+        try await manager.upsertSessionMetadata(.init(sessionId: kept, title: "Launch plan", category: .work))
+        try await manager.insertSummary(Summary(periodType: .session, periodStart: recordedAt, periodEnd: recordedAt.addingTimeInterval(60),
+                                                text: "Planned the launch.", sessionId: kept))
+        try await manager.insertSummary(Summary(periodType: .session, periodStart: recordedAt, periodEnd: recordedAt.addingTimeInterval(60),
+                                                text: "A recording that was deleted.", sessionId: deleted))
+        let digest = MonthDigest(monthStart: march, isFinal: true,
+                                 stats: DigestStats(sessionCount: 1, totalMinutes: 1, wordCount: 10, activeDays: 1, workCount: 1, personalCount: 0),
+                                 headline: "Launch month", narrative: nil, items: [], engineTier: "apple", journal: .work)
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: try digest.jsonString(), start: march,
+                                              end: calendar.date(byAdding: .month, value: 1, to: march)!, category: .work)
+
+        let markdown = try await DataExporter(databaseManager: manager).exportToMarkdown(year: 2026)
+        #expect(markdown.contains("## March 2026"))
+        #expect(markdown.contains("Launch month"))
+        #expect(markdown.contains("· Work · Launch plan**"))
+        #expect(markdown.contains("Planned the launch."))
+        #expect(!markdown.contains("deleted"))
+
+        await manager.close()
+    }
+    
     @Test("AudioChunk CRUD operations")
     func testAudioChunkCRUD() async throws {
         let manager = try await createTestDatabase()

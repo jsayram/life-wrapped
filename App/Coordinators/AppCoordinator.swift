@@ -1220,33 +1220,8 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
-    // MARK: - Period Summary Updates
+    // MARK: - Year Wrap and Month Digests
     
-    /// Update period summaries after a new session summary is created
-    /// Follows hierarchical rollup: Session → Day → Week → Month → Year
-    private func updatePeriodSummaries(sessionId: UUID, sessionDate: Date) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updatePeriodSummaries(sessionId: sessionId, sessionDate: sessionDate)
-    }
-    
-    /// Update or create daily summary by aggregating all session summaries for that day using deterministic rollup
-    public func updateDailySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateDailySummary(date: date, forceRegenerate: forceRegenerate)
-    }
-    
-    /// Update or create monthly summary by concatenating daily rollups
-    public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateMonthlySummary(date: date, forceRegenerate: forceRegenerate)
-    }
-    
-    /// Update or create yearly summary by concatenating monthly rollups (no external calls)
-    public func updateYearlySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateYearlySummary(date: date, forceRegenerate: forceRegenerate)
-    }
-
     /// Engines that can write a Year Wrap here: Smartest (when unlocked and set up) and Apple Intelligence
     public func yearWrapEngines() async -> [EngineTier] {
         let engines = await summarizationCoordinator?.yearWrapEngines() ?? []

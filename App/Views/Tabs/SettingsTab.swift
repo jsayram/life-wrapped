@@ -323,19 +323,8 @@ enum ScreenshotSampleData {
             ))
         }
 
-        // Period summaries for the Overview tab
-        let dayEnd = calendar.date(byAdding: .day, value: 1, to: today) ?? today
-        try await db.insertSummary(Summary(periodType: .day, periodStart: today, periodEnd: dayEnd,
-            text: "An early run by the river, a launch-focused morning with Sarah and a clearing walk at lunch. Stress about the deadline eased as the day went on.", engineTier: "local"))
-        if let month = calendar.dateInterval(of: .month, for: Date()) {
-            try await db.insertSummary(Summary(periodType: .month, periodStart: month.start, periodEnd: month.end,
-                text: "This month was about shipping: design reviews, pricing and the release checklist. Outside work, running became a habit and weekends stayed slow and social.", engineTier: "local"))
-        }
-
         // Year Wrap
         if let year = calendar.dateInterval(of: .year, for: Date()) {
-            try await db.insertSummary(Summary(periodType: .year, periodStart: year.start, periodEnd: year.end,
-                text: "A year of building. Work centered on launching the beta, from design reviews to pricing and the release checklist. Running turned into a habit, weekends stayed slow, and time with Dad in the garden became a favorite ritual.", engineTier: "local"))
             let wrap = """
             {"year_title": "A year of building and slowing down",
              "year_summary": "You shipped a product, ran more than ever, and kept coming back to the garden. Work was intense in the spring and calmer by the fall.",

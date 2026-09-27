@@ -11,7 +11,6 @@
 		03897F9A7040FDD64B784AFE /* TranscriptChunkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB939340C76B658DB8A32CC1 /* TranscriptChunkView.swift */; };
 		07CA18D171747965F02521E8 /* HistoryTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7478A5E3E20A8A05004A726 /* HistoryTab.swift */; };
 		0993883A171BF6411B15550A /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = F880C26B6A3AA9A3D31EE4D9 /* Storage */; };
-		0E43495432ACAC887111E142 /* GeneratePeriodSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 310036F5C73A5C1662F95F6D /* GeneratePeriodSummaryCard.swift */; };
 		10B3DC1429913D1C9144AADD /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C34897EBDE7448AFFB29195 /* SessionRow.swift */; };
 		118E7C0B53001E159D22E27C /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 024E096A1D81806148B9C4DB /* FlowLayout.swift */; };
 		13299D476A5FD082380BD0A0 /* SessionSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9BF0A84EFA77115EE53D4E4 /* SessionSummaryCard.swift */; };
@@ -70,7 +69,6 @@
 		8BAE7FFFBF2DA8570ADE45EC /* TermsOfServiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D8507065D0A971ABACF6DB /* TermsOfServiceView.swift */; };
 		92F04A416F06955D1E5A250D /* SummaryQualityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB02CFABA61FDA9DAAB74597 /* SummaryQualityCard.swift */; };
 		96B4C27EA7FA74A00E5C71A5 /* TopicTagsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7267DD1EAEA5D508663E0A17 /* TopicTagsView.swift */; };
-		972B613561146CFA5388F126 /* PeriodSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9582D460ACABF96F259D38 /* PeriodSummaryCard.swift */; };
 		A1D1E5700000000000000001 /* MonthDigestCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D1E5700000000000000002 /* MonthDigestCard.swift */; };
 		98BB882CAF69936BE54A6DC6 /* SessionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7137BB35107AD90AB431B6D2 /* SessionRowView.swift */; };
 		9EDDEAA04C184D4724FFC0BF /* InfoRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75199834B9D84B5F280BCBA /* InfoRow.swift */; };
@@ -148,11 +146,9 @@
 		2D435825CF6794630D3FC299 /* RecordingRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingRow.swift; sourceTree = "<group>"; };
 		2F4BF5CB52B60C6DEBC0DF8D /* YearWrappedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearWrappedCard.swift; sourceTree = "<group>"; };
 		303597C991FCE6CB954F0D29 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
-		310036F5C73A5C1662F95F6D /* GeneratePeriodSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratePeriodSummaryCard.swift; sourceTree = "<group>"; };
 		34051FCDD4091EBC573F31C6 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
 		372AB55C1C346C295788E7A9 /* TimeRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRange.swift; sourceTree = "<group>"; };
-		3C9582D460ACABF96F259D38 /* PeriodSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeriodSummaryCard.swift; sourceTree = "<group>"; };
 		A1D1E5700000000000000002 /* MonthDigestCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthDigestCard.swift; sourceTree = "<group>"; };
 		3C95B298DE0C9B26176BF5D8 /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		41A525C5C2A6B8993B3979E6 /* StreakDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakDisplay.swift; sourceTree = "<group>"; };
@@ -329,11 +325,9 @@
 		4A4BF375A67FB0EDE6293BC5 /* Cards */ = {
 			isa = PBXGroup;
 			children = (
-				310036F5C73A5C1662F95F6D /* GeneratePeriodSummaryCard.swift */,
 				B8C1EB7682DDDD26B839FF34 /* GenerateYearWrapCard.swift */,
 				E075703BA63467E041B06A7D /* OverviewSummaryCard.swift */,
 				A1D1E5700000000000000002 /* MonthDigestCard.swift */,
-				3C9582D460ACABF96F259D38 /* PeriodSummaryCard.swift */,
 				D9BF0A84EFA77115EE53D4E4 /* SessionSummaryCard.swift */,
 				45F56452C81B17084F3EEC88 /* StatCard.swift */,
 				2F4BF5CB52B60C6DEBC0DF8D /* YearWrappedCard.swift */,
@@ -710,7 +704,6 @@
 				440C0343FF74797745AB1A8B /* Extensions.swift in Sources */,
 				7236C91D520222B1CC5C1C6E /* FilteredSessionsView.swift in Sources */,
 				118E7C0B53001E159D22E27C /* FlowLayout.swift in Sources */,
-				0E43495432ACAC887111E142 /* GeneratePeriodSummaryCard.swift in Sources */,
 				3F4BFBF03BD4056C36FD4F3A /* GenerateYearWrapCard.swift in Sources */,
 				B347BC51BCD19786669427D6 /* GenerationOverlay.swift in Sources */,
 				07CA18D171747965F02521E8 /* HistoryTab.swift in Sources */,
@@ -728,7 +721,6 @@
 				B225830D660A24C52C117216 /* OnDeviceEnginesView.swift in Sources */,
 				81BCA54639DC53173D8002A1 /* OverviewSummaryCard.swift in Sources */,
 				33199FDEDECBE5D103236437 /* OverviewTab.swift in Sources */,
-				972B613561146CFA5388F126 /* PeriodSummaryCard.swift in Sources */,
 				A1D1E5700000000000000001 /* MonthDigestCard.swift in Sources */,
 				8B7DCB0F1E11C0BA863A78EF /* PermissionsCoordinator.swift in Sources */,
 				5BADCDC2211908AD5EAA196D /* PermissionsView.swift in Sources */,
