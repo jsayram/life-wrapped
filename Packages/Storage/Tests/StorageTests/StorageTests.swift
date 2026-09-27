@@ -42,6 +42,29 @@ struct DatabaseManagerTests {
         await manager.close()
     }
     
+    @Test("Recording days: one per local day, all time, however many recordings a day has")
+    func testRecordingDays() async throws {
+        let manager = try await createTestDatabase()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // 400 recordings on one busy day, plus one recording on each of the 3 days before it
+        for dayOffset in 0...3 {
+            let day = calendar.date(byAdding: .day, value: -dayOffset, to: today)!.addingTimeInterval(9 * 3600)
+            for index in 0..<(dayOffset == 0 ? 400 : 1) {
+                let start = day.addingTimeInterval(Double(index))
+                try await manager.insertAudioChunk(AudioChunk(
+                    fileURL: URL(fileURLWithPath: "/tmp/\(UUID()).m4a"), startTime: start, endTime: start + 1,
+                    format: .m4a, sampleRate: 44100, sessionId: UUID(), chunkIndex: 0))
+            }
+        }
+
+        let days = try await manager.fetchRecordingDays()
+        #expect(days.count == 4)
+        #expect(Set(days.map { calendar.startOfDay(for: $0) }).count == 4)
+
+        await manager.close()
+    }
+
     @Test("Change times: content changes and transcript edits are recorded separately")
     func testSessionChangeTimes() async throws {
         let manager = try await createTestDatabase()

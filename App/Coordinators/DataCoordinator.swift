@@ -21,18 +21,10 @@ public final class DataCoordinator {
     
     // MARK: - Stats & Rollups
     
-    /// Calculate current streak from recording sessions (not transcript segments)
-    /// This ensures streak updates immediately when a recording is made,
-    /// without waiting for transcription to complete.
-    public func calculateStreak() async throws -> Int {
-        // Get all sessions (up to 365 for a year of data)
-        let sessions = try await databaseManager.fetchSessions(limit: 365)
-        
-        // Extract unique dates from session start times
-        let activityDates = sessions.map { $0.firstChunkTime }
-        
-        let streakInfo = StreakCalculator.calculateStreak(from: activityDates)
-        return streakInfo.currentStreak
+    /// Streak from recording days (not transcripts), so it counts a recording as soon as it's saved.
+    /// Uses every day with a recording, however many recordings each day has.
+    public func calculateStreak() async throws -> StreakCalculator.StreakInfo {
+        StreakCalculator.calculateStreak(from: try await databaseManager.fetchRecordingDays())
     }
     
     /// Fetch today's stats from rollup

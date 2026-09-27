@@ -120,6 +120,10 @@ public actor DatabaseManager {
         try await sessionRepository.fetchSessions(limit: limit)
     }
     
+    public func fetchRecordingDays() async throws -> [Date] {
+        try await sessionRepository.fetchRecordingDays()
+    }
+
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         try await sessionRepository.fetchSessionsByHour()
     }

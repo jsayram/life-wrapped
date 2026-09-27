@@ -110,6 +110,7 @@ public final class AppCoordinator: ObservableObject {
     
     @Published public private(set) var recordingState: RecordingState = .idle
     @Published public private(set) var currentStreak: Int = 0
+    @Published public private(set) var longestStreak: Int = 0
     @Published public private(set) var todayStats: DayStats = .empty
     @Published public private(set) var isInitialized: Bool = false
     @Published public private(set) var initializationError: Error?
@@ -439,6 +440,8 @@ public final class AppCoordinator: ObservableObject {
     public func handleAppBecameActive() async {
         print("🟢 [AppCoordinator] App became active")
         // Resume any paused operations if needed
+        // The day may have changed while the app was in the background
+        await refreshStreak()
         // Widget updates happen here since they need to be current
         await updateWidgetData()
         
@@ -883,6 +886,8 @@ public final class AppCoordinator: ObservableObject {
                                                 heardNothing: !audioCapture.lastRecordingHeardVoice)
         }
         currentRecordingSessionId = nil
+        // Count today right away, without waiting for transcription and the summary
+        await refreshStreak()
         await recordingEnded()
     }
 
@@ -1028,13 +1033,14 @@ public final class AppCoordinator: ObservableObject {
     
     // MARK: - Stats & Data Loading
     
-    /// Refresh the current streak count
+    /// Refresh the current and longest streak
     public func refreshStreak() async {
         do {
-            currentStreak = try await dataCoordinator?.calculateStreak() ?? 0
+            let info = try await dataCoordinator?.calculateStreak()
+            currentStreak = info?.currentStreak ?? 0
+            longestStreak = info?.longestStreak ?? 0
         } catch {
             print("Failed to refresh streak: \(error)")
-            currentStreak = 0
         }
     }
     

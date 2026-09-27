@@ -21,6 +21,32 @@ struct StatisticsView: View {
             // Key Statistics Section
             if longestSession != nil || mostActiveMonth != nil {
                 Section {
+                    if coordinator.longestStreak > 0 {
+                        HStack(spacing: 12) {
+                            Image(systemName: "flame")
+                                .scaledFont(size: 20, weight: .regular)
+                                .foregroundStyle(AppTheme.textPrimary)
+                                .frame(width: 28)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Longest streak")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                HStack {
+                                    Text("\(coordinator.longestStreak) day\(coordinator.longestStreak == 1 ? "" : "s")")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                    Text("Now \(coordinator.currentStreak)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .accessibilityElement(children: .combine)
+                    }
+
                     if let longest = longestSession {
                         NavigationLink {
                             FilteredSessionsView(
@@ -271,6 +297,8 @@ struct StatisticsView: View {
     private func loadStatistics() async {
         isLoadingStats = true
         defer { isLoadingStats = false }
+
+        await coordinator.refreshStreak()
 
         longestSession = try? await coordinator.fetchLongestSession()
         mostActiveMonth = try? await coordinator.fetchMostActiveMonth()

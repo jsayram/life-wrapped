@@ -228,6 +228,30 @@ public actor SessionRepository {
     // MARK: - Analytics Queries
     
     /// Fetch session counts grouped by hour of day (0-23)
+    /// One date per local calendar day that has a recording (its first recording's start), all time.
+    /// Streaks are built from these, so heavy recording days don't crowd older days out.
+    public func fetchRecordingDays() async throws -> [Date] {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = """
+                SELECT MIN(start_time)
+                FROM audio_chunks
+                WHERE chunk_index = 0
+                GROUP BY DATE(start_time, 'unixepoch', 'localtime')
+                """
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            var days: [Date] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                days.append(Date(timeIntervalSince1970: sqlite3_column_double(stmt, 0)))
+            }
+            return days
+        }
+    }
+
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         try await connection.withDatabase { db in
             guard let db = db else { throw StorageError.notOpen }
