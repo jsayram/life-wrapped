@@ -66,7 +66,7 @@ struct YearWrappedCard: View {
                     coordinator.showSuccess("Year Wrapped summary copied")
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 15))
+                        .scaledFont(size: 15)
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
@@ -77,7 +77,7 @@ struct YearWrappedCard: View {
                     onRegenerate()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 15))
+                        .scaledFont(size: 15)
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
@@ -87,7 +87,7 @@ struct YearWrappedCard: View {
             .foregroundStyle(AppTheme.onAccent)
 
             Text(String(Calendar.current.component(.year, from: summary.periodStart)))
-                .font(AppTheme.titleFont(size: 44))
+                .scaledFont(size: 44, design: .serif)
                 .foregroundStyle(AppTheme.onAccent)
 
             if let journals = parsed?.journals, !journals.isEmpty {
@@ -99,7 +99,7 @@ struct YearWrappedCard: View {
                             .tracking(0.8)
                             .foregroundStyle(AppTheme.onAccent.opacity(0.7))
                         Text(journal.title)
-                            .font(AppTheme.titleFont(size: 20))
+                            .scaledFont(size: 20, design: .serif)
                             .foregroundStyle(AppTheme.onAccent)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(journal.summary)
@@ -113,7 +113,7 @@ struct YearWrappedCard: View {
             } else {
                 if let title = parsed?.yearTitle {
                     Text(title)
-                        .font(AppTheme.titleFont(size: 22))
+                        .scaledFont(size: 22, design: .serif)
                         .foregroundStyle(AppTheme.onAccent)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -125,14 +125,21 @@ struct YearWrappedCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Staleness note
-            if coordinator.yearWrapNewSessionCount > 0 {
-                Label(
-                    "\(coordinator.yearWrapNewSessionCount) \(coordinator.yearWrapNewSessionCount == 1 ? "recording" : "recordings") new or changed since this wrap",
-                    systemImage: "exclamationmark.circle"
-                )
+            // Out of date: this journal's recordings added or changed since the wrap was built
+            if outdatedCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("\(outdatedCount) \(scopeWord)\(outdatedCount == 1 ? "recording" : "recordings") added or changed since this wrap")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("Update") { update() }
+                        .fontWeight(.semibold)
+                        .foregroundStyle(AppTheme.onAccent)
+                }
                 .font(.footnote)
-                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                .foregroundStyle(AppTheme.onAccent.opacity(0.8))
+                .padding(10)
+                .background(AppTheme.onAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
             Button {
@@ -142,7 +149,7 @@ struct YearWrappedCard: View {
                     Text("View full wrap")
                         .font(.subheadline.weight(.semibold))
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(size: 12, weight: .semibold)
                 }
                 .foregroundStyle(AppTheme.onAccent)
                 .padding(.vertical, 4)
@@ -163,6 +170,29 @@ struct YearWrappedCard: View {
     }
     
     // MARK: - Helpers
+
+    private var outdatedCount: Int {
+        coordinator.yearWrapOutdatedCounts[filter] ?? 0
+    }
+
+    /// "work " / "personal " so the count says which journal it covers
+    private var scopeWord: String {
+        switch filter {
+        case .all: return ""
+        case .workOnly: return "work "
+        case .personalOnly: return "personal "
+        }
+    }
+
+    /// Rebuild with the engine that made this wrap, reusing every month and journal that didn't
+    /// change. Falls back to the engine picker when that engine isn't known.
+    private func update() {
+        if let engine = summary.engineTier.flatMap(EngineTier.init(rawValue:)) {
+            coordinator.startYearWrap(engine: engine, forceRegenerate: false)
+        } else {
+            onRegenerate()
+        }
+    }
     
     private var parsed: YearWrapData? {
         YearWrapData.parse(summary.text)

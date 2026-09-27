@@ -76,7 +76,7 @@ struct PermissionsView: View {
                         OnboardingAppMark()
 
                         Text("Your year,\nin your own words.")
-                            .font(AppTheme.titleFont(size: 34))
+                            .scaledFont(size: 34, design: .serif)
                             .foregroundStyle(AppTheme.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
@@ -102,7 +102,7 @@ struct PermissionsView: View {
                         // Info card about speech recognition (requested later)
                         HStack(spacing: 16) {
                             Image(systemName: "waveform")
-                .font(.system(size: 20, weight: .regular))
+                .scaledFont(size: 20, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 28)
                             
@@ -118,7 +118,7 @@ struct PermissionsView: View {
                             Spacer()
                             
                             Image(systemName: "clock")
-                                .font(.system(size: 18, weight: .regular))
+                                .scaledFont(size: 18, weight: .regular)
                                 .foregroundColor(AppTheme.textSecondary)
                         }
                         .padding(16)
@@ -309,7 +309,7 @@ struct PermissionsView: View {
                 OnboardingAppMark()
 
                 Text("Setting up\non-device AI")
-                    .font(AppTheme.titleFont(size: 34))
+                    .scaledFont(size: 34, design: .serif)
                     .foregroundStyle(AppTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
@@ -665,7 +665,7 @@ struct PermissionCard: View {
         HStack(spacing: 16) {
             // Icon
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .regular))
+                .scaledFont(size: 20, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 28)
             
@@ -684,7 +684,7 @@ struct PermissionCard: View {
             
             // Status
             Image(systemName: status.icon)
-                .font(.system(size: 18, weight: .regular))
+                .scaledFont(size: 18, weight: .regular)
                 .foregroundColor(status.color)
         }
         .padding(16)
@@ -724,7 +724,7 @@ struct PermissionsView_Previews: PreviewProvider {
 private struct OnboardingAppMark: View {
     var body: some View {
         Image(systemName: "waveform")
-            .font(.system(size: 24, weight: .regular))
+            .scaledFont(size: 24, weight: .regular)
             .foregroundStyle(AppTheme.onAccent)
             .frame(width: 56, height: 56)
             .background(

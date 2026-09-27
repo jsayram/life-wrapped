@@ -289,7 +289,7 @@ struct AISettingsView: View {
                 Section {
                     VStack(spacing: 16) {
                         Image(systemName: "lock")
-                            .font(.system(size: 32))
+                            .scaledFont(size: 32)
                             .foregroundStyle(AppTheme.purple)
                         
                         Text("Purchase required")
@@ -825,7 +825,7 @@ struct SmartestPurchaseSheet: View {
                 // Header
                 VStack(spacing: 12) {
                     Image(systemName: "cloud")
-                        .font(.system(size: 24, weight: .regular))
+                        .scaledFont(size: 24, weight: .regular)
                         .foregroundStyle(AppTheme.onAccent)
                         .frame(width: 56, height: 56)
                         .background(
@@ -835,7 +835,7 @@ struct SmartestPurchaseSheet: View {
                         .accessibilityHidden(true)
 
                     Text("Unlock Smartest")
-                        .font(AppTheme.titleFont(size: 30))
+                        .scaledFont(size: 30, design: .serif)
                         .foregroundStyle(AppTheme.textPrimary)
 
                     Text("The most detailed summaries, using OpenAI or Anthropic with your own API key.")
@@ -923,7 +923,7 @@ struct FeatureRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .regular))
+                .scaledFont(size: 16, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 24)
             Text(text)

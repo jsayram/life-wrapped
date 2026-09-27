@@ -12,7 +12,7 @@ struct StreakDisplay: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "flame")
-                .font(.system(size: 14, weight: .regular))
+                .scaledFont(size: 14, weight: .regular)
                 .foregroundStyle(AppTheme.textSecondary)
             Text("\(Text("\(streak)").fontWeight(.semibold).foregroundColor(AppTheme.textPrimary)) day streak")
                 .foregroundStyle(AppTheme.textSecondary)

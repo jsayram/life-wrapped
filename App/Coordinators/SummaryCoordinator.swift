@@ -22,6 +22,10 @@ public final class SummaryCoordinator {
     /// Sessions whose summary is being written right now. The end of a recording and its last
     /// chunk's transcription can both ask for the summary; only the first request runs.
     private var summarizingSessions: Set<UUID> = []
+
+    public func isSummarizing(_ sessionId: UUID) -> Bool {
+        summarizingSessions.contains(sessionId)
+    }
     
     // MARK: - Callbacks
     
@@ -94,6 +98,8 @@ public final class SummaryCoordinator {
         } catch {
             print("❌ [SummaryCoordinator] ⚠️ Failed to check/generate session summary: \(error)")
             print("❌ [SummaryCoordinator] Error details: \(error.localizedDescription)")
+            NotificationCenter.default.post(name: .sessionSummaryFailed, object: sessionId,
+                                            userInfo: ["message": error.localizedDescription])
         }
     }
     
@@ -241,6 +247,7 @@ public final class SummaryCoordinator {
         print("💾 [SummaryCoordinator] Saving summary to database...")
         try await databaseManager.insertSummary(generatedSummary)
         try? await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
+        NotificationCenter.default.post(name: .sessionSummaryUpdated, object: sessionId)
         print("✅ [SummaryCoordinator] Session summary saved successfully!")
         print("📊 [SummaryCoordinator] Summary details - topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none")")
         
@@ -791,7 +798,7 @@ public final class SummaryCoordinator {
     
     /// How many of the year's recordings are new or changed since the Year Wrap was built.
     /// Changed means its journal, notes or summary changed, all of which feed the wrap.
-    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int, journal: SessionCategory? = nil) async throws -> Int {
         let yearlyData = try await databaseManager.fetchSessionsByYear()
         guard let yearData = yearlyData.first(where: { $0.year == year }) else {
             print("⚠️ [SummaryCoordinator] No sessions found for year \(year)")
@@ -810,6 +817,12 @@ public final class SummaryCoordinator {
         // Changed after the wrap was built
         let changed = try await databaseManager.fetchSessionIdsContentChanged(since: yearWrap.createdAt)
         outdated.formUnion(changed.intersection(yearSessions))
+
+        // Only this journal's recordings count toward its wrap
+        if let journal, !outdated.isEmpty {
+            let metadata = try await databaseManager.fetchSessionMetadataBatch(sessionIds: Array(outdated))
+            outdated = outdated.filter { Self.journal(of: metadata[$0]) == journal }
+        }
 
         print("📊 [SummaryCoordinator] Year Wrap staleness check: \(outdated.count) recordings new or changed since \(yearWrap.createdAt)")
         return outdated.count

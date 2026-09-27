@@ -54,7 +54,7 @@ struct MonthDigestCard: View {
     private func content(stats: DigestStats) -> some View {
         if let headline = story.headline {
             Text(headline)
-                .font(AppTheme.titleFont(size: 22))
+                .scaledFont(size: 22, design: .serif)
                 .foregroundStyle(AppTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -110,7 +110,7 @@ struct MonthDigestCard: View {
                     }
                 }
                 Text(digest.monthStart.formatted(.dateTime.month(.wide).year()))
-                    .font(AppTheme.titleFont(size: 24))
+                    .scaledFont(size: 24, design: .serif)
                     .foregroundStyle(AppTheme.textPrimary)
                 if !digest.isFinal {
                     Text("Updates as you record until the month ends")

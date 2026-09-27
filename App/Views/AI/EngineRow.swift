@@ -130,9 +130,9 @@ struct AttributeBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 10))
+                .scaledFont(size: 10)
             Text(text)
-                .font(.system(size: 10, weight: .medium))
+                .scaledFont(size: 10, weight: .medium)
         }
         .foregroundStyle(isAvailable ? color : color.opacity(0.4))
         .padding(.horizontal, 6)

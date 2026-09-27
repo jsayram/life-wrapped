@@ -55,7 +55,7 @@ struct RecordingDetailView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 32))
+                                .scaledFont(size: 32)
                                 .foregroundStyle(AppTheme.textPrimary)
                             
                             VStack(alignment: .leading, spacing: 4) {

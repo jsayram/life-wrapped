@@ -51,6 +51,8 @@ public struct AppTheme {
     // MARK: - Typography
 
     /// Large screen titles in New York (Apple's system serif)
+    /// Serif display font at a fixed size. In views prefer `.scaledFont(size:design: .serif)`,
+    /// which follows Dynamic Type.
     public static func titleFont(size: CGFloat = 34) -> Font {
         .system(size: size, weight: .regular, design: .serif)
     }
@@ -271,7 +273,7 @@ struct GraphiteSegmentedControl<Value: Hashable>: View {
                     HStack(spacing: 6) {
                         if let icon = option.systemImage {
                             Image(systemName: icon)
-                                .font(.system(size: 14, weight: .regular))
+                                .scaledFont(size: 14, weight: .regular)
                         }
                         Text(option.title)
                             .font(.subheadline.weight(isSelected ? .semibold : .regular))
@@ -311,7 +313,7 @@ struct IconSquareButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .regular))
+                .scaledFont(size: 15, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 36, height: 36)
                 .background(
@@ -351,11 +353,11 @@ struct GraphiteEmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: systemImage)
-                .font(.system(size: 28, weight: .light))
+                .scaledFont(size: 28, weight: .light)
                 .foregroundStyle(AppTheme.textSecondary)
                 .accessibilityHidden(true)
             Text(title)
-                .font(AppTheme.titleFont(size: 22))
+                .scaledFont(size: 22, design: .serif)
                 .foregroundStyle(AppTheme.textPrimary)
                 .multilineTextAlignment(.center)
             description
@@ -367,5 +369,32 @@ struct GraphiteEmptyState: View {
         .padding(.horizontal, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
+    }
+}
+
+
+// MARK: - Scaled Fonts
+
+/// A fixed-size system font that still follows the Dynamic Type setting. Sizes scale with body text,
+/// large display sizes with the large title, and growth is capped so fixed-size frames hold up.
+private struct ScaledSystemFont: ViewModifier {
+    let size: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+
+    @ScaledMetric(relativeTo: .body) private var bodyScale: CGFloat = 100
+    @ScaledMetric(relativeTo: .largeTitle) private var titleScale: CGFloat = 100
+
+    func body(content: Content) -> some View {
+        let scale = (size >= 28 ? titleScale : bodyScale) / 100
+        // Must stay a plain system font: calling scaledFont here would apply this modifier forever
+        content.font(.system(size: size * min(scale, 1.6), weight: weight, design: design))
+    }
+}
+
+extension View {
+    /// Like `.font(.system(size:weight:design:))`, but scales with Dynamic Type
+    func scaledFont(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> some View {
+        modifier(ScaledSystemFont(size: size, weight: weight, design: design))
     }
 }

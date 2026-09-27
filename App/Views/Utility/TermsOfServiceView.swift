@@ -9,7 +9,7 @@ struct TermsOfServiceView: View {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Terms of service")
-                        .font(AppTheme.titleFont(size: 28))
+                        .scaledFont(size: 28, design: .serif)
                     
                     Text("Last updated September 26, 2026")
                         .font(.caption)

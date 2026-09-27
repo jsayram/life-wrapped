@@ -52,7 +52,7 @@ struct SessionSummaryCard: View {
                     coordinator.showSuccess("Summary copied")
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(AppTheme.textSecondary)
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())

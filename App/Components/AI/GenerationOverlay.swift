@@ -16,7 +16,7 @@ struct GenerationOverlay: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 12) {
                     Image(systemName: tierSymbol)
-                        .font(.system(size: 17, weight: .regular))
+                        .scaledFont(size: 17, weight: .regular)
                         .foregroundStyle(AppTheme.textPrimary)
                         .frame(width: 36, height: 36)
                         .background(
@@ -26,7 +26,7 @@ struct GenerationOverlay: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Summarizing")
-                            .font(AppTheme.titleFont(size: 22))
+                            .scaledFont(size: 22, design: .serif)
                             .foregroundStyle(AppTheme.textPrimary)
                         if let engineTier {
                             Text(engineTier.displayName)

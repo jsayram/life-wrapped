@@ -25,7 +25,7 @@ struct SetupView: View {
                 // Header
                 VStack(spacing: 16) {
                     Image(systemName: "cpu")
-                        .font(.system(size: 80))
+                        .scaledFont(size: 80)
                         .foregroundStyle(AppTheme.accent)
                     
                     Text("Setting Up Life Wrapped")
@@ -113,7 +113,7 @@ struct SetupView: View {
                     } else if isReady {
                         VStack(spacing: 16) {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 50))
+                                .scaledFont(size: 50)
                                 .foregroundColor(AppTheme.accent)
                             
                             Text("Ready to go!")

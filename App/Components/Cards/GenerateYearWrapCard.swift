@@ -12,7 +12,7 @@ struct GenerateYearWrapCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Wrap your year")
-                    .font(AppTheme.titleFont(size: 24))
+                    .scaledFont(size: 24, design: .serif)
                     .foregroundStyle(AppTheme.textPrimary)
 
                 Text("Your year so far: a wrap for work and one for personal, side by side under All. It runs in the background while you use the app.")
@@ -61,11 +61,11 @@ struct YearWrapProgressCard: View {
 
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 20))
+                    .scaledFont(size: 20)
                     .symbolEffect(.pulse)
                     .accessibilityHidden(true)
                 Text("Wrapping up your year")
-                    .font(AppTheme.titleFont(size: 26))
+                    .scaledFont(size: 26, design: .serif)
             }
             .foregroundStyle(AppTheme.onAccent)
 
@@ -122,7 +122,7 @@ struct MissingCategoryWrapCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("No \(name) wrap yet")
-                .font(AppTheme.titleFont(size: 22))
+                .scaledFont(size: 22, design: .serif)
                 .foregroundStyle(AppTheme.textPrimary)
             Text("A \(name) wrap is written only from recordings whose category is \(name.capitalized). Set that on a few recordings, then generate again.")
                 .font(.subheadline)

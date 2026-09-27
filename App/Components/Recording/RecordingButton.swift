@@ -23,7 +23,7 @@ struct RecordingButton: View {
             if coordinator.recordingState.isRecording {
                 VStack(spacing: 20) {
                     Text(formatDuration(recordingDuration))
-                        .font(.system(size: 48, weight: .light, design: .monospaced))
+                        .scaledFont(size: 48, weight: .light, design: .monospaced)
                         .monospacedDigit()
                         .foregroundStyle(AppTheme.textPrimary)
                         .accessibilityLabel("Recording time \(formatDuration(recordingDuration))")
@@ -106,7 +106,7 @@ struct RecordingButton: View {
                     .controlSize(.large)
             } else {
                 Image(systemName: "mic")
-                    .font(.system(size: 40, weight: .regular))
+                    .scaledFont(size: 40, weight: .regular)
                     .foregroundStyle(AppTheme.onAccent)
             }
         }

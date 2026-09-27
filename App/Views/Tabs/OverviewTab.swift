@@ -369,19 +369,22 @@ struct OverviewTab: View {
             }
             yearWraps = wraps
             
-            // Staleness is measured against the All wrap, which every run writes
+            // Staleness is measured against the All wrap, which every run writes, and counted per
+            // journal so each card only reports changes that affect its own wrap
             if let yearWrap = wraps[.all] {
                 let year = Calendar.current.component(.year, from: dateForFetch)
-                if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                    coordinator.updateYearWrapNewSessionCount(newCount)
-                }
+                var counts: [ItemFilter: Int] = [:]
+                counts[.all] = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year)
+                counts[.workOnly] = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year, journal: .work)
+                counts[.personalOnly] = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year, journal: .personal)
+                coordinator.updateYearWrapOutdatedCounts(counts)
             } else {
-                coordinator.updateYearWrapNewSessionCount(0)
+                coordinator.updateYearWrapOutdatedCounts([:])
             }
         } else {
             yearWraps = [:]
             // Reset staleness count when not viewing Year
-            coordinator.updateYearWrapNewSessionCount(0)
+            coordinator.updateYearWrapOutdatedCounts([:])
         }
         
         isLoading = false
@@ -736,11 +739,11 @@ struct YearWrapGenerationSheet: View {
         VStack(spacing: 20) {
             VStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 28, weight: .regular))
+                    .scaledFont(size: 28, weight: .regular)
                     .foregroundStyle(AppTheme.textPrimary)
                 
                 Text("Wrap your year")
-                    .font(AppTheme.titleFont(size: 24))
+                    .scaledFont(size: 24, design: .serif)
                 
                 Text("One wrap for work and one for personal, side by side under All")
                     .font(.subheadline)

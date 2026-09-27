@@ -48,7 +48,7 @@ struct StatisticsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "timer")
-                                    .font(.system(size: 20, weight: .regular))
+                                    .scaledFont(size: 20, weight: .regular)
                                     .foregroundStyle(AppTheme.textPrimary)
                                     .frame(width: 28)
                                 
@@ -80,7 +80,7 @@ struct StatisticsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "calendar.badge.plus")
-                                    .font(.system(size: 20, weight: .regular))
+                                    .scaledFont(size: 20, weight: .regular)
                                     .foregroundStyle(AppTheme.textPrimary)
                                     .frame(width: 28)
                                 
@@ -200,7 +200,7 @@ struct StatisticsView: View {
                             ForEach(Array(topWords.enumerated()), id: \.element.id) { index, wordFreq in
                                 VStack(spacing: 6) {
                                     Text(wordFreq.word.capitalized)
-                                        .font(.system(size: fontSizeForRank(index), weight: .bold))
+                                        .scaledFont(size: fontSizeForRank(index), weight: .bold)
                                         .foregroundStyle(colorForRank(index))
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.7)

@@ -117,7 +117,18 @@ public final class AppCoordinator: ObservableObject {
     @Published public var currentToast: Toast?
     @Published public private(set) var isDownloadingLocalModel: Bool = false
     @Published public private(set) var localModelDownloadProgress: Double = 0
-    @Published public private(set) var yearWrapNewSessionCount: Int = 0
+    /// Per wrap filter: how many of that journal's recordings are new or changed since the wrap was built
+    @Published public private(set) var yearWrapOutdatedCounts: [ItemFilter: Int] = [:]
+    /// The recording that was just saved, for the confirmation on the Record screen. Nil once dismissed
+    /// or when a new recording starts.
+    @Published public private(set) var lastSavedRecording: SavedRecording?
+
+    public struct SavedRecording: Equatable, Sendable {
+        public let sessionId: UUID
+        public let journal: SessionCategory
+        /// The mic never heard anything loud enough to be speech during this recording
+        public let heardNothing: Bool
+    }
     /// Current step of a running Year Wrap, nil when none is running
     @Published public private(set) var yearWrapProgress: YearWrapProgress?
     @Published public private(set) var isGeneratingYearWrap: Bool = false
@@ -140,6 +151,8 @@ public final class AppCoordinator: ObservableObject {
     /// so "every saved chunk has a transcript" can be true long before the recording ends.
     /// Its summary waits until recording stops, or it would cover only the first chunks.
     private var sessionStillRecording: UUID?
+    /// The session the current recording's chunks belong to
+    private var currentRecordingSessionId: UUID?
     private var widgetCoordinator: WidgetCoordinator?
     private var permissionsCoordinator: PermissionsCoordinator?
     private var localModelCoordinator: LocalModelCoordinator?
@@ -184,6 +197,8 @@ public final class AppCoordinator: ObservableObject {
             }
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
+
+            currentRecordingSessionId = chunk.sessionId
 
             // Auto-chunks arrive while still recording; the final chunk arrives during stop
             if recordingCoordinator?.isRecording == true {
@@ -690,6 +705,8 @@ public final class AppCoordinator: ObservableObject {
             print("❌ [AppCoordinator] NOT INITIALIZED")
             throw AppCoordinatorError.notInitialized
         }
+        lastSavedRecording = nil
+        currentRecordingSessionId = nil
         
         // Request microphone permission just-in-time
         print("🎤 [AppCoordinator] Requesting microphone permission...")
@@ -852,6 +869,8 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         
+        let journal = recordingCoordinator?.currentCategory ?? recordingCoordinator?.selectedCategory ?? .personal
+
         // Delegate to RecordingCoordinator. Its stop waits for the final chunk to be saved.
         do {
             try await recordingCoordinator?.stopRecording()
@@ -859,11 +878,27 @@ public final class AppCoordinator: ObservableObject {
             await recordingEnded()
             throw error
         }
+        if let sessionId = currentRecordingSessionId {
+            lastSavedRecording = SavedRecording(sessionId: sessionId, journal: journal,
+                                                heardNothing: !audioCapture.lastRecordingHeardVoice)
+        }
+        currentRecordingSessionId = nil
         await recordingEnded()
+    }
+
+    /// Hide the saved-recording confirmation
+    public func dismissLastSavedRecording() {
+        lastSavedRecording = nil
+    }
+
+    /// Whether this recording's summary is being written right now
+    public func isSummarizing(sessionId: UUID) -> Bool {
+        summaryCoordinator?.isSummarizing(sessionId) ?? false
     }
 
     /// Cancel the current recording without saving
     public func cancelRecording() async {
+        currentRecordingSessionId = nil
         await recordingCoordinator?.cancelRecording()
         await recordingEnded()
     }
@@ -1323,17 +1358,17 @@ public final class AppCoordinator: ObservableObject {
         await summaryCoordinator?.fetchMonthDigestStatus(date: date)
     }
     
-    /// Get count of new sessions created after Year Wrap generation
-    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+    /// How many of the year's recordings in `journal` (nil: both) are new or changed since the wrap was built
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int, journal: SessionCategory? = nil) async throws -> Int {
         guard let summaryCoordinator = summaryCoordinator else {
             throw AppCoordinatorError.notInitialized
         }
-        return try await summaryCoordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year)
+        return try await summaryCoordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year, journal: journal)
     }
-    
-    /// Update Year Wrap staleness count
-    public func updateYearWrapNewSessionCount(_ count: Int) {
-        yearWrapNewSessionCount = count
+
+    /// Update the Year Wrap staleness counts, per wrap filter
+    public func updateYearWrapOutdatedCounts(_ counts: [ItemFilter: Int]) {
+        yearWrapOutdatedCounts = counts
     }
 
     /// Delete a recording and its associated data
@@ -1518,6 +1553,11 @@ public final class AppCoordinator: ObservableObject {
 extension Notification.Name {
     static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
     static let recordingTitlesUpdated = Notification.Name("RecordingTitlesUpdated")
+    /// A recording's summary was saved. `object` is the session's UUID.
+    static let sessionSummaryUpdated = Notification.Name("SessionSummaryUpdated")
+    /// Writing a recording's summary in the background failed. `object` is the session's UUID;
+    /// `userInfo["message"]` says why.
+    static let sessionSummaryFailed = Notification.Name("SessionSummaryFailed")
 }
 
 #if DEBUG

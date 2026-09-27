@@ -6,7 +6,7 @@ struct PrivacyPolicyView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Privacy first")
-                    .font(AppTheme.titleFont(size: 28))
+                    .scaledFont(size: 28, design: .serif)
                 
                 VStack(alignment: .leading, spacing: 12) {
                     PrivacyPoint(
@@ -67,7 +67,7 @@ struct PrivacyPoint: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .regular))
+                .scaledFont(size: 20, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 28)
             

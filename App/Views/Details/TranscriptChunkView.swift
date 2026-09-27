@@ -59,27 +59,12 @@ struct TranscriptChunkView: View {
                 
                 Spacer()
                 
-                // Action buttons - compact. While editing, Cancel and Done sit here, like the notes card.
-                if isEditing {
-                    HStack(spacing: 8) {
-                        Button("Cancel") { cancelEdit() }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .tint(AppTheme.textPrimary)
-                        Button("Done") { saveEdit() }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
-                            .tint(AppTheme.accent)
-                            .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    .transition(.opacity)
-                } else if !combinedText.isEmpty {
+                // Action buttons - compact
+                if !combinedText.isEmpty {
                     HStack(spacing: 8) {
                         Button {
                             editedText = combinedText
                             isEditing = true
-                            isTextFocused = true
                         } label: {
                             HStack(spacing: 2) {
                                 Image(systemName: "pencil")
@@ -106,17 +91,19 @@ struct TranscriptChunkView: View {
                 .stroke(chunkBorderColor, lineWidth: 2)
         )
         .onTapGesture {
-            if !isEditing { onSeekToChunk() }
+            onSeekToChunk()
+        }
+        .sheet(isPresented: $isEditing) {
+            editorSheet
         }
         .animation(.easeInOut(duration: 0.15), value: isEditing)
         .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
         .animation(.easeInOut(duration: 0.3), value: isEdited)
     }
     
+    // Only the playing part is highlighted; an edit is shown by its "Edited" badge alone
     private var chunkBackground: Color {
-        if isEdited {
-            return AppTheme.textSecondary.opacity(0.08)
-        } else if isCurrentChunk {
+        if isCurrentChunk {
             return AppTheme.accent.opacity(0.1)
         } else {
             return Color.clear
@@ -124,9 +111,7 @@ struct TranscriptChunkView: View {
     }
     
     private var chunkBorderColor: Color {
-        if isEdited {
-            return AppTheme.textSecondary.opacity(0.5)
-        } else if isCurrentChunk {
+        if isCurrentChunk {
             return AppTheme.accent.opacity(0.5)
         } else {
             return Color.clear
@@ -211,8 +196,6 @@ struct TranscriptChunkView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-        } else if isEditing {
-            inlineEditor
         } else {
             // Selectable text - user can select and copy individual words
             Text(combinedText)
@@ -225,31 +208,31 @@ struct TranscriptChunkView: View {
         }
     }
     
-    /// Inline editor, the same as the notes box: grows with the text, up to a limit
-    private var inlineEditor: some View {
-        ZStack(alignment: .topLeading) {
-            // Invisible copy of the text sizes the box to its content
-            Text(editedText.isEmpty ? " " : editedText + " ")
-                .font(.body)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
-                .opacity(0)
-                .accessibilityHidden(true)
-
+    /// Full-screen editor: room for long text, paste and dictation, and Cancel/Save where iOS puts them
+    private var editorSheet: some View {
+        NavigationStack {
             TextEditor(text: $editedText)
                 .font(.body)
                 .focused($isTextFocused)
                 .scrollContentBackground(.hidden)
-                .accessibilityLabel("Transcript part \(chunkIndex + 1)")
+                .padding(.horizontal, 12)
+                .background(AppTheme.background)
+                .navigationTitle(session.chunkCount > 1 ? "Edit part \(chunkIndex + 1)" : "Edit transcript")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { cancelEdit() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { saveEdit() }
+                            .fontWeight(.semibold)
+                            .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || editedText == combinedText)
+                    }
+                }
+                .onAppear { isTextFocused = true }
         }
-        .frame(maxHeight: 420)
-        .padding(.horizontal, 6)
-        .background(AppTheme.fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(AppTheme.textSecondary.opacity(0.6), lineWidth: 1)
-        )
+        // Swiping down would throw away changes; make the user pick Cancel or Save
+        .interactiveDismissDisabled(editedText != combinedText)
     }
 
     private func cancelEdit() {

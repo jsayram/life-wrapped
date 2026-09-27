@@ -16,7 +16,7 @@ struct SummaryQualityCard: View {
         Button(action: onSelect) {
             HStack(alignment: .center, spacing: 14) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .regular))
+                    .scaledFont(size: 18, weight: .regular)
                     .foregroundStyle(AppTheme.textPrimary)
                     .frame(width: 24)
                     .accessibilityHidden(true)

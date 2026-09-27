@@ -185,7 +185,7 @@ struct YearWrapDetailView: View {
             
             VStack(spacing: 16) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 44, weight: .light))
+                    .scaledFont(size: 44, weight: .light)
                     .foregroundStyle(AppTheme.onAccent)
                     .accessibilityHidden(true)
                 
@@ -203,7 +203,7 @@ struct YearWrapDetailView: View {
                                 .tracking(0.8)
                                 .foregroundStyle(AppTheme.onAccent.opacity(0.7))
                             Text(journal.title)
-                                .font(AppTheme.titleFont(size: 26))
+                                .scaledFont(size: 26, design: .serif)
                                 .foregroundStyle(AppTheme.onAccent)
                                 .multilineTextAlignment(.center)
                                 .accessibilityAddTraits(.isHeader)
@@ -217,7 +217,7 @@ struct YearWrapDetailView: View {
                     }
                 } else if let data = displayData {
                     Text(data.yearTitle)
-                        .font(AppTheme.titleFont(size: 30))
+                        .scaledFont(size: 30, design: .serif)
                         .foregroundStyle(AppTheme.onAccent)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -471,11 +471,11 @@ struct YearWrapDetailView: View {
     private func sectionHeader(_ title: String, icon: String) -> some View {
         Label {
             Text(title)
-                .font(AppTheme.titleFont(size: 20))
+                .scaledFont(size: 20, design: .serif)
                 .foregroundStyle(AppTheme.textPrimary)
         } icon: {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .regular))
+                .scaledFont(size: 16, weight: .regular)
                 .foregroundStyle(AppTheme.textSecondary)
         }
         .accessibilityAddTraits(.isHeader)

@@ -692,6 +692,12 @@ public final class AudioCaptureManager: ObservableObject {
         currentAudioLevel = levels.last ?? 0
     }
 
+    /// Whether the last (or current) recording ever heard something loud enough to be a voice.
+    /// Stays readable after the recording stops, until the next one starts.
+    public var lastRecordingHeardVoice: Bool {
+        lastVoiceAt != nil
+    }
+
     /// Whether the mic seems to hear anything. Not published: poll it while recording.
     /// No readings at all (a stalled or interrupted mic) also counts as no signal.
     public func inputStatus(at now: Date = Date()) -> InputStatus {

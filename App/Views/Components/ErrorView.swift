@@ -20,7 +20,7 @@ struct ErrorView: View {
         VStack(spacing: 20) {
             // Icon
             Image(systemName: errorIcon)
-                .font(.system(size: 60))
+                .scaledFont(size: 60)
                 .foregroundStyle(AppTheme.destructive)
             
             // Title

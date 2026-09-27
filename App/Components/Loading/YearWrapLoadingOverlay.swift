@@ -17,12 +17,12 @@ struct YearWrapLoadingOverlay: View {
 
             VStack(spacing: 18) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 28, weight: .regular))
+                    .scaledFont(size: 28, weight: .regular)
                     .foregroundStyle(AppTheme.textPrimary)
                     .symbolEffect(.pulse)
 
                 Text("Wrapping up your year")
-                    .font(AppTheme.titleFont(size: 24))
+                    .scaledFont(size: 24, design: .serif)
                     .foregroundStyle(AppTheme.textPrimary)
                     .multilineTextAlignment(.center)
 

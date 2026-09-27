@@ -20,6 +20,8 @@ struct SessionDetailView: View {
     @State private var transcriptionCheckTimer: Timer?
     @State private var sessionSummary: Summary?
     @State private var summaryLoadError: String?
+    /// The summary is being written in the background (or about to be, right after transcription)
+    @State private var summaryIsBeingWritten = false
     @State private var scrubbedTime: TimeInterval = 0
     
     // Session metadata
@@ -60,13 +62,13 @@ struct SessionDetailView: View {
                 // Transcription Processing Banner
                 processingBannerSection
 
-                // Session Summary Section (if available or error)
+                // Summary: the summary, a real failure (with Retry), or where it is on its way
                 if let summary = sessionSummary {
                     sessionSummarySection(summary: summary)
                 } else if let error = summaryLoadError {
                     sessionSummaryErrorSection(error: error)
-                } else if isTranscriptionComplete {
-                    sessionSummaryPlaceholderSection
+                } else {
+                    summaryPendingSection
                 }
 
                 // Notes
@@ -104,6 +106,20 @@ struct SessionDetailView: View {
         .onAppear {
             startPlaybackUpdateTimer()
             startTranscriptionCheckTimer()
+        }
+        // Follow the background summary once transcription is done, so the card never sits on a
+        // stale state: it shows the summary when it's saved and a failure when it fails
+        .task(id: isTranscriptionComplete) {
+            await followBackgroundSummary()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionSummaryUpdated)) { note in
+            guard note.object as? UUID == session.sessionId else { return }
+            Task { await loadSessionSummary() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionSummaryFailed)) { note in
+            guard note.object as? UUID == session.sessionId, sessionSummary == nil else { return }
+            summaryIsBeingWritten = false
+            summaryLoadError = note.userInfo?["message"] as? String ?? "The summary couldn't be written."
         }
         .onDisappear {
             stopPlaybackUpdateTimer()
@@ -358,7 +374,7 @@ struct SessionDetailView: View {
                         .frame(width: 44, height: 44)
                     
                     Image(systemName: isCurrentlyPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(AppTheme.onAccent)
                 }
                 
@@ -438,21 +454,6 @@ struct SessionDetailView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // Share button
-                    ShareLink(item: transcriptText) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.body)
-                            Text("Share")
-                                .fontWeight(.medium)
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(AppTheme.textPrimary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                        .contentShape(Rectangle())
-                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 12)
@@ -722,7 +723,7 @@ struct SessionDetailView: View {
                     }
 
                     TextField("Untitled recording", text: $sessionTitle)
-                        .font(AppTheme.titleFont(size: 24))
+                        .scaledFont(size: 24, design: .serif)
                         .foregroundStyle(AppTheme.textPrimary)
                         .focused($isTextFieldFocused)
                         .submitLabel(.done)
@@ -741,7 +742,7 @@ struct SessionDetailView: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(sessionTitle.isEmpty ? "Untitled recording" : sessionTitle)
-                            .font(AppTheme.titleFont(size: 28))
+                            .scaledFont(size: 28, design: .serif)
                             .foregroundStyle(AppTheme.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
@@ -774,62 +775,56 @@ struct SessionDetailView: View {
     
     // MARK: - Session Summary Section
     
-    private var sessionSummaryPlaceholderSection: some View {
+    /// No summary yet. Says what's actually happening, and only offers a button when nothing is
+    /// on its way: Retry lives in the failure card.
+    private var summaryPendingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Recording parts")
-                    .font(.headline)
-                
-                Spacer()
-                
-                // Generate button
-                Button {
-                    Task {
-                        await regenerateSummary()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        if isRegeneratingSummary {
-                            ProgressView()
-                                .tint(AppTheme.purple)
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "sparkles")
-                                .font(.body)
-                        }
-                        Text("Generate")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(isRegeneratingSummary)
-            }
-            
-            if isRegeneratingSummary {
-                HStack {
+            Text("Summary")
+                .font(.headline)
+
+            if !isTranscriptionComplete {
+                summaryStatus(icon: "clock", title: "Waiting for the transcript",
+                              detail: "The summary is written once transcription finishes.")
+            } else if transcriptSegments.isEmpty {
+                // Nothing was transcribed (silence, or transcription failed): no summary is possible
+                summaryStatus(icon: "text.page.slash", title: "Nothing to summarize",
+                              detail: "This recording has no transcript.")
+            } else if summaryIsBeingWritten || isRegeneratingSummary {
+                HStack(spacing: 8) {
                     ProgressView()
-                        .tint(AppTheme.purple)
-                    Text("Generating AI summary...")
+                        .controlSize(.small)
+                    Text("Writing the summary")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .fontWeight(.medium)
                 }
-                .padding(.top, 8)
             } else {
-                Text("Summary not yet generated. Tap Generate to create an AI summary of this recording.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .italic()
+                summaryStatus(icon: "sparkles", title: "No summary yet",
+                              detail: "This recording hasn't been summarized.")
+                Button {
+                    Task { await regenerateSummary() }
+                } label: {
+                    Label("Write summary", systemImage: "sparkles")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(AppTheme.textPrimary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .graphiteCard()
     }
-    
+
+    private func summaryStatus(icon: String, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(title, systemImage: icon)
+                .font(.subheadline)
+                .fontWeight(.medium)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private func sessionSummaryErrorSection(error: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -868,16 +863,15 @@ struct SessionDetailView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                let isWaiting = !isTranscriptionComplete || error.contains("not yet generated")
                 HStack(spacing: 8) {
-                    Image(systemName: isWaiting ? "clock" : "exclamationmark.triangle")
+                    Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(AppTheme.textSecondary)
-                    Text(isWaiting ? "Waiting for the transcript" : "Summary failed")
+                    Text("Summary failed")
                         .font(.subheadline)
                         .fontWeight(.medium)
                 }
                 
-                Text(isWaiting ? "The summary is written once transcription finishes." : error)
+                Text(error)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
@@ -918,7 +912,7 @@ struct SessionDetailView: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .semibold))
+                            .scaledFont(size: 15, weight: .semibold)
                             .foregroundStyle(AppTheme.textPrimary)
                             .frame(width: 36, height: 36)
                             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
@@ -955,7 +949,7 @@ struct SessionDetailView: View {
                 HStack {
                     Image(systemName: engineIcon(for: engineTier))
                         .font(.caption)
-                    Text("Generated by \(engineDisplayName(for: engineTier))")
+                    Text("Summarized by \(engineDisplayName(for: engineTier))")
                         .font(.caption)
                 }
                 .foregroundStyle(.secondary)
@@ -1052,7 +1046,7 @@ struct SessionDetailView: View {
         switch tier.lowercased() {
         case "apple": return "Apple Intelligence"
         case "basic": return "Basic"
-        case "external": return "Year Wrapped Pro AI"
+        case "external": return "Smartest Engine AI"
         case "rollup": return "Rollup"
         case "year wrap": return "Year Wrap"
         default: return tier.capitalized
@@ -1366,6 +1360,22 @@ struct SessionDetailView: View {
         }
     }
     
+    /// While there's no summary after transcription, check every couple of seconds whether one is
+    /// being written. A short grace period covers the moment between transcription finishing and
+    /// the summary starting.
+    private func followBackgroundSummary() async {
+        guard isTranscriptionComplete else { return }
+        var graceTicks = 3
+        while !Task.isCancelled, sessionSummary == nil, summaryLoadError == nil {
+            let writing = coordinator.isSummarizing(sessionId: session.sessionId)
+            summaryIsBeingWritten = writing || graceTicks > 0
+            if graceTicks > 0 { graceTicks -= 1 }
+            if !writing { await loadSessionSummary() }
+            try? await Task.sleep(for: .seconds(2))
+        }
+        summaryIsBeingWritten = false
+    }
+
     private func loadSessionSummary() async {
         summaryLoadError = nil
         do {
@@ -1373,8 +1383,8 @@ struct SessionDetailView: View {
             if sessionSummary != nil {
                 print("✨ [SessionDetailView] Loaded session summary")
             } else {
+                // Not an error: it's waiting for the transcript, being written, or never made
                 print("ℹ️ [SessionDetailView] No session summary found (not yet generated)")
-                summaryLoadError = "Summary not yet generated. Transcription must complete first."
             }
         } catch {
             print("❌ [SessionDetailView] Failed to load session summary: \(error)")

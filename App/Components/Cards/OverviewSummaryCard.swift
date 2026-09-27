@@ -42,7 +42,7 @@ struct OverviewSummaryCard: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(periodTitle)
-                    .font(AppTheme.titleFont(size: 20))
+                    .scaledFont(size: 20, design: .serif)
                 Text("Based on \(sessionCount) session\(sessionCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)

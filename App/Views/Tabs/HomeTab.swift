@@ -9,6 +9,9 @@ struct HomeTab: View {
     
     @State private var category: SessionCategory = .personal
     @State private var activeTier: EngineTier?
+    /// The just-saved recording, opened from the confirmation
+    @State private var openedRecording: RecordingSession?
+    @State private var isDeletingSilentRecording = false
 
     /// The journal the current recording goes to, or nil when there's no recording in progress
     private var recordingJournal: SessionCategory? {
@@ -27,7 +30,7 @@ struct HomeTab: View {
                     // Header: serif title with the streak pill (or a recording indicator)
                     HStack(alignment: .center) {
                         Text("Life Wrapped")
-                            .font(AppTheme.titleFont(size: 34))
+                            .scaledFont(size: 34, design: .serif)
                             .foregroundStyle(AppTheme.textPrimary)
                             .accessibilityAddTraits(.isHeader)
                         Spacer(minLength: 12)
@@ -92,8 +95,24 @@ struct HomeTab: View {
                         }
                     }
 
-                    // Current summary engine
-                    if let tier = activeTier, !coordinator.recordingState.isRecording {
+                    // What just happened to the recording that was stopped; replaces the engine card meanwhile
+                    if let saved = coordinator.lastSavedRecording, !coordinator.recordingState.isRecording {
+                        SavedRecordingBanner(
+                            saved: saved,
+                            isDeleting: isDeletingSilentRecording,
+                            onOpen: { Task { await open(saved) } },
+                            onDelete: { Task { await deleteSilent(saved) } },
+                            onDismiss: { withAnimation { coordinator.dismissLastSavedRecording() } }
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        // A normal save confirmation fades after a while; a silent recording waits for an answer
+                        .task(id: saved.sessionId) {
+                            guard !saved.heardNothing else { return }
+                            try? await Task.sleep(for: .seconds(15))
+                            guard !Task.isCancelled, coordinator.lastSavedRecording == saved else { return }
+                            withAnimation { coordinator.dismissLastSavedRecording() }
+                        }
+                    } else if let tier = activeTier, !coordinator.recordingState.isRecording {
                         NavigationLink(destination: AISettingsView()) {
                             SummaryEngineCard(tier: tier)
                         }
@@ -147,6 +166,31 @@ struct HomeTab: View {
             }
             .themedScreen()
             .navigationBarHidden(true)
+            .navigationDestination(item: $openedRecording) { session in
+                SessionDetailView(session: session)
+            }
+            .animation(.easeInOut(duration: 0.25), value: coordinator.lastSavedRecording)
+        }
+    }
+
+    private func open(_ saved: AppCoordinator.SavedRecording) async {
+        guard let session = try? await coordinator.fetchSessions(ids: [saved.sessionId]).first else {
+            coordinator.showError("Couldn't open the recording")
+            return
+        }
+        coordinator.dismissLastSavedRecording()
+        openedRecording = session
+    }
+
+    private func deleteSilent(_ saved: AppCoordinator.SavedRecording) async {
+        isDeletingSilentRecording = true
+        defer { isDeletingSilentRecording = false }
+        do {
+            try await coordinator.deleteSession(saved.sessionId)
+            withAnimation { coordinator.dismissLastSavedRecording() }
+            coordinator.showSuccess("Recording deleted")
+        } catch {
+            coordinator.showError("Couldn't delete the recording")
         }
     }
     
@@ -178,6 +222,72 @@ private struct RecordingIndicatorPill: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .overlay(Capsule().strokeBorder(AppTheme.hairline, lineWidth: 1))
+    }
+}
+
+/// After Stop: where the recording went and what happens next, or, when the mic heard nothing,
+/// an offer to delete it.
+private struct SavedRecordingBanner: View {
+    let saved: AppCoordinator.SavedRecording
+    let isDeleting: Bool
+    let onOpen: () -> Void
+    let onDelete: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: saved.heardNothing ? "mic.slash" : "checkmark.circle")
+                    .font(.body.weight(.semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(saved.heardNothing ? "The mic didn't pick up any speech" : "Saved to \(saved.journal.displayName)")
+                        .font(.subheadline.weight(.semibold))
+                    Text(saved.heardNothing
+                         ? "Delete it, or keep it in case it caught something."
+                         : "The transcript and summary are on the way.")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if !saved.heardNothing {
+                    Button("View", action: onOpen)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(AppTheme.textPrimary)
+                }
+            }
+
+            if saved.heardNothing {
+                HStack(spacing: 10) {
+                    Button(role: .destructive, action: onDelete) {
+                        if isDeleting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Delete")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AppTheme.destructive)
+                    .disabled(isDeleting)
+
+                    Button("Keep", action: onDismiss)
+                        .buttonStyle(.bordered)
+                        .tint(AppTheme.textPrimary)
+                        .disabled(isDeleting)
+                }
+                .controlSize(.small)
+            }
+        }
+        .foregroundStyle(AppTheme.textPrimary)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.card, in: RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                .strokeBorder(AppTheme.hairline, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -230,7 +340,7 @@ private struct SummaryEngineCard: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "sparkle")
-                .font(.system(size: 18, weight: .regular))
+                .scaledFont(size: 18, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
@@ -243,7 +353,7 @@ private struct SummaryEngineCard: View {
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .scaledFont(size: 13, weight: .semibold)
                 .foregroundStyle(AppTheme.textSecondary)
         }
         .padding(.horizontal, 16)

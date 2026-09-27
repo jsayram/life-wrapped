@@ -15,7 +15,7 @@ struct SessionRowClean: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: session.journal.outlineSymbol)
-                .font(.system(size: 17, weight: .regular))
+                .scaledFont(size: 17, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 22, height: 22)
                 .padding(.top, 1)

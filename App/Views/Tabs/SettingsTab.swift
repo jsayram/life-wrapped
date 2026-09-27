@@ -192,7 +192,7 @@ struct SettingsRowLabel: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .regular))
+                .scaledFont(size: 17, weight: .regular)
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(width: 24)
             Text(title)
