@@ -516,7 +516,8 @@ public actor ExternalAPIEngine: SummarizationEngine {
             duration: duration,
             wordCount: wordCount,
             languageCodes: languageCodes,
-            keyMoments: keyMoments
+            keyMoments: keyMoments,
+            title: json["title"] as? String
         )
     }
     

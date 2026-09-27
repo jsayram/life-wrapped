@@ -96,6 +96,8 @@ public struct SessionIntelligence: Codable, Sendable {
     public let languageCodes: [String]
     public let keyMoments: [KeyMoment]?
     public let category: SessionCategory?  // Work/Personal classification from user
+    /// Short title the model suggested for the recording, if it gave one
+    public let title: String?
     
     public init(
         sessionId: UUID,
@@ -107,8 +109,10 @@ public struct SessionIntelligence: Codable, Sendable {
         wordCount: Int,
         languageCodes: [String],
         keyMoments: [KeyMoment]? = nil,
-        category: SessionCategory? = nil
+        category: SessionCategory? = nil,
+        title: String? = nil
     ) {
+        self.title = title
         self.sessionId = sessionId
         self.summary = summary
         self.topics = topics

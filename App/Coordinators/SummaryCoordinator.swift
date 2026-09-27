@@ -198,7 +198,8 @@ public final class SummaryCoordinator {
         
         // Generate summary using coordinator (returns Summary with structured data)
         print("🌐 [SummaryCoordinator] 🚀 CALLING LLM API - Summarizing \(wordCount) words from session...")
-        var generatedSummary = try await summarizationEngine.generateSessionSummary(sessionId: sessionId, segments: allSegments)
+        let generated = try await summarizationEngine.generateSessionSummary(sessionId: sessionId, segments: allSegments)
+        var generatedSummary = generated.summary
         
         print("✅ [SummaryCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
         print("📝 [SummaryCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
@@ -231,6 +232,10 @@ public final class SummaryCoordinator {
         try await databaseManager.insertSummary(generatedSummary)
         print("✅ [SummaryCoordinator] Session summary saved successfully!")
         print("📊 [SummaryCoordinator] Summary details - topics: \(generatedSummary.topicsJSON?.prefix(50) ?? "none")")
+        
+        // Give the recording a title if it doesn't have one yet (never replaces the user's own)
+        let keyPoints = (try? [String].fromTopicsJSON(generatedSummary.topicsJSON)) ?? []
+        await applyTitleIfMissing(sessionId: sessionId, suggested: generated.title, summary: generatedSummary.text, keyPoints: keyPoints)
         
         // Update period summaries (daily, monthly, yearly)
         print("📅 [SummaryCoordinator] Updating period summaries...")
@@ -279,6 +284,70 @@ public final class SummaryCoordinator {
         try await databaseManager.insertSummary(updatedSummary)
         
         print("✅ [SummaryCoordinator] Appended notes to session summary")
+    }
+    
+    // MARK: - Recording Titles
+    
+    /// Set a recording's title when it has none. Uses the model's suggestion, then a short
+    /// request to the user's engine, then the summary's own first words.
+    private func applyTitleIfMissing(sessionId: UUID, suggested: String?, summary: String, keyPoints: [String]) async {
+        if let existing = try? await databaseManager.fetchSessionMetadata(sessionId: sessionId),
+           let title = existing.title, !title.trimmingCharacters(in: .whitespaces).isEmpty {
+            return
+        }
+        var title = SessionTitler.clean(suggested)
+        if title == nil, let generator = await summarizationEngine.digestGenerator() {
+            title = await SessionTitler.titles(for: [summary], generator: generator).first ?? nil
+        }
+        if title == nil {
+            title = SessionTitler.fallback(summary: summary, keyPoints: keyPoints)
+        }
+        guard let title else { return }
+        try? await databaseManager.updateSessionTitle(sessionId: sessionId, title: title)
+        print("🏷️ [SummaryCoordinator] Titled recording: \(title)")
+    }
+    
+    /// Title recordings that were summarized before titles were generated, newest first,
+    /// ten per request. Stops after `limit` so one app launch stays light.
+    /// Returns how many recordings were titled.
+    @discardableResult
+    public func titleUntitledRecordings(limit: Int = 50) async -> Int {
+        guard let summaries = try? await liveSessionSummaries(from: .distantPast, to: .distantFuture) else { return 0 }
+        let ids = summaries.compactMap { $0.sessionId }
+        guard let metadata = try? await databaseManager.fetchSessionMetadataBatch(sessionIds: ids) else { return 0 }
+        let untitled = summaries.reversed().filter { summary in
+            guard let id = summary.sessionId else { return false }
+            let title = metadata[id]?.title?.trimmingCharacters(in: .whitespaces) ?? ""
+            return title.isEmpty
+        }.prefix(limit)
+        guard !untitled.isEmpty else { return 0 }
+        
+        let generator = await summarizationEngine.digestGenerator()
+        let batches = stride(from: 0, to: untitled.count, by: 10).map { Array(untitled.dropFirst($0).prefix(10)) }
+        var titled = 0
+        for batch in batches {
+            let suggested: [String?]
+            if let generator {
+                suggested = await SessionTitler.titles(for: batch.map(\.text), generator: generator)
+            } else {
+                suggested = Array(repeating: nil, count: batch.count)
+            }
+            for (summary, suggestion) in zip(batch, suggested) {
+                guard let id = summary.sessionId else { continue }
+                // The user may have named it while this ran
+                if let current = try? await databaseManager.fetchSessionMetadata(sessionId: id),
+                   let title = current.title, !title.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+                let keyPoints = (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? []
+                guard let title = suggestion ?? SessionTitler.fallback(summary: summary.text, keyPoints: keyPoints) else { continue }
+                try? await databaseManager.updateSessionTitle(sessionId: id, title: title)
+                titled += 1
+            }
+        }
+        if generator?.tier == .local {
+            await summarizationEngine.getLocalEngine().unloadModel()
+        }
+        print("🏷️ [SummaryCoordinator] Titled \(titled) older recordings")
+        return titled
     }
     
     // MARK: - Helper Methods for Sessions

@@ -302,9 +302,8 @@ public actor AppleEngine: SummarizationEngine {
             )
         }
         
-        // Extract fields from JSON (matching UniversalPrompt session schema)
-        // The prompt also asks for a "title"; recordings already have their own title,
-        // so only the summary text is kept (no "[Title] " prefix in the summary).
+        // Extract fields from JSON (matching UniversalPrompt session schema).
+        // The title is kept separately and becomes the recording's title if it has none.
         let summary = json["summary"] as? String ?? responseText
         let keyPoints = json["key_points"] as? [String] ?? []
         
@@ -320,7 +319,8 @@ public actor AppleEngine: SummarizationEngine {
             duration: duration,
             wordCount: wordCount,
             languageCodes: languageCodes,
-            keyMoments: nil
+            keyMoments: nil,
+            title: json["title"] as? String
         )
     }
     

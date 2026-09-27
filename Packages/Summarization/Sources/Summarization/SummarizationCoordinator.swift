@@ -306,7 +306,7 @@ public actor SummarizationCoordinator {
     public func generateSessionSummary(
         sessionId: UUID,
         segments: [TranscriptSegment]
-    ) async throws -> Summary {
+    ) async throws -> (summary: Summary, title: String?) {
         guard !segments.isEmpty else {
             throw SummarizationError.noTranscriptData
         }
@@ -401,7 +401,7 @@ public actor SummarizationCoordinator {
                 #if DEBUG
                 print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
                 #endif
-                return try convertToSummary(intelligence: intelligence)
+                return (try convertToSummary(intelligence: intelligence), intelligence.title)
                 
             } catch {
                 #if DEBUG

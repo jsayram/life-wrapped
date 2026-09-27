@@ -99,6 +99,9 @@ struct HistoryTab: View {
                 .refreshable {
                     await loadSessions()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .recordingTitlesUpdated)) { _ in
+                    Task { await loadSessions() }
+                }
                 .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
                     Button("OK") {
                         playbackError = nil

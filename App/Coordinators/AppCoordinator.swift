@@ -398,6 +398,9 @@ public final class AppCoordinator: ObservableObject {
             initializationError = nil
             print("🎉 [AppCoordinator] Initialization complete!")
             
+            // The launch's "became active" event arrives before this point, so run background upkeep now
+            Task { await finalizeMonthDigestIfIdle() }
+            
         } catch {
             print("❌ [AppCoordinator] Initialization failed: \(error.localizedDescription)")
             print("❌ [AppCoordinator] Error details: \(error)")
@@ -428,6 +431,9 @@ public final class AppCoordinator: ObservableObject {
         isFinalizingMonthDigest = true
         defer { isFinalizingMonthDigest = false }
         await summaryCoordinator?.finalizeNextClosedMonthDigest()
+        if await summaryCoordinator?.titleUntitledRecordings() ?? 0 > 0 {
+            NotificationCenter.default.post(name: .recordingTitlesUpdated, object: nil)
+        }
     }
     
     /// Handle app becoming inactive (transition state)
@@ -1443,6 +1449,7 @@ public final class AppCoordinator: ObservableObject {
 
 extension Notification.Name {
     static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
+    static let recordingTitlesUpdated = Notification.Name("RecordingTitlesUpdated")
 }
 
 #if DEBUG
