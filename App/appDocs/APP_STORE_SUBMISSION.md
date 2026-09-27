@@ -2,7 +2,7 @@
 
 > Complete step-by-step guide to deploy Life Wrapped to TestFlight and the App Store.
 
-**Last Updated:** December 2024
+**Last Updated:** September 27, 2026. For paste-ready listing copy (subtitle, description, keywords, What's New, in-app purchase text), see `APP_STORE_READY.md`.
 
 ---
 
@@ -74,7 +74,7 @@
 
 | Field                | Value                     | Notes                                       |
 | -------------------- | ------------------------- | ------------------------------------------- |
-| **Platforms**        | iOS, watchOS              | Check applicable platforms                  |
+| **Platforms**        | iOS                       | iPhone and iPad (there is no watchOS app)   |
 | **Name**             | Life Wrapped              | Your app's display name (max 30 characters) |
 | **Primary Language** | English (US)              | Or your preferred language                  |
 | **Bundle ID**        | `com.jsayram.lifewrapped` | Must match Xcode project                    |
@@ -90,13 +90,13 @@ Navigate to your app in App Store Connect and fill in:
 #### General Information
 
 - **App Name:** Life Wrapped
-- **Subtitle:** Privacy-First Audio Journaling (max 30 characters)
-- **Category:** Primary: Productivity, Secondary: Health & Fitness
+- **Subtitle:** Private audio journal (max 30 characters)
+- **Category:** Primary: Productivity
 - **Content Rights:** Confirm you own or have rights to all content
 
 #### Privacy Policy
 
-- **URL:** `https://yourwebsite.com/privacy` (REQUIRED)
+- **URL:** `https://jsayram.github.io/life-wrapped/privacy` (REQUIRED)
 - Must be publicly accessible
 
 ---
@@ -134,8 +134,8 @@ Provisioning Profile: Automatic
 1. Select **LifeWrapped** target
 2. Go to **General** tab
 3. Set:
-   - **Version:** `1.0.0` (semantic versioning)
-   - **Build:** `1` (increment for each upload)
+   - **Version:** the marketing version (currently `1.1`)
+   - **Build:** set automatically by Xcode Cloud for each upload (see `XCODE_CLOUD_BUILD.md`)
 
 > **Tip:** Build numbers must be unique for each upload. Use integers: 1, 2, 3...
 
@@ -388,12 +388,7 @@ Go to **App Store Connect** → **Your App** → **App Store** tab
 1. Go to **App Privacy** section
 2. Answer questionnaire about data collection:
 
-**For Life Wrapped:**
-| Data Type | Collected | Linked | Tracking |
-|-----------|-----------|--------|----------|
-| Audio Data | Yes | No | No |
-| Health (if applicable) | Depends | No | No |
-| Usage Data | Optional | No | No |
+**For Life Wrapped:** choose **Data Not Collected**. The developer receives no data: audio and transcripts stay on the device, and Cloud AI sends text straight from the device to the user's own OpenAI or Anthropic account with the user's own key. The reasoning and details are in `PRIVACY_LABELS.md`.
 
 ### Step 7.4: Age Rating
 

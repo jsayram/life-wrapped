@@ -1,8 +1,10 @@
 # Year Wrap Topic Validation System
 
+> **Status, September 27, 2026:** written for the Phi-3.5 era. Year Wrap is now built from month summaries by `YearWrapBuilder`, with Apple Intelligence or Cloud AI; the downloaded model (Offline AI) is no longer used for it. Keep this for the reasoning behind topic validation, not as a description of current code.
+
 ## Problem
 
-Local AI (Phi-3.5 Mini, the model Smart used before Qwen3 4B) was fabricating topics not present in the source summaries. Example:
+Local AI (Phi-3.5 Mini, the model Offline AI, then called Smart, used before Qwen3 4B) was fabricating topics not present in the source summaries. Example:
 
 ```
 ❌ "The summarization tool functioned without crashing"

@@ -1,5 +1,7 @@
 # Work/Personal Classification — Test Plan
 
+> **Status, September 27, 2026:** test plan from December 2025 for the first Year Wrap. Year Wrap has since been rebuilt around separate Work and Personal journals, month summaries and Apple Intelligence or Cloud AI, so this plan no longer matches the app. Current behavior is covered by the unit tests for `MonthDigestBuilder` and `YearWrapBuilder` in the Summarization package.
+
 > **Completed**: December 28, 2025  
 > **Status**: Ready for Testing
 

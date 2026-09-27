@@ -1,8 +1,10 @@
 # Local AI Architecture (MLX + Qwen3)
 
+> **Status, September 27, 2026:** Offline AI makes recording summaries, titles and month summaries when it is the chosen summary quality (or as the fallback for Apple Intelligence and Cloud AI). It is not used for Year Wrap, which runs on Apple Intelligence or Cloud AI.
+
 ## Overview
 
-The Local AI engine (the Smart tier) provides on-device summarization using Apple's MLX framework with Qwen3-4B-Instruct-2507, 4-bit. It replaced Phi-3.5 Mini in September 2026. Devices with 4 GB of memory run Qwen3 1.7B instead (see [Smaller Model for 4 GB Devices](#smaller-model-for-4-gb-devices)). This document covers model requirements, performance optimizations, and quality improvements.
+The Local AI engine (shown in the app as Offline AI; called Smart before September 2026) provides on-device summarization using Apple's MLX framework with Qwen3-4B-Instruct-2507, 4-bit. It replaced Phi-3.5 Mini in September 2026. Devices with 4 GB of memory run Qwen3 1.7B instead (see [Smaller Model for 4 GB Devices](#smaller-model-for-4-gb-devices)). This document covers model requirements, performance optimizations, and quality improvements.
 
 **Key Features:**
 
@@ -45,7 +47,7 @@ Qwen3 4B needs about 2.9 GB of free memory, which iOS doesn't give one app on a 
 | --- | --- | --- |
 | 5 GiB or more (6 GB devices and up) | Qwen3-4B-Instruct-2507, 4-bit | ~2.3 GB |
 | 3 to 5 GiB (4 GB devices) | Qwen3-1.7B, 4-bit (`mlx-community/Qwen3-1.7B-4bit`, commit `3b1b1768f8f8cf8351c712464f906e86c2b8269e`, 984,015,687 bytes) | ~1.0 GB |
-| Under 3 GiB (iPhone XR, SE 2nd gen) | None, Smart isn't offered | |
+| Under 3 GiB (iPhone XR, SE 2nd gen) | None, Offline AI isn't offered | |
 
 - Qwen3 1.7B is a hybrid thinking model. `chatTemplateContext` passes `enable_thinking: false` so its chat template skips reasoning.
 - KV cache for 1.7B: 2 × 28 layers × 8 heads × 128 dims × 2 bytes ≈ 112 KB per token, about 0.5 GB for 4,096 tokens.
@@ -99,7 +101,7 @@ public var recommendedConfig: (contextTokens: Int, maxTokens: Int, temperature: 
 
 ### Updating from Phi-3.5
 
-On launch, `SummarizationCoordinator.restoreSavedPreference()` calls `LocalEngine.removeRetiredModels()`, which deletes the old `mlx-community/Phi-3.5-mini-instruct-4bit` folder (about 2.1 GB). If Smart was selected, it falls back to Basic until the new model is downloaded, and AI & Summaries shows "New model available".
+On launch, `SummarizationCoordinator.restoreSavedPreference()` calls `LocalEngine.removeRetiredModels()`, which deletes the old `mlx-community/Phi-3.5-mini-instruct-4bit` folder (about 2.1 GB). If Offline AI was selected, it falls back to Key Sentences until the new model is downloaded, and AI & Summaries shows "New model available".
 
 ### Library Versions
 

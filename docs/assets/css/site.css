@@ -8,7 +8,7 @@
   --line: #E4E4E0;
   --ink: #111111;
   --ink2: #55554F;
-  --on-ink: #F7F7F5;
+  --on-ink: #FFFFFF;
   --serif: ui-serif, "New York", "Iowan Old Style", "Source Serif Pro", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -100,8 +100,16 @@ section h2:first-child, section .overline + h2 { margin-top: 0; }
 .shots { display: flex; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 8px 2px 20px; scrollbar-width: none; }
 .shots::-webkit-scrollbar { display: none; }
 .shots img { flex: 0 0 auto; width: 260px; height: auto; border-radius: 28px; border: 1px solid var(--line); scroll-snap-align: start; background: var(--card); }
+.shots[hidden] { display: none; }
+.shots-ipad img { width: 420px; border-radius: 22px; }
 .shots-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-.shots-controls { display: flex; gap: 8px; }
+.shots-controls { display: flex; gap: 8px; align-items: center; }
+
+/* Segmented control, as in the app: a fill track with the chosen segment raised on a card */
+.segmented { display: inline-flex; padding: 3px; gap: 2px; background: var(--fill); border-radius: 12px; margin-right: 4px; }
+.segmented button { height: 34px; padding: 0 16px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--ink2); font: inherit; font-size: 15px; cursor: pointer; }
+.segmented button[aria-selected="true"] { background: var(--card); border-color: var(--line); color: var(--ink); font-weight: 600; }
+.segmented button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .icon-btn:focus-visible, .btn:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
@@ -138,5 +146,8 @@ a.row:hover { background: var(--fill); }
   section { padding: 56px 0; }
   .hero { padding: 56px 0 48px; }
   .shots img { width: 220px; }
+  .shots-ipad img { width: 300px; }
+  .shots-controls { width: 100%; }
+  .segmented { margin-right: auto; }
   .shots-head { align-items: start; flex-direction: column; }
 }

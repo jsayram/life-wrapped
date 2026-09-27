@@ -59,7 +59,7 @@ Each recording session consists of:
 
 - **Session ID**: Unique identifier (UUID) for the recording session
 - **Chunks**: Ordered array of audio chunks (0, 1, 2, ...)
-- **Duration**: Configurable chunk size (default 180 seconds)
+- **Duration**: Configurable chunk size (default 30 seconds)
 - **Timestamps**: Start and end times for each chunk
 
 Example session:
@@ -106,11 +106,11 @@ The system detects this drop from 37→1 words and automatically saves the 37-wo
 
 ### Chunk Duration Setting
 
-Users can configure chunk duration in the Settings tab:
+Users can configure the part length in Settings, then Recording:
 
 - **Range**: 30 seconds to 300 seconds (5 minutes)
 - **Steps**: 30-second increments
-- **Default**: 180 seconds (3 minutes)
+- **Default**: 30 seconds
 - **Location**: Settings → Recording section
 
 Shorter durations are useful for:

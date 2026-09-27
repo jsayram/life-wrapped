@@ -1,5 +1,7 @@
 # Life Wrapped — Development Workflow
 
+> **Status, September 27, 2026:** this is the original December 2025 plan. Much of it never shipped: there is no watchOS or macOS app, no CloudKit sync or iCloud backup feature, and no `WatchApp/` or `MacApp/` folders, and the `watch` build option refers to a scheme that doesn't exist. The current project structure, build steps, branches (`main` for production, `dev` for integration) and privacy rules are in the [README](../../README.md).
+
 > **Privacy-first, on-device audio journaling for iOS, watchOS, and (later) macOS.**
 
 ---

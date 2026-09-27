@@ -1,7 +1,7 @@
 # Life Wrapped - App Review Guide
 
-**Version:** 1.0  
-**Date:** December 31, 2025  
+**Version:** 1.1  
+**Date:** September 27, 2026  
 **Developer:** Jose Ramirez-Villa  
 **Contact:** jsayram@Gmail.com
 
@@ -11,7 +11,7 @@
 
 **Life Wrapped** is a privacy-first audio journaling app that records voice memos, transcribes them on-device, and provides AI-powered summaries and insights.
 
-**Key Differentiator:** All transcription happens 100% on-device using Apple's Speech framework. No audio or transcript data ever leaves the user's device.
+**Key Differentiator:** All transcription happens on the device using Apple's Speech framework. Audio never leaves the device, and journal text leaves it only if the user sets up the optional Cloud AI feature with their own API key.
 
 ---
 
@@ -37,20 +37,21 @@ This app does **not require user authentication**. Users can immediately start r
 
 ### 3. AI Summaries (Multiple Options)
 
-The app offers 4 AI summarization engines:
+The app offers 4 summary engines, chosen in Settings, then AI & Summaries:
 
 | Engine                 | Internet Required | Notes                                    |
 | ---------------------- | ----------------- | ---------------------------------------- |
-| **Basic**              | No                | Built-in NLP, always works               |
-| **Local AI**           | Download only     | Qwen3 4B (~2.3 GB), or Qwen3 1.7B (~1.0 GB) on 4 GB devices, one-time download |
-| **Apple Intelligence** | No                | iOS 18.1+, A17 Pro/M1+ devices           |
-| **External API**       | Yes               | User provides their own API keys         |
+| **Key Sentences**      | No                | Built-in NLP, always works               |
+| **Offline AI**         | Download only     | Qwen3 4B (~2.3 GB), or Qwen3 1.7B (~1.0 GB) on 4 GB devices, one-time download |
+| **Apple Intelligence** | No                | iOS 26 or later on a device with Apple Intelligence turned on |
+| **Cloud AI**           | Yes               | One-time in-app purchase; the user provides their own OpenAI or Anthropic API key |
 
-### 4. History & Insights
+### 4. History, Overview & Year Wrap
 
-- View all past recordings in the History tab
-- See daily/weekly/monthly insights
-- Search through transcripts
+- View all past recordings in the History tab (on iPad, the list and the recording sit side by side)
+- Search titles, notes and transcripts
+- On the Overview tab, see each recording's summary for today and yesterday, a summary of each month, and the Year Wrap
+- Year Wrap: a year in review built from the month summaries (Apple Intelligence or Cloud AI)
 
 ---
 
@@ -88,17 +89,17 @@ The app offers 4 AI summarization engines:
 
 These features are optional and only work if the user chooses to enable them:
 
-### External AI API (Bring Your Own Key)
+### Cloud AI (Bring Your Own Key)
 
-- Users can optionally add their own OpenAI or Anthropic API keys
-- Keys are stored securely in the iOS Keychain
-- This is the **only feature** that sends data to external servers
-- Users must explicitly configure this in Settings
+- Unlocked with a one-time, non-consumable in-app purchase ($2.99, product ID `com.jsayram.lifewrapped.smartestai`). There is no subscription
+- Users then add their own OpenAI or Anthropic API key; keys are stored in the iOS Keychain
+- This is the **only feature** that sends journal text to external servers, and only to the provider the user connects
+- Users must explicitly configure this in Settings, then AI & Summaries
 
-### Local AI Model Download
+### Offline AI Model Download
 
-- Users can download a local AI model (~2.1GB) for on-device summarization
-- One-time download from HuggingFace
+- Users can download an AI model (~2.3 GB, or ~1.0 GB on 4 GB devices) for on-device summaries
+- One-time download from Hugging Face; no journal data is sent
 - After download, works completely offline
 
 ---
@@ -109,20 +110,20 @@ These features are optional and only work if the user chooses to enable them:
 2. **Tap Record** → Microphone permission requested (first time)
 3. **Speak** → Audio is recorded and chunked automatically
 4. **Stop Recording** → Transcription begins automatically
-5. **View Transcript** → Full text with word-level timing
+5. **View Transcript** → Full text by part, with playback
 6. **AI Summary** → Automatic summary generation (using selected engine)
 7. **History Tab** → Browse all past recordings
-8. **Insights Tab** → View patterns and analytics
-9. **Settings** → Configure AI engine, export data
+8. **Overview Tab** → Today's and yesterday's recording summaries, month summaries and the Year Wrap
+9. **Settings** → Choose the summary engine, see Statistics, export data
 
 ---
 
 ## Privacy Highlights
 
 - ✅ **No tracking or analytics**
-- ✅ **No third-party SDKs** (except optional user-configured APIs)
+- ✅ **No third-party analytics or ad SDKs.** The only third-party libraries are MLX and Hugging Face swift-transformers, which run the optional Offline AI model on the device
 - ✅ **No data collection** — we don't have servers
-- ✅ **All data stored locally** in encrypted SQLite database
+- ✅ **All data stored locally** in a SQLite database protected by iOS file protection
 - ✅ **Speech Recognition** uses `requiresOnDeviceRecognition = true`
 - ✅ **Users can export and delete all data** anytime
 
@@ -142,11 +143,11 @@ These features are optional and only work if the user chooses to enable them:
 
 1. Record 2-3 voice memos
 2. Test search in History
-3. Try editing a transcript
-4. Mark a session as favorite
-5. Export a transcript
-6. Check Insights tab
-7. Review Settings options
+3. Try editing a transcript and adding notes
+4. Mark a recording as favorite
+5. Export data (Settings, then Data)
+6. Check the Overview tab and Settings, then Statistics
+7. Review Settings options. Under Purchases, Cloud AI opens the purchase sheet, which also has Restore purchases and Redeem code
 
 ---
 
@@ -156,17 +157,17 @@ These features are optional and only work if the user chooses to enable them:
 | ------------------------------------ | ------------------------------------------ |
 | First transcription is slower        | Speech model downloads on first use        |
 | "Processing" shows for a few seconds | Normal transcription time                  |
-| Local AI download is large           | ~2.1GB model file, optional feature        |
+| Offline AI download is large         | ~2.3 GB model file, optional feature       |
 | Some features grayed out             | Depend on iOS version or device capability |
 
 ---
 
 ## Device Requirements
 
-- **iOS:** 18.0+
-- **Devices:** iPhone (all iOS 18 compatible devices)
-- **Storage:** ~100MB app + optional 2.1GB for Local AI
-- **Apple Intelligence:** Requires iOS 18.1+, A17 Pro or M1+ chip
+- **iOS / iPadOS:** 18.0+
+- **Devices:** iPhone and iPad (all iOS 18 compatible devices)
+- **Storage:** ~100MB app + optional 2.3 GB for Offline AI
+- **Apple Intelligence:** Requires iOS 26 or later on a device that supports it, with Apple Intelligence turned on
 
 ---
 
@@ -182,7 +183,7 @@ These features are optional and only work if the user chooses to enable them:
 
 1. **No backend servers** — This is a fully client-side app
 2. **No account system** — All data is local to the device
-3. **No in-app purchases yet** — V1 is completely free
+3. **One optional in-app purchase** — Cloud AI, a one-time $2.99 unlock; everything else is free
 4. **Privacy is the core feature** — On-device processing is intentional
 
 Thank you for reviewing Life Wrapped! Please reach out if you have any questions.

@@ -2,51 +2,43 @@
 
 ## Overview
 
-Life Wrapped provides two iOS widgets for quick access to recording and session stats directly from your home screen or lock screen.
+Life Wrapped has two widgets, for the Home Screen and the Lock Screen. They follow the app's graphite style: monochrome, using the system's primary and secondary colors, so they fit light, dark and tinted Home Screens.
 
 ---
 
 ## Available Widgets
 
-### 1. 📱 Sessions Widget
+### 1. Quick Record (`RecordWidget`)
 
-**Purpose:** Display today's recording session count and streak at a glance.
+**Purpose:** Start a recording with Work or Personal already chosen. Shown in the widget gallery as "Quick Record".
 
-| Size                   | Description                                                   |
-| ---------------------- | ------------------------------------------------------------- |
-| **Small**              | Shows session count with waveform icon, plus streak indicator |
-| **Accessory Circular** | Lock screen widget showing session count                      |
-| **Accessory Inline**   | Lock screen inline text showing streak and sessions           |
-
-**What it shows:**
-
-- 📊 Number of sessions recorded today
-- 🔥 Current streak (days in a row with recordings)
-
-**Tap action:** Opens the app to Home tab
-
----
-
-### 2. 🎙️ Record Widget
-
-**Purpose:** Quick-start recording with Work or Personal category pre-selected.
-
-| Size                   | Description                                      |
-| ---------------------- | ------------------------------------------------ |
-| **Small**              | Two buttons: Work and Personal                   |
-| **Medium**             | Larger Work/Personal buttons with streak display |
-| **Accessory Circular** | Lock screen mic button for quick recording       |
-
-**What it shows:**
-
-- 💼 **Work** button (blue) - Starts recording with Work category
-- 🏠 **Personal** button (purple) - Starts recording with Personal category
-- 🔥 Current streak indicator
+| Size                   | Description                                                            |
+| ---------------------- | ---------------------------------------------------------------------- |
+| **Small**              | Work and Personal buttons, and the streak                              |
+| **Medium**             | Work, record and Personal buttons, the streak and today's recordings   |
+| **Accessory Circular** | Lock Screen mic ("REC") that starts a recording                        |
 
 **Tap actions:**
 
-- **Work button:** Opens app and starts recording with Work category (`lifewrapped://record?category=work`)
-- **Personal button:** Opens app and starts recording with Personal category (`lifewrapped://record?category=personal`)
+- **Work:** opens the app and starts a Work recording (`lifewrapped://record?category=work`)
+- **Personal:** opens the app and starts a Personal recording (`lifewrapped://record?category=personal`)
+- **Record (medium) and the circular widget:** `lifewrapped://record`, with the journal last chosen in the app
+
+When the streak is at risk (nothing recorded yet today), the streak line reads "Save your streak".
+
+---
+
+### 2. Today's Recordings (`SessionsWidget`)
+
+**Purpose:** Today's recording count and the streak at a glance. Shown in the widget gallery as "Today's Recordings".
+
+| Size                   | Description                                           |
+| ---------------------- | ----------------------------------------------------- |
+| **Small**              | Today's recording count and the streak                |
+| **Accessory Circular** | Today's recording count                               |
+| **Accessory Inline**   | "N recordings today"                                  |
+
+**Tap action:** opens the History tab (`lifewrapped://history`)
 
 ---
 
@@ -70,8 +62,9 @@ Widgets display data from the shared App Group (`group.com.jsayram.lifewrapped`)
 
 | Data               | Source                                                            |
 | ------------------ | ----------------------------------------------------------------- |
-| **Streak Days**    | Calculated from recording session dates (not transcript segments) |
-| **Sessions Today** | Count of recording sessions started today                         |
+| **Streak Days**    | Days in a row with a recording that started on that day           |
+| **Today's recordings** | Recordings started today (`todayEntries`), plus today's minutes and words |
+| **Last recording** | Time of the latest recording                                      |
 | **Streak At Risk** | True if no recording today and previous days had recordings       |
 
 **Refresh Rate:** Every 15 minutes, or immediately when:
@@ -84,14 +77,10 @@ Widgets display data from the shared App Group (`group.com.jsayram.lifewrapped`)
 
 ## Adding Widgets
 
-1. Long-press on your iPhone home screen
-2. Tap the **+** button (top left)
-3. Search for "LifeWrapped"
-4. Choose between:
-   - **Sessions Widget** - For viewing stats
-   - **Record Widget** - For quick recording with category
-5. Select your preferred size
-6. Tap "Add Widget"
+1. Touch and hold the Home Screen, then tap **Edit** and **Add Widget**
+2. Search for "Life Wrapped"
+3. Choose **Quick Record** or **Today's Recordings**, then a size
+4. Tap **Add Widget**
 
 ---
 
@@ -131,4 +120,5 @@ struct LifeWrappedWidgetBundle: WidgetBundle {
 - All widget data is stored locally in the App Group
 - No network requests are made by widgets
 - Data is calculated from on-device recording sessions
-- Streak and session counts update immediately after recordings (no waiting for transcription)
+- Streak and recording counts update right after a recording stops (no waiting for transcription)
+- Only numbers are shared with the widget: no audio, transcripts or summaries

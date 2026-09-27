@@ -1,8 +1,19 @@
-# AI Architecture (4 Engines: Basic, Apple Intelligence, Local AI, External API)
+# AI Architecture (4 Engines: Key Sentences, Offline AI, Apple Intelligence, Cloud AI)
 
-> **Update, September 2026:** Smart (Local AI) now runs **Qwen3-4B-Instruct-2507, 4-bit** (`mlx-community/Qwen3-4B-Instruct-2507-4bit`, ~2.3 GB) with MLX, not Phi-3.5 Mini. Prompts are sent as system and user messages and formatted by the model's own chat template; never hand-write chat tags. See [LOCAL_AI_ARCHITECTURE.md](LOCAL_AI_ARCHITECTURE.md) for the current setup. Sections below that describe Phi-3.5, llama.cpp or SwiftLlama are kept as history.
+> **Names, September 2026:** the app shows the engines as **Key Sentences** (`BasicEngine`, tier `.basic`), **Offline AI** (`LocalEngine`, `.local`), **Apple Intelligence** (`AppleEngine`, `.apple`) and **Cloud AI** (`ExternalAPIEngine`, `.external`). They were called Basic, Smart, Smarter and Smartest before. Only `EngineTier.displayName` and the UI text changed; the raw values stored in the database, the class names and the in-app purchase product ID (`com.jsayram.lifewrapped.smartestai`) are the same. This doc uses the class names (Basic Engine, Local AI, External API) in older sections.
 
-Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS with Swift 6.2. Covers all four engines: on-device processing (Basic, Apple Intelligence, Local AI) and cloud-based (External API).
+> **Update, September 2026:** Offline AI (Local AI) now runs **Qwen3-4B-Instruct-2507, 4-bit** (`mlx-community/Qwen3-4B-Instruct-2507-4bit`, ~2.3 GB) with MLX, not Phi-3.5 Mini. Prompts are sent as system and user messages and formatted by the model's own chat template; never hand-write chat tags. See [LOCAL_AI_ARCHITECTURE.md](LOCAL_AI_ARCHITECTURE.md) for the current setup. Sections below that describe Phi-3.5, llama.cpp or SwiftLlama are kept as history.
+
+> **What the app does now (September 27, 2026).** Where this doc disagrees, trust this list and the code:
+>
+> - **Summaries:** one per recording, plus a short title. There are no day, week or year text rollups any more; the Overview lists each recording's summary for today and yesterday.
+> - **Month summaries** (`MonthDigestBuilder`) are built per journal (Work and Personal) from the month's recording summaries, dates, labels and notes, and rebuilt when those change. An ended month is finished in the background when the app opens.
+> - **Year Wrap** (`YearWrapBuilder`) is built per journal from the month summaries, with Apple Intelligence or Cloud AI only (`yearWrapGenerator`). "All" is combined in code.
+> - **Engine choice:** Cloud AI is used only when it's the chosen summary quality, or when picked for a Year Wrap. Fallback chains: Cloud AI, Offline AI, Key Sentences; Apple Intelligence, Offline AI, Key Sentences; Offline AI, Key Sentences.
+> - **Cloud AI availability** needs a saved API key; only then does the app check connectivity with a request to www.apple.com.
+> - What Cloud AI sends is listed on the [privacy policy](https://jsayram.github.io/life-wrapped/privacy).
+
+Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS with Swift 6.2. Covers all four engines: on-device processing (Key Sentences, Apple Intelligence, Offline AI) and cloud-based (Cloud AI).
 
 ---
 
@@ -38,10 +49,10 @@ Comprehensive guide to Life Wrapped's multi-tier AI summarization system on iOS 
 
 | Engine             | Minimum iOS | Device Requirements    | Network  | Notes                         |
 | ------------------ | ----------- | ---------------------- | -------- | ----------------------------- |
-| Basic              | 15.0+       | Any iPhone             | Offline  | Always available              |
+| Key Sentences      | 15.0+       | Any iPhone             | Offline  | Always available              |
 | Apple Intelligence | 18.1+       | A17 Pro / M1+, 8GB RAM | Offline  | Placeholder (APIs not public) |
-| Local AI (Qwen3)   | 18.0+       | 6GB+ RAM for 4B, 4GB for 1.7B | Offline  | ~2.3 GB (4B) or ~1.0 GB (1.7B) download |
-| External API       | 15.0+       | Any iPhone             | Required | User API key required         |
+| Offline AI (Qwen3) | 18.0+       | 6GB+ RAM for 4B, 4GB for 1.7B | Offline  | ~2.3 GB (4B) or ~1.0 GB (1.7B) download |
+| Cloud AI           | 15.0+       | Any iPhone             | Required | User API key required         |
 
 ---
 
@@ -1123,10 +1134,10 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
 
     public var displayName: String {
         switch self {
-        case .basic: return "Basic"
+        case .basic: return "Key Sentences"
+        case .local: return "Offline AI"
         case .apple: return "Apple Intelligence"
-        case .local: return "Local AI"
-        case .external: return "Year Wrapped Pro AI"
+        case .external: return "Cloud AI"
         }
     }
 }

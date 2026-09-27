@@ -1,5 +1,7 @@
 # Year Wrap Progress Tracking Enhancement
 
+> **Status, September 27, 2026:** written when Year Wrap ran on the downloaded model (then called Local AI). Year Wrap now runs on Apple Intelligence or Cloud AI only, one journal at a time, in the background; progress shows on the Year screen (`YearWrapProgress` in `SummaryCoordinator.swift`). Timings and steps below are from the old design.
+
 ## Overview
 
 Added detailed real-time progress tracking for Year Wrap generation to improve user experience during the 2-3 minute Local AI processing time.
