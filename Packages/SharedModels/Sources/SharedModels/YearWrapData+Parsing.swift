@@ -74,14 +74,22 @@ extension YearWrapData {
             peopleMentioned: (json["people_mentioned"] as? [[String: Any]] ?? []).compactMap { dict in
                 guard let name = dict["name"] as? String else { return nil }
                 return PersonMention(name: name, relationship: dict["relationship"] as? String,
-                                     impact: dict["impact"] as? String, sessionIds: uuids(dict["session_ids"]))
+                                     impact: dict["impact"] as? String, sessionIds: uuids(dict["session_ids"]),
+                                     category: (dict["category"] as? String).flatMap(ItemCategory.init(rawValue:)))
             },
             placesVisited: (json["places_visited"] as? [[String: Any]] ?? []).compactMap { dict in
                 guard let name = dict["name"] as? String else { return nil }
                 return PlaceVisit(name: name, frequency: dict["frequency"] as? String,
-                                  context: dict["context"] as? String, sessionIds: uuids(dict["session_ids"]))
+                                  context: dict["context"] as? String, sessionIds: uuids(dict["session_ids"]),
+                                  category: (dict["category"] as? String).flatMap(ItemCategory.init(rawValue:)))
             },
-            stats: stats(json["stats"])
+            stats: stats(json["stats"]),
+            journals: (json["journals"] as? [[String: Any]])?.compactMap { dict in
+                guard let category = (dict["category"] as? String).flatMap(SessionCategory.init(rawValue:)),
+                      let title = dict["title"] as? String,
+                      let summary = dict["summary"] as? String else { return nil }
+                return JournalStory(category: category, title: title, summary: summary)
+            }
         )
     }
 
@@ -143,15 +151,69 @@ extension YearWrapData {
             opportunitiesMissed: hide(opportunitiesMissed),
             peopleMentioned: peopleMentioned.map {
                 people
-                    ? PersonMention(name: "[Person]", relationship: nil, impact: $0.impact.map(hide), sessionIds: $0.sessionIds)
-                    : PersonMention(name: hide($0.name), relationship: $0.relationship.map(hide), impact: $0.impact.map(hide), sessionIds: $0.sessionIds)
+                    ? PersonMention(name: "[Person]", relationship: nil, impact: $0.impact.map(hide), sessionIds: $0.sessionIds, category: $0.category)
+                    : PersonMention(name: hide($0.name), relationship: $0.relationship.map(hide), impact: $0.impact.map(hide), sessionIds: $0.sessionIds, category: $0.category)
             },
             placesVisited: placesVisited.map {
                 places
-                    ? PlaceVisit(name: "[Location]", frequency: $0.frequency, context: $0.context.map(hide), sessionIds: $0.sessionIds)
-                    : PlaceVisit(name: hide($0.name), frequency: $0.frequency, context: $0.context.map(hide), sessionIds: $0.sessionIds)
+                    ? PlaceVisit(name: "[Location]", frequency: $0.frequency, context: $0.context.map(hide), sessionIds: $0.sessionIds, category: $0.category)
+                    : PlaceVisit(name: hide($0.name), frequency: $0.frequency, context: $0.context.map(hide), sessionIds: $0.sessionIds, category: $0.category)
             },
-            stats: stats
+            stats: stats,
+            journals: journals?.map { JournalStory(category: $0.category, title: hide($0.title), summary: hide($0.summary)) }
         )
+    }
+}
+
+// MARK: - All, from the two journals
+
+extension YearWrapData {
+
+    /// The All wrap, put together in code from each journal's own wrap; no model is involved.
+    /// Each journal keeps its title and summary, sections list the work items then the personal
+    /// ones, and people and places are tagged with the journal they came from.
+    /// `stats` are the year's numbers across both journals, computed from the month digests.
+    /// With one journal, its wrap is returned with that journal's story attached.
+    public static func combining(_ wraps: [SessionCategory: YearWrapData], year: Int, stats: YearWrapStats?) -> YearWrapData? {
+        let ordered = SessionCategory.allCases.compactMap { journal in wraps[journal].map { (journal, $0) } }
+        guard !ordered.isEmpty else { return nil }
+
+        let stories = ordered.map { JournalStory(category: $0.0, title: $0.1.yearTitle, summary: $0.1.yearSummary) }
+        func all(_ section: (YearWrapData) -> [ClassifiedItem]) -> [ClassifiedItem] {
+            ordered.flatMap { section($0.1) }
+        }
+        let itemCategory: (SessionCategory) -> ItemCategory = { $0 == .work ? .work : .personal }
+
+        return YearWrapData(
+            yearTitle: ordered.count == 1 ? ordered[0].1.yearTitle : "Your \(year)",
+            // For anything that reads only the summary text (copying, older screens)
+            yearSummary: stories.map { "\($0.category.displayName): \($0.title). \($0.summary)" }.joined(separator: "\n\n"),
+            majorArcs: all(\.majorArcs),
+            biggestWins: all(\.biggestWins),
+            biggestLosses: all(\.biggestLosses),
+            biggestChallenges: all(\.biggestChallenges),
+            finishedProjects: all(\.finishedProjects),
+            unfinishedProjects: all(\.unfinishedProjects),
+            topWorkedOnTopics: all(\.topWorkedOnTopics),
+            topTalkedAboutThings: all(\.topTalkedAboutThings),
+            valuableActionsTaken: all(\.valuableActionsTaken),
+            opportunitiesMissed: all(\.opportunitiesMissed),
+            peopleMentioned: ordered.flatMap { journal, wrap in
+                wrap.peopleMentioned.map { PersonMention(name: $0.name, relationship: $0.relationship, impact: $0.impact,
+                                                          sessionIds: $0.sessionIds, category: itemCategory(journal)) }
+            },
+            placesVisited: ordered.flatMap { journal, wrap in
+                wrap.placesVisited.map { PlaceVisit(name: $0.name, frequency: $0.frequency, context: $0.context,
+                                                     sessionIds: $0.sessionIds, category: itemCategory(journal)) }
+            },
+            stats: stats,
+            journals: stories
+        )
+    }
+
+    /// Plain text of the wrap's story for copying: each journal's title and summary under All
+    public var storyText: String {
+        guard let journals, !journals.isEmpty else { return yearSummary }
+        return journals.map { "\($0.category.displayName.uppercased())\n\($0.title)\n\($0.summary)" }.joined(separator: "\n\n")
     }
 }

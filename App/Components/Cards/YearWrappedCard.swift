@@ -62,7 +62,7 @@ struct YearWrappedCard: View {
                 Spacer(minLength: 0)
 
                 Button {
-                    UIPasteboard.general.string = yearSummary
+                    UIPasteboard.general.string = parsed?.storyText ?? yearSummary
                     coordinator.showSuccess("Year Wrapped summary copied")
                 } label: {
                     Image(systemName: "doc.on.doc")
@@ -90,18 +90,40 @@ struct YearWrappedCard: View {
                 .font(AppTheme.titleFont(size: 44))
                 .foregroundStyle(AppTheme.onAccent)
 
-            if let title = parsed?.yearTitle {
-                Text(title)
-                    .font(AppTheme.titleFont(size: 22))
-                    .foregroundStyle(AppTheme.onAccent)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            if let journals = parsed?.journals, !journals.isEmpty {
+                // All: each journal's own title and summary, never blended into one
+                ForEach(journals, id: \.category) { journal in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(journal.category.displayName.uppercased(), systemImage: journal.category == .work ? "briefcase.fill" : "house.fill")
+                            .font(.caption)
+                            .tracking(0.8)
+                            .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                        Text(journal.title)
+                            .font(AppTheme.titleFont(size: 20))
+                            .foregroundStyle(AppTheme.onAccent)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(journal.summary)
+                            .font(.subheadline)
+                            .foregroundStyle(AppTheme.onAccent.opacity(0.85))
+                            .lineLimit(3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } else {
+                if let title = parsed?.yearTitle {
+                    Text(title)
+                        .font(AppTheme.titleFont(size: 22))
+                        .foregroundStyle(AppTheme.onAccent)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            Text(yearSummary)
-                .font(.body)
-                .foregroundStyle(AppTheme.onAccent.opacity(0.85))
-                .lineLimit(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(yearSummary)
+                    .font(.body)
+                    .foregroundStyle(AppTheme.onAccent.opacity(0.85))
+                    .lineLimit(6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             // Staleness note
             if coordinator.yearWrapNewSessionCount > 0 {

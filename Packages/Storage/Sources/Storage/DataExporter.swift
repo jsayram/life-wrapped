@@ -142,9 +142,13 @@ public actor DataExporter {
         }
         
         // Check if this is a Year Wrap export
-        // Work and Personal have their own wraps; older years only have the combined one
-        let yearWrap = filteredSummaries.first(where: { $0.periodType == filter.yearWrapType })
-            ?? filteredSummaries.first(where: { $0.periodType == .yearWrap })
+        // Work and Personal each have their own journal wrap; wraps from before journals were
+        // separate types, and older years may only have the combined one
+        let journal: SessionCategory? = filter == .workOnly ? .work : (filter == .personalOnly ? .personal : nil)
+        let combined = filteredSummaries.first(where: { $0.periodType == .yearWrap && $0.category == nil })
+        let yearWrap = journal.flatMap { journal in filteredSummaries.first(where: { $0.periodType == .yearWrap && $0.category == journal }) }
+            ?? (filter == .all ? nil : filteredSummaries.first(where: { $0.periodType == filter.yearWrapType }))
+            ?? combined
         
         if let yearWrap = yearWrap, let year = year {
             // Render enhanced Year Wrap PDF
@@ -210,15 +214,20 @@ public actor DataExporter {
             return renderStandardPDF(summaries: [yearWrap], year: year)
         }
         let parsedData = parsed.redacted(people: redactPeople, places: redactPlaces)
-        // A category's own wrap has stats for just that category, so it shows them like All
-        let statsFilter: ItemFilter = yearWrap.periodType == filter.yearWrapType ? .all : filter
+        // A journal's own wrap has stats for just that journal, so it shows them like All
+        let isOwnWrap = yearWrap.category != nil || (filter != .all && yearWrap.periodType == filter.yearWrapType)
+        let statsFilter: ItemFilter = isOwnWrap ? .all : filter
         let tiles = try await yearStatTiles(stats: parsedData.stats, year: year, filter: statsFilter)
         let writer = GraphitePDFWriter(title: "Year Wrap \(year)")
 
         return writer.render { page in
             // Page 1: black cover, like the Year Wrapped card in the app
             page.beginCoverPage()
-            page.drawCover(year: year, title: parsedData.yearTitle, summary: parsedData.yearSummary, filterLabel: filter == .workOnly ? "Work" : (filter == .personalOnly ? "Personal" : nil))
+            // All keeps each journal's own story; the plain-text form labels them
+            let coverSummary = parsedData.journals.map { journals in
+                journals.map { "\($0.category.displayName): \($0.title). \($0.summary)" }.joined(separator: "\n\n")
+            } ?? parsedData.yearSummary
+            page.drawCover(year: year, title: parsedData.yearTitle, summary: coverSummary, filterLabel: filter == .workOnly ? "Work" : (filter == .personalOnly ? "Personal" : nil))
 
             // Page 2: numbers, then the insight sections flowing across pages
             page.beginPage()

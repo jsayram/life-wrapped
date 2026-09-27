@@ -495,6 +495,8 @@ public struct YearWrapData: Codable, Sendable {
     public let placesVisited: [PlaceVisit]
     /// Numbers computed in code from the month digests. Nil for older wraps.
     public let stats: YearWrapStats?
+    /// All only: each journal's own title and summary. Nil for a journal's wrap and for older wraps.
+    public let journals: [JournalStory]?
     
     public init(
         yearTitle: String,
@@ -511,7 +513,8 @@ public struct YearWrapData: Codable, Sendable {
         opportunitiesMissed: [ClassifiedItem],
         peopleMentioned: [PersonMention],
         placesVisited: [PlaceVisit],
-        stats: YearWrapStats? = nil
+        stats: YearWrapStats? = nil,
+        journals: [JournalStory]? = nil
     ) {
         self.yearTitle = yearTitle
         self.yearSummary = yearSummary
@@ -528,6 +531,20 @@ public struct YearWrapData: Codable, Sendable {
         self.peopleMentioned = peopleMentioned
         self.placesVisited = placesVisited
         self.stats = stats
+        self.journals = journals
+    }
+}
+
+/// One journal's title and summary inside the All wrap
+public struct JournalStory: Codable, Sendable, Hashable {
+    public let category: SessionCategory
+    public let title: String
+    public let summary: String
+
+    public init(category: SessionCategory, title: String, summary: String) {
+        self.category = category
+        self.title = title
+        self.summary = summary
     }
 }
 
@@ -559,12 +576,15 @@ public struct PersonMention: Codable, Sendable {
     public let relationship: String?
     public let impact: String?
     public let sessionIds: [UUID]?
+    /// The journal this mention came from; set in the All wrap, where both journals are listed
+    public let category: ItemCategory?
     
-    public init(name: String, relationship: String? = nil, impact: String? = nil, sessionIds: [UUID]? = nil) {
+    public init(name: String, relationship: String? = nil, impact: String? = nil, sessionIds: [UUID]? = nil, category: ItemCategory? = nil) {
         self.name = name
         self.relationship = relationship
         self.impact = impact
         self.sessionIds = sessionIds
+        self.category = category
     }
 }
 
@@ -574,11 +594,14 @@ public struct PlaceVisit: Codable, Sendable {
     public let frequency: String?
     public let context: String?
     public let sessionIds: [UUID]?
+    /// The journal this place came from; set in the All wrap, where both journals are listed
+    public let category: ItemCategory?
     
-    public init(name: String, frequency: String? = nil, context: String? = nil, sessionIds: [UUID]? = nil) {
+    public init(name: String, frequency: String? = nil, context: String? = nil, sessionIds: [UUID]? = nil, category: ItemCategory? = nil) {
         self.name = name
         self.frequency = frequency
         self.context = context
         self.sessionIds = sessionIds
+        self.category = category
     }
 }

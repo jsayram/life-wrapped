@@ -1197,12 +1197,27 @@ public final class AppCoordinator: ObservableObject {
     }
 
     /// Fetch period summary for a specific date and type
-    public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
+    public func fetchPeriodSummary(type: PeriodType, date: Date, category: SessionCategory? = nil) async throws -> Summary? {
         guard let dbManager = databaseManager else {
             throw AppCoordinatorError.notInitialized
         }
         
-        return try await dbManager.fetchPeriodSummary(type: type, date: date)
+        return try await dbManager.fetchPeriodSummary(type: type, date: date, category: category)
+    }
+    
+    /// This year's Year Wrap for a filter. Work and Personal are each journal's own wrap; wraps made
+    /// before journals were stored as separate types and are read until the next generation.
+    public func fetchYearWrap(for filter: ItemFilter, date: Date) async -> Summary? {
+        switch filter {
+        case .all:
+            return try? await fetchPeriodSummary(type: .yearWrap, date: date)
+        case .workOnly, .personalOnly:
+            let journal: SessionCategory = filter == .workOnly ? .work : .personal
+            if let own = try? await fetchPeriodSummary(type: .yearWrap, date: date, category: journal) {
+                return own
+            }
+            return try? await fetchPeriodSummary(type: filter.yearWrapType, date: date)
+        }
     }
     
     // MARK: - Period Summary Updates

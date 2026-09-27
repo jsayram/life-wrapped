@@ -77,4 +77,47 @@ struct YearWrapDataTests {
     @Test func noRedactionLeavesTextAlone() {
         #expect(wrap().redacted(people: false, places: false).yearTitle == "Maria and Lisbon")
     }
+
+    private func journalWrap(_ title: String, item: String, category: ItemCategory, person: String) -> YearWrapData {
+        YearWrapData(
+            yearTitle: title, yearSummary: "\(title) summary.",
+            majorArcs: [], biggestWins: [ClassifiedItem(text: item, category: category)], biggestLosses: [],
+            biggestChallenges: [], finishedProjects: [], unfinishedProjects: [], topWorkedOnTopics: [],
+            topTalkedAboutThings: [], valuableActionsTaken: [], opportunitiesMissed: [],
+            peopleMentioned: [PersonMention(name: person)], placesVisited: [])
+    }
+
+    @Test func allKeepsEachJournalsStory() throws {
+        let work = journalWrap("Shipping year", item: "Launched the app", category: .work, person: "Sarah")
+        let personal = journalWrap("Garden year", item: "Ran a 10k", category: .personal, person: "Sarah")
+        let stats = YearWrapStats(sessionCount: 9, totalMinutes: 60, wordCount: 900, activeDays: 7, workCount: 5, personalCount: 4, busiestMonth: 3)
+        let all = try #require(YearWrapData.combining([.personal: personal, .work: work], year: 2026, stats: stats))
+
+        #expect(all.yearTitle == "Your 2026")
+        #expect(all.journals?.map(\.title) == ["Shipping year", "Garden year"])
+        #expect(all.biggestWins.map(\.text) == ["Launched the app", "Ran a 10k"])
+        // Sarah appears once per journal, each tagged, never merged
+        #expect(all.peopleMentioned.map(\.category) == [.work, .personal])
+        #expect(all.stats?.sessionCount == 9)
+        #expect(all.storyText.hasPrefix("WORK\nShipping year"))
+    }
+
+    @Test func allWithOneJournalUsesItsTitle() throws {
+        let work = journalWrap("Shipping year", item: "Launched the app", category: .work, person: "Sarah")
+        let all = try #require(YearWrapData.combining([.work: work], year: 2026, stats: nil))
+        #expect(all.yearTitle == "Shipping year")
+        #expect(all.journals?.count == 1)
+        #expect(YearWrapData.combining([:], year: 2026, stats: nil) == nil)
+    }
+
+    @Test func journalsSurviveSavingAndRedaction() throws {
+        let work = journalWrap("Work with Maria", item: "Launched the app", category: .work, person: "Maria")
+        let all = try #require(YearWrapData.combining([.work: work], year: 2026, stats: nil))
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let parsed = try #require(YearWrapData.parse(String(decoding: try encoder.encode(all), as: UTF8.self)))
+        #expect(parsed.journals?.first?.category == .work)
+        #expect(parsed.peopleMentioned.first?.category == .work)
+        #expect(parsed.redacted(people: true, places: false).journals?.first?.title == "Work with [Person]")
+    }
 }

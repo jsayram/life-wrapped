@@ -146,6 +146,12 @@ public enum YearWrapBuilder {
 
     // MARK: - Stats and merging
 
+    /// The year's numbers from its month digests, without a model. For All, pass each month's
+    /// two journals combined (MonthDigest.combining) so a shared day counts once.
+    public static func stats(for digests: [MonthDigest]) -> YearWrapStats {
+        computeStats(digests.sorted { $0.monthStart < $1.monthStart })
+    }
+
     static func computeStats(_ digests: [MonthDigest]) -> YearWrapStats {
         let busiest = digests.max { $0.stats.sessionCount < $1.stats.sessionCount }
         return YearWrapStats(

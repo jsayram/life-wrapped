@@ -430,7 +430,7 @@ struct OverviewTab: View {
         if selectedTimeRange == .allTime {
             var wraps: [ItemFilter: Summary] = [:]
             for filter in ItemFilter.allCases {
-                wraps[filter] = try? await coordinator.fetchPeriodSummary(type: filter.yearWrapType, date: dateForFetch)
+                wraps[filter] = await coordinator.fetchYearWrap(for: filter, date: dateForFetch)
             }
             yearWraps = wraps
             

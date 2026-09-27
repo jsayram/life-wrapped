@@ -194,7 +194,28 @@ struct YearWrapDetailView: View {
                     .tracking(0.8)
                     .foregroundStyle(AppTheme.onAccent.opacity(0.7))
                 
-                if let data = displayData {
+                if let data = displayData, let journals = data.journals, !journals.isEmpty {
+                    // All: each journal's own story, one after the other
+                    ForEach(journals, id: \.category) { journal in
+                        VStack(spacing: 8) {
+                            Label(journal.category.displayName.uppercased(), systemImage: journal.category == .work ? "briefcase.fill" : "house.fill")
+                                .font(.caption)
+                                .tracking(0.8)
+                                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                            Text(journal.title)
+                                .font(AppTheme.titleFont(size: 26))
+                                .foregroundStyle(AppTheme.onAccent)
+                                .multilineTextAlignment(.center)
+                                .accessibilityAddTraits(.isHeader)
+                            Text(journal.summary)
+                                .font(.body)
+                                .foregroundStyle(AppTheme.onAccent.opacity(0.9))
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 8)
+                    }
+                } else if let data = displayData {
                     Text(data.yearTitle)
                         .font(AppTheme.titleFont(size: 30))
                         .foregroundStyle(AppTheme.onAccent)
@@ -350,9 +371,14 @@ struct YearWrapDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(people.enumerated()), id: \.offset) { _, person in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(person.name)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                            HStack(spacing: 8) {
+                                Text(person.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                if let category = person.category {
+                                    categoryBadge(for: category)
+                                }
+                            }
                             
                             if let relationship = person.relationship {
                                 Text(relationship)
@@ -398,9 +424,14 @@ struct YearWrapDetailView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(places.enumerated()), id: \.offset) { _, place in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(place.name)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
+                            HStack(spacing: 8) {
+                                Text(place.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                if let category = place.category {
+                                    categoryBadge(for: category)
+                                }
+                            }
                             
                             if let frequency = place.frequency {
                                 Text(frequency)

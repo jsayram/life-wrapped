@@ -947,13 +947,13 @@ public final class SummaryCoordinator {
     }
 
     /// Bump when Year Wrap generation changes, so a cached wrap is rebuilt
-    private static let yearWrapVersion = "yearwrap-v3"
+    private static let yearWrapVersion = "yearwrap-v4"
     
     /// Year Wrap, built from the year's month digests with Apple Intelligence or Smartest AI.
-    /// Brings every month's digest up to date, then writes three wraps: All, Work and Personal.
-    /// Work and Personal are built only from that category's recordings, so each has its own
-    /// title, summary and numbers. A category with no recordings this year gets no wrap.
-    /// Throws when the engine isn't available or nothing could be built.
+    /// Brings every month's journal digests up to date, then writes one wrap per journal from that
+    /// journal's months only (one model request each with Smartest). All is the two put together
+    /// in code, with each journal's own title and summary. A journal with no recordings this year
+    /// gets no wrap. Throws when the engine isn't available or nothing could be built.
     public func wrapUpYear(date: Date, engine: EngineTier, forceRegenerate: Bool = false) async throws {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: date)
@@ -990,83 +990,100 @@ public final class SummaryCoordinator {
         let firstRunNote = splittingOldMonths && staleMonths.count > 1
             ? "This first wrap separates each month into work and personal, so it takes longer than usual."
             : nil
-        let wrapFilters: [ItemFilter] = [.all, .workOnly, .personalOnly]
-        let totalSteps = staleMonths.count + wrapFilters.count
+        let journals = SessionCategory.allCases
+        let totalSteps = staleMonths.count + journals.count
         var step = 0
 
-        // 1. Month digests, rebuilt with the same engine so a slow local model never runs here
-        var digests: [MonthDigest] = []
+        // 1. Month digests, rebuilt with the same engine so a slow local model never runs here.
+        //    Each journal's own digests feed its wrap; the combined months give All its numbers.
+        var journalDigests: [SessionCategory: [MonthDigest]] = [:]
+        var combinedMonths: [MonthDigest] = []
         for month in months {
             if staleMonths.contains(month) {
                 step += 1
                 onYearWrapProgressUpdate?(YearWrapProgress(step: step, total: totalSteps,
                     label: "Reading \(month.formatted(.dateTime.month(.wide)))", note: firstRunNote))
             }
-            if let digest = await updateMonthDigest(date: month, generator: generator) {
-                digests.append(digest)
+            guard let combined = await updateMonthDigest(date: month, generator: generator) else { continue }
+            combinedMonths.append(combined)
+            for (journal, entry) in await storedMonth(month).journals {
+                if let digest = entry.digest { journalDigests[journal, default: []].append(digest) }
             }
         }
-        guard !digests.isEmpty else {
+        guard !journalDigests.isEmpty else {
             throw SummarizationError.summarizationFailed("Couldn't read your months. Try again in a moment.")
         }
 
-        // 2. One wrap per filter
-        var built = 0
-        for filter in wrapFilters {
+        // 2. One wrap per journal, each from that journal's months only
+        var wraps: [SessionCategory: YearWrapData] = [:]
+        for journal in journals {
             step += 1
-            let label: String
-            switch filter {
-            case .all: label = "Writing your year"
-            case .workOnly: label = "Writing your work year"
-            case .personalOnly: label = "Writing your personal year"
-            }
-            onYearWrapProgressUpdate?(YearWrapProgress(step: step, total: totalSteps, label: label))
+            onYearWrapProgressUpdate?(YearWrapProgress(step: step, total: totalSteps,
+                label: journal == .work ? "Writing your work year" : "Writing your personal year"))
 
-            let slices = digests.compactMap { $0.slice(for: filter) }
-            let type = filter.yearWrapType
-            guard !slices.isEmpty else {
-                // No recordings in this category: remove a wrap left from an earlier run
-                if let old = try? await databaseManager.fetchPeriodSummary(type: type, date: startOfYear) {
+            guard let digests = journalDigests[journal], !digests.isEmpty else {
+                // No recordings in this journal this year: remove a wrap left from an earlier run
+                if let old = try? await databaseManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear, category: journal) {
                     try? await databaseManager.deleteSummary(id: old.id)
                 }
                 continue
             }
 
             // The wrap only changes when its months or the engine change
-            let sliceTexts = slices.compactMap { try? $0.jsonString() }
-            let inputHash = await databaseManager.computeInputHash([Self.yearWrapVersion, generator.tier.rawValue, filter.rawValue] + sliceTexts)
+            let digestTexts = digests.compactMap { try? $0.jsonString() }
+            let inputHash = await databaseManager.computeInputHash([Self.yearWrapVersion, generator.tier.rawValue, journal.rawValue] + digestTexts)
             if !forceRegenerate,
-               let existing = try? await databaseManager.fetchPeriodSummary(type: type, date: startOfYear),
-               existing.inputHash == inputHash {
-                print("💾 [SummaryCoordinator] ✅ CACHE HIT - \(type.displayName) unchanged")
-                built += 1
+               let existing = try? await databaseManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear, category: journal),
+               existing.inputHash == inputHash,
+               let cached = YearWrapData.parse(existing.text) {
+                print("💾 [SummaryCoordinator] ✅ CACHE HIT - \(journal.displayName) Year Wrap unchanged")
+                wraps[journal] = cached
                 continue
             }
 
-            print("🎁 [SummaryCoordinator] Building \(type.displayName) for \(year) from \(slices.count) months with \(generator.tier.displayName)")
-            let wrap = await YearWrapBuilder.build(year: year, digests: slices, generator: generator, scope: filter)
-            let sessionIds = Set(slices.flatMap { $0.items.flatMap(\.sessionIds) })
-            let sources = filter == .all
-                ? sessionSummaries.compactMap { $0.sessionId }
-                : sessionSummaries.compactMap { $0.sessionId }.filter { sessionIds.contains($0) }
-            let topicsJSON = (try? JSONEncoder().encode(wrap.topWorkedOnTopics.map { $0.text })).map { String(decoding: $0, as: UTF8.self) }
-            try await databaseManager.upsertPeriodSummary(
-                type: type,
-                text: try YearWrapBuilder.jsonString(wrap),
-                start: startOfYear,
-                end: endOfYear,
-                topicsJSON: topicsJSON,
-                entitiesJSON: nil,
-                engineTier: generator.tier.rawValue,
-                sourceIds: await databaseManager.sourceIdsToJSON(sources),
-                inputHash: inputHash
-            )
-            built += 1
+            print("🎁 [SummaryCoordinator] Building \(journal.displayName) Year Wrap for \(year) from \(digests.count) months with \(generator.tier.displayName)")
+            let wrap = await YearWrapBuilder.build(year: year, digests: digests, generator: generator, scope: journal.itemFilter)
+            let sessionIds = Set(digests.flatMap { $0.items.flatMap(\.sessionIds) })
+            try await saveYearWrap(wrap, start: startOfYear, end: endOfYear, engineTier: generator.tier.rawValue,
+                                   sources: sessionSummaries.compactMap { $0.sessionId }.filter { sessionIds.contains($0) },
+                                   inputHash: inputHash, category: journal)
+            wraps[journal] = wrap
         }
-        guard built > 0 else {
+
+        // 3. All: the two journals put together in code, no model request
+        guard let all = YearWrapData.combining(wraps, year: year, stats: YearWrapBuilder.stats(for: combinedMonths)) else {
             throw SummarizationError.summarizationFailed("Year Wrap couldn't be built. Try again in a moment.")
         }
-        print("✅ [SummaryCoordinator] Year Wraps saved")
+        try await saveYearWrap(all, start: startOfYear, end: endOfYear, engineTier: generator.tier.rawValue,
+                               sources: sessionSummaries.compactMap { $0.sessionId }, inputHash: nil, category: nil)
+
+        // Wraps from before journals, stored as their own types, are replaced by the ones above
+        for legacyType in [PeriodType.yearWrapWork, .yearWrapPersonal] {
+            if let old = try? await databaseManager.fetchPeriodSummary(type: legacyType, date: startOfYear) {
+                try? await databaseManager.deleteSummary(id: old.id)
+            }
+        }
+        if generator.tier == .local {
+            await summarizationEngine.getLocalEngine().unloadModel()
+        }
+        print("✅ [SummaryCoordinator] Year Wraps saved: \(wraps.keys.map(\.displayName).sorted().joined(separator: ", ")) and All")
+    }
+
+    private func saveYearWrap(_ wrap: YearWrapData, start: Date, end: Date, engineTier: String, sources: [UUID],
+                              inputHash: String?, category: SessionCategory?) async throws {
+        let topicsJSON = (try? JSONEncoder().encode(wrap.topWorkedOnTopics.map { $0.text })).map { String(decoding: $0, as: UTF8.self) }
+        try await databaseManager.upsertPeriodSummary(
+            type: .yearWrap,
+            text: try YearWrapBuilder.jsonString(wrap),
+            start: start,
+            end: end,
+            topicsJSON: topicsJSON,
+            entitiesJSON: nil,
+            engineTier: engineTier,
+            sourceIds: await databaseManager.sourceIdsToJSON(sources),
+            inputHash: inputHash,
+            category: category
+        )
     }
     
     /// Get count of new sessions created after Year Wrap generation
