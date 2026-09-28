@@ -854,6 +854,7 @@ struct YearWrapGenerationSheet: View {
     }
     
     private var appleAvailable: Bool { engines?.contains(.apple) ?? false }
+    private var localAvailable: Bool { engines?.contains(.local) ?? false }
     private var smartestReady: Bool { isSmartestAIUnlocked && hasExternalAPIConfigured && (engines?.contains(.external) ?? false) }
     
     var body: some View {
@@ -876,6 +877,8 @@ struct YearWrapGenerationSheet: View {
             VStack(spacing: 12) {
                 smartestRow
                 appleRow
+                localRow
+                basicRow
             }
             .opacity(engines == nil ? 0.5 : 1)
             .disabled(engines == nil)
@@ -974,6 +977,52 @@ struct YearWrapGenerationSheet: View {
         }
     }
     
+    @ViewBuilder
+    private var localRow: some View {
+        if localAvailable {
+            engineButton(
+                icon: "cpu",
+                title: "Offline AI",
+                detail: "Free and private. Slower: a few minutes with the app open.",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.local)
+            }
+        } else if engines != nil {
+            HStack(spacing: 12) {
+                Image(systemName: "cpu")
+                    .font(.title3)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offline AI")
+                        .font(.headline)
+                    Text("Not downloaded. Get it under Settings › Summaries to wrap your year on this \(DeviceName.current).")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var basicRow: some View {
+        if engines != nil {
+            engineButton(
+                icon: "bolt",
+                title: "Key Sentences",
+                detail: "Instant. Your numbers, people, places and topics, without a written story.",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.basic)
+            }
+        }
+    }
+
     private var purchaseBadge: some View {
         Group {
             if isPurchasing {

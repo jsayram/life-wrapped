@@ -110,9 +110,9 @@ struct YearWrapBuilderTests {
         #expect(wrap.yearSummary.contains("8 recordings"))
     }
 
-    @Test("Small models get one short request per section, and picks keep their sources and category")
+    @Test("Apple Intelligence gets one short request per section, and picks keep their sources and category")
     func perSection() async {
-        let generator = ScriptedGenerator { prompt in
+        let generator = ScriptedGenerator(tier: .apple) { prompt in
             if prompt.contains("year_title") {
                 return #"{"year_title":"Growing things","year_summary":"I grew a garden and ran more."}"#
             }
@@ -136,6 +136,45 @@ struct YearWrapBuilderTests {
         // A section whose answer wasn't JSON falls back to the digest items
         #expect(wrap.biggestChallenges.first?.text == "Launch deadline stress")
         #expect(await generator.calls > 1)
+    }
+
+    @Test("The offline model gets one compact request for the whole wrap")
+    func compactForLocal() async {
+        let generator = ScriptedGenerator(tier: .local) { prompt in
+            // Everything arrives in one prompt: months, every section and the title
+            guard prompt.contains("year_title"), prompt.contains("biggest_wins"), prompt.contains("Months:") else { return "not json" }
+            let ids = prompt.split(separator: "\n").filter { $0.contains("Ran") }.compactMap { line -> Int? in
+                guard let open = line.firstIndex(of: "["), let close = line.firstIndex(of: "]") else { return nil }
+                return Int(line[line.index(after: open)..<close])
+            }
+            return #"{"year_title":"A running year","year_summary":"I ran and grew things.","biggest_wins":[{"t":"I kept running","ids":[\#(ids.map(String.init).joined(separator: ","))]}],"biggest_losses":[]}"#
+        }
+        let wrap = await YearWrapBuilder.build(year: 2026, digests: sampleDigests(), generator: generator)
+        #expect(await generator.calls == 1)
+        #expect(wrap.yearTitle == "A running year")
+        #expect(wrap.biggestWins.first?.text == "I kept running")
+        #expect(Set(wrap.biggestWins.first?.sessionIds ?? []) == [runA, runB])
+        // An empty Losses answer is a real answer; a section left out is filled from the digests
+        #expect(wrap.biggestLosses.isEmpty)
+        #expect(wrap.biggestChallenges.first?.text == "Launch deadline stress")
+    }
+
+    @Test("When the offline model's compact answer can't be read, only the title is asked for again")
+    func compactFallback() async {
+        let generator = ScriptedGenerator(tier: .local) { prompt in
+            prompt.contains("biggest_wins") ? "garbage" : #"{"year_title":"Second try","year_summary":"Short."}"#
+        }
+        let wrap = await YearWrapBuilder.build(year: 2026, digests: sampleDigests(), generator: generator)
+        #expect(await generator.calls == 2)
+        #expect(wrap.yearTitle == "Second try")
+        #expect(!wrap.biggestWins.isEmpty)
+    }
+
+    @Test("Month lines can be cut to their opening for a small prompt")
+    func shortMonthLines() {
+        let lines = YearWrapBuilder.monthLines(sampleDigests(), maxCharacters: 20)
+        #expect(lines.split(separator: "\n").allSatisfy { $0.count < 60 })
+        #expect(lines.contains("…"))
     }
 
     @Test("Unrelated ids on a pick are dropped, so it keeps only its own recordings and category")
@@ -164,7 +203,7 @@ struct YearWrapBuilderTests {
 
     @Test("A section the model answered with nothing usable falls back to the digest items")
     func unusableSectionFallsBack() async {
-        let generator = ScriptedGenerator { prompt in
+        let generator = ScriptedGenerator(tier: .apple) { prompt in
             prompt.contains("year_title") ? #"{"year_title":"T","year_summary":"S"}"# : #"{"items":[{"t":"Nothing matches here","ids":[]}]}"#
         }
         let wrap = await YearWrapBuilder.build(year: 2026, digests: sampleDigests(), generator: generator)
@@ -174,7 +213,7 @@ struct YearWrapBuilderTests {
 
     @Test("A bare list with the placeholder copied still yields the candidates' own text")
     func bareListWithPlaceholder() async {
-        let generator = ScriptedGenerator { prompt in
+        let generator = ScriptedGenerator(tier: .apple) { prompt in
             if prompt.contains("year_title") { return #"{"year_title":"T","year_summary":"S"}"# }
             guard prompt.contains("biggest wins"),
                   let line = prompt.split(separator: "\n").first(where: { $0.contains("Ran a 10k") }),

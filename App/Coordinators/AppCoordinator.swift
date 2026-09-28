@@ -3,6 +3,7 @@
 // =============================================================================
 
 import Foundation
+import BackgroundTasks
 import SwiftUI
 import UIKit
 import AVFoundation
@@ -192,6 +193,7 @@ public final class AppCoordinator: ObservableObject {
         storeChanges = storeManager.objectWillChange.sink { [weak self] _ in
             MainActor.assumeIsolated { self?.objectWillChange.send() }
         }
+        AppCoordinator.current = self
     }
     
     private func setupAudioCaptureCallback() {
@@ -1374,6 +1376,53 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
+    // MARK: - Finishing months in the background
+
+    /// Identifier of the processing task that finishes ended months' digests while the phone charges
+    public static let finalizeMonthsTaskIdentifier = "com.jsayram.lifewrapped.finalize-months"
+
+    /// The running coordinator, for the background task handler registered before it exists
+    nonisolated(unsafe) public private(set) static weak var current: AppCoordinator?
+
+    /// Register the task. Must run before the app finishes launching.
+    public static func registerBackgroundTasks() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: finalizeMonthsTaskIdentifier, using: nil) { task in
+            guard let task = task as? BGProcessingTask else { return }
+            let work = Task { @MainActor in
+                let finished = await AppCoordinator.current?.finalizeClosedMonthsInBackground() ?? false
+                AppCoordinator.scheduleMonthFinalization()
+                task.setTaskCompleted(success: finished)
+            }
+            task.expirationHandler = { work.cancel() }
+        }
+    }
+
+    /// Ask iOS to run the task later, while charging. Harmless to call often; one request replaces the last.
+    public static func scheduleMonthFinalization() {
+        let request = BGProcessingTaskRequest(identifier: finalizeMonthsTaskIdentifier)
+        request.requiresExternalPower = true
+        request.requiresNetworkConnectivity = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("🗓️ [AppCoordinator] Month finalization scheduled")
+        } catch {
+            print("⚠️ [AppCoordinator] Couldn't schedule month finalization: \(error.localizedDescription)")
+        }
+    }
+
+    /// Finish every ended month that still needs it, one at a time, until done or cancelled.
+    /// Returns true when there was nothing left or all of it got done.
+    public func finalizeClosedMonthsInBackground() async -> Bool {
+        guard isInitialized, let summaryCoordinator, !isGeneratingYearWrap, !recordingState.isRecording else { return false }
+        for _ in 0..<24 {
+            if Task.isCancelled { return false }
+            let worked = await summaryCoordinator.finalizeNextClosedMonthDigest()
+            if !worked { return true }
+        }
+        return true
+    }
+
     // MARK: - Upgrading earlier summaries
 
     /// Recordings whose summary was written by an engine weaker than `tier`, oldest first
