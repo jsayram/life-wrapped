@@ -56,12 +56,18 @@ public enum MonthDigestBuilder {
 
     /// Build a digest. With a `journal`, the sources are that journal's recordings only and the
     /// story is written about that side of life; nothing from the other journal is involved.
+    ///
+    /// With `previous`, the items and numbers are rebuilt but the headline and narrative are
+    /// copied from that earlier digest instead of being written again. The caller passes it when
+    /// the engine available now writes worse than the one that wrote the story, so a month never
+    /// loses its Cloud AI story because a recording was edited while Key Sentences was selected.
     public static func build(
         monthStart: Date,
         sources: [DigestSource],
         isFinal: Bool,
         generator: (any TextGenerating)?,
-        journal: SessionCategory? = nil
+        journal: SessionCategory? = nil,
+        keepingStoryFrom previous: MonthDigest? = nil
     ) async -> MonthDigest {
         let sorted = sources.sorted { $0.start < $1.start }
         let categories = categoryMap(sorted)
@@ -103,10 +109,17 @@ public enum MonthDigestBuilder {
         let items = merge(extracted, categories: categories)
 
         let modelForStories = usedModel ? generator : nil
-        let story = await writeStory(items: items, stats: stats, monthStart: monthStart,
-                                     focus: journal?.displayName.lowercased(), generator: modelForStories)
-        var headline = story.headline
-        let narrative = story.narrative
+        var headline: String?
+        var narrative: String?
+        if let previous {
+            headline = previous.headline
+            narrative = previous.narrative
+        } else {
+            let story = await writeStory(items: items, stats: stats, monthStart: monthStart,
+                                         focus: journal?.displayName.lowercased(), generator: modelForStories)
+            headline = story.headline
+            narrative = story.narrative
+        }
         // The plain "14 recordings · topics" headline is only for months without a written story
         if headline == nil && narrative == nil {
             headline = basicHeadline(items: items, stats: stats)
@@ -121,8 +134,12 @@ public enum MonthDigestBuilder {
             var story: (headline: String?, narrative: String?) = (nil, nil)
             if present.count > 1 {
                 let sectionItems = items.filter { $0.matches(filter) }
-                story = await writeStory(items: sectionItems, stats: sectionStats, monthStart: monthStart,
-                                         focus: sessionCategory.displayName.lowercased(), generator: modelForStories)
+                if let kept = previous?.section(for: itemCategory) {
+                    story = (kept.headline, kept.narrative)
+                } else {
+                    story = await writeStory(items: sectionItems, stats: sectionStats, monthStart: monthStart,
+                                             focus: sessionCategory.displayName.lowercased(), generator: modelForStories)
+                }
                 if story.headline == nil && story.narrative == nil {
                     story.headline = basicHeadline(items: sectionItems, stats: sectionStats)
                 }
@@ -139,7 +156,9 @@ public enum MonthDigestBuilder {
             items: items,
             engineTier: usedModel ? (generator?.tier.rawValue ?? EngineTier.basic.rawValue) : EngineTier.basic.rawValue,
             sections: sections,
-            journal: journal
+            journal: journal,
+            storyEngineTier: previous?.displayedEngineTier,
+            storyPredatesItems: previous != nil
         )
     }
 

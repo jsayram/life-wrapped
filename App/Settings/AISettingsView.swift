@@ -671,12 +671,18 @@ struct AISettingsView: View {
             return
         }
         
+        let previous = activeEngine
         Task {
             guard let summCoord = coordinator.summarizationCoordinator else { return }
             await summCoord.setPreferredEngine(tier)
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-            coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+            if let previous, tier.isWeaker(than: previous.rawValue) {
+                // Nothing already written gets rewritten by a weaker engine
+                coordinator.showToast(Toast(style: .info, message: "Switched to \(tierDisplayName(tier)). Summaries written by \(tierDisplayName(previous)) stay as they are; new recordings use \(tierDisplayName(tier)).", duration: 5))
+            } else {
+                coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+            }
         }
     }
     

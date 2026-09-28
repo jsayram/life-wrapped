@@ -125,6 +125,12 @@ struct YearWrappedCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            if let engine = summary.engineTier.flatMap(EngineTier.init(rawValue:)) {
+                Label("Written by \(engine.displayName)", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+            }
+
             // Out of date: this journal's recordings added or changed since the wrap was built
             if outdatedCount > 0 {
                 HStack(spacing: 8) {

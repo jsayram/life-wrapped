@@ -47,6 +47,10 @@ struct SessionDetailView: View {
     @State private var generationPhase: String = ""
     @State private var showGenerationOverlay = false
     @State private var activeEngineForGeneration: EngineTier?
+    /// Asked before the engine chosen now replaces a summary written by a better one
+    @State private var showDowngradeConfirmation = false
+    @State private var downgradeMessage = ""
+    @State private var downgradeEngineName = ""
     /// Set once the user moves this recording to the other journal, to explain what that changes
     @State private var movedToJournal: SessionCategory?
     /// Screen width, to switch to two columns when there's room
@@ -121,6 +125,14 @@ struct SessionDetailView: View {
         .themedScreen()
         .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Replace this summary?", isPresented: $showDowngradeConfirmation, titleVisibility: .visible) {
+            Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
+                Task { await regenerateSummary() }
+            }
+            Button("Keep the current summary", role: .cancel) {}
+        } message: {
+            Text(downgradeMessage)
+        }
         .toolbar {
             // The title is shown large in the content, so keep the bar clean
             ToolbarItem(placement: .principal) { Text("").accessibilityHidden(true) }
@@ -940,7 +952,7 @@ struct SessionDetailView: View {
                             Label("Copy summary", systemImage: "doc.on.doc")
                         }
                         Button {
-                            Task { await regenerateSummary() }
+                            confirmRegenerate()
                         } label: {
                             Label("Regenerate summary", systemImage: "sparkles")
                         }
@@ -967,7 +979,7 @@ struct SessionDetailView: View {
                     Text("Transcript changed since this summary")
                     Spacer(minLength: 8)
                     Button("Update") {
-                        Task { await regenerateSummary() }
+                        confirmRegenerate()
                     }
                     .fontWeight(.semibold)
                     .foregroundStyle(AppTheme.textPrimary)
@@ -1155,6 +1167,23 @@ struct SessionDetailView: View {
         }
     }
     
+    /// Regenerate now, or ask first when the engine chosen in Settings writes worse than the
+    /// one that wrote this summary. Nothing good is replaced by something plainer by accident.
+    private func confirmRegenerate() {
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            let current = await summCoord.getActiveEngine()
+            if let stored = sessionSummary?.engineTier, current.isWeaker(than: stored) {
+                let storedName = EngineTier(rawValue: stored)?.displayName ?? stored
+                downgradeEngineName = current.displayName
+                downgradeMessage = "This summary was written by \(storedName). \(current.displayName) is selected now and writes a plainer one. To keep the better summary, choose \(storedName) in Settings before regenerating."
+                showDowngradeConfirmation = true
+            } else {
+                await regenerateSummary()
+            }
+        }
+    }
+
     private func regenerateSummary() async {
         isRegeneratingSummary = true
         summaryLoadError = nil

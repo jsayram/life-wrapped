@@ -4,6 +4,7 @@
 
 import SwiftUI
 import SharedModels
+import Summarization
 
 struct MonthDigestCard: View {
     let digest: MonthDigest
@@ -84,6 +85,8 @@ struct MonthDigestCard: View {
             }
         }
 
+        engineNote
+
         statsRow(stats)
 
         ForEach(DigestItemKind.displayOrder, id: \.self) { kind in
@@ -92,6 +95,27 @@ struct MonthDigestCard: View {
                 section(kind: kind, items: items)
             }
         }
+    }
+
+    /// Who wrote this month. When a weaker engine rebuilt the items, the better story was kept
+    /// and this says it doesn't cover the newest recordings.
+    private var engineNote: some View {
+        let name = Self.engineNames(digest.displayedEngineTier)
+        return HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+            Text(digest.storyPredatesItems
+                 ? "Story by \(name), kept from before the latest recordings. Rebuild to rewrite it."
+                 : "Built with \(name)")
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption)
+        .foregroundStyle(AppTheme.textSecondary)
+    }
+
+    /// "Cloud AI", or "Cloud AI and Key Sentences" for a month combined from two journals
+    static func engineNames(_ stored: String) -> String {
+        let names = stored.split(separator: "+").map { EngineTier(rawValue: String($0))?.displayName ?? "AI" }
+        return Array(Set(names)).sorted { names.firstIndex(of: $0)! < names.firstIndex(of: $1)! }.joined(separator: " and ")
     }
 
     // MARK: - Header

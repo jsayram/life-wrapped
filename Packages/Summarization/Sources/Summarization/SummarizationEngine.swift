@@ -78,6 +78,31 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .external: return false
         }
     }
+
+    /// How well this engine writes, highest first: Cloud AI, then Apple Intelligence, then the
+    /// offline model, then Key Sentences. The app never replaces a summary with one from a
+    /// lower rank on its own; a person can still ask for it.
+    public var fidelityRank: Int {
+        switch self {
+        case .basic: return 0
+        case .local: return 1
+        case .apple: return 2
+        case .external: return 3
+        }
+    }
+
+    /// Rank of a stored engine name. A digest combined from two journals stores "local+basic";
+    /// that counts as its weakest part. Unknown or missing names rank lowest.
+    public static func fidelityRank(of stored: String?) -> Int {
+        guard let stored else { return 0 }
+        let parts = stored.split(separator: "+").compactMap { EngineTier(rawValue: String($0)) }
+        return parts.map(\.fidelityRank).min() ?? 0
+    }
+
+    /// True when a summary written by `stored` would get worse if `self` rewrote it
+    public func isWeaker(than stored: String?) -> Bool {
+        fidelityRank < EngineTier.fidelityRank(of: stored)
+    }
 }
 
 // MARK: - Summarization Engine Protocol

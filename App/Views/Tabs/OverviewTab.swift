@@ -22,6 +22,12 @@ struct OverviewTab: View {
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
+    /// Asked before a weaker engine rewrites a month story or a Year Wrap written by a better one
+    @State private var showMonthRebuildConfirmation = false
+    @State private var showYearWrapDowngradeConfirmation = false
+    @State private var pendingYearWrapEngine: EngineTier?
+    @State private var downgradeEngineName = ""
+    @State private var downgradeMessage = ""
     @State private var showPurchaseSheet = false
     @State private var reopenYearWrapAfterPurchase = false
     
@@ -144,7 +150,7 @@ struct OverviewTab: View {
                                             coordinator.showSuccess("Month copied")
                                         },
                                         onRegenerate: {
-                                            Task { await refreshMonthDigest(force: true) }
+                                            Task { await confirmMonthRebuild() }
                                             }
                                         )
                                         .padding(.horizontal, 16)
@@ -279,6 +285,22 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
+            .confirmationDialog("Rewrite this month's story?", isPresented: $showMonthRebuildConfirmation, titleVisibility: .visible) {
+                Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
+                    Task { await refreshMonthDigest(force: true) }
+                }
+                Button("Keep the story", role: .cancel) {}
+            } message: {
+                Text(downgradeMessage)
+            }
+            .confirmationDialog("Replace this Year Wrap?", isPresented: $showYearWrapDowngradeConfirmation, titleVisibility: .visible) {
+                Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
+                    if let engine = pendingYearWrapEngine { coordinator.startYearWrap(engine: engine) }
+                }
+                Button("Keep the current wrap", role: .cancel) { pendingYearWrapEngine = nil }
+            } message: {
+                Text(downgradeMessage)
+            }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
@@ -286,7 +308,7 @@ struct OverviewTab: View {
                     isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
                     onGenerate: { engine in
                         showYearWrapConfirmation = false
-                        coordinator.startYearWrap(engine: engine)
+                        confirmYearWrap(with: engine)
                     },
                     onPurchaseSmartestAI: {
                         // Close this sheet and show purchase sheet
@@ -417,6 +439,33 @@ struct OverviewTab: View {
         isLoading = false
     }
     
+    /// Rebuild the month now, or ask first when the engine available now would replace a story
+    /// written by a better one. Rebuilding is the one way a person can choose that on purpose.
+    private func confirmMonthRebuild() async {
+        guard let digest = monthDigest else { return }
+        let current = await coordinator.summarizationCoordinator?.digestGenerator()?.tier ?? .basic
+        if digest.hasWrittenStory, current.isWeaker(than: digest.displayedEngineTier) {
+            downgradeEngineName = current.displayName
+            downgradeMessage = "This month's story was written by \(MonthDigestCard.engineNames(digest.displayedEngineTier)). \(current.displayName) is what's available now and writes a plainer one. The items and numbers update either way."
+            showMonthRebuildConfirmation = true
+        } else {
+            await refreshMonthDigest(force: true)
+        }
+    }
+
+    /// Start a Year Wrap, or ask first when the chosen engine writes worse than the one that
+    /// wrote the wrap on screen
+    private func confirmYearWrap(with engine: EngineTier) {
+        if let stored = yearWraps[.all]?.engineTier ?? yearWraps[categoryFilter]?.engineTier, engine.isWeaker(than: stored) {
+            pendingYearWrapEngine = engine
+            downgradeEngineName = engine.displayName
+            downgradeMessage = "Your current wrap was written by \(EngineTier(rawValue: stored)?.displayName ?? stored). \(engine.displayName) writes a plainer one and would replace it."
+            showYearWrapDowngradeConfirmation = true
+        } else {
+            coordinator.startYearWrap(engine: engine)
+        }
+    }
+
     private func refreshMonthDigest(force: Bool) async {
         guard !isUpdatingMonthDigest else { return }
         isUpdatingMonthDigest = true

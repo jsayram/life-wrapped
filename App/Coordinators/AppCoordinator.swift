@@ -373,6 +373,10 @@ public final class AppCoordinator: ObservableObject {
             summaryCoord.onYearWrapProgressUpdate = { [weak self] progress in
                 self?.yearWrapProgress = progress
             }
+            summaryCoord.onEngineFallback = { [weak self] chosen, used in
+                // Say so, or a lapsed API key quietly turns months of Cloud AI summaries into Key Sentences ones
+                self?.showInfo("\(chosen.displayName) wasn't available. This recording was summarized by \(used.displayName).")
+            }
             self.summaryCoordinator = summaryCoord
             print("✅ [AppCoordinator] SummaryCoordinator initialized")
             

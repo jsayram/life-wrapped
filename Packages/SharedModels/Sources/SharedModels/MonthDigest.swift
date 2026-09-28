@@ -179,6 +179,11 @@ public struct MonthDigest: Codable, Sendable, Hashable {
     public let sections: [CategorySection]?
     /// The journal this digest was built from. Nil for older digests that mixed both.
     public let journal: SessionCategory?
+    /// Engine that wrote the headline and narrative, when it isn't the one that extracted the
+    /// items. Set when a month was rebuilt by a weaker engine and kept its better story.
+    public let storyEngineTier: String?
+    /// True when the story was kept from an earlier build and doesn't cover the newest recordings
+    public let storyPredatesItems: Bool
 
     public init(
         monthStart: Date,
@@ -189,7 +194,9 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         items: [DigestItem],
         engineTier: String,
         sections: [CategorySection]? = nil,
-        journal: SessionCategory? = nil
+        journal: SessionCategory? = nil,
+        storyEngineTier: String? = nil,
+        storyPredatesItems: Bool = false
     ) {
         self.monthStart = monthStart
         self.isFinal = isFinal
@@ -200,6 +207,39 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         self.engineTier = engineTier
         self.sections = sections
         self.journal = journal
+        self.storyEngineTier = storyEngineTier
+        self.storyPredatesItems = storyPredatesItems
+    }
+
+    // Digests saved before the story fields existed decode with their defaults
+    private enum CodingKeys: String, CodingKey {
+        case monthStart, isFinal, stats, headline, narrative, items, engineTier, sections, journal
+        case storyEngineTier, storyPredatesItems
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        monthStart = try c.decode(Date.self, forKey: .monthStart)
+        isFinal = try c.decode(Bool.self, forKey: .isFinal)
+        stats = try c.decode(DigestStats.self, forKey: .stats)
+        headline = try c.decodeIfPresent(String.self, forKey: .headline)
+        narrative = try c.decodeIfPresent(String.self, forKey: .narrative)
+        items = try c.decode([DigestItem].self, forKey: .items)
+        engineTier = try c.decode(String.self, forKey: .engineTier)
+        sections = try c.decodeIfPresent([CategorySection].self, forKey: .sections)
+        journal = try c.decodeIfPresent(SessionCategory.self, forKey: .journal)
+        storyEngineTier = try c.decodeIfPresent(String.self, forKey: .storyEngineTier)
+        storyPredatesItems = try c.decodeIfPresent(Bool.self, forKey: .storyPredatesItems) ?? false
+    }
+
+    /// The engine whose writing the reader sees: the story's author when it was kept, otherwise
+    /// the engine that built the digest
+    public var displayedEngineTier: String { storyEngineTier ?? engineTier }
+
+    /// Whether any written story exists, for the month or for one of its journals
+    public var hasWrittenStory: Bool {
+        if narrative != nil { return true }
+        return (sections ?? []).contains { $0.narrative != nil }
     }
 
     public func items(of kind: DigestItemKind, filter: ItemFilter = .all) -> [DigestItem] {
@@ -288,12 +328,14 @@ public struct MonthDigest: Codable, Sendable, Hashable {
         return MonthDigest(monthStart: monthStart, isFinal: isFinal, stats: stats, headline: story.headline,
                            narrative: story.narrative, items: items.filter { $0.matches(filter) }, engineTier: engineTier,
                            sections: sections?.filter { $0.category == category },
-                           journal: filter == .workOnly ? .work : .personal)
+                           journal: filter == .workOnly ? .work : .personal,
+                           storyEngineTier: storyEngineTier, storyPredatesItems: storyPredatesItems)
     }
 
     public func withFinal(_ isFinal: Bool) -> MonthDigest {
         MonthDigest(monthStart: monthStart, isFinal: isFinal, stats: stats, headline: headline,
-                    narrative: narrative, items: items, engineTier: engineTier, sections: sections, journal: journal)
+                    narrative: narrative, items: items, engineTier: engineTier, sections: sections, journal: journal,
+                    storyEngineTier: storyEngineTier, storyPredatesItems: storyPredatesItems)
     }
 
     /// The month across both journals, put together in code: numbers added up, each journal's
@@ -309,6 +351,8 @@ public struct MonthDigest: Codable, Sendable, Hashable {
                                    headline: digest.headline, narrative: digest.narrative)
         }
         let tiers = Set(ordered.map(\.engineTier))
+        let storyTiers = Set(ordered.map(\.displayedEngineTier))
+        let storyTier = storyTiers.count == 1 ? storyTiers.first : ordered.map(\.displayedEngineTier).joined(separator: "+")
         return MonthDigest(
             monthStart: first.monthStart,
             isFinal: ordered.allSatisfy(\.isFinal),
@@ -317,7 +361,9 @@ public struct MonthDigest: Codable, Sendable, Hashable {
             narrative: nil,
             items: ordered.flatMap(\.items),
             engineTier: tiers.count == 1 ? first.engineTier : ordered.map(\.engineTier).joined(separator: "+"),
-            sections: sections
+            sections: sections,
+            storyEngineTier: storyTier == (tiers.count == 1 ? first.engineTier : nil) ? nil : storyTier,
+            storyPredatesItems: ordered.contains(where: \.storyPredatesItems)
         )
     }
 

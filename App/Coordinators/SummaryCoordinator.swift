@@ -34,6 +34,9 @@ public final class SummaryCoordinator {
     
     /// Called as Year Wrap generation moves through its steps
     public var onYearWrapProgressUpdate: ((YearWrapProgress) -> Void)?
+    /// Called when a recording was summarized by a different engine than the one chosen in
+    /// Settings, because that one wasn't available. (chosen, used)
+    public var onEngineFallback: ((EngineTier, EngineTier) -> Void)?
     
     // MARK: - Initialization
     
@@ -175,6 +178,13 @@ public final class SummaryCoordinator {
                     if let existingHash = existingSummary.inputHash {
                         print("🔑 [SummaryCoordinator] Old hash: \(existingHash.prefix(8))..., New hash: \(inputHash.prefix(8))...")
                     }
+                    // Not on its own with a weaker engine: the recording keeps its better summary and
+                    // shows "Transcript changed since this summary", where updating is the person's call
+                    let current = await summarizationEngine.getActiveEngine()
+                    if current.isWeaker(than: existingSummary.engineTier) {
+                        print("🛡️ [SummaryCoordinator] Keeping the \(existingSummary.engineTier ?? "") summary; \(current.displayName) would write a weaker one")
+                        return
+                    }
                 }
             }
         } else {
@@ -218,6 +228,9 @@ public final class SummaryCoordinator {
         var generatedSummary = generated.summary
         
         print("✅ [SummaryCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
+        if let used = generatedSummary.engineTier.flatMap(EngineTier.init(rawValue:)), used != activeEngine {
+            onEngineFallback?(activeEngine, used)
+        }
         print("📝 [SummaryCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
         
         // Update time range and include inputHash for caching
@@ -553,12 +566,20 @@ public final class SummaryCoordinator {
                     guard let journalInputs = inputs[journal] else { continue }
                     let sources = await digestSources(from: journalInputs)
                     print("🧩 [SummaryCoordinator] Building \(isFinal ? "final" : "draft") \(journal.displayName) digest for \(bounds.start.formatted(.dateTime.month().year())) from \(sources.count) recordings with \(generator?.tier.displayName ?? "Basic")")
+                    // A story written by a better engine is kept; only the items and numbers are
+                    // rebuilt. Rebuild (force) is the person's explicit choice to rewrite it.
+                    let previous = stored.journals[journal]?.digest
+                    let keep = (!forceRegenerate && previous.map { $0.hasWrittenStory && (generator?.tier ?? .basic).isWeaker(than: $0.displayedEngineTier) } == true) ? previous : nil
+                    if let keep {
+                        print("🛡️ [SummaryCoordinator] Keeping the \(EngineTier(rawValue: keep.displayedEngineTier)?.displayName ?? keep.displayedEngineTier) story for \(journal.displayName); \(generator?.tier.displayName ?? "Key Sentences") would write a plainer one")
+                    }
                     let digest = await MonthDigestBuilder.build(
                         monthStart: bounds.start,
                         sources: sources,
                         isFinal: isFinal,
                         generator: generator,
-                        journal: journal
+                        journal: journal,
+                        keepingStoryFrom: keep
                     )
                     try await saveMonthDigest(digest, inputs: journalInputs)
                     digests.append(digest)
