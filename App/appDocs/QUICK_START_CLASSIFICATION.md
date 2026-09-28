@@ -1,6 +1,6 @@
 # Quick Start: Testing Work/Personal Classification
 
-> **Status, September 27, 2026:** written in December 2025 for the first Year Wrap. Year Wrap has since been rebuilt: Work and Personal are separate journals with their own month summaries and their own wrap, "All" is put together in code, and wraps are made with Apple Intelligence or Cloud AI only. The steps below no longer match the app.
+> **Status, September 28, 2026:** written in December 2025 for the first Year Wrap. Year Wrap has since been rebuilt: Work and Personal are separate journals with their own month summaries and their own wrap, "All" is put together in code, and since 1.3 wraps can be made with any summary engine. The steps below no longer match the app.
 
 ## 🎯 Goal
 

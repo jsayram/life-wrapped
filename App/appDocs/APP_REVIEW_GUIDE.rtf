@@ -3,7 +3,7 @@
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Life Wrapped - App Review Guide\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 {\b Version:} 1.1\line {\b Date:} September 27, 2026\line {\b Developer:} Jose Ramirez-Villa\line {\b Contact:} jsayram@Gmail.com\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 {\b Version:} 1.3\line {\b Date:} September 28, 2026\line {\b Developer:} Jose Ramirez-Villa\line {\b Contact:} jsayram@Gmail.com\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Quick Overview\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 {\b Life Wrapped} is a privacy-first audio journaling app that records voice memos, transcribes them on-device, and provides AI-powered summaries and insights.\par}
@@ -94,6 +94,12 @@
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Search titles, notes and transcripts\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab On the Overview tab, see each recording\u8217's summary for today and yesterday, a summary of each month, and the Year Wrap\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Year Wrap: a year in review built from the month summaries, with any summary engine (Key Sentences needs no model)\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 5. New in 1.3\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Year Wrap without any model or purchase.} On the Overview tab, switch to Year and tap Generate, then choose {\b Key Sentences}. It builds the wrap at once from the month summaries (numbers, people, places and topics, without a written story). No download, no Apple Intelligence and no in-app purchase are needed. Offline AI, Apple Intelligence and Cloud AI are offered too when they are available on the device.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Earlier versions.} When a summary is rewritten, the app keeps the old text. Open a recording, edit part of its transcript and tap Update on the summary, then choose Earlier versions from the menu on the summary to see and restore the previous text. (Regenerating with Key Sentences on an unchanged transcript gives the same text, so no version is added.) Months and the Year Wrap have the same sheet behind their clock button.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Upgrade earlier summaries.} In Settings, then AI & Summaries, choosing a stronger engine that is ready shows an Earlier summaries section. It lists the recordings a weaker engine summarized, and nothing is rewritten until the user taps Upgrade. To see it without a purchase: record with Key Sentences, then switch to Apple Intelligence (on a supported device) or to Offline AI after downloading the model.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Weaker engines ask first.} Engines rank Cloud AI, Apple Intelligence, Offline AI, Key Sentences. If the selected engine ranks below the one that wrote a summary, month or Year Wrap, Regenerate, Rebuild and Year Wrap ask before replacing it.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Months finished while charging.} See Background Modes below.\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Permissions Requested\par}
 {
@@ -137,6 +143,44 @@
 \intbl\row}
 {\pard \ql \f0 \sa180 \li0 \fi0 \par}
 {\pard \ql \f0 \sa180 \li0 \fi0 {\b Note:} All speech recognition is configured for on-device only. No audio is sent to Apple\u8217's servers.\par}
+{\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Background Modes\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The app declares two background modes in Info.plist. Neither sends data anywhere on its own.\par}
+{
+\trowd \trgaph120
+\clbrdrb\brdrs\cellx4320\clbrdrb\brdrs\cellx8640
+\trkeep\intbl
+{
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Mode\par}
+\cell}
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Why\par}
+\cell}
+}
+\intbl\row}
+{
+\trowd \trgaph120
+\cellx4320\cellx8640
+\trkeep\intbl
+{
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 {\b Audio} ({\f1 audio})\par}
+\cell}
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Recording keeps going when the screen locks\par}
+\cell}
+}
+\intbl\row}
+{
+\trowd \trgaph120
+\cellx4320\cellx8640
+\trkeep\intbl
+{
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 {\b Background processing} ({\f1 processing})\par}
+\cell}
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 A {\f1 BGProcessingTask} with the identifier {\f1 com.jsayram.lifewrapped.finalize-months}\par}
+\cell}
+}
+\intbl\row}
+{\pard \ql \f0 \sa180 \li0 \fi0 \par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The processing task finishes the summaries of months that have ended, so the Year Wrap has finished months to read. The app schedules it when it goes to the background. It asks iOS to run it only while the device is on external power ({\f1 requiresExternalPower = true}), no sooner than 30 minutes later, and it doesn\u8217't require a network connection. It uses the summary engine the user chose, so with Key Sentences, Offline AI or Apple Intelligence it runs entirely on the device. It is the same work the app already does in the foreground when it opens. If the user chose Cloud AI, the month\u8217's text goes to their provider, as described in the privacy policy. iOS decides when the task runs, and it stops when iOS ends the task.\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Export Compliance / Encryption\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 {\b This app uses only exempt encryption.}\par}
@@ -211,8 +255,9 @@
 {\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab {\b View Transcript} \u8594 ? Full text by part, with playback\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab {\b AI Summary} \u8594 ? Automatic summary generation (using selected engine)\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 7.\tx360\tab {\b History Tab} \u8594 ? Browse all past recordings\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 8.\tx360\tab {\b Overview Tab} \u8594 ? Today\u8217's and yesterday\u8217's recording summaries, month summaries and the Year Wrap\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 9.\tx360\tab {\b Settings} \u8594 ? Choose the summary engine, see Statistics, export data\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 8.\tx360\tab {\b Overview Tab} \u8594 ? Today\u8217's and yesterday\u8217's recording summaries, month summaries and the Year Wrap (switch to Year, then Generate; Key Sentences works on any device)\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 9.\tx360\tab {\b Earlier versions} \u8594 ? From a recording\u8217's summary menu, or the clock button on a month or the Year Wrap\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 10.\tx360\tab {\b Settings} \u8594 ? Choose the summary engine, upgrade earlier summaries, see Statistics, export and import data\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Privacy Highlights\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab \u9989 ? {\b No tracking or analytics}\par}
@@ -236,7 +281,9 @@
 {\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Mark a recording as favorite\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab Export data (Settings, then Data)\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab Check the Overview tab and Settings, then Statistics\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 7.\tx360\tab Review Settings options. Under Purchases, Cloud AI opens the purchase sheet, which also has Restore purchases and Redeem code\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 7.\tx360\tab Review Settings options. Under Purchases, Cloud AI opens the purchase sheet, which also has Restore purchases and Redeem code\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 8.\tx360\tab On the Overview tab, switch to Year and generate a Year Wrap with Key Sentences (no model or purchase needed)\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 9.\tx360\tab Edit part of a recording\u8217's transcript, tap Update on its summary, then open Earlier versions from the summary\u8217's menu and restore the previous one\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 Known Behaviors (Not Bugs)\par}
 {
@@ -291,6 +338,39 @@
 {{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Some features grayed out\par}
 \cell}
 {{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Depend on iOS version or device capability\par}
+\cell}
+}
+\intbl\row}
+{
+\trowd \trgaph120
+\cellx3987\cellx8639
+\trkeep\intbl
+{
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Year Wrap with Key Sentences has no written story\par}
+\cell}
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 By design: it uses no model, only the numbers, people, places and topics from the month summaries\par}
+\cell}
+}
+\intbl\row}
+{
+\trowd \trgaph120
+\cellx3987\cellx8639
+\trkeep\intbl
+{
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 Earlier summaries section missing in Settings\par}
+\cell}
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 It only shows when the selected engine is ready and some recordings were summarized by a weaker one\par}
+\cell}
+}
+\intbl\row}
+{
+\trowd \trgaph120
+\cellx3987\cellx8639
+\trkeep\intbl
+{
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 A month summary changes while the app is closed\par}
+\cell}
+{{\pard\intbl \ql \f0 \sa0 \li0 \fi0 The background processing task finished that month while the device was charging\par}
 \cell}
 }
 \intbl\row}

@@ -134,7 +134,7 @@ Provisioning Profile: Automatic
 1. Select **LifeWrapped** target
 2. Go to **General** tab
 3. Set:
-   - **Version:** the marketing version (currently `1.1`)
+   - **Version:** the marketing version (currently `1.3`)
    - **Build:** set automatically by Xcode Cloud for each upload (see `XCODE_CLOUD_BUILD.md`)
 
 > **Tip:** Build numbers must be unique for each upload. Use integers: 1, 2, 3...
@@ -380,7 +380,7 @@ Go to **App Store Connect** → **Your App** → **App Store** tab
 **Tips:**
 
 - Format: JPEG or PNG
-- 1-10 screenshots per device size
+- 1-10 screenshots per device size (Life Wrapped uses all 10; the files and their order are in `APP_STORE_READY.md`)
 - Can include app preview videos (15-30 seconds)
 
 ### Step 7.3: App Privacy (Data Collection)

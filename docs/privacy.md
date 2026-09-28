@@ -6,7 +6,7 @@ title: Privacy policy
 
 # Privacy policy
 
-**Last updated: September 27, 2026**
+**Last updated: September 28, 2026**
 
 Life Wrapped is an audio journal, so privacy comes first. Your recordings stay on your iPhone or iPad, and nothing is sent to us.
 
@@ -22,7 +22,7 @@ Life Wrapped is an audio journal, so privacy comes first. Your recordings stay o
 
 - **Audio recordings**, in the app's protected storage
 - **Transcripts**, made on your device with Apple's Speech framework
-- **Summaries, titles and month digests**, made on your device (Key Sentences, Offline AI, Apple Intelligence) or by the provider you connect (Cloud AI)
+- **Summaries, titles, month digests and Year Wraps**, made on your device (Key Sentences, Offline AI, Apple Intelligence) or by the provider you connect (Cloud AI), along with the earlier versions the app keeps when one is rewritten
 - **Your notes, favorites and Work or Personal labels**
 - **App settings**, in UserDefaults, and **API keys**, in the iOS Keychain
 
@@ -52,7 +52,7 @@ All speech-to-text happens on your device using Apple's Speech framework with `r
 | **Apple Intelligence** | Apple's on-device model (iOS or iPadOS 26 or later, on supported devices) | On your device | None |
 | **Cloud AI** | OpenAI or Anthropic, with your own API key | The provider's servers | Text only, see below |
 
-Year Wrap is made with Apple Intelligence or Cloud AI, whichever you pick when you create it.
+Year Wrap can be made with any of the four. You pick one when you create it, and only Cloud AI sends anything off your device.
 
 ---
 
@@ -75,9 +75,9 @@ Everything else works offline. Links in the app, such as "Get API key" and "View
 
 When Cloud AI is your summary quality, the app sends text, never audio, to **OpenAI** or **Anthropic**, whichever you connect:
 
-- **A recording's summary:** its transcript and its Work or Personal label
+- **A recording's summary:** its transcript and its Work or Personal label. This includes upgrading earlier recordings to Cloud AI in Settings, which first lists the recordings it will send
 - **A recording's title:** the first 400 characters of its summary. Recordings that don't have a title yet are titled in the background when you open the app
-- **A month summary:** that month's recording summaries, their dates and Work or Personal labels, and any notes you added to those recordings. A month that has ended is finished in the background when you open the app
+- **A month summary:** that month's recording summaries, their dates and Work or Personal labels, and any notes you added to those recordings. A month that has ended is finished in the background when you open the app, or while your device is charging
 - **Year Wrap, if you choose Cloud AI for it:** your month summaries, and for any month that needs rebuilding first, that month's recording summaries and notes
 
 The request uses the model you enter in Settings, then AI & Summaries. It's made with **your API key**, not ours, and the provider bills you directly.
@@ -142,7 +142,7 @@ The Home Screen and Lock Screen widgets read a few numbers from the shared App G
 
 ### Data portability
 
-Exports are available as JSON (transcripts and summaries), Markdown (summaries) or PDF (summaries). Exports don't include audio.
+Exports are available as JSON (transcripts and summaries, with the earlier versions of each summary), Markdown (summaries) or PDF (summaries). Exports don't include audio.
 
 ---
 

@@ -72,19 +72,17 @@ xcodebuild -scheme LifeWrapped -destination 'generic/platform=iOS Simulator' bui
 
 ### Database Schema Changes
 
-**Current Schema Version: V1** — All tables created in single `applySchema()` method.
+**Current Schema Version: V4** (`currentSchemaVersion` in `Packages/Storage/Sources/Storage/Migrations/SchemaManager.swift`). V4 added the `summary_versions` table.
 
-Database schema lives in `Packages/Storage/Sources/Storage/DatabaseManager.swift`:
-
-- **Approach**: Modify tables directly in `applySchema()` method
-- Change columns, indexes, or constraints in CREATE TABLE statements
-- Delete app and reinstall to regenerate database with new schema
+- **Approach**: add a versioned migration step in `SchemaManager.swift` (see "To modify schema" below)
+- Existing databases upgrade in place; never ask users to delete the app
 
 **Key Database Tables:**
 
 - `audio_chunks` — Recording segments with session_id and chunk_index
 - `transcript_segments` — Text segments with word_count, sentiment_score
-- `summaries` — Period-based + session-level summaries (session_id column)
+- `summaries` — Period-based + session-level summaries (session_id column, engine_tier, input_hash)
+- `summary_versions`: earlier text of a rewritten summary (up to 10 per summary, restorable; exported in JSON 1.1)
 - `session_metadata` — Titles, notes, favorites for sessions
 - `insights_rollups` — Time-based aggregations
 - `control_events` — App control events
@@ -132,8 +130,9 @@ if newWordCount < currentWordCount {
 
 ### Year Wrap and month summaries
 
-- `SummaryCoordinator.updateMonthDigest` builds one `MonthDigest` per journal from that month's recording summaries, dates, labels and notes, and rebuilds it when those inputs change (hash check). Ended months are finished in the background when the app opens.
-- `SummaryCoordinator.wrapUpYear` builds one Year Wrap per journal from its month digests with the engine the user picked (Apple Intelligence or Cloud AI only, via `yearWrapGenerator`), then combines them for "All" with `YearWrapData.combining`.
+- `SummaryCoordinator.updateMonthDigest` builds one `MonthDigest` per journal from that month's recording summaries, dates, labels and notes, and rebuilds it when those inputs change (hash check). Ended months are finished in the background when the app opens, and by the `com.jsayram.lifewrapped.finalize-months` `BGProcessingTask` while the device charges (`AppCoordinator.registerBackgroundTasks`).
+- `SummaryCoordinator.wrapUpYear` builds one Year Wrap per journal from its month digests with the engine the user picked (any engine via `yearWrapGenerator`; Key Sentences returns no generator and builds the wrap without a model), then combines them for "All" with `YearWrapData.combining`.
+- Engines have a fidelity rank (`EngineTier.fidelityRank`: Cloud AI, Apple Intelligence, Offline AI, Key Sentences). Never let a lower-ranked engine rewrite a higher-ranked summary, month story or Year Wrap without the user asking, and save rewrites through `replaceSessionSummary` or `upsertPeriodSummary` so the old text lands in `summary_versions`.
 - `ItemCategory` (work, personal, both) and `ItemFilter` (all, workOnly, personalOnly) drive the filters and PDF export.
 
 **Key Files**:

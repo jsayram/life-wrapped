@@ -1,7 +1,7 @@
 # Life Wrapped - Xcode Cloud & Build Guide
 
-**Version:** 1.1  
-**Date:** December 31, 2025  
+**Version:** 1.3  
+**Date:** September 28, 2026  
 **Developer:** Jose Ramirez-Villa
 
 ---
