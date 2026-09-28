@@ -131,8 +131,11 @@ struct MonthDigestCard: View {
                         .tracking(0.8)
                         .foregroundStyle(AppTheme.textSecondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .layoutPriority(1)
                     if !digest.isFinal {
                         StatusPill(text: "In progress", color: AppTheme.textSecondary)
+                            .fixedSize()
                     }
                 }
                 Text(digest.monthStart.formatted(.dateTime.month(.wide).year()))
@@ -147,7 +150,7 @@ struct MonthDigestCard: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 if let onHistory {
                     IconSquareButton(systemImage: "clock.arrow.circlepath", accessibilityLabel: "Earlier versions", action: onHistory)
                 }

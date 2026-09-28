@@ -28,9 +28,13 @@ struct OverviewTab: View {
     @State private var pendingYearWrapEngine: EngineTier?
     @State private var downgradeEngineName = ""
     @State private var downgradeMessage = ""
-    /// Rows whose earlier versions are on screen: a month's journal digests or a Year Wrap
-    @State private var versionRows: [Summary] = []
-    @State private var showVersions = false
+    /// Rows whose earlier versions are on screen: a month's journal digests or a Year Wrap.
+    /// Presented as an item so the sheet always sees the rows it was opened with.
+    @State private var versionRows: VersionRows?
+    private struct VersionRows: Identifiable {
+        let id = UUID()
+        let rows: [Summary]
+    }
     @State private var showPurchaseSheet = false
     @State private var reopenYearWrapAfterPurchase = false
     
@@ -291,7 +295,7 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
-            .confirmationDialog("Rewrite this month's story?", isPresented: $showMonthRebuildConfirmation, titleVisibility: .visible) {
+            .alert("Rewrite this month's story?", isPresented: $showMonthRebuildConfirmation) {
                 Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
                     Task { await refreshMonthDigest(force: true) }
                 }
@@ -299,8 +303,8 @@ struct OverviewTab: View {
             } message: {
                 Text(downgradeMessage)
             }
-            .sheet(isPresented: $showVersions) {
-                SummaryVersionsSheet(rows: versionRows, coordinator: coordinator) {
+            .sheet(item: $versionRows) { item in
+                SummaryVersionsSheet(rows: item.rows, coordinator: coordinator) {
                     Task {
                         monthDigest = await coordinator.fetchMonthDigest(date: selectedMonth)
                         await loadInsights()
@@ -308,7 +312,7 @@ struct OverviewTab: View {
                 }
                 .presentationDetents([.medium, .large])
             }
-            .confirmationDialog("Replace this Year Wrap?", isPresented: $showYearWrapDowngradeConfirmation, titleVisibility: .visible) {
+            .alert("Replace this Year Wrap?", isPresented: $showYearWrapDowngradeConfirmation) {
                 Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
                     if let engine = pendingYearWrapEngine { coordinator.startYearWrap(engine: engine) }
                 }
@@ -496,8 +500,7 @@ struct OverviewTab: View {
                 rows.append(row)
             }
         }
-        versionRows = rows
-        showVersions = true
+        versionRows = VersionRows(rows: rows)
     }
 
     private func refreshMonthDigest(force: Bool) async {
@@ -528,8 +531,8 @@ struct OverviewTab: View {
                 filter: categoryFilter,
                 onRegenerate: { showYearWrapConfirmation = true },
                 onHistory: {
-                    versionRows = [wrap]
-                    showVersions = true
+                    // All, Work and Personal are written together, so their versions are shown and restored together
+                    versionRows = VersionRows(rows: [ItemFilter.all, .workOnly, .personalOnly].compactMap { yearWraps[$0] })
                 }
             )
             .transition(.opacity)

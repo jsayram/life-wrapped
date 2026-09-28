@@ -126,7 +126,7 @@ struct SessionDetailView: View {
         .themedScreen()
         .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Replace this summary?", isPresented: $showDowngradeConfirmation, titleVisibility: .visible) {
+        .alert("Replace this summary?", isPresented: $showDowngradeConfirmation) {
             Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
                 Task { await regenerateSummary() }
             }

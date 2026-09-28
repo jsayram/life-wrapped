@@ -59,7 +59,7 @@ SUMMARIES, YOUR WAY
 
 LOOK BACK
 • Overview shows today, yesterday and a summary of each month, for work, personal or both.
-• Year Wrap tells the story of your year: wins, challenges, projects, people, places and the topics you kept coming back to. Made with Apple Intelligence or Cloud AI.
+• Year Wrap tells the story of your year: wins, challenges, projects, people, places and the topics you kept coming back to. Every summary option can make one; Apple Intelligence and Cloud AI write the fullest story.
 • Statistics show your streak, when you record most and the words you use most.
 • Search titles, notes and transcripts.
 
@@ -73,6 +73,20 @@ Cloud AI sends text from your journal, never audio, to the provider you choose. 
 ```
 
 ## What's New in this version [4000]
+
+Version 1.3:
+
+```
+• Every summary option can now make your Year Wrap. Key Sentences builds one instantly from your months, Offline AI writes one on your device, and Apple Intelligence and Cloud AI write the fullest story.
+• Nothing you already have gets worse. A summary, month or Year Wrap written by a better option is never rewritten by a plainer one without asking you first.
+• Earlier versions: every rewrite keeps the text it replaced, so you can bring back an earlier summary, month or Year Wrap.
+• Switch to a stronger summary option and upgrade your earlier recordings in one go.
+• Month summaries finish in the background while your iPhone charges.
+• Key Sentences always writes a summary and a title, even for a few-second recording, and picks better topics.
+• Backups now include each summary's engine and its earlier versions.
+```
+
+Version 1.2:
 
 ```
 • A new, calmer design with serif titles and clear cards, in light and dark mode.

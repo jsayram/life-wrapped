@@ -48,7 +48,7 @@ struct SummaryVersionsSheet: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 ForEach(history) { version in
-                                    versionRow(engine: version.engineTier, date: version.createdAt, text: version.text, type: row.periodType, isCurrent: false) {
+                                    versionRow(engine: version.engineTier, date: version.createdAt, text: version.text, type: row.periodType, isCurrent: false, replacedAt: version.replacedAt) {
                                         Button {
                                             Task { await restore(version, replacing: row) }
                                         } label: {
@@ -65,7 +65,7 @@ struct SummaryVersionsSheet: View {
                                 }
                             } header: {
                                 if current.count > 1 {
-                                    Text(row.category?.displayName ?? "Month")
+                                    Text(row.category?.displayName ?? "All")
                                 }
                             }
                         }
@@ -85,6 +85,7 @@ struct SummaryVersionsSheet: View {
 
     @ViewBuilder
     private func versionRow(engine: String?, date: Date, text: String, type: PeriodType, isCurrent: Bool,
+                            replacedAt: Date? = nil,
                             @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -100,7 +101,9 @@ struct SummaryVersionsSheet: View {
                 Spacer()
                 trailing()
             }
-            Text(date.formatted(date: .abbreviated, time: .shortened))
+            // A month's first digest is dated at the start of its month, so the replacement time is the honest one
+            Text(replacedAt.map { "Replaced \($0.formatted(date: .abbreviated, time: .shortened))" }
+                 ?? date.formatted(date: .abbreviated, time: .shortened))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(Self.preview(text, type: type))
@@ -149,12 +152,22 @@ struct SummaryVersionsSheet: View {
         versions = history
     }
 
+    /// Restore a version. The rows shown together (a month's two journals, a Year Wrap's All, Work
+    /// and Personal) are written in one go, so the matching version of each sibling row, replaced
+    /// at the same time by the same engine, is restored with it and the set stays consistent.
     private func restore(_ version: SummaryVersion, replacing row: Summary) async {
         guard let db = coordinator.getDatabaseManager() else { return }
         restoring = version.id
         defer { restoring = nil }
         do {
             try await db.restoreSummaryVersion(version, replacing: row)
+            for sibling in current where sibling.id != row.id {
+                if let match = (versions[sibling.id] ?? []).first(where: {
+                    $0.engineTier == version.engineTier && abs($0.replacedAt.timeIntervalSince(version.replacedAt)) < 30
+                }) {
+                    try await db.restoreSummaryVersion(match, replacing: sibling)
+                }
+            }
             if let sessionId = row.sessionId {
                 try? await db.markSessionChanged(sessionId: sessionId, content: true)
                 NotificationCenter.default.post(name: .sessionSummaryUpdated, object: sessionId)

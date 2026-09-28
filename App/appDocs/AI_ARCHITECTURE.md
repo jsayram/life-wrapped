@@ -8,7 +8,8 @@
 >
 > - **Summaries:** one per recording, plus a short title. There are no day, week or year text rollups any more; the Overview lists each recording's summary for today and yesterday.
 > - **Month summaries** (`MonthDigestBuilder`) are built per journal (Work and Personal) from the month's recording summaries, dates, labels and notes, and rebuilt when those change. An ended month is finished in the background when the app opens.
-> - **Year Wrap** (`YearWrapBuilder`) is built per journal from the month summaries, with Apple Intelligence or Cloud AI only (`yearWrapGenerator`). "All" is combined in code.
+> - **Year Wrap** (`YearWrapBuilder`) is built per journal from the month summaries with any engine: Cloud AI, Apple Intelligence, Offline AI (one compact request per journal) or Key Sentences (no model: numbers, people, places, topics and the most-mentioned items). "All" is combined in code.
+> - **Fidelity protection (1.3):** engines rank Cloud AI, Apple Intelligence, Offline AI, Key Sentences (`EngineTier.fidelityRank`). Nothing a higher-ranked engine wrote is rewritten by a lower one without the person asking: a month rebuilt by a weaker engine keeps its story (`MonthDigest.storyEngineTier`), Regenerate and Rebuild ask first, and every rewrite keeps the old text in `summary_versions` (schema v4) with Restore in the app and a bulk upgrade in Settings when a stronger engine returns.
 > - **Engine choice:** Cloud AI is used only when it's the chosen summary quality, or when picked for a Year Wrap. Fallback chains: Cloud AI, Offline AI, Key Sentences; Apple Intelligence, Offline AI, Key Sentences; Offline AI, Key Sentences.
 > - **Cloud AI availability** needs a saved API key; only then does the app check connectivity with a request to www.apple.com.
 > - What Cloud AI sends is listed on the [privacy policy](https://jsayram.github.io/life-wrapped/privacy).

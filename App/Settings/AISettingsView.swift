@@ -737,7 +737,7 @@ struct AISettingsView: View {
         } footer: {
             Text("\(count) \(count == 1 ? "recording was" : "recordings were") summarized by a weaker engine than \(name). Upgrading rewrites them with \(name). The earlier text is kept and can be restored from each recording.")
         }
-        .confirmationDialog("Upgrade \(count) \(count == 1 ? "recording" : "recordings")?", isPresented: $showUpgradeConfirmation, titleVisibility: .visible) {
+        .alert("Upgrade \(count) \(count == 1 ? "recording" : "recordings")?", isPresented: $showUpgradeConfirmation) {
             Button("Upgrade with \(name)") {
                 coordinator.upgradeSummaries(sessionIds: upgradeableSessionIds, with: tier)
             }

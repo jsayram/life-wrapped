@@ -30,6 +30,20 @@ struct BasicEngineShortTranscriptTests {
         #expect(!summary.contains(".."), "Doubled period in: \(summary)")
     }
 
+    @Test("Topics are nouns, not whatever scored highest")
+    func topicsAreNouns() async throws {
+        let engine = try await makeEngine()
+        let transcript = "Took a long walk at lunch instead of eating at my desk. The weather finally turned and the park was full of people. I want to walk at lunch three times a week."
+        let result = try await engine.summarizeSession(
+            sessionId: UUID(), transcriptText: transcript, duration: 40, languageCodes: ["en-US"]
+        )
+        #expect(!result.topics.isEmpty)
+        for word in ["finally", "turned", "full"] {
+            #expect(!result.topics.contains(word), "\(word) is not a topic")
+        }
+        #expect(result.topics.contains { ["walk", "lunch", "weather", "park", "desk", "people"].contains($0) })
+    }
+
     @Test("Sentences that already end in a period are not given another one")
     func noDoubledPeriods() async throws {
         let engine = try await makeEngine()

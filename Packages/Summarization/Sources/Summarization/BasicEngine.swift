@@ -187,8 +187,13 @@ public actor BasicEngine: SummarizationEngine {
         // Build TF-IDF scores for keywords
         let tfidfScores = computeTFIDF(sentences: sentences)
 
-        // Extract topics using TF-IDF ranking
-        let topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores, limit: 5)
+        // Topics: the weightiest words that are nouns where they appear. Tagging whole sentences
+        // is reliable; "turned" or "finally" scoring high shouldn't make them topics.
+        let nouns = nounsInContext(processedText)
+        var topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores.filter { nouns.contains($0.key) }, limit: 5)
+        if topics.count < 2 {
+            topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores, limit: 5)
+        }
         
         // Generate summary using enhanced scoring
         let summaryText = generateSummary(
@@ -409,6 +414,22 @@ public actor BasicEngine: SummarizationEngine {
         return !Self.stopWords.contains(lowered)
     }
     
+    /// Lowercased words the tagger reads as nouns in their sentences. Unlike tagging a word on its
+    /// own, this uses the words around it, so it is stable across devices.
+    nonisolated func nounsInContext(_ text: String) -> Set<String> {
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = text
+        var nouns: Set<String> = []
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass,
+                             options: [.omitPunctuation, .omitWhitespace, .omitOther]) { tag, range in
+            if tag == .noun {
+                nouns.insert(String(text[range]).lowercased())
+            }
+            return true
+        }
+        return nouns
+    }
+
     /// Extract topics using TF-IDF scores
     private nonisolated func extractTopicsWithTFIDF(tfidfScores: [String: Double], limit: Int) -> [String] {
         return tfidfScores

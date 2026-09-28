@@ -51,7 +51,7 @@ The app offers 4 summary engines, chosen in Settings, then AI & Summaries:
 - View all past recordings in the History tab (on iPad, the list and the recording sit side by side)
 - Search titles, notes and transcripts
 - On the Overview tab, see each recording's summary for today and yesterday, a summary of each month, and the Year Wrap
-- Year Wrap: a year in review built from the month summaries (Apple Intelligence or Cloud AI)
+- Year Wrap: a year in review built from the month summaries, with any summary engine (Key Sentences needs no model)
 
 ---
 
