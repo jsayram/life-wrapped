@@ -28,6 +28,9 @@ struct OverviewTab: View {
     @State private var pendingYearWrapEngine: EngineTier?
     @State private var downgradeEngineName = ""
     @State private var downgradeMessage = ""
+    /// Rows whose earlier versions are on screen: a month's journal digests or a Year Wrap
+    @State private var versionRows: [Summary] = []
+    @State private var showVersions = false
     @State private var showPurchaseSheet = false
     @State private var reopenYearWrapAfterPurchase = false
     
@@ -151,7 +154,10 @@ struct OverviewTab: View {
                                         },
                                         onRegenerate: {
                                             Task { await confirmMonthRebuild() }
-                                            }
+                                            },
+                                        onHistory: {
+                                            Task { await openMonthVersions() }
+                                        }
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -292,6 +298,15 @@ struct OverviewTab: View {
                 Button("Keep the story", role: .cancel) {}
             } message: {
                 Text(downgradeMessage)
+            }
+            .sheet(isPresented: $showVersions) {
+                SummaryVersionsSheet(rows: versionRows, coordinator: coordinator) {
+                    Task {
+                        monthDigest = await coordinator.fetchMonthDigest(date: selectedMonth)
+                        await loadInsights()
+                    }
+                }
+                .presentationDetents([.medium, .large])
             }
             .confirmationDialog("Replace this Year Wrap?", isPresented: $showYearWrapDowngradeConfirmation, titleVisibility: .visible) {
                 Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
@@ -466,6 +481,25 @@ struct OverviewTab: View {
         }
     }
 
+    /// Show the earlier versions of this month's digest, for the journal on screen or both
+    private func openMonthVersions() async {
+        guard let db = coordinator.getDatabaseManager() else { return }
+        let journals: [SessionCategory]
+        switch categoryFilter {
+        case .all: journals = [.work, .personal]
+        case .workOnly: journals = [.work]
+        case .personalOnly: journals = [.personal]
+        }
+        var rows: [Summary] = []
+        for journal in journals {
+            if let row = try? await db.fetchPeriodSummary(type: .monthDigest, date: selectedMonth, category: journal) {
+                rows.append(row)
+            }
+        }
+        versionRows = rows
+        showVersions = true
+    }
+
     private func refreshMonthDigest(force: Bool) async {
         guard !isUpdatingMonthDigest else { return }
         isUpdatingMonthDigest = true
@@ -492,7 +526,11 @@ struct OverviewTab: View {
                 wraps: yearWraps,
                 coordinator: coordinator,
                 filter: categoryFilter,
-                onRegenerate: { showYearWrapConfirmation = true }
+                onRegenerate: { showYearWrapConfirmation = true },
+                onHistory: {
+                    versionRows = [wrap]
+                    showVersions = true
+                }
             )
             .transition(.opacity)
         } else if yearWraps[.all] != nil {

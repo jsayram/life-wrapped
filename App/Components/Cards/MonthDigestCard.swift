@@ -15,6 +15,8 @@ struct MonthDigestCard: View {
     var isSplitting: Bool = false
     let onCopy: () -> Void
     let onRegenerate: () -> Void
+    /// Opens the month's earlier versions; nil hides the button
+    var onHistory: (() -> Void)? = nil
     private static let collapsedCount = 5
 
     @State private var expandedKinds: Set<DigestItemKind> = []
@@ -146,6 +148,9 @@ struct MonthDigestCard: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 8) {
+                if let onHistory {
+                    IconSquareButton(systemImage: "clock.arrow.circlepath", accessibilityLabel: "Earlier versions", action: onHistory)
+                }
                 IconSquareButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy month", action: onCopy)
                 if isUpdating {
                     ProgressView()

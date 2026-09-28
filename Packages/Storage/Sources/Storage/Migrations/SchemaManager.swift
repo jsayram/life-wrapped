@@ -13,7 +13,7 @@ public actor SchemaManager {
     private let connection: DatabaseConnection
     
     /// Current database schema version
-    private static let currentSchemaVersion = 3
+    private static let currentSchemaVersion = 4
     
     public init(connection: DatabaseConnection) {
         self.connection = connection
@@ -72,6 +72,8 @@ public actor SchemaManager {
                     try await addSummaryCategory()
                 case 3:
                     try await addSessionChangeTimes()
+                case 4:
+                    try await addSummaryVersions()
                 default:
                     throw StorageError.unknownMigrationVersion(version)
                 }
@@ -107,6 +109,30 @@ public actor SchemaManager {
     private func addSessionChangeTimes() async throws {
         try await connection.execute("ALTER TABLE session_metadata ADD COLUMN content_changed_at REAL")
         try await connection.execute("ALTER TABLE session_metadata ADD COLUMN transcript_edited_at REAL")
+    }
+
+    /// v4: earlier versions of summaries. When a session summary, month digest or Year Wrap is
+    /// rewritten, the text it replaces is kept here under the summary's key (see
+    /// `Summary.versionKey`), so a rewrite by a weaker engine can be undone.
+    private func addSummaryVersions() async throws {
+        try await connection.execute("""
+            CREATE TABLE IF NOT EXISTS summary_versions (
+                id TEXT PRIMARY KEY NOT NULL,
+                summary_key TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                replaced_at REAL NOT NULL,
+                engine_tier TEXT,
+                topics_json TEXT,
+                entities_json TEXT,
+                source_ids TEXT,
+                input_hash TEXT
+            )
+            """)
+        try await connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_summary_versions_key
+            ON summary_versions(summary_key, replaced_at)
+            """)
     }
 
     private func applySchema() async throws {

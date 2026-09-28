@@ -49,12 +49,17 @@ public actor DataExporter {
             allSegments.append(contentsOf: segments)
         }
         
+        // Earlier versions travel with the summaries they belong to
+        let keys = Set(summaries.map(\.versionKey))
+        let versions = try await databaseManager.fetchAllSummaryVersions().filter { keys.contains($0.summaryKey) }
+
         let export = JSONExport(
             exportDate: Date(),
-            version: "1.0",
+            version: "1.1",
             audioChunks: chunks.map { JSONAudioChunk(from: $0) },
             transcriptSegments: allSegments.map { JSONTranscriptSegment(from: $0) },
-            summaries: summaries.map { JSONSummary(from: $0) }
+            summaries: summaries.map { JSONSummary(from: $0) },
+            summaryVersions: versions.map { JSONSummaryVersion(from: $0) }
         )
         
         let encoder = JSONEncoder()
@@ -477,6 +482,50 @@ public struct JSONExport: Codable {
     let audioChunks: [JSONAudioChunk]
     let transcriptSegments: [JSONTranscriptSegment]?
     let summaries: [JSONSummary]
+    /// Earlier versions of the summaries. Missing in exports made before 1.3.
+    let summaryVersions: [JSONSummaryVersion]?
+
+    init(exportDate: Date, version: String, audioChunks: [JSONAudioChunk], transcriptSegments: [JSONTranscriptSegment]?,
+         summaries: [JSONSummary], summaryVersions: [JSONSummaryVersion]? = nil) {
+        self.exportDate = exportDate
+        self.version = version
+        self.audioChunks = audioChunks
+        self.transcriptSegments = transcriptSegments
+        self.summaries = summaries
+        self.summaryVersions = summaryVersions
+    }
+}
+
+public struct JSONSummaryVersion: Codable {
+    let id: UUID
+    let summaryKey: String
+    let text: String
+    let createdAt: Date
+    let replacedAt: Date
+    let engineTier: String?
+    let topicsJSON: String?
+    let entitiesJSON: String?
+    let sourceIds: String?
+    let inputHash: String?
+
+    init(from version: SummaryVersion) {
+        self.id = version.id
+        self.summaryKey = version.summaryKey
+        self.text = version.text
+        self.createdAt = version.createdAt
+        self.replacedAt = version.replacedAt
+        self.engineTier = version.engineTier
+        self.topicsJSON = version.topicsJSON
+        self.entitiesJSON = version.entitiesJSON
+        self.sourceIds = version.sourceIds
+        self.inputHash = version.inputHash
+    }
+
+    var model: SummaryVersion {
+        SummaryVersion(id: id, summaryKey: summaryKey, text: text, createdAt: createdAt, replacedAt: replacedAt,
+                       engineTier: engineTier, topicsJSON: topicsJSON, entitiesJSON: entitiesJSON,
+                       sourceIds: sourceIds, inputHash: inputHash)
+    }
 }
 
 public struct JSONAudioChunk: Codable {
@@ -537,6 +586,13 @@ public struct JSONSummary: Codable {
     let sessionId: UUID?
     /// The journal a period summary belongs to. Missing in exports made before journals.
     let category: String?
+    /// Which engine wrote it and what it was built from. Missing in exports made before 1.3;
+    /// without them a restored summary ranks as Key Sentences and its months rebuild once.
+    let engineTier: String?
+    let topicsJSON: String?
+    let entitiesJSON: String?
+    let sourceIds: String?
+    let inputHash: String?
     
     init(from summary: Summary) {
         self.id = summary.id
@@ -547,6 +603,11 @@ public struct JSONSummary: Codable {
         self.createdAt = summary.createdAt
         self.sessionId = summary.sessionId
         self.category = summary.category?.rawValue
+        self.engineTier = summary.engineTier
+        self.topicsJSON = summary.topicsJSON
+        self.entitiesJSON = summary.entitiesJSON
+        self.sourceIds = summary.sourceIds
+        self.inputHash = summary.inputHash
     }
 }
 

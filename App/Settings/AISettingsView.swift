@@ -5,6 +5,9 @@ import Summarization
 struct AISettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var activeEngine: EngineTier?
+    /// Recordings summarized by an engine weaker than the selected one
+    @State private var upgradeableSessionIds: [UUID] = []
+    @State private var showUpgradeConfirmation = false
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     @State private var showingSmartestConfig = false
@@ -116,6 +119,12 @@ struct AISettingsView: View {
                 Text("Summary quality")
             } footer: {
                 Text("Key Sentences, Offline AI and Apple Intelligence never leave your \(DeviceName.current). Cloud AI sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
+            }
+
+            // MARK: - Upgrade earlier summaries
+            if let tier = activeEngine, tier != .basic, isEngineReady(tier),
+               !upgradeableSessionIds.isEmpty || coordinator.summaryUpgradeProgress != nil {
+                upgradeSection(tier: tier)
             }
             
             // MARK: - Smartest Configuration (only show if purchased)
@@ -541,6 +550,7 @@ struct AISettingsView: View {
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         activeEngine = await summCoord.getActiveEngine()
         availableEngines = await summCoord.getAvailableEngines()
+        upgradeableSessionIds = await coordinator.upgradeableSessionIds(for: activeEngine ?? .basic)
         
         // Load local model status
         isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
@@ -695,6 +705,66 @@ struct AISettingsView: View {
         }
     }
     
+    /// Whether the engine can run right now, so an upgrade with it makes sense
+    private func isEngineReady(_ tier: EngineTier) -> Bool {
+        switch tier {
+        case .basic: return true
+        case .local: return isLocalModelDownloaded
+        case .apple: return availableEngines.contains(.apple)
+        case .external: return coordinator.storeManager.isSmartestAIUnlocked && hasValidAPIKey()
+        }
+    }
+
+    /// Rewrite recordings summarized by a weaker engine with the selected one, on request
+    @ViewBuilder
+    private func upgradeSection(tier: EngineTier) -> some View {
+        let count = upgradeableSessionIds.count
+        let name = tierDisplayName(tier)
+        Section {
+            if let progress = coordinator.summaryUpgradeProgress {
+                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1))) {
+                    Text("Upgrading \(progress.done) of \(progress.total)")
+                }
+            } else {
+                Button {
+                    showUpgradeConfirmation = true
+                } label: {
+                    Label("Upgrade \(count) \(count == 1 ? "recording" : "recordings") with \(name)", systemImage: "arrow.up.circle")
+                }
+            }
+        } header: {
+            Text("Earlier summaries")
+        } footer: {
+            Text("\(count) \(count == 1 ? "recording was" : "recordings were") summarized by a weaker engine than \(name). Upgrading rewrites them with \(name). The earlier text is kept and can be restored from each recording.")
+        }
+        .confirmationDialog("Upgrade \(count) \(count == 1 ? "recording" : "recordings")?", isPresented: $showUpgradeConfirmation, titleVisibility: .visible) {
+            Button("Upgrade with \(name)") {
+                coordinator.upgradeSummaries(sessionIds: upgradeableSessionIds, with: tier)
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text(upgradeWarning(tier))
+        }
+        .onChange(of: coordinator.summaryUpgradeProgress) { _, progress in
+            if progress == nil {
+                Task { upgradeableSessionIds = await coordinator.upgradeableSessionIds(for: tier) }
+            }
+        }
+    }
+
+    private func upgradeWarning(_ tier: EngineTier) -> String {
+        switch tier {
+        case .external:
+            return "Sends the transcript of each recording to \(selectedProvider) with your API key. What it costs depends on your plan and the length of the recordings. Keep the app open."
+        case .local:
+            return "Runs the offline model once per recording. It can take a while; keep the app open and plugged in."
+        case .apple:
+            return "Runs Apple Intelligence once per recording on this \(DeviceName.current). Keep the app open."
+        case .basic:
+            return ""
+        }
+    }
+
     private func hasValidAPIKey() -> Bool {
         let key = selectedProvider == "OpenAI" 
             ? KeychainHelper.load(key: "openai_api_key")

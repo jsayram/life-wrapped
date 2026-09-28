@@ -11,6 +11,8 @@ struct YearWrappedCard: View {
     let coordinator: AppCoordinator
     let filter: ItemFilter
     let onRegenerate: () -> Void
+    /// Opens the wrap's earlier versions; nil hides the button
+    var onHistory: (() -> Void)? = nil
     @Environment(\.colorScheme) var colorScheme
     @State private var showDetailView = false
     
@@ -60,6 +62,17 @@ struct YearWrappedCard: View {
                     .foregroundStyle(AppTheme.onAccent.opacity(0.7))
 
                 Spacer(minLength: 0)
+
+                if let onHistory {
+                    Button(action: onHistory) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .scaledFont(size: 15)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Earlier versions")
+                }
 
                 Button {
                     UIPasteboard.general.string = parsed?.storyText ?? yearSummary

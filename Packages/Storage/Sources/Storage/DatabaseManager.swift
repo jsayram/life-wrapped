@@ -25,6 +25,7 @@ public actor DatabaseManager {
     private let sessionRepository: SessionRepository
     private let transcriptRepository: TranscriptRepository
     private let summaryRepository: SummaryRepository
+    private let summaryVersionRepository: SummaryVersionRepository
     private let insightsRepository: InsightsRepository
     private let controlEventRepository: ControlEventRepository
     
@@ -53,6 +54,7 @@ public actor DatabaseManager {
         self.sessionRepository = SessionRepository(connection: connection)
         self.transcriptRepository = TranscriptRepository(connection: connection)
         self.summaryRepository = SummaryRepository(connection: connection)
+        self.summaryVersionRepository = SummaryVersionRepository(connection: connection)
         self.insightsRepository = InsightsRepository(connection: connection)
         self.controlEventRepository = ControlEventRepository(connection: connection)
         
@@ -146,6 +148,7 @@ public actor DatabaseManager {
     
     public func deleteSession(sessionId: UUID) async throws {
         try await sessionRepository.deleteSession(sessionId: sessionId)
+        try await summaryVersionRepository.deleteAll(key: Summary.versionKey(periodType: .session, periodStart: Date(), sessionId: sessionId, category: nil))
     }
     
     public func fetchSessionsByDate(date: Date) async throws -> [RecordingSession] {
@@ -311,6 +314,11 @@ public actor DatabaseManager {
         inputHash: String? = nil,
         category: SessionCategory? = nil
     ) async throws {
+        // The text being replaced is kept as a version, so the rewrite can be undone
+        if let existing = try await summaryRepository.fetchPeriodSummary(type: type, date: start, category: category),
+           existing.text != text {
+            try await summaryVersionRepository.insert(SummaryVersion(archiving: existing))
+        }
         try await summaryRepository.upsertPeriodSummary(
             type: type,
             text: text,
@@ -341,8 +349,75 @@ public actor DatabaseManager {
         try await summaryRepository.fetchMonthlySummaries(from: startDate, to: endDate)
     }
     
+    /// Delete a summary and the earlier versions kept for it
     public func deleteSummary(id: UUID) async throws {
+        if let existing = try await summaryRepository.fetch(id: id) {
+            try await summaryVersionRepository.deleteAll(key: existing.versionKey)
+        }
         try await summaryRepository.delete(id: id)
+    }
+
+    // MARK: - Summary Versions
+
+    /// Store a recording's new summary in place of its current one. The current text is kept
+    /// as a version unless it is the same text.
+    public func replaceSessionSummary(_ summary: Summary) async throws {
+        guard let sessionId = summary.sessionId else { throw StorageError.invalidData("A session summary needs a session id") }
+        if let existing = try await summaryRepository.fetchForSession(sessionId: sessionId) {
+            if existing.text != summary.text {
+                try await summaryVersionRepository.insert(SummaryVersion(archiving: existing))
+            }
+            try await summaryRepository.delete(id: existing.id)
+        }
+        try await summaryRepository.insert(summary)
+    }
+
+    /// Earlier versions of a summary, newest first
+    public func fetchSummaryVersions(for summary: Summary) async throws -> [SummaryVersion] {
+        try await summaryVersionRepository.fetch(key: summary.versionKey)
+    }
+
+    /// Make an earlier version the current summary again. The text it replaces is kept as a
+    /// version in turn, so restoring is itself reversible. Returns the summary as stored.
+    @discardableResult
+    public func restoreSummaryVersion(_ version: SummaryVersion, replacing current: Summary) async throws -> Summary {
+        if current.text != version.text {
+            try await summaryVersionRepository.insert(SummaryVersion(archiving: current))
+        }
+        let restored = Summary(
+            id: current.id,
+            periodType: current.periodType,
+            periodStart: current.periodStart,
+            periodEnd: current.periodEnd,
+            text: version.text,
+            createdAt: version.createdAt,
+            sessionId: current.sessionId,
+            topicsJSON: version.topicsJSON,
+            entitiesJSON: version.entitiesJSON,
+            engineTier: version.engineTier,
+            sourceIds: version.sourceIds,
+            inputHash: version.inputHash,
+            category: current.category
+        )
+        try await summaryRepository.update(restored)
+        try await summaryVersionRepository.delete(id: version.id)
+        return restored
+    }
+
+    public func insertSummaryVersion(_ version: SummaryVersion) async throws {
+        try await summaryVersionRepository.insert(version)
+    }
+
+    public func summaryVersionExists(id: UUID) async throws -> Bool {
+        try await summaryVersionRepository.exists(id: id)
+    }
+
+    public func fetchAllSummaryVersions() async throws -> [SummaryVersion] {
+        try await summaryVersionRepository.fetchAll()
+    }
+
+    public func deleteAllSummaryVersions() async throws {
+        try await summaryVersionRepository.deleteAll()
     }
     
     // MARK: - InsightsRollup CRUD

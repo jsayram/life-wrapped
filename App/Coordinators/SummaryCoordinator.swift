@@ -249,16 +249,9 @@ public final class SummaryCoordinator {
             inputHash: inputHash  // Store hash for future cache checks
         )
         
-        // Delete old session summary if it exists (to prevent duplicates in rollups)
-        if let existingSummary = try? await databaseManager.fetchSummaryForSession(sessionId: sessionId) {
-            print("🗑️ [SummaryCoordinator] Deleting old session summary (ID: \(existingSummary.id))...")
-            try await databaseManager.deleteSummary(id: existingSummary.id)
-            print("✅ [SummaryCoordinator] Old session summary deleted")
-        }
-        
-        // Save session summary
+        // Save session summary. The one it replaces is kept as a version, so this can be undone.
         print("💾 [SummaryCoordinator] Saving summary to database...")
-        try await databaseManager.insertSummary(generatedSummary)
+        try await databaseManager.replaceSessionSummary(generatedSummary)
         try? await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         NotificationCenter.default.post(name: .sessionSummaryUpdated, object: sessionId)
         print("✅ [SummaryCoordinator] Session summary saved successfully!")

@@ -612,3 +612,112 @@ private func createTestDatabase() async throws -> DatabaseManager {
     
     return try await DatabaseManager(containerIdentifier: containerID)
 }
+
+// MARK: - Summary versions
+
+@Suite("Summary versions")
+struct SummaryVersionTests {
+
+    private let start = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+    private var end: Date { start.addingTimeInterval(86_400 * 31) }
+
+    @Test("Replacing a recording's summary keeps the old text, and restoring brings it back")
+    func sessionSummaryVersions() async throws {
+        let manager = try await createTestDatabase()
+        let sessionId = UUID()
+        let cloud = Summary(periodType: .session, periodStart: start, periodEnd: start.addingTimeInterval(60),
+                            text: "A careful Cloud AI summary.", sessionId: sessionId, engineTier: "external", inputHash: "h1")
+        try await manager.replaceSessionSummary(cloud)
+        #expect(try await manager.fetchSummaryVersions(for: cloud).isEmpty)
+
+        let basic = Summary(periodType: .session, periodStart: start, periodEnd: start.addingTimeInterval(60),
+                            text: "Key sentences.", sessionId: sessionId, engineTier: "basic", inputHash: "h1")
+        try await manager.replaceSessionSummary(basic)
+        let current = try #require(try await manager.fetchSummaryForSession(sessionId: sessionId))
+        #expect(current.text == "Key sentences.")
+        let versions = try await manager.fetchSummaryVersions(for: current)
+        #expect(versions.count == 1)
+        #expect(versions.first?.engineTier == "external")
+        #expect(versions.first?.text == "A careful Cloud AI summary.")
+
+        // The same text again is not a new version
+        try await manager.replaceSessionSummary(basic)
+        #expect(try await manager.fetchSummaryVersions(for: current).count == 1)
+
+        // Restore: Cloud AI is current again and the Key Sentences text is kept in turn
+        let restored = try await manager.restoreSummaryVersion(versions[0], replacing: current)
+        #expect(restored.engineTier == "external")
+        #expect(try await manager.fetchSummaryForSession(sessionId: sessionId)?.text == "A careful Cloud AI summary.")
+        let after = try await manager.fetchSummaryVersions(for: restored)
+        #expect(after.count == 1)
+        #expect(after.first?.engineTier == "basic")
+
+        // Deleting the recording removes its versions
+        try await manager.deleteSession(sessionId: sessionId)
+        #expect(try await manager.fetchSummaryVersions(for: restored).isEmpty)
+        await manager.close()
+    }
+
+    @Test("A rewritten month digest keeps its earlier text, at most ten versions")
+    func periodSummaryVersions() async throws {
+        let manager = try await createTestDatabase()
+        for i in 0..<12 {
+            try await manager.upsertPeriodSummary(type: .monthDigest, text: "v\(i)", start: start, end: end,
+                                                  engineTier: i == 0 ? "external" : "basic", category: .work)
+        }
+        let current = try #require(try await manager.fetchPeriodSummary(type: .monthDigest, date: start, category: .work))
+        #expect(current.text == "v11")
+        let versions = try await manager.fetchSummaryVersions(for: current)
+        #expect(versions.count == SummaryVersionRepository.keptPerSummary)
+        #expect(versions.first?.text == "v10")
+        #expect(versions.last?.text == "v1")
+
+        // Deleting the digest row removes its versions too
+        try await manager.deleteSummary(id: current.id)
+        #expect(try await manager.fetchSummaryVersions(for: current).isEmpty)
+        await manager.close()
+    }
+
+    @Test("Backups carry engines and versions, and older backups still import")
+    func backupRoundTrip() async throws {
+        let manager = try await createTestDatabase()
+        let sessionId = UUID()
+        let first = Summary(periodType: .session, periodStart: start, periodEnd: start.addingTimeInterval(60),
+                            text: "First.", sessionId: sessionId, topicsJSON: "[\"launch\"]", engineTier: "external", inputHash: "h1")
+        try await manager.replaceSessionSummary(first)
+        let second = Summary(periodType: .session, periodStart: start, periodEnd: start.addingTimeInterval(60),
+                             text: "Second.", sessionId: sessionId, engineTier: "basic", inputHash: "h1")
+        try await manager.replaceSessionSummary(second)
+
+        let data = try await DataExporter(databaseManager: manager).exportToJSON()
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(json.contains("\"summaryVersions\""))
+        #expect(json.contains("\"engineTier\" : \"basic\""))
+
+        let fresh = try await createTestDatabase()
+        let result = try await DataImporter(databaseManager: fresh).importFromJSON(data: data)
+        #expect(result.importedSummaries == 1)
+        let imported = try #require(try await fresh.fetchSummaryForSession(sessionId: sessionId))
+        #expect(imported.engineTier == "basic")
+        #expect(imported.inputHash == "h1")
+        let versions = try await fresh.fetchSummaryVersions(for: imported)
+        #expect(versions.count == 1)
+        #expect(versions.first?.topicsJSON == "[\"launch\"]")
+
+        // Importing the same backup again adds nothing
+        _ = try await DataImporter(databaseManager: fresh).importFromJSON(data: data)
+        #expect(try await fresh.fetchSummaryVersions(for: imported).count == 1)
+
+        // A backup from before 1.3 has no versions and no engine
+        let old = """
+        {"exportDate":"2026-01-01T00:00:00Z","version":"1.0","audioChunks":[],"summaries":[
+        {"id":"\(UUID().uuidString)","periodType":"session","periodStart":"2026-01-01T00:00:00Z","periodEnd":"2026-01-01T00:01:00Z","text":"Old.","createdAt":"2026-01-01T00:00:00Z","sessionId":"\(UUID().uuidString)"}]}
+        """
+        let older = try await createTestDatabase()
+        let oldResult = try await DataImporter(databaseManager: older).importFromJSON(data: Data(old.utf8))
+        #expect(oldResult.importedSummaries == 1)
+        #expect(oldResult.errors.isEmpty)
+
+        await manager.close(); await fresh.close(); await older.close()
+    }
+}

@@ -51,6 +51,7 @@ struct SessionDetailView: View {
     @State private var showDowngradeConfirmation = false
     @State private var downgradeMessage = ""
     @State private var downgradeEngineName = ""
+    @State private var showVersions = false
     /// Set once the user moves this recording to the other journal, to explain what that changes
     @State private var movedToJournal: SessionCategory?
     /// Screen width, to switch to two columns when there's room
@@ -132,6 +133,14 @@ struct SessionDetailView: View {
             Button("Keep the current summary", role: .cancel) {}
         } message: {
             Text(downgradeMessage)
+        }
+        .sheet(isPresented: $showVersions) {
+            if let summary = sessionSummary {
+                SummaryVersionsSheet(rows: [summary], coordinator: coordinator) {
+                    Task { await loadSessionSummary() }
+                }
+                .presentationDetents([.medium, .large])
+            }
         }
         .toolbar {
             // The title is shown large in the content, so keep the bar clean
@@ -955,6 +964,11 @@ struct SessionDetailView: View {
                             confirmRegenerate()
                         } label: {
                             Label("Regenerate summary", systemImage: "sparkles")
+                        }
+                        Button {
+                            showVersions = true
+                        } label: {
+                            Label("Earlier versions", systemImage: "clock.arrow.circlepath")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
