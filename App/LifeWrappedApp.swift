@@ -21,7 +21,7 @@ enum DeepLinkDestination: String {
 
 @main
 struct LifeWrappedApp: App {
-    @StateObject private var coordinator = AppCoordinator()
+    @StateObject private var coordinator = AppCoordinator.shared
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
