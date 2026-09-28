@@ -16,7 +16,7 @@ struct LanguageSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             
-            Section("Supported Languages (\(allLanguages.count))") {
+            Section("Supported languages (\(allLanguages.count))") {
                 ForEach(allLanguages, id: \.self) { languageCode in
                     Toggle(isOn: Binding(
                         get: { enabledLanguages.contains(languageCode) },
@@ -30,9 +30,8 @@ struct LanguageSettingsView: View {
                         }
                     )) {
                         HStack {
-                            Text(LanguageDetector.flagEmoji(for: languageCode))
-                                .font(.title3)
                             Text(LanguageDetector.displayName(for: languageCode))
+                                .foregroundStyle(AppTheme.textPrimary)
                             Spacer()
                             Text(languageCode)
                                 .font(.caption)
@@ -40,12 +39,14 @@ struct LanguageSettingsView: View {
                                 .monospacedDigit()
                         }
                     }
-                    .tint(AppTheme.purple)
+                    .tint(AppTheme.accent)
                 }
             }
         }
+        .themedScreen()
+        .readableMargins()
         .navigationTitle("Languages")
-        .navigationBarTitleDisplayMode(.inline)
+        .columnScreenTitleDisplayMode()
         .task {
             loadLanguages()
         }
@@ -60,12 +61,12 @@ struct LanguageSettingsView: View {
             // Default to English and Spanish only
             let defaultLanguages = ["en", "es"]
             enabledLanguages = Set(defaultLanguages.filter { allLanguages.contains($0) })
-            saveEnabledLanguages()
+            saveEnabledLanguages(announce: false)
         }
     }
     
-    private func saveEnabledLanguages() {
+    private func saveEnabledLanguages(announce: Bool = true) {
         UserDefaults.standard.set(Array(enabledLanguages), forKey: enabledLanguagesKey)
-        coordinator.showSuccess("Language preferences saved")
+        if announce { coordinator.showSuccess("Language preferences saved") }
     }
 }

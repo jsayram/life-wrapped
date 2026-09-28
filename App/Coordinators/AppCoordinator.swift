@@ -8,6 +8,7 @@ import UIKit
 import AVFoundation
 import Speech
 import CryptoKit
+import Combine
 import SharedModels
 import Summarization
 import Storage
@@ -110,18 +111,34 @@ public final class AppCoordinator: ObservableObject {
     
     @Published public private(set) var recordingState: RecordingState = .idle
     @Published public private(set) var currentStreak: Int = 0
+    @Published public private(set) var longestStreak: Int = 0
     @Published public private(set) var todayStats: DayStats = .empty
     @Published public private(set) var isInitialized: Bool = false
     @Published public private(set) var initializationError: Error?
     @Published public var needsPermissions: Bool = false
     @Published public var currentToast: Toast?
     @Published public private(set) var isDownloadingLocalModel: Bool = false
-    @Published public private(set) var yearWrapNewSessionCount: Int = 0
-    @Published public var yearWrapProgress: String = ""
-    @Published public var isGeneratingYearWrap: Bool = false
+    @Published public private(set) var localModelDownloadProgress: Double = 0
+    /// Per wrap filter: how many of that journal's recordings are new or changed since the wrap was built
+    @Published public private(set) var yearWrapOutdatedCounts: [ItemFilter: Int] = [:]
+    /// The recording that was just saved, for the confirmation on the Record screen. Nil once dismissed
+    /// or when a new recording starts.
+    @Published public private(set) var lastSavedRecording: SavedRecording?
+
+    public struct SavedRecording: Equatable, Sendable {
+        public let sessionId: UUID
+        public let journal: SessionCategory
+        /// The mic never heard anything loud enough to be speech during this recording
+        public let heardNothing: Bool
+    }
+    /// Current step of a running Year Wrap, nil when none is running
+    @Published public private(set) var yearWrapProgress: YearWrapProgress?
+    @Published public private(set) var isGeneratingYearWrap: Bool = false
     
-    /// Store manager for in-app purchases
-    @Published public private(set) var storeManager = StoreManager()
+    /// Store manager for in-app purchases. Views read it through the coordinator, so its changes are
+    /// forwarded below; a nested ObservableObject doesn't refresh them on its own.
+    public let storeManager = StoreManager()
+    private var storeChanges: AnyCancellable?
     
     // MARK: - Dependencies
     
@@ -133,6 +150,13 @@ public final class AppCoordinator: ObservableObject {
     private var dataCoordinator: DataCoordinator?
     private var summaryCoordinator: SummaryCoordinator?
     public var recordingCoordinator: RecordingCoordinator?
+
+    /// The session being recorded right now. Its chunks are transcribed while recording goes on,
+    /// so "every saved chunk has a transcript" can be true long before the recording ends.
+    /// Its summary waits until recording stops, or it would cover only the first chunks.
+    private var sessionStillRecording: UUID?
+    /// The session the current recording's chunks belong to
+    private var currentRecordingSessionId: UUID?
     private var widgetCoordinator: WidgetCoordinator?
     private var permissionsCoordinator: PermissionsCoordinator?
     private var localModelCoordinator: LocalModelCoordinator?
@@ -157,6 +181,11 @@ public final class AppCoordinator: ObservableObject {
         
         // Setup chunk completion callback
         setupAudioCaptureCallback()
+        
+        // StoreManager publishes on the main actor, so the forward stays there
+        storeChanges = storeManager.objectWillChange.sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
     }
     
     private func setupAudioCaptureCallback() {
@@ -177,6 +206,13 @@ public final class AppCoordinator: ObservableObject {
             }
             try await dbManager.insertAudioChunk(chunk)
             print("✅ [AppCoordinator] Audio chunk saved")
+
+            currentRecordingSessionId = chunk.sessionId
+
+            // Auto-chunks arrive while still recording; the final chunk arrives during stop
+            if recordingCoordinator?.isRecording == true {
+                sessionStillRecording = chunk.sessionId
+            }
             
             // If this is the first chunk (index 0), create/update session metadata with category
             if chunk.chunkIndex == 0, let category = recordingCoordinator?.currentCategory {
@@ -236,6 +272,7 @@ public final class AppCoordinator: ObservableObject {
                 self?.showError(message)
             }
             localModelCoord.$isDownloadingLocalModel.assign(to: &self.$isDownloadingLocalModel)
+            localModelCoord.$localModelDownloadProgress.assign(to: &self.$localModelDownloadProgress)
             self.localModelCoordinator = localModelCoord
             print("✅ [AppCoordinator] LocalModelCoordinator initialized for download")
             
@@ -334,9 +371,7 @@ public final class AppCoordinator: ObservableObject {
                 await self?.updateWidgetData()
             }
             summaryCoord.onYearWrapProgressUpdate = { [weak self] progress in
-                Task { @MainActor in
-                    self?.yearWrapProgress = progress
-                }
+                self?.yearWrapProgress = progress
             }
             self.summaryCoordinator = summaryCoord
             print("✅ [AppCoordinator] SummaryCoordinator initialized")
@@ -371,8 +406,9 @@ public final class AppCoordinator: ObservableObject {
             localModelCoord.onError = { [weak self] message in
                 self?.showError(message)
             }
-            // Sync isDownloadingLocalModel state
+            // Sync download state
             localModelCoord.$isDownloadingLocalModel.assign(to: &self.$isDownloadingLocalModel)
+            localModelCoord.$localModelDownloadProgress.assign(to: &self.$localModelDownloadProgress)
             self.localModelCoordinator = localModelCoord
             print("✅ [AppCoordinator] LocalModelCoordinator initialized")
             
@@ -395,6 +431,9 @@ public final class AppCoordinator: ObservableObject {
             initializationError = nil
             print("🎉 [AppCoordinator] Initialization complete!")
             
+            // The launch's "became active" event arrives before this point, so run background upkeep now
+            Task { await finalizeMonthDigestIfIdle() }
+            
         } catch {
             print("❌ [AppCoordinator] Initialization failed: \(error.localizedDescription)")
             print("❌ [AppCoordinator] Error details: \(error)")
@@ -409,8 +448,27 @@ public final class AppCoordinator: ObservableObject {
     public func handleAppBecameActive() async {
         print("🟢 [AppCoordinator] App became active")
         // Resume any paused operations if needed
+        // The day may have changed while the app was in the background
+        await refreshStreak()
         // Widget updates happen here since they need to be current
         await updateWidgetData()
+        
+        // Finalize one ended month's digest in the background, without blocking the UI
+        Task { await finalizeMonthDigestIfIdle() }
+    }
+    
+    /// True while a foreground digest check is running, so quick app switches don't stack them
+    private var isFinalizingMonthDigest = false
+    
+    private func finalizeMonthDigestIfIdle() async {
+        guard isInitialized, !isFinalizingMonthDigest, !isGeneratingYearWrap,
+              !recordingState.isRecording, !recordingState.isProcessing else { return }
+        isFinalizingMonthDigest = true
+        defer { isFinalizingMonthDigest = false }
+        await summaryCoordinator?.finalizeNextClosedMonthDigest()
+        if await summaryCoordinator?.titleUntitledRecordings() ?? 0 > 0 {
+            NotificationCenter.default.post(name: .recordingTitlesUpdated, object: nil)
+        }
     }
     
     /// Handle app becoming inactive (transition state)
@@ -615,6 +673,15 @@ public final class AppCoordinator: ObservableObject {
         return sessions
     }
     
+    /// Today's recordings, newest first, with titles and journals (for the Record screen)
+    public func fetchTodaysSessions() async throws -> [RecordingSession] {
+        guard let dbManager = databaseManager else {
+            throw AppCoordinatorError.notInitialized
+        }
+        let ids = try await dbManager.fetchSessionsByDate(date: Date()).map(\.sessionId)
+        return try await fetchSessions(ids: ids)
+    }
+
     /// Fetch specific sessions by IDs
     public func fetchSessions(ids: [UUID]) async throws -> [RecordingSession] {
         guard let dbManager = databaseManager else {
@@ -658,6 +725,8 @@ public final class AppCoordinator: ObservableObject {
             print("❌ [AppCoordinator] NOT INITIALIZED")
             throw AppCoordinatorError.notInitialized
         }
+        lastSavedRecording = nil
+        currentRecordingSessionId = nil
         
         // Request microphone permission just-in-time
         print("🎤 [AppCoordinator] Requesting microphone permission...")
@@ -820,13 +889,48 @@ public final class AppCoordinator: ObservableObject {
             throw AppCoordinatorError.notInitialized
         }
         
-        // Delegate to RecordingCoordinator
-        try await recordingCoordinator?.stopRecording()
+        let journal = recordingCoordinator?.currentCategory ?? recordingCoordinator?.selectedCategory ?? .personal
+
+        // Delegate to RecordingCoordinator. Its stop waits for the final chunk to be saved.
+        do {
+            try await recordingCoordinator?.stopRecording()
+        } catch {
+            await recordingEnded()
+            throw error
+        }
+        if let sessionId = currentRecordingSessionId {
+            lastSavedRecording = SavedRecording(sessionId: sessionId, journal: journal,
+                                                heardNothing: !audioCapture.lastRecordingHeardVoice)
+        }
+        currentRecordingSessionId = nil
+        // Count today right away, without waiting for transcription and the summary
+        await refreshStreak()
+        await recordingEnded()
     }
-    
+
+    /// Hide the saved-recording confirmation
+    public func dismissLastSavedRecording() {
+        lastSavedRecording = nil
+    }
+
+    /// Whether this recording's summary is being written right now
+    public func isSummarizing(sessionId: UUID) -> Bool {
+        summaryCoordinator?.isSummarizing(sessionId) ?? false
+    }
+
     /// Cancel the current recording without saving
     public func cancelRecording() async {
+        currentRecordingSessionId = nil
         await recordingCoordinator?.cancelRecording()
+        await recordingEnded()
+    }
+
+    /// Recording is over (stopped, cancelled or failed): let its summary run. If every chunk is
+    /// already transcribed this writes it now; otherwise the last chunk's transcription will.
+    private func recordingEnded() async {
+        guard let sessionId = sessionStillRecording else { return }
+        sessionStillRecording = nil
+        await checkAndGenerateSessionSummary(for: sessionId)
     }
     
     /// Set the recording category from a deep link string
@@ -865,7 +969,12 @@ public final class AppCoordinator: ObservableObject {
     private func checkAndGenerateSessionSummary(for sessionId: UUID) async {
         print("🔔 [AppCoordinator] === CHECK AND GENERATE SESSION SUMMARY TRIGGERED ===")
         print("📌 [AppCoordinator] Session ID: \(sessionId)")
-        
+
+        guard sessionId != sessionStillRecording else {
+            print("⏳ [AppCoordinator] Session \(sessionId) is still recording, summary waits until it stops")
+            return
+        }
+
         do {
             // Check if all chunks are transcribed
             print("1️⃣ [AppCoordinator] Checking if session transcription is complete...")
@@ -941,13 +1050,14 @@ public final class AppCoordinator: ObservableObject {
     
     // MARK: - Stats & Data Loading
     
-    /// Refresh the current streak count
+    /// Refresh the current and longest streak
     public func refreshStreak() async {
         do {
-            currentStreak = try await dataCoordinator?.calculateStreak() ?? 0
+            let info = try await dataCoordinator?.calculateStreak()
+            currentStreak = info?.currentStreak ?? 0
+            longestStreak = info?.longestStreak ?? 0
         } catch {
             print("Failed to refresh streak: \(error)")
-            currentStreak = 0
         }
     }
     
@@ -1129,6 +1239,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         try await data.updateSessionTitle(sessionId: sessionId, title: title)
         print("📝 [AppCoordinator] Updated session title: \(title ?? "nil")")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
     }
     
     /// Update session notes
@@ -1136,6 +1247,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         try await data.updateSessionNotes(sessionId: sessionId, notes: notes)
         print("📝 [AppCoordinator] Updated session notes")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
     }
     
     /// Toggle session favorite status
@@ -1143,6 +1255,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         let isFavorite = try await data.toggleSessionFavorite(sessionId: sessionId)
         print("⭐ [AppCoordinator] Session favorite: \(isFavorite)")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
         return isFavorite
     }
     
@@ -1151,6 +1264,7 @@ public final class AppCoordinator: ObservableObject {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
         try await data.updateSessionCategory(sessionId: sessionId, category: category)
         print("🏷️ [AppCoordinator] Updated session category: \(category?.displayName ?? "None")")
+        NotificationCenter.default.post(name: .sessionMetadataChanged, object: sessionId)
     }
     
     /// Fetch session metadata
@@ -1162,10 +1276,16 @@ public final class AppCoordinator: ObservableObject {
     // MARK: - Transcript Editing
     
     /// Update transcript segment text (for user edits)
-    public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
+    public func updateTranscriptText(sessionId: UUID, segmentId: UUID, newText: String) async throws {
         guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
-        try await data.updateTranscriptText(segmentId: segmentId, newText: newText)
+        try await data.updateTranscriptText(sessionId: sessionId, segmentId: segmentId, newText: newText)
         print("✏️ [AppCoordinator] Updated transcript segment: \(segmentId)")
+    }
+
+    /// When the recording's transcript was last edited, or nil if never
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        guard let data = dataCoordinator else { throw AppCoordinatorError.notInitialized }
+        return try await data.fetchTranscriptEditedAt(sessionId: sessionId)
     }
     
     /// Search for sessions by transcript text
@@ -1175,64 +1295,107 @@ public final class AppCoordinator: ObservableObject {
     }
 
     /// Fetch period summary for a specific date and type
-    public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
+    public func fetchPeriodSummary(type: PeriodType, date: Date, category: SessionCategory? = nil) async throws -> Summary? {
         guard let dbManager = databaseManager else {
             throw AppCoordinatorError.notInitialized
         }
         
-        return try await dbManager.fetchPeriodSummary(type: type, date: date)
+        return try await dbManager.fetchPeriodSummary(type: type, date: date, category: category)
     }
     
-    // MARK: - Period Summary Updates
-    
-    /// Update period summaries after a new session summary is created
-    /// Follows hierarchical rollup: Session → Day → Week → Month → Year
-    private func updatePeriodSummaries(sessionId: UUID, sessionDate: Date) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updatePeriodSummaries(sessionId: sessionId, sessionDate: sessionDate)
+    /// This year's Year Wrap for a filter. Work and Personal are each journal's own wrap; wraps made
+    /// before journals were stored as separate types and are read until the next generation.
+    public func fetchYearWrap(for filter: ItemFilter, date: Date) async -> Summary? {
+        switch filter {
+        case .all:
+            return try? await fetchPeriodSummary(type: .yearWrap, date: date)
+        case .workOnly, .personalOnly:
+            let journal: SessionCategory = filter == .workOnly ? .work : .personal
+            if let own = try? await fetchPeriodSummary(type: .yearWrap, date: date, category: journal) {
+                return own
+            }
+            return try? await fetchPeriodSummary(type: filter.yearWrapType, date: date)
+        }
     }
     
-    /// Update or create daily summary by aggregating all session summaries for that day using deterministic rollup
-    public func updateDailySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateDailySummary(date: date, forceRegenerate: forceRegenerate)
-    }
+    // MARK: - Year Wrap and Month Digests
     
-    /// Update or create weekly summary by concatenating daily rollups
-    public func updateWeeklySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateWeeklySummary(date: date, forceRegenerate: forceRegenerate)
-    }
-    
-    /// Update or create monthly summary by concatenating weekly rollups (or daily when needed)
-    public func updateMonthlySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateMonthlySummary(date: date, forceRegenerate: forceRegenerate)
-    }
-    
-    /// Update or create yearly summary by concatenating monthly rollups (no external calls)
-    public func updateYearlySummary(date: Date, forceRegenerate: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.updateYearlySummary(date: date, forceRegenerate: forceRegenerate)
+    /// Engines that can write a Year Wrap here: Smartest (when unlocked and set up) and Apple Intelligence
+    public func yearWrapEngines() async -> [EngineTier] {
+        let engines = await summarizationCoordinator?.yearWrapEngines() ?? []
+        return engines.filter { $0 != .external || storeManager.isSmartestAIUnlocked }
     }
 
-    /// Manual Year Wrap using specified AI engine (keeps deterministic rollup as default)
-    public func wrapUpYear(date: Date, forceRegenerate: Bool = false, useLocalAI: Bool = false) async {
-        // Delegate to SummaryCoordinator
-        await summaryCoordinator?.wrapUpYear(date: date, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
+    /// Start a Year Wrap for this year. It runs on its own, so the user can keep using the app;
+    /// the Year view shows progress and reloads when it's done. Asks iOS for extra time if the
+    /// app is sent to the background mid-run.
+    public func startYearWrap(engine: EngineTier, forceRegenerate: Bool = true) {
+        guard !isGeneratingYearWrap, let summaryCoordinator else { return }
+        isGeneratingYearWrap = true
+        yearWrapProgress = YearWrapProgress(step: 1, total: 1, label: "Getting ready")
+
+        Task { @MainActor in
+            var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "YearWrap") {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
+            defer {
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                }
+                isGeneratingYearWrap = false
+                yearWrapProgress = nil
+            }
+
+            do {
+                try await summaryCoordinator.wrapUpYear(date: Date(), engine: engine, forceRegenerate: forceRegenerate)
+                NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
+                showSuccess("Your Year Wrap is ready")
+            } catch {
+                print("❌ [AppCoordinator] Year Wrap failed: \(error)")
+                // Our own failures carry a readable reason; show that without the "Summarization failed:" prefix
+                if case SummarizationError.summarizationFailed(let reason) = error {
+                    showError(reason)
+                } else {
+                    showError("Year Wrap failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
     
-    /// Get count of new sessions created after Year Wrap generation
-    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int) async throws -> Int {
+    /// Build or refresh the digest for the month containing `date`
+    @discardableResult
+    public func updateMonthDigest(date: Date, forceRegenerate: Bool = false) async -> MonthDigest? {
+        await summaryCoordinator?.updateMonthDigest(date: date, forceRegenerate: forceRegenerate)
+    }
+    
+    /// First day of every month that has recordings, newest first
+    public func monthsWithRecordings() async -> [Date] {
+        await summaryCoordinator?.monthsWithRecordings() ?? []
+    }
+    
+    /// The stored digest for the month containing `date`
+    public func fetchMonthDigest(date: Date) async -> MonthDigest? {
+        await summaryCoordinator?.fetchMonthDigest(date: date)
+    }
+    
+    /// The stored digest plus whether the month still has to be split into work and personal
+    public func fetchMonthDigestStatus(date: Date) async -> (digest: MonthDigest, usesLegacy: Bool)? {
+        await summaryCoordinator?.fetchMonthDigestStatus(date: date)
+    }
+    
+    /// How many of the year's recordings in `journal` (nil: both) are new or changed since the wrap was built
+    public func getNewSessionsSinceYearWrap(yearWrap: Summary, year: Int, journal: SessionCategory? = nil) async throws -> Int {
         guard let summaryCoordinator = summaryCoordinator else {
             throw AppCoordinatorError.notInitialized
         }
-        return try await summaryCoordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year)
+        return try await summaryCoordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year, journal: journal)
     }
-    
-    /// Update Year Wrap staleness count
-    public func updateYearWrapNewSessionCount(_ count: Int) {
-        yearWrapNewSessionCount = count
+
+    /// Update the Year Wrap staleness counts, per wrap filter
+    public func updateYearWrapOutdatedCounts(_ counts: [ItemFilter: Int]) {
+        yearWrapOutdatedCounts = counts
     }
 
     /// Delete a recording and its associated data
@@ -1257,6 +1420,11 @@ public final class AppCoordinator: ObservableObject {
         
         // Delete entire session - cascade delete handles transcript segments
         try await dbManager.deleteSession(sessionId: sessionId)
+        
+        // Its summary goes too, so it doesn't linger in rollups, digests and Year Wrap
+        if let summary = try? await dbManager.fetchSummaryForSession(sessionId: sessionId) {
+            try? await dbManager.deleteSummary(id: summary.id)
+        }
         
         // Refresh stats
         await updateRollupsAndStats()
@@ -1327,7 +1495,7 @@ public final class AppCoordinator: ObservableObject {
     //   • The app is fully functional on first launch with zero downloads
     //
     // ✅ PART (ii) - Size Disclosure & User Prompt:
-    //   • All download buttons display size: "Download Model (~2.3 GB)"
+    //   • All download buttons display size, e.g. "Download model (~2.3 GB)" (LocalEngine.modelDownloadSize)
     //   • User must explicitly tap button to start download (never automatic)
     //   • Skip/Cancel options shown at every download prompt
     //   • "Wi-Fi recommended" note displayed before download
@@ -1371,6 +1539,9 @@ public final class AppCoordinator: ObservableObject {
         
         // Don't show if user has External AI, Apple Intelligence, or Local AI selected
         guard activeEngine == .basic else { return false }
+
+        // Don't suggest a download this device can't run
+        guard isLocalModelSupported else { return false }
         
         // Only show if local model is not downloaded
         let isDownloaded = await isLocalModelDownloaded()
@@ -1385,12 +1556,22 @@ public final class AppCoordinator: ObservableObject {
     
     /// Get the expected model size for display before download
     public var expectedLocalModelSizeMB: String {
-        localModelCoordinator?.expectedLocalModelSizeMB ?? "~2.3 GB"
+        localModelCoordinator?.expectedLocalModelSizeMB ?? LocalEngine.modelDownloadSize
     }
     
+    /// Whether this device has enough memory to run Smart (6 GB or more)
+    public var isLocalModelSupported: Bool {
+        LocalEngine.isSupportedOnThisDevice
+    }
+
     /// Get the local model display name
     public var localModelDisplayName: String {
-        localModelCoordinator?.localModelDisplayName ?? "Phi-3.5 Mini"
+        localModelCoordinator?.localModelDisplayName ?? LocalEngine.modelDisplayName
+    }
+    
+    /// True when the old Smart model was removed and the new one isn't downloaded yet
+    public var showsLocalModelReplacedNotice: Bool {
+        localModelCoordinator?.showsModelReplacedNotice ?? false
     }
 }
 
@@ -1398,6 +1579,14 @@ public final class AppCoordinator: ObservableObject {
 
 extension Notification.Name {
     static let periodSummariesUpdated = Notification.Name("PeriodSummariesUpdated")
+    static let recordingTitlesUpdated = Notification.Name("RecordingTitlesUpdated")
+    /// A recording's title, notes, star or journal changed; the object is its session ID
+    static let sessionMetadataChanged = Notification.Name("SessionMetadataChanged")
+    /// A recording's summary was saved. `object` is the session's UUID.
+    static let sessionSummaryUpdated = Notification.Name("SessionSummaryUpdated")
+    /// Writing a recording's summary in the background failed. `object` is the session's UUID;
+    /// `userInfo["message"]` says why.
+    static let sessionSummaryFailed = Notification.Name("SessionSummaryFailed")
 }
 
 #if DEBUG

@@ -1,5 +1,7 @@
 # Step 1 — Project Foundation & iOS App
 
+> **Status, September 27, 2026:** a record of the first build step from December 2025, kept for history. The project has changed a lot since; see the [README](../../README.md) for the current structure.
+
 > **Completed**: December 13, 2025  
 > **Commits**: `91f907c` (Step 1A), `fdd2934` (Step 1B)
 

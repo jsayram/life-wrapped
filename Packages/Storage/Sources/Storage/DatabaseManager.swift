@@ -120,6 +120,10 @@ public actor DatabaseManager {
         try await sessionRepository.fetchSessions(limit: limit)
     }
     
+    public func fetchRecordingDays() async throws -> [Date] {
+        try await sessionRepository.fetchRecordingDays()
+    }
+
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         try await sessionRepository.fetchSessionsByHour()
     }
@@ -174,12 +178,28 @@ public actor DatabaseManager {
         try await sessionRepository.updateSessionCategory(sessionId: sessionId, category: category)
     }
     
+    public func markSessionChanged(sessionId: UUID, content: Bool = false, transcript: Bool = false) async throws {
+        try await sessionRepository.markSessionChanged(sessionId: sessionId, content: content, transcript: transcript)
+    }
+
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        try await sessionRepository.fetchTranscriptEditedAt(sessionId: sessionId)
+    }
+
+    public func fetchSessionIdsContentChanged(since date: Date) async throws -> Set<UUID> {
+        try await sessionRepository.fetchSessionIdsContentChanged(since: date)
+    }
+
     public func fetchSessionsByCategory(category: SessionCategory, limit: Int? = nil) async throws -> [RecordingSession] {
         try await sessionRepository.fetchSessionsByCategory(category: category, limit: limit)
     }
     
     public func fetchSessionMetadataBatch(sessionIds: [UUID]) async throws -> [UUID: SessionMetadata] {
         try await sessionRepository.fetchSessionMetadataBatch(sessionIds: sessionIds)
+    }
+    
+    public func existingSessionIds(among sessionIds: [UUID]) async throws -> Set<UUID> {
+        try await sessionRepository.existingSessionIds(among: sessionIds)
     }
     
     public func deleteSessionMetadata(sessionId: UUID) async throws {
@@ -274,8 +294,9 @@ public actor DatabaseManager {
         try await summaryRepository.fetchSessionSummariesInDateRange(from: startDate, to: endDate)
     }
     
-    public func fetchPeriodSummary(type: PeriodType, date: Date) async throws -> Summary? {
-        try await summaryRepository.fetchPeriodSummary(type: type, date: date)
+    /// `category` picks a journal's own summary; nil means one not tied to a journal
+    public func fetchPeriodSummary(type: PeriodType, date: Date, category: SessionCategory? = nil) async throws -> Summary? {
+        try await summaryRepository.fetchPeriodSummary(type: type, date: date, category: category)
     }
     
     public func upsertPeriodSummary(
@@ -287,7 +308,8 @@ public actor DatabaseManager {
         entitiesJSON: String? = nil,
         engineTier: String? = nil,
         sourceIds: String? = nil,
-        inputHash: String? = nil
+        inputHash: String? = nil,
+        category: SessionCategory? = nil
     ) async throws {
         try await summaryRepository.upsertPeriodSummary(
             type: type,
@@ -298,10 +320,15 @@ public actor DatabaseManager {
             entitiesJSON: entitiesJSON,
             engineTier: engineTier,
             sourceIds: sourceIds,
-            inputHash: inputHash
+            inputHash: inputHash,
+            category: category
         )
     }
     
+    public func fetchSummaries(periodType: PeriodType, from startDate: Date, to endDate: Date) async throws -> [Summary] {
+        try await summaryRepository.fetchSummaries(periodType: periodType, from: startDate, to: endDate)
+    }
+
     public func fetchDailySummaries(from startDate: Date, to endDate: Date) async throws -> [Summary] {
         try await summaryRepository.fetchDailySummaries(from: startDate, to: endDate)
     }

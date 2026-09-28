@@ -44,7 +44,7 @@ public actor SummarizationCoordinator {
         self.basicEngine = BasicEngine(storage: storage)
         self.activeEngine = basicEngine
         
-        // Initialize local LLM engine (Phi-3.5)
+        // Initialize local LLM engine (Smart tier)
         self.localEngine = LocalEngine()
         
         // Initialize Apple Intelligence engine
@@ -72,6 +72,17 @@ public actor SummarizationCoordinator {
     /// Restore saved preference and select appropriate engine
     /// Call this after initialization to properly set up the active engine
     public func restoreSavedPreference() async {
+        // Delete Smart models this device doesn't use: Phi-3.5 from before Qwen3 (about 2.1 GB), or the
+        // Qwen3 size meant for other devices (4 GB phones used to get the 2.3 GB Qwen3 4B).
+        // If Smart was selected, it falls back to the next tier until the new model is downloaded,
+        // and Settings explains why.
+        if await localEngine.removeRetiredModels() {
+            UserDefaults.standard.set(true, forKey: LocalEngine.modelReplacedNoticeKey)
+            #if DEBUG
+            print("🧹 [SummarizationCoordinator] Removed a local model this device does not use")
+            #endif
+        }
+        
         // Load saved preference from UserDefaults
         if let savedPreference = UserDefaults.standard.string(forKey: Self.preferredEngineKey),
            let tier = EngineTier(rawValue: savedPreference) {
@@ -103,7 +114,7 @@ public actor SummarizationCoordinator {
             } else {
                 preferredTier = .basic
                 #if DEBUG
-                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Basic")
+                print("🧠 [SummarizationCoordinator] No preference set - defaulting to Key Sentences")
                 #endif
             }
         }
@@ -148,12 +159,13 @@ public actor SummarizationCoordinator {
     /// - Parameters:
     ///   - apiKey: The API key to validate
     ///   - provider: The provider (OpenAI or Anthropic)
+    ///   - model: The model ID to test (defaults to the saved model)
     /// - Returns: Validation result with success message or error
-    public func validateExternalAPIKey(_ apiKey: String, for provider: ExternalAPIEngine.Provider) async -> ExternalAPIEngine.APIKeyValidationResult {
+    public func validateExternalAPIKey(_ apiKey: String, for provider: ExternalAPIEngine.Provider, model: String? = nil) async -> ExternalAPIEngine.APIKeyValidationResult {
         guard let external = externalEngine as? ExternalAPIEngine else {
             return .invalid(reason: "External API engine not available")
         }
-        return await external.validateAPIKey(apiKey, for: provider)
+        return await external.validateAPIKey(apiKey, for: provider, model: model)
     }
     
     /// Set the preferred engine tier
@@ -294,7 +306,7 @@ public actor SummarizationCoordinator {
     public func generateSessionSummary(
         sessionId: UUID,
         segments: [TranscriptSegment]
-    ) async throws -> Summary {
+    ) async throws -> (summary: Summary, title: String?) {
         guard !segments.isEmpty else {
             throw SummarizationError.noTranscriptData
         }
@@ -334,9 +346,9 @@ public actor SummarizationCoordinator {
         var lastError: Error?
         var engineToTry = activeEngine
         
-        // Define fallback chain: External → Local → Basic
-        // Apple Intelligence is not in automatic fallback - user must explicitly select it
-        let fallbackChain: [EngineTier] = [.external, .local, .basic]
+        // Start with the engine the user chose, then fall back only to on-device engines.
+        // Never escalate to the cloud unless the user picked External.
+        let fallbackChain = Self.fallbackChain(for: preferredTier)
         var triedEngines: [EngineTier] = []
         
         for tier in fallbackChain {
@@ -389,7 +401,7 @@ public actor SummarizationCoordinator {
                 #if DEBUG
                 print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
                 #endif
-                return try convertToSummary(intelligence: intelligence)
+                return (try convertToSummary(intelligence: intelligence), intelligence.title)
                 
             } catch {
                 #if DEBUG
@@ -423,256 +435,72 @@ public actor SummarizationCoordinator {
         }
     }
     
-    // MARK: - Period Summarization
-    
-    /// Generate a daily summary by aggregating session summaries
-    /// - Parameter date: The date to summarize
-    /// - Returns: Summary object ready for database storage
-    /// - Throws: SummarizationError if generation fails
-    public func generateDailySummary(for date: Date) async throws -> Summary {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: date)
-        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
-            throw SummarizationError.invalidDateRange(start: startOfDay, end: date)
-        }
-        
-        return try await generatePeriodSummary(
-            periodType: .day,
-            startDate: startOfDay,
-            endDate: endOfDay
-        )
-    }
-    
-    /// Generate a weekly summary by aggregating daily summaries
-    /// - Parameter date: A date within the week to summarize
-    /// - Returns: Summary object ready for database storage
-    /// - Throws: SummarizationError if generation fails
-    public func generateWeeklySummary(for date: Date) async throws -> Summary {
-        let calendar = Calendar.current
-        
-        // Get start of week (Sunday)
-        let weekday = calendar.component(.weekday, from: date)
-        let daysToSubtract = weekday - 1
-        guard let startOfWeek = calendar.date(byAdding: .day, value: -daysToSubtract, to: date) else {
-            throw SummarizationError.invalidDateRange(start: date, end: date)
-        }
-        let startOfWeekDay = calendar.startOfDay(for: startOfWeek)
-        
-        // Get end of week
-        guard let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeekDay) else {
-            throw SummarizationError.invalidDateRange(start: startOfWeekDay, end: date)
-        }
-        
-        return try await generatePeriodSummary(
-            periodType: .week,
-            startDate: startOfWeekDay,
-            endDate: endOfWeek
-        )
-    }
-    
-    /// Generate a monthly summary by aggregating weekly summaries
-    /// - Parameter date: A date within the month to summarize
-    /// - Returns: Summary object ready for database storage
-    /// - Throws: SummarizationError if generation fails
-    public func generateMonthlySummary(for date: Date) async throws -> Summary {
-        let calendar = Calendar.current
-        
-        // Get start of month
-        let components = calendar.dateComponents([.year, .month], from: date)
-        guard let startOfMonth = calendar.date(from: components) else {
-            throw SummarizationError.invalidDateRange(start: date, end: date)
-        }
-        
-        // Get end of month (start of next month)
-        guard let endOfMonth = calendar.date(byAdding: .month, value: 1, to: startOfMonth) else {
-            throw SummarizationError.invalidDateRange(start: startOfMonth, end: date)
-        }
-        
-        return try await generatePeriodSummary(
-            periodType: .month,
-            startDate: startOfMonth,
-            endDate: endOfMonth
-        )
-    }
+    // MARK: - Digest and Year Wrap models
 
-    // MARK: - Yearly Summarization
-    
-    /// Generate a yearly summary by aggregating monthly summaries
-    /// - Parameter date: A date within the year to summarize
-    /// - Returns: Summary object ready for database storage
-    /// - Throws: SummarizationError if generation fails
-    public func generateYearlySummary(for date: Date) async throws -> Summary {
-        let calendar = Calendar.current
-        
-        // Get start of year
-        let components = calendar.dateComponents([.year], from: date)
-        guard let startOfYear = calendar.date(from: components) else {
-            throw SummarizationError.invalidDateRange(start: date, end: date)
-        }
-        
-        // Get end of year (start of next year)
-        guard let endOfYear = calendar.date(byAdding: .year, value: 1, to: startOfYear) else {
-            throw SummarizationError.invalidDateRange(start: startOfYear, end: date)
-        }
-        
-        return try await generatePeriodSummary(
-            periodType: .year,
-            startDate: startOfYear,
-            endDate: endOfYear
-        )
-    }
-
-    /// Generate a Year Wrap summary using the specified engine (External or Local AI)
-    public func generateYearWrapSummary(
-        startOfYear: Date,
-        endOfYear: Date,
-        sourceSummaries: [Summary],
-        workSessionCount: Int,
-        personalSessionCount: Int,
-        useLocalAI: Bool = false
-    ) async throws -> Summary {
-        guard !sourceSummaries.isEmpty else {
-            throw SummarizationError.noTranscriptData
-        }
-
-        // Select engine based on user choice
-        let engine: any SummarizationEngine
-        
-        if useLocalAI {
-            // Use Local AI (Phi-3.5 Mini)
-            guard await localEngine.isAvailable() else {
-                throw SummarizationError.summarizationFailed("Local AI engine not available. Please download the model first.")
+    /// The model to build month digests with: the user's chosen engine, or the next
+    /// on-device one if it isn't available. Nil means Basic (no model).
+    /// Follows the same chain as session summaries, so it never falls back to the cloud.
+    public func digestGenerator() async -> (any TextGenerating)? {
+        for tier in Self.fallbackChain(for: preferredTier) {
+            if let generator = await availableGenerator(for: tier) {
+                return generator
             }
-            engine = localEngine
-            #if DEBUG
-            print("🤖 [SummarizationCoordinator] Using Local AI for Year Wrap")
-            #endif
-        } else {
-            // Use External API (OpenAI/Anthropic)
-            guard let external = externalEngine else {
-                throw SummarizationError.summarizationFailed("External engine not available for Year Wrap")
-            }
-            guard await external.isAvailable() else {
-                throw SummarizationError.summarizationFailed("External engine unavailable or missing credentials for Year Wrap")
-            }
-            engine = external
-            #if DEBUG
-            print("☁️ [SummarizationCoordinator] Using External API for Year Wrap")
-            #endif
         }
-
-        let previousEngine = activeEngine
-        activeEngine = engine
-        defer { activeEngine = previousEngine }
-
-        let intelligences = sourceSummaries.map { summary -> SessionIntelligence in
-            let topics = (try? [String].fromTopicsJSON(summary.topicsJSON)) ?? []
-            let entities = (try? [Entity].fromEntitiesJSON(summary.entitiesJSON)) ?? []
-            let wordCount = summary.text.split(separator: " ").count
-
-            return SessionIntelligence(
-                sessionId: summary.id,
-                summary: summary.text,
-                topics: topics,
-                entities: entities,
-                sentiment: 0.0,
-                duration: summary.periodEnd.timeIntervalSince(summary.periodStart),
-                wordCount: wordCount,
-                languageCodes: ["en-US"],
-                category: nil  // Monthly summaries don't have single category
-            )
-        }
-
-        // Build category context from session counts
-        let categoryContext = buildCategoryContext(workCount: workSessionCount, personalCount: personalSessionCount)
-
-        let intelligence = try await engine.summarizePeriod(
-            periodType: .yearWrap,
-            sessionSummaries: intelligences,
-            periodStart: startOfYear,
-            periodEnd: endOfYear,
-            categoryContext: categoryContext
-        )
-
-        return try convertToSummary(periodIntelligence: intelligence)
+        return nil
     }
-    
-    /// Build category context string for AI prompt
-    private func buildCategoryContext(workCount: Int, personalCount: Int) -> String? {
-        guard workCount > 0 || personalCount > 0 else { return nil }
-        
-        let total = workCount + personalCount
-        let workPercent = total > 0 ? Int((Double(workCount) / Double(total)) * 100) : 0
-        let personalPercent = total > 0 ? Int((Double(personalCount) / Double(total)) * 100) : 0
-        
-        return """
-        SESSION CATEGORY DISTRIBUTION:
-        - Work sessions: \(workCount) (\(workPercent)%)
-        - Personal sessions: \(personalCount) (\(personalPercent)%)
-        
-        CLASSIFICATION RULES (MANDATORY):
-        1. Classify ~\(workPercent)% of items as "work" and ~\(personalPercent)% as "personal"
-        2. Work items: professional topics, projects, meetings, career-related
-        3. Personal items: hobbies, family, health, personal goals, non-work activities
-        4. Use "both" ONLY if an item genuinely spans both domains (rare, <10% of items)
-        5. When uncertain, use the proportional split as a guide
-        """
+
+    /// Engines that can write a Year Wrap on this device right now: Smartest (External) and
+    /// Apple Intelligence. Local models are too slow for it and Basic has no model.
+    public func yearWrapEngines() async -> [EngineTier] {
+        var engines: [EngineTier] = []
+        for tier in [EngineTier.external, .apple] where await availableGenerator(for: tier) != nil {
+            engines.append(tier)
+        }
+        return engines
     }
-    
-    /// Generate a period summary by aggregating session-level summaries
-    private func generatePeriodSummary(
-        periodType: PeriodType,
-        startDate: Date,
-        endDate: Date
-    ) async throws -> Summary {
-        // Fetch all session summaries for this period from database
-        let sessionSummaries = try await storage.fetchSummaries(periodType: .session)
-            .filter { summary in
-                guard summary.sessionId != nil else { return false }
-                // Check if session's period overlaps with our date range
-                return summary.periodStart >= startDate && summary.periodStart < endDate
+
+    /// The model for Year Wrap. Only Smartest (External) or Apple Intelligence.
+    public func yearWrapGenerator(tier: EngineTier) async throws -> any TextGenerating {
+        switch tier {
+        case .external:
+            guard let external = await availableGenerator(for: .external) else {
+                throw SummarizationError.summarizationFailed("Cloud AI needs an API key. Add one in Settings.")
             }
-        
-        guard !sessionSummaries.isEmpty else {
-            throw SummarizationError.noTranscriptData
+            return external
+        case .apple:
+            guard let apple = await availableGenerator(for: .apple) else {
+                throw SummarizationError.summarizationFailed("Apple Intelligence isn't available on this device.")
+            }
+            return apple
+        case .local, .basic:
+            throw SummarizationError.summarizationFailed("Year Wrap needs Apple Intelligence or Cloud AI.")
         }
-        
-        // Convert Summary objects to SessionIntelligence
-        let intelligences = sessionSummaries.compactMap { summary -> SessionIntelligence? in
-            guard let sessionId = summary.sessionId else { return nil }
-            
-            // Parse topics and entities from JSON
-            let topics = try? [String].fromTopicsJSON(summary.topicsJSON)
-            let entities = try? [Entity].fromEntitiesJSON(summary.entitiesJSON)
-            
-            // Calculate duration and word count (we need to fetch from segments)
-            // For now, use defaults - can be enhanced to fetch actual values
-            let duration: TimeInterval = 0  // Will be calculated from segments if needed
-            let wordCount = summary.text.split(separator: " ").count
-            
-            return SessionIntelligence(
-                sessionId: sessionId,
-                summary: summary.text,
-                topics: topics ?? [],
-                entities: entities ?? [],
-                sentiment: 0.0,  // Default neutral
-                duration: duration,
-                wordCount: wordCount,
-                languageCodes: ["en-US"]
-            )
+    }
+
+    private func availableGenerator(for tier: EngineTier) async -> (any TextGenerating)? {
+        let engine: (any SummarizationEngine)?
+        switch tier {
+        case .basic: return nil
+        case .local: engine = localEngine
+        case .apple: engine = appleEngine
+        case .external: engine = externalEngine
         }
-        
-        // Generate period intelligence using active engine
-        let intelligence = try await activeEngine.summarizePeriod(
-            periodType: periodType,
-            sessionSummaries: intelligences,
-            periodStart: startDate,
-            periodEnd: endDate,
-            categoryContext: nil
-        )
-        
-        // Convert to Summary for database storage
-        return try convertToSummary(periodIntelligence: intelligence)
+        guard let engine, let generator = engine as? any TextGenerating, await engine.isAvailable() else {
+            return nil
+        }
+        return generator
+    }
+
+    /// Engines to try, in order, for a session summary.
+    /// Starts with the user's choice; falls back to on-device engines only, so a
+    /// transcript is never sent to a cloud API unless the user selected External.
+    static func fallbackChain(for preferred: EngineTier) -> [EngineTier] {
+        switch preferred {
+        case .external: return [.external, .local, .basic]
+        case .apple: return [.apple, .local, .basic]
+        case .local: return [.local, .basic]
+        case .basic: return [.basic]
+        }
     }
     
     // MARK: - Conversion Helpers
@@ -689,24 +517,6 @@ public actor SummarizationCoordinator {
             text: intelligence.summary,
             createdAt: Date(),
             sessionId: intelligence.sessionId,
-            topicsJSON: topicsJSON,
-            entitiesJSON: entitiesJSON,
-            engineTier: activeEngine.tier.rawValue
-        )
-    }
-    
-    /// Convert PeriodIntelligence to Summary for database storage
-    private func convertToSummary(periodIntelligence: PeriodIntelligence) throws -> Summary {
-        let topicsJSON = try periodIntelligence.topicsJSON()
-        let entitiesJSON = try periodIntelligence.entitiesJSON()
-        
-        return Summary(
-            periodType: periodIntelligence.periodType,
-            periodStart: periodIntelligence.periodStart,
-            periodEnd: periodIntelligence.periodEnd,
-            text: periodIntelligence.summary,
-            createdAt: Date(),
-            sessionId: nil,  // Period summaries don't have sessionId
             topicsJSON: topicsJSON,
             entitiesJSON: entitiesJSON,
             engineTier: activeEngine.tier.rawValue

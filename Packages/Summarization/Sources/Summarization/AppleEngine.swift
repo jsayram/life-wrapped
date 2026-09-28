@@ -34,16 +34,20 @@ public actor AppleEngine: SummarizationEngine {
     private var summariesGenerated: Int = 0
     private var totalProcessingTime: TimeInterval = 0.0
     
-    #if canImport(FoundationModels)
-    // Language model session for conversations
-    private var session: LanguageModelSession?
-    #endif
-    
     // MARK: - Initialization
     
     public init(storage: DatabaseManager) {
         self.storage = storage
     }
+    
+    #if canImport(FoundationModels)
+    /// The only place a model session is created. Always Apple's on-device model:
+    /// transcripts never leave the phone. Do not switch to the Private Cloud Compute
+    /// server model; the Smarter tier is promised to users as on-device and private.
+    private func makeSession() -> LanguageModelSession {
+        LanguageModelSession(model: SystemLanguageModel.default)
+    }
+    #endif
     
     // MARK: - SummarizationEngine Protocol
     
@@ -58,9 +62,10 @@ public actor AppleEngine: SummarizationEngine {
         switch availability {
         case .available:
             return true
-        case .unavailable:
+        case .unavailable(let reason):
             #if DEBUG
-            print("⚠️ [AppleEngine] Apple Intelligence is unavailable on this device")
+            // deviceNotEligible / appleIntelligenceNotEnabled / modelNotReady
+            print("⚠️ [AppleEngine] Apple Intelligence is unavailable: \(reason)")
             #endif
             return false
         @unknown default:
@@ -87,14 +92,10 @@ public actor AppleEngine: SummarizationEngine {
         }
         
         #if canImport(FoundationModels)
-        // Create or reuse session
-        if session == nil {
-            session = LanguageModelSession()
-        }
-        
-        guard let session = session else {
-            throw SummarizationError.summarizationFailed("Failed to create language model session")
-        }
+        // Fresh session per request. A reused session keeps every earlier prompt and
+        // reply in its transcript, which overflows the model's context window after a
+        // few summaries and leaks one recording's content into the next.
+        let session = makeSession()
         
         // Calculate word count
         let wordCount = transcriptText.split(separator: " ").count
@@ -173,14 +174,10 @@ public actor AppleEngine: SummarizationEngine {
         }
         
         #if canImport(FoundationModels)
-        // Create or reuse session
-        if session == nil {
-            session = LanguageModelSession()
-        }
-        
-        guard let session = session else {
-            throw SummarizationError.summarizationFailed("Failed to create language model session")
-        }
+        // Fresh session per request. A reused session keeps every earlier prompt and
+        // reply in its transcript, which overflows the model's context window after a
+        // few summaries and leaks one recording's content into the next.
+        let session = makeSession()
         
         // Build input from session summaries (same as External API)
         let combinedSummaries = sessionSummaries
@@ -290,8 +287,7 @@ public actor AppleEngine: SummarizationEngine {
         languageCodes: [String]
     ) -> SessionIntelligence {
         // Try to parse JSON response
-        guard let jsonData = responseText.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+        guard let json = ModelJSON.object(from: responseText) else {
             // Fallback: use response as plain text summary
             return SessionIntelligence(
                 sessionId: sessionId,
@@ -306,8 +302,8 @@ public actor AppleEngine: SummarizationEngine {
             )
         }
         
-        // Extract fields from JSON (matching UniversalPrompt session schema)
-        let title = json["title"] as? String ?? ""
+        // Extract fields from JSON (matching UniversalPrompt session schema).
+        // The title is kept separately and becomes the recording's title if it has none.
         let summary = json["summary"] as? String ?? responseText
         let keyPoints = json["key_points"] as? [String] ?? []
         
@@ -316,14 +312,15 @@ public actor AppleEngine: SummarizationEngine {
         
         return SessionIntelligence(
             sessionId: sessionId,
-            summary: title.isEmpty ? summary : "[\(title)] \(summary)",
+            summary: summary,
             topics: topics,
             entities: [],
             sentiment: 0.0,
             duration: duration,
             wordCount: wordCount,
             languageCodes: languageCodes,
-            keyMoments: nil
+            keyMoments: nil,
+            title: json["title"] as? String
         )
     }
     
@@ -340,8 +337,7 @@ public actor AppleEngine: SummarizationEngine {
         let totalWords = sessionSummaries.reduce(0) { $0 + $1.wordCount }
         
         // Try to parse JSON response
-        guard let jsonData = responseText.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+        guard let json = ModelJSON.object(from: responseText) else {
             // Fallback: use response as plain text summary
             return PeriodIntelligence(
                 periodType: periodType,
@@ -433,6 +429,27 @@ public actor AppleEngine: SummarizationEngine {
     }
 }
 
+// MARK: - TextGenerating
+
+@available(iOS 26.0, macOS 26.0, *)
+extension AppleEngine: TextGenerating {
+    // Apple's on-device model has a 4,096-token window, like Smart
+    public nonisolated var inputTokenBudget: Int { 1_900 }
+    public nonisolated var outputTokenBudget: Int { 700 }
+
+    public func generateText(system: String, user: String, maxTokens: Int) async throws -> String {
+        #if canImport(FoundationModels)
+        // Fresh session per request so earlier prompts don't fill the context window
+        let session = LanguageModelSession(model: SystemLanguageModel.default, instructions: system)
+        let options = GenerationOptions(maximumResponseTokens: maxTokens)
+        let response = try await session.respond(to: user, options: options)
+        return String(response.content)
+        #else
+        throw SummarizationError.summarizationFailed("Apple Intelligence requires iOS 26")
+        #endif
+    }
+}
+
 // MARK: - Fallback for iOS 18.1-25.x (placeholder)
 
 /// Legacy Apple Engine for iOS 18.1-25.x
@@ -464,7 +481,7 @@ public actor AppleEngineLegacy: SummarizationEngine {
         duration: TimeInterval,
         languageCodes: [String]
     ) async throws -> SessionIntelligence {
-        throw SummarizationError.summarizationFailed("Apple Intelligence API requires iOS 26.0+. Please use Local AI or External API instead.")
+        throw SummarizationError.summarizationFailed("Apple Intelligence needs iOS 26 or later. Use Offline AI or Cloud AI instead instead.")
     }
     
     public func summarizePeriod(
@@ -474,7 +491,7 @@ public actor AppleEngineLegacy: SummarizationEngine {
         periodEnd: Date,
         categoryContext: String? = nil
     ) async throws -> PeriodIntelligence {
-        throw SummarizationError.summarizationFailed("Apple Intelligence API requires iOS 26.0+. Please use Local AI or External API instead.")
+        throw SummarizationError.summarizationFailed("Apple Intelligence needs iOS 26 or later. Use Offline AI or Cloud AI instead instead.")
     }
     
     public func getStatistics() async -> (summariesGenerated: Int, averageTime: TimeInterval, totalTime: TimeInterval) {

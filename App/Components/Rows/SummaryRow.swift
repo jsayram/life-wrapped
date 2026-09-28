@@ -13,7 +13,7 @@ struct SummaryRow: View {
                     .fontWeight(.semibold)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.blue.opacity(0.2))
+                    .background(AppTheme.accent.opacity(0.2))
                     .clipShape(Capsule())
                 
                 Spacer()

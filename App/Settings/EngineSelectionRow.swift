@@ -12,7 +12,7 @@ struct EngineSelectionRow: View {
             HStack(spacing: 12) {
                 Image(systemName: tier.icon)
                     .font(.title3)
-                    .foregroundStyle(isAvailable ? .blue : .secondary)
+                    .foregroundStyle(isAvailable ? AppTheme.accent : .secondary)
                     .frame(width: 32)
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -28,8 +28,8 @@ struct EngineSelectionRow: View {
                 Spacer()
                 
                 if isActive {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle")
+                        .foregroundStyle(AppTheme.accent)
                 } else if !isAvailable {
                     Text("Unavailable")
                         .font(.caption)

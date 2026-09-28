@@ -7,38 +7,31 @@
 
 import Foundation
 
-/// Configuration for the local LLM
+/// Generation settings for the local model
 public struct LocalLLMConfiguration: Sendable {
     public let modelType: LocalModelType
-    public let contextSize: Int32
-    public let batchSize: Int32
-    public let maxTokens: Int32
+    public let contextTokens: Int
+    public let maxTokens: Int
     public let temperature: Float
-    
+    public let topP: Float
+
     public init(
-        modelType: LocalModelType = .phi35,
-        contextSize: Int32? = nil,
-        batchSize: Int32? = nil,
-        maxTokens: Int32? = nil,
-        temperature: Float? = nil
+        modelType: LocalModelType = .current,
+        contextTokens: Int? = nil,
+        maxTokens: Int? = nil,
+        temperature: Float? = nil,
+        topP: Float? = nil
     ) {
         self.modelType = modelType
         let defaults = modelType.recommendedConfig
-        self.contextSize = contextSize ?? defaults.nCTX
-        self.batchSize = batchSize ?? defaults.batch
+        self.contextTokens = contextTokens ?? defaults.contextTokens
         self.maxTokens = maxTokens ?? defaults.maxTokens
-        self.temperature = temperature ?? defaults.temp
+        self.temperature = temperature ?? defaults.temperature
+        self.topP = topP ?? defaults.topP
     }
-    
-    /// Get current configuration from UserDefaults
+
+    /// Settings for the model Smart uses today
     public static func current() -> LocalLLMConfiguration {
-        let modelRaw = UserDefaults.standard.string(forKey: "localLLMModel") ?? LocalModelType.phi35.rawValue
-        let modelType = LocalModelType(rawValue: modelRaw) ?? .phi35
-        return LocalLLMConfiguration(modelType: modelType)
-    }
-    
-    /// Save configuration to UserDefaults
-    public func save() {
-        UserDefaults.standard.set(modelType.rawValue, forKey: "localLLMModel")
+        LocalLLMConfiguration(modelType: .current)
     }
 }

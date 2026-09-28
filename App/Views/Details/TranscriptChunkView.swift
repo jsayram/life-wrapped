@@ -30,7 +30,7 @@ struct TranscriptChunkView: View {
                     HStack(spacing: 6) {
                         Text("Part \(chunkIndex + 1)")
                             .font(.caption)
-                            .foregroundStyle(isCurrentChunk ? .blue : .secondary)
+                            .foregroundStyle(isCurrentChunk ? AppTheme.accent : .secondary)
                             .fontWeight(isCurrentChunk ? .semibold : .regular)
                         
                         if let chunkId = chunkId {
@@ -39,43 +39,32 @@ struct TranscriptChunkView: View {
                         
                         if isEdited {
                             HStack(spacing: 2) {
-                                Image(systemName: "pencil.circle.fill")
+                                Image(systemName: "pencil")
                                     .font(.caption2)
                                 Text("Edited")
                                     .font(.caption2)
                             }
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(AppTheme.textSecondary)
                         }
                     }
                 } else if isEdited {
                     HStack(spacing: 2) {
-                        Image(systemName: "pencil.circle.fill")
+                        Image(systemName: "pencil")
                             .font(.caption2)
                         Text("Edited")
                             .font(.caption2)
                     }
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(AppTheme.textSecondary)
                 }
                 
                 Spacer()
                 
                 // Action buttons - compact
-                if !isEditing && !combinedText.isEmpty {
+                if !combinedText.isEmpty {
                     HStack(spacing: 8) {
-                        Button {
-                            UIPasteboard.general.string = combinedText
-                            coordinator.showSuccess("Copied")
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        
                         Button {
                             editedText = combinedText
                             isEditing = true
-                            isTextFocused = true
                         } label: {
                             HStack(spacing: 2) {
                                 Image(systemName: "pencil")
@@ -83,9 +72,10 @@ struct TranscriptChunkView: View {
                             }
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(AppTheme.accent)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Edit part \(chunkIndex + 1)")
                     }
                 }
             }
@@ -101,29 +91,28 @@ struct TranscriptChunkView: View {
                 .stroke(chunkBorderColor, lineWidth: 2)
         )
         .onTapGesture {
-            if !isEditing {
-                onSeekToChunk()
-            }
+            onSeekToChunk()
         }
+        .sheet(isPresented: $isEditing) {
+            editorSheet
+        }
+        .animation(.easeInOut(duration: 0.15), value: isEditing)
         .animation(.easeInOut(duration: 0.3), value: isCurrentChunk)
         .animation(.easeInOut(duration: 0.3), value: isEdited)
     }
     
+    // Only the playing part is highlighted; an edit is shown by its "Edited" badge alone
     private var chunkBackground: Color {
-        if isEdited {
-            return Color.orange.opacity(0.08)
-        } else if isCurrentChunk {
-            return Color.blue.opacity(0.1)
+        if isCurrentChunk {
+            return AppTheme.accent.opacity(0.1)
         } else {
             return Color.clear
         }
     }
     
     private var chunkBorderColor: Color {
-        if isEdited {
-            return Color.orange.opacity(0.5)
-        } else if isCurrentChunk {
-            return Color.blue.opacity(0.5)
+        if isCurrentChunk {
+            return AppTheme.accent.opacity(0.5)
         } else {
             return Color.clear
         }
@@ -140,16 +129,11 @@ struct TranscriptChunkView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                 }
-                .foregroundStyle(.blue)
+                .foregroundStyle(AppTheme.accent)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RadialGradient(
-                        colors: [Color.blue.opacity(0.2), Color.blue.opacity(0.05)],
-                        center: .center,
-                        startRadius: 5,
-                        endRadius: 20
-                    )
+                    AppTheme.accent.opacity(0.2)
                 )
                 .clipShape(Capsule())
             } else if coordinator.transcribedChunkIds.contains(chunkId) {
@@ -160,16 +144,11 @@ struct TranscriptChunkView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                 }
-                .foregroundColor(.green)
+                .foregroundColor(AppTheme.accent)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RadialGradient(
-                        colors: [Color.green.opacity(0.2), Color.green.opacity(0.05)],
-                        center: .center,
-                        startRadius: 5,
-                        endRadius: 20
-                    )
+                    AppTheme.accent.opacity(0.2)
                 )
                 .clipShape(Capsule())
             } else if coordinator.failedChunkIds.contains(chunkId) {
@@ -180,16 +159,11 @@ struct TranscriptChunkView: View {
                         .font(.caption2)
                         .fontWeight(.medium)
                 }
-                .foregroundColor(.orange)
+                .foregroundColor(AppTheme.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    RadialGradient(
-                        colors: [Color.orange.opacity(0.2), Color.orange.opacity(0.05)],
-                        center: .center,
-                        startRadius: 5,
-                        endRadius: 20
-                    )
+                    AppTheme.textSecondary.opacity(0.2)
                 )
                 .clipShape(Capsule())
             }
@@ -211,59 +185,17 @@ struct TranscriptChunkView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise")
-                        Text("Retry Transcription")
+                        Text("Retry transcription")
                     }
                     .font(.subheadline)
                     .fontWeight(.medium)
                 }
                 .buttonStyle(.borderedProminent)
+                .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                 .tint(AppTheme.magenta)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-        } else if isEditing {
-            VStack(alignment: .leading, spacing: 12) {
-                TextEditor(text: $editedText)
-                    .font(.body)
-                    .frame(minHeight: 200, maxHeight: 400)
-                    .padding(12)
-                    .background(Color(.tertiarySystemBackground))
-                    .cornerRadius(12)
-                    .focused($isTextFocused)
-                    .scrollContentBackground(.hidden)
-                
-                HStack(spacing: 12) {
-                    Button {
-                        isEditing = false
-                        editedText = ""
-                    } label: {
-                        Text("Cancel")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.tertiarySystemBackground))
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button {
-                        saveEdit()
-                    } label: {
-                        Text("Save")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
         } else {
             // Selectable text - user can select and copy individual words
             Text(combinedText)
@@ -276,15 +208,49 @@ struct TranscriptChunkView: View {
         }
     }
     
+    /// Full-screen editor: room for long text, paste and dictation, and Cancel/Save where iOS puts them
+    private var editorSheet: some View {
+        NavigationStack {
+            TextEditor(text: $editedText)
+                .font(.body)
+                .focused($isTextFocused)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 12)
+                .background(AppTheme.background)
+                .navigationTitle(session.chunkCount > 1 ? "Edit part \(chunkIndex + 1)" : "Edit transcript")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { cancelEdit() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { saveEdit() }
+                            .fontWeight(.semibold)
+                            .disabled(editedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || editedText == combinedText)
+                    }
+                }
+                .onAppear { isTextFocused = true }
+        }
+        // Swiping down would throw away changes; make the user pick Cancel or Save
+        .interactiveDismissDisabled(editedText != combinedText)
+    }
+
+    private func cancelEdit() {
+        isTextFocused = false
+        isEditing = false
+        editedText = ""
+    }
+
     private func saveEdit() {
         let trimmedText = editedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty, let firstSegment = segments.first else {
-            isEditing = false
+        guard !trimmedText.isEmpty, trimmedText != combinedText, let firstSegment = segments.first else {
+            cancelEdit()
             return
         }
         
         // Save the edited text to the first segment (we combine all segments into one for simplicity)
         onTextEdited(firstSegment.id, trimmedText)
+        isTextFocused = false
         isEditing = false
         editedText = ""
     }

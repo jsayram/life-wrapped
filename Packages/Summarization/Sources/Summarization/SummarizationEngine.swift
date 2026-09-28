@@ -7,13 +7,14 @@
 
 import Foundation
 import SharedModels
+import LocalLLM
 
 // MARK: - Engine Tier
 
 /// Tiers of summarization engines, ordered by capability
 public enum EngineTier: String, Codable, Sendable, CaseIterable {
     case basic      // Simple extractive + keyword extraction
-    case local      // Local LLM (Phi-3.5 via llama.cpp)
+    case local      // Local LLM (Qwen3 4B or 1.7B via MLX)
     case apple      // Apple Intelligence / Foundation Models (iOS 26+)
     case external   // External API (OpenAI, Anthropic with user keys)
     
@@ -24,10 +25,10 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
     
     public var displayName: String {
         switch self {
-        case .basic: return "Basic"
-        case .local: return "Smart"
-        case .apple: return "Smarter"
-        case .external: return "Smartest"
+        case .basic: return "Key Sentences"
+        case .local: return "Offline AI"
+        case .apple: return "Apple Intelligence"
+        case .external: return "Cloud AI"
         }
     }
     
@@ -54,11 +55,11 @@ public enum EngineTier: String, Codable, Sendable, CaseIterable {
         case .basic:
             return "Fast on-device extractive summarization using sentence scoring and keyword analysis. Works offline."
         case .local:
-            return "On-device LLM (Phi-3.5 Mini) for smart chunk-by-chunk processing. Each audio chunk is summarized by local AI, then aggregated. Works offline."
+            return "On-device model (\(LocalModelType.current.displayName)) for chunk-by-chunk processing. Each audio chunk is cleaned up by local AI, then combined. Works offline."
         case .apple:
             return "Advanced AI using Apple's on-device Foundation Models (iOS 26+, Apple Intelligence enabled). Works offline."
         case .external:
-            return "Premium AI using external services (OpenAI or Anthropic). Requires your API key and internet connection. Automatically falls back to Basic when offline."
+            return "Premium AI using external services (OpenAI or Anthropic). Requires your API key and internet connection. Automatically falls back to Key Sentences when offline."
         }
     }
     

@@ -21,9 +21,9 @@ Life Wrapped uses StoreKit 2 for in-app purchases. This guide covers how to test
 ### Normal Purchase
 
 1. Run the app in Simulator or device
-2. Navigate to Year Wrap or AI Settings
-3. Tap "Smartest AI" (shows 🔒 lock icon)
-4. Tap "Unlock for $4.99"
+2. Go to Settings, then AI & Summaries (or the Year Wrap engine sheet)
+3. Tap "Cloud AI" (shows a 🔒 lock icon and "One-time $2.99 • Tap to unlock")
+4. Tap "Unlock for $2.99, once"
 5. Confirm in the simulated App Store sheet
 6. ✅ Purchase completes instantly
 
@@ -67,8 +67,8 @@ Simulates user closing the purchase sheet mid-transaction:
 This tests your app's handling of:
 
 - `Transaction.updates` listener receiving delayed transactions
-- UI state when purchase is pending
-- Recovery from interrupted purchases
+- UI state when purchase is pending: the purchase sheet shows "Waiting for approval. Cloud AI unlocks as soon as the purchase is approved."
+- Recovery from interrupted purchases: approving it while the sheet is open closes the sheet with a "Cloud AI unlocked" toast
 
 ### Failed Purchases
 
@@ -85,7 +85,7 @@ Test how the app handles purchase failures:
 | **Verification**   | Receipt verification fails |
 | **App Store Sync** | Sync with App Store fails  |
 
-4. Run the app and trigger the operation
+4. Run the app and trigger the operation. The purchase sheet shows a plain-language message under the button (for example "Couldn't reach the App Store. Check your connection and try again."); cancelling shows nothing
 5. **Remember to disable errors** after testing!
 
 ### Specific Error Codes
@@ -106,14 +106,27 @@ You can also simulate specific StoreKit errors:
 
 1. Complete a purchase (follow Normal Purchase steps)
 2. Clear app data or reinstall app
-3. Go to **Settings → Purchases → Restore Purchases**
-4. The Smartest AI feature should unlock again
+3. Go to **Settings → Purchases → Restore purchases** (or use Restore purchases on the purchase sheet)
+4. Cloud AI unlocks again, with a "Cloud AI restored" toast
 
 To test restore when nothing was purchased:
 
 1. Clear all purchase history (Debug → StoreKit → Clear Purchase History)
-2. Tap Restore Purchases
-3. App should show "Nothing to restore" or similar message
+2. Tap Restore purchases
+3. The app says "No Cloud AI purchase was found for the Apple Account signed in to the App Store."
+
+When Cloud AI is already unlocked, Restore purchases says "Cloud AI is already unlocked." without asking the App Store.
+
+---
+
+## Testing Redeem Code
+
+The purchase sheet's **Redeem code** button opens Apple's offer code sheet (`.offerCodeRedemption`). Offer codes work for non-consumables on iOS 16.3 and later.
+
+- **In Xcode:** add an offer code to the Cloud AI product in `StoreKitConfiguration.storekit`; the Transaction Manager can then trigger a redemption.
+- **In the sandbox:** create codes in App Store Connect (the in-app purchase, then Offer Codes). Sandbox accounts have no redemption limit.
+
+A redeemed code arrives through `Transaction.updates`, which unlocks Cloud AI and closes the sheet. Closing Apple's sheet without redeeming shows nothing.
 
 ---
 
@@ -156,7 +169,7 @@ The `StoreManager` logs purchase events:
 
 ```
 🛒 [StoreManager] Checking entitlements...
-✅ [StoreManager] Smartest AI is unlocked
+🔓 [StoreManager] Cloud AI unlocked: true
 🛒 [StoreManager] Purchase successful for smartestAI
 ```
 
@@ -218,10 +231,10 @@ Before starting, ensure you have:
 
 | Field              | Value                                |
 | ------------------ | ------------------------------------ |
-| **Reference Name** | Smartest AI                          |
+| **Reference Name** | Cloud AI                             |
 | **Product ID**     | `com.jsayram.lifewrapped.smartestai` |
 
-> ⚠️ **CRITICAL**: The Product ID must match EXACTLY what's in `StoreManager.swift`. This cannot be changed after creation!
+> ⚠️ **CRITICAL**: The Product ID must match EXACTLY what's in `StoreManager.swift`. This cannot be changed after creation! (The product was first named "Smartest AI"; the reference and display names can be renamed, the ID stays `smartestai`.)
 
 7. Click **Create**
 
@@ -233,8 +246,8 @@ Before starting, ensure you have:
 2. Click **Add Pricing** (or the pricing section)
 3. Select your **Price Tier**:
    - Tier 1 = $0.99
-   - Tier 2 = $1.99 ← (Current test price)
-   - Tier 3 = $2.99
+   - Tier 2 = $1.99
+   - Tier 3 = $2.99 ← (current price)
    - Tier 5 = $4.99
    - etc.
 4. Choose **Start Date**: Select when the price takes effect (usually "Today")
@@ -254,14 +267,14 @@ At least one localization is **required** for review.
 
 | Field            | Value                                                                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display Name** | Smartest AI                                                                                                                                        |
-| **Description**  | Unlock GPT-4, Claude, and other premium AI providers for the highest quality summaries and insights. Bring your own API keys for complete control. |
+| **Display Name** | Cloud AI |
+| **Description**  | Detailed summaries with your own AI key |
 
 5. Click **Save**
 
 **Optional**: Add more languages if your app is localized:
 
-- Spanish: "IA Más Inteligente" / "Desbloquea GPT-4, Claude y otros proveedores de IA premium..."
+- Spanish: "IA en la nube" / "Paga una vez para usar tu propia clave de OpenAI o Anthropic..."
 - etc.
 
 ---
@@ -273,25 +286,25 @@ This is **required** for Apple's review team to test your IAP.
 1. Scroll to **Review Information** section
 2. Add a **Review Screenshot**:
    - Take a screenshot of the purchase screen in your app
-   - Should show the "Unlock Smartest AI" button or purchase confirmation
+   - Should show the "Unlock Cloud AI" sheet (`Images/Iphone/inapp-purchase.jpg` is the current one)
    - Resolution: At least 640x920 pixels
    - Format: PNG or JPEG
 3. Add **Review Notes** (explain to Apple what this IAP does):
 
 ```
-This in-app purchase unlocks the "Smartest AI" feature, which allows users to configure their own API keys for external AI providers (OpenAI GPT-4 or Anthropic Claude).
+This one-time, non-consumable purchase unlocks "Cloud AI", which lets users connect their own API key for OpenAI or Anthropic. There is no subscription; the provider bills the user directly.
 
 How it works:
-1. User purchases "Smartest AI"
-2. User goes to Settings → AI Settings → Smartest Configuration
+1. User purchases "Cloud AI"
+2. User goes to Settings → AI & Summaries → Cloud AI
 3. User enters their own API key from OpenAI or Anthropic
 4. AI summaries are now generated using the external provider
 
 Note: The app is fully functional without this purchase using on-device AI. This is a premium upgrade for users who want the highest quality summaries.
 
 To test:
-1. Navigate to any Year Wrap or the AI Settings screen
-2. Tap "Smartest AI" or the locked sparkle icon
+1. Go to Settings → AI & Summaries
+2. Tap "Cloud AI" (it shows a lock and "One-time $2.99")
 3. Complete the purchase
 4. The API configuration section will unlock
 ```
@@ -407,7 +420,7 @@ Before submitting, test with real App Store Connect (not just Xcode StoreKit):
 □ Create IAP in App Store Connect
   □ Type: Non-Consumable
   □ Product ID: com.jsayram.lifewrapped.smartestai
-  □ Reference Name: Smartest AI
+  □ Reference Name: Cloud AI
 
 □ Configure Pricing
   □ Select price tier
@@ -446,7 +459,7 @@ Before submitting, test with real App Store Connect (not just Xcode StoreKit):
 | **Missing restore purchases** | Ensure "Restore Purchases" button exists in Settings         |
 | **IAP not clearly explained** | Add clear description of what user gets before purchase      |
 | **No way to use without IAP** | Ensure free tier (On-Device AI) is fully functional          |
-| **Price not displayed**       | Show price in the purchase button (e.g., "Unlock for $1.99") |
+| **Price not displayed**       | Show price in the purchase button (e.g., "Unlock for $2.99, once") |
 | **Missing privacy policy**    | Add privacy policy URL in App Store Connect                  |
 
 ---

@@ -1,519 +1,229 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Life Wrapped - Privacy-First Audio Transcript Journaling</title>
-    <meta name="description" content="Privacy-first audio journaling app for iOS and watchOS. All transcription happens on-device.">
-    <style>
-        :root {
-            --primary: #007AFF;
-            --dark: #1a1a1a;
-            --light: #f5f5f7;
-            --gray: #86868b;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            line-height: 1.6;
-            color: var(--dark);
-            background: var(--light);
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
-        }
-        
-        /* Hero Section */
-        .hero {
-            text-align: center;
-            padding: 80px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-        
-        .hero .tagline {
-            font-size: 1.5rem;
-            opacity: 0.9;
-            margin-bottom: 10px;
-        }
-        
-        .hero .subtitle {
-            font-size: 1.1rem;
-            opacity: 0.8;
-            margin-bottom: 30px;
-        }
-        
-        .app-store-badge {
-            height: 50px;
-            transition: transform 0.2s;
-        }
-        
-        .app-store-badge:hover {
-            transform: scale(1.05);
-        }
-        
-        /* Screenshots Section */
-        .screenshots {
-            padding: 80px 20px;
-            background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%);
-            overflow: hidden;
-        }
-        
-        .screenshots h2 {
-            text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 50px;
-            color: white;
-        }
-        
-        /* Carousel */
-        .carousel-container {
-            position: relative;
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 0 60px;
-        }
-        
-        .carousel {
-            display: flex;
-            gap: 30px;
-            overflow-x: auto;
-            scroll-behavior: smooth;
-            scroll-snap-type: x mandatory;
-            -webkit-overflow-scrolling: touch;
-            padding: 20px 0 40px;
-            scrollbar-width: none;
-        }
-        
-        .carousel::-webkit-scrollbar {
-            display: none;
-        }
-        
-        .carousel-slide {
-            flex: 0 0 auto;
-            scroll-snap-align: center;
-            width: 320px;
-            transition: transform 0.3s, opacity 0.3s;
-        }
-        
-        .carousel-slide img {
-            width: 100%;
-            height: auto;
-            border-radius: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-        
-        .carousel-slide:hover img {
-            transform: scale(1.05);
-            box-shadow: 0 30px 80px rgba(0,0,0,0.5);
-        }
-        
-        .carousel-btn {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.2);
-            border: none;
-            color: white;
-            font-size: 24px;
-            cursor: pointer;
-            transition: background 0.3s;
-            z-index: 10;
-            backdrop-filter: blur(10px);
-        }
-        
-        .carousel-btn:hover {
-            background: rgba(255,255,255,0.4);
-        }
-        
-        .carousel-btn.prev {
-            left: 10px;
-        }
-        
-        .carousel-btn.next {
-            right: 10px;
-        }
-        
-        .carousel-dots {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 30px;
-        }
-        
-        .carousel-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.3);
-            border: none;
-            cursor: pointer;
-            transition: background 0.3s, transform 0.3s;
-        }
-        
-        .carousel-dot.active,
-        .carousel-dot:hover {
-            background: white;
-            transform: scale(1.2);
-        }
-        
-        @media (max-width: 768px) {
-            .carousel-slide {
-                width: 280px;
-            }
-            .carousel-btn {
-                width: 40px;
-                height: 40px;
-                font-size: 18px;
-            }
-            .carousel-container {
-                padding: 0 40px;
-            }
-        }
-        
-        /* Features Section */
-        .features {
-            padding: 60px 20px;
-            background: var(--light);
-        }
-        
-        .features h2 {
-            text-align: center;
-            font-size: 2rem;
-            margin-bottom: 40px;
-        }
-        
-        .feature-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        
-        .feature-card {
-            background: white;
-            padding: 30px;
-            border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-        }
-        
-        .feature-card .icon {
-            font-size: 2.5rem;
-            margin-bottom: 15px;
-        }
-        
-        .feature-card h3 {
-            font-size: 1.2rem;
-            margin-bottom: 10px;
-            color: var(--dark);
-        }
-        
-        .feature-card p {
-            color: var(--gray);
-            font-size: 0.95rem;
-        }
-        
-        /* Privacy Section */
-        .privacy {
-            padding: 60px 20px;
-            background: var(--dark);
-            color: white;
-            text-align: center;
-        }
-        
-        .privacy h2 {
-            font-size: 2rem;
-            margin-bottom: 20px;
-        }
-        
-        .privacy p {
-            max-width: 600px;
-            margin: 0 auto 30px;
-            opacity: 0.9;
-        }
-        
-        .privacy-badges {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            flex-wrap: wrap;
-        }
-        
-        .privacy-badge {
-            background: rgba(255,255,255,0.1);
-            padding: 15px 25px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .privacy-badge .icon {
-            font-size: 1.5rem;
-        }
-        
-        /* Links Section */
-        .links {
-            padding: 60px 20px;
-            background: white;
-            text-align: center;
-        }
-        
-        .links h2 {
-            font-size: 2rem;
-            margin-bottom: 30px;
-        }
-        
-        .link-grid {
-            display: flex;
-            justify-content: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .link-card {
-            background: var(--light);
-            padding: 20px 40px;
-            border-radius: 12px;
-            text-decoration: none;
-            color: var(--dark);
-            transition: all 0.2s;
-        }
-        
-        .link-card:hover {
-            background: var(--primary);
-            color: white;
-            transform: translateY(-2px);
-        }
-        
-        /* Footer */
-        footer {
-            padding: 40px 20px;
-            background: var(--light);
-            text-align: center;
-            color: var(--gray);
-        }
-        
-        footer a {
-            color: var(--primary);
-            text-decoration: none;
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-            .hero h1 {
-                font-size: 2.5rem;
-            }
-            
-            .hero .tagline {
-                font-size: 1.2rem;
-            }
-            
-            .screenshot-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Life Wrapped · A private audio journal</title>
+  <meta name="description" content="A private audio journal for iPhone and iPad. Transcribed on your device, summarized your way, wrapped up at the end of the year.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Life Wrapped · A private audio journal">
+  <meta property="og:description" content="Speak, and Life Wrapped turns your days into summaries and a year in review. Transcribed on your iPhone or iPad.">
+  <meta property="og:url" content="https://jsayram.github.io/life-wrapped/">
+  <meta property="og:image" content="https://jsayram.github.io/life-wrapped/assets/icons/icon-512.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <link rel="icon" href="assets/icons/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 </head>
 <body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./" aria-label="Life Wrapped home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="70"><path d="M541 243 H302 Q273 243 273 272 V750 Q273 780 302 780 H632 Q661 780 661 750 V690"/><path d="M362 571 H512 M362 661 H572"/><rect x="602" y="213" width="118" height="238" rx="59" fill="currentColor" stroke="none"/><path d="M527 392 A134 134 0 0 0 795 392"/><path d="M661 525 V631"/></svg>
+        </span>
+        <span class="brand-name">Life Wrapped</span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="privacy">Privacy</a>
+        <a href="support">Support</a>
+        <a href="terms">Terms</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
     <!-- Hero -->
     <section class="hero">
-        <div class="container">
-            <h1>🎙️ Life Wrapped</h1>
-            <p class="tagline">Privacy-First Audio Journaling</p>
-            <p class="subtitle">Your words. Your device. Your privacy.</p>
-            <a href="https://apps.apple.com/us/app/life-wrapped/id6757250245">
-                <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" 
-                     alt="Download on the App Store" 
-                     class="app-store-badge">
-            </a>
+      <div class="wrap">
+        <div class="app-mark" aria-hidden="true">
+          <svg width="46" height="46" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="59"><path d="M541 243 H302 Q273 243 273 272 V750 Q273 780 302 780 H632 Q661 780 661 750 V690"/><path d="M362 571 H512 M362 661 H572"/><rect x="602" y="213" width="118" height="238" rx="59" fill="currentColor" stroke="none"/><path d="M527 392 A134 134 0 0 0 795 392"/><path d="M661 525 V631"/></svg>
         </div>
+        <p class="overline">A private audio journal for iPhone and iPad</p>
+        <h1>Your year,<br>in your own words.</h1>
+        <p class="lead">Speak, and Life Wrapped turns your days into summaries and a year in review. Transcription happens on your iPhone or iPad, and your audio never leaves it.</p>
+        <div class="hero-actions">
+          <a class="badge" href="https://apps.apple.com/us/app/life-wrapped/id6757250245">
+            <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store">
+          </a>
+          <a class="btn btn-line" href="privacy">How your data is handled</a>
+        </div>
+      </div>
     </section>
 
     <!-- Screenshots -->
-    <section class="screenshots">
-        <div class="container">
-            <h2>📱 See It In Action</h2>
-            <div class="carousel-container">
-                <button class="carousel-btn prev" onclick="scrollCarousel(-1)">‹</button>
-                <div class="carousel" id="carousel">
-                    <div class="carousel-slide">
-                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image1.png" alt="Smarter Transcripts - Never miss a thought">
-                    </div>
-                    <div class="carousel-slide">
-                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image2.png" alt="Overview - Your daily insights">
-                    </div>
-                    <div class="carousel-slide">
-                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image3.png" alt="100% Private - On-device AI">
-                    </div>
-                    <div class="carousel-slide">
-                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image4.png" alt="Choose your AI - Connect your favorite engine">
-                    </div>
-                    <div class="carousel-slide">
-                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image5.png" alt="Apple Intelligence Ready">
-                    </div>
-                    <div class="carousel-slide">
-                        <img src="https://raw.githubusercontent.com/jsayram/life-wrapped/main/Images/Iphone/Life-Wrapped-APp/image6.png" alt="Export Your Data - You are in control">
-                    </div>
-                </div>
-                <button class="carousel-btn next" onclick="scrollCarousel(1)">›</button>
+    <section aria-labelledby="shots-title">
+      <div class="wrap">
+        <div class="shots-head">
+          <div>
+            <p class="overline">In the app</p>
+            <h2 id="shots-title">See it in action</h2>
+          </div>
+          <div class="shots-controls">
+            <div class="segmented" role="tablist" aria-label="Device">
+              <button type="button" role="tab" id="tab-iphone" aria-controls="shots-iphone" aria-selected="true" onclick="showDevice('iphone')">iPhone</button>
+              <button type="button" role="tab" id="tab-ipad" aria-controls="shots-ipad" aria-selected="false" tabindex="-1" onclick="showDevice('ipad')">iPad</button>
             </div>
-            <div class="carousel-dots" id="carouselDots"></div>
+            <button class="icon-btn" type="button" aria-label="Previous screenshot" onclick="scrollShots(-1)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <button class="icon-btn" type="button" aria-label="Next screenshot" onclick="scrollShots(1)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
         </div>
+        <div class="shots" id="shots-iphone" role="tabpanel" aria-labelledby="tab-iphone">
+          <img src="assets/screens/iphone-1.jpg" width="560" height="1213" alt="Record screen with the Work and Personal switch and today's recordings" loading="lazy">
+          <img src="assets/screens/iphone-2.jpg" width="560" height="1213" alt="History with search, favorites and recordings grouped by day" loading="lazy">
+          <img src="assets/screens/iphone-3.jpg" width="560" height="1213" alt="A recording with its summary, notes and transcript" loading="lazy">
+          <img src="assets/screens/iphone-4.jpg" width="560" height="1213" alt="Overview of today with a summary for each recording" loading="lazy">
+          <img src="assets/screens/iphone-5.jpg" width="560" height="1213" alt="Year Wrap with the year's story and stats" loading="lazy">
+          <img src="assets/screens/iphone-6.jpg" width="560" height="1213" alt="Choosing a summary quality in AI and Summaries settings" loading="lazy">
+        </div>
+        <div class="shots shots-ipad" id="shots-ipad" role="tabpanel" aria-labelledby="tab-ipad" hidden>
+          <img src="assets/screens/ipad-1.jpg" width="840" height="1120" alt="Record screen on iPad" loading="lazy">
+          <img src="assets/screens/ipad-2.jpg" width="840" height="1120" alt="History on iPad with the list and the chosen recording side by side" loading="lazy">
+          <img src="assets/screens/ipad-3.jpg" width="840" height="1120" alt="A recording on iPad in two columns" loading="lazy">
+          <img src="assets/screens/ipad-4.jpg" width="840" height="1120" alt="Overview on iPad with today's and yesterday's summaries" loading="lazy">
+          <img src="assets/screens/ipad-5.jpg" width="840" height="1120" alt="Year Wrap on iPad" loading="lazy">
+          <img src="assets/screens/ipad-6.jpg" width="840" height="1120" alt="AI and Summaries settings on iPad" loading="lazy">
+        </div>
+      </div>
     </section>
 
     <!-- Features -->
-    <section class="features">
-        <div class="container">
-            <h2>✨ Features</h2>
-            <div class="feature-grid">
-                <div class="feature-card">
-                    <div class="icon">🎙️</div>
-                    <h3>Auto-Chunking Recording</h3>
-                    <p>Automatically splits recordings into manageable segments for efficient processing.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">🗣️</div>
-                    <h3>On-Device Transcription</h3>
-                    <p>All speech-to-text happens locally on your device — never sent to the cloud.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">🤖</div>
-                    <h3>AI-Powered Summaries</h3>
-                    <p>Get intelligent insights and summaries from your recordings automatically.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">📊</div>
-                    <h3>Rich Insights</h3>
-                    <p>Track topics, sentiment, and patterns over time with beautiful analytics.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="icon">🔒</div>
-                    <h3>Privacy-First</h3>
-                    <p>Your data never leaves your device. We don't collect, transmit, or store anything.</p>
-                </div>
-            </div>
+    <section aria-labelledby="features-title">
+      <div class="wrap">
+        <p class="overline">What it does</p>
+        <h2 id="features-title">Talk through your day</h2>
+        <p class="muted" style="max-width: 620px; margin-bottom: 32px;">Record a thought, a meeting or a walk home. Life Wrapped keeps it, writes it down and helps you see the shape of your year.</p>
+        <div class="grid">
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <h3>Record in one tap</h3>
+            <p>Pick Work or Personal and tap once. Long entries are split into short parts automatically, so they transcribe quickly.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg>
+            <h3>Transcribed on your device</h3>
+            <p>Apple's Speech framework, set to on-device recognition only. Your audio is never uploaded. Fix any part of a transcript and add your own notes.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg>
+            <h3>Summaries your way</h3>
+            <p>Key Sentences, Offline AI and Apple Intelligence run on your device. Cloud AI uses the OpenAI or Anthropic model you choose, with your own key, for a one-time $2.99.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z"/><path d="M14 3.5V8h4M9 12.5h6M9 16h4"/></svg>
+            <h3>Your days and months</h3>
+            <p>Every recording gets a title and a summary. Overview shows today and yesterday, and writes a summary of each month, for work, personal or both.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+            <h3>Year Wrap</h3>
+            <p>Your year in review: wins, challenges, projects, people, places and the topics you kept coming back to. Made with Apple Intelligence or Cloud AI.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+            <h3>Find anything</h3>
+            <p>Search titles, notes and transcripts, filter by Work or Personal, and star the recordings you want to keep close.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>
+            <h3>Patterns over time</h3>
+            <p>Your streak, your longest recording, when you record most and the words you use most.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="17" height="7" rx="2"/></svg>
+            <h3>Widgets</h3>
+            <p>Start a Work or Personal recording from your Home Screen or Lock Screen, and see today's count and your streak.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+            <h3>Export anytime</h3>
+            <p>Take your transcripts and summaries with you as JSON, Markdown or PDF, or delete everything whenever you want.</p>
+          </div>
         </div>
+      </div>
     </section>
 
     <!-- Privacy -->
-    <section class="privacy">
-        <div class="container">
-            <h2>🔒 Privacy by Design</h2>
-            <p>Life Wrapped is built with privacy as a core principle. All transcription happens on-device using Apple's Speech framework.</p>
-            <div class="privacy-badges">
-                <div class="privacy-badge">
-                    <span class="icon">📱</span>
-                    <span>100% On-Device</span>
-                </div>
-                <div class="privacy-badge">
-                    <span class="icon">🚫</span>
-                    <span>No Data Collection</span>
-                </div>
-                <div class="privacy-badge">
-                    <span class="icon">🔐</span>
-                    <span>Encrypted Storage</span>
-                </div>
-            </div>
+    <section class="section-ink" aria-labelledby="privacy-title">
+      <div class="wrap">
+        <p class="overline">Privacy</p>
+        <h2 id="privacy-title">Private by design</h2>
+        <p class="muted" style="max-width: 620px; margin-bottom: 32px;">No account, no analytics, no tracking. Your journal lives on your iPhone or iPad.</p>
+        <div class="grid">
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>
+            <h3>Stays on your device</h3>
+            <p>Audio, transcripts, notes and summaries are stored on your device and never sent to us.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/></svg>
+            <h3>No data collection</h3>
+            <p>No analytics SDKs, crash reporters, ads or tracking of any kind.</p>
+          </div>
+          <div class="card">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.6-7.96A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></svg>
+            <h3>Cloud only if you choose</h3>
+            <p>Text leaves your device only when you choose Cloud AI, and only goes to the provider you connect. Audio never does.</p>
+          </div>
         </div>
+      </div>
     </section>
 
     <!-- Links -->
-    <section class="links">
-        <div class="container">
-            <h2>📄 Documentation</h2>
-            <div class="link-grid">
-                <a href="privacy" class="link-card">Privacy Policy</a>
-                <a href="support" class="link-card">Support</a>
-                <a href="terms" class="link-card">Terms of Service</a>
-            </div>
-        </div>
+    <section aria-labelledby="docs-title">
+      <div class="wrap-narrow">
+        <p class="overline">Documentation</p>
+        <h2 id="docs-title">Read the details</h2>
+        <nav class="rows" aria-label="Documentation">
+          <a class="row" href="privacy"><span>Privacy policy</span><span class="value" aria-hidden="true">›</span></a>
+          <a class="row" href="support"><span>Support</span><span class="value" aria-hidden="true">›</span></a>
+          <a class="row" href="terms"><span>Terms of service</span><span class="value" aria-hidden="true">›</span></a>
+        </nav>
+      </div>
     </section>
+  </main>
 
-    <!-- Footer -->
-    <footer>
-        <p>© 2025 Jose Ramirez-Villa - Life Wrapped</p>
-        <p>Made with ❤️ for your privacy</p>
-    </footer>
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>© <span id="year">2026</span> Jose Ramirez-Villa · Life Wrapped</span>
+      <span><a href="privacy">Privacy</a> · <a href="support">Support</a> · <a href="terms">Terms</a></span>
+    </div>
+  </footer>
 
-    <!-- Carousel JavaScript -->
-    <script>
-        const carousel = document.getElementById('carousel');
-        const dotsContainer = document.getElementById('carouselDots');
-        const slides = document.querySelectorAll('.carousel-slide');
-        let currentSlide = 0;
-
-        // Create dots
-        slides.forEach((_, index) => {
-            const dot = document.createElement('button');
-            dot.className = 'carousel-dot' + (index === 0 ? ' active' : '');
-            dot.onclick = () => goToSlide(index);
-            dotsContainer.appendChild(dot);
-        });
-
-        function updateDots() {
-            const dots = document.querySelectorAll('.carousel-dot');
-            dots.forEach((dot, index) => {
-                dot.classList.toggle('active', index === currentSlide);
-            });
-        }
-
-        function scrollCarousel(direction) {
-            currentSlide += direction;
-            if (currentSlide < 0) currentSlide = slides.length - 1;
-            if (currentSlide >= slides.length) currentSlide = 0;
-            goToSlide(currentSlide);
-        }
-
-        function goToSlide(index) {
-            currentSlide = index;
-            const slide = slides[index];
-            const slideWidth = slide.offsetWidth + 30; // including gap
-            // Scroll within the carousel only, don't affect page scroll
-            carousel.scrollTo({ left: slideWidth * index, behavior: 'smooth' });
-            updateDots();
-        }
-
-        // Check if carousel is visible in viewport
-        function isCarouselVisible() {
-            const rect = carousel.getBoundingClientRect();
-            return rect.top < window.innerHeight && rect.bottom > 0;
-        }
-
-        // Update dots on scroll
-        carousel.addEventListener('scroll', () => {
-            const scrollLeft = carousel.scrollLeft;
-            const slideWidth = slides[0].offsetWidth + 30; // including gap
-            currentSlide = Math.round(scrollLeft / slideWidth);
-            updateDots();
-        });
-
-        // Auto-scroll every 4 seconds, only if carousel is visible
-        setInterval(() => {
-            if (isCarouselVisible()) {
-                scrollCarousel(1);
-            }
-        }, 4000);
-    </script>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+    var device = 'iphone';
+    function showDevice(name) {
+      device = name;
+      ['iphone', 'ipad'].forEach(function (d) {
+        var on = d === name;
+        document.getElementById('shots-' + d).hidden = !on;
+        var tab = document.getElementById('tab-' + d);
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        tab.tabIndex = on ? 0 : -1;
+      });
+    }
+    // Arrow keys move between the iPhone and iPad tabs
+    document.querySelector('.segmented').addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      var next = device === 'iphone' ? 'ipad' : 'iphone';
+      showDevice(next);
+      document.getElementById('tab-' + next).focus();
+    });
+    function scrollShots(direction) {
+      var shots = document.getElementById('shots-' + device);
+      var first = shots.querySelector('img');
+      var step = first ? first.getBoundingClientRect().width + 20 : 280;
+      shots.scrollBy({ left: direction * step, behavior: 'smooth' });
+    }
+  </script>
 </body>
 </html>

@@ -24,8 +24,36 @@ public final class AudioCaptureManager: ObservableObject {
     /// FFT frequency magnitudes for waveform visualization (80 bars)
     /// Each value represents the magnitude of a frequency bin
     @Published public private(set) var fftMagnitudes: [Float] = Array(repeating: 0, count: 80)
-    
+
+    /// Recent input levels (0.0 to 1.0), oldest first, for a scrolling level meter.
+    /// About 40 new values a second while recording.
+    @Published public private(set) var levelHistory: [Float] = Array(repeating: 0, count: AudioCaptureManager.levelHistoryCount)
+
+    /// Whether the microphone seems to be hearing anything
+    public enum InputStatus: Equatable, Sendable {
+        case hearing
+        /// Sound is coming in, but nothing loud enough to be a voice for a while
+        case quiet
+        /// No sound at all: the mic is blocked, muted, or taken by another app
+        case noSignal
+    }
+
+    public static let levelHistoryCount = 32
+
     // MARK: - Private Properties
+
+    // Input monitoring, for `inputStatus(at:)`
+    private var recordingStartedAt: Date?
+    private var lastSignalAt: Date?
+    private var lastVoiceAt: Date?
+
+    /// Quieter than this is digital silence; a working mic always picks up some room noise
+    private static let silenceDecibels: Float = -90
+    /// Louder than this counts as someone talking near the phone
+    private static let voiceDecibels: Float = -45
+    /// Meter range: the floor reads as empty bars, the ceiling as full ones
+    private static let meterFloorDecibels: Float = -60
+    private static let meterCeilingDecibels: Float = -10
     
     private let audioEngine = AVAudioEngine()
     private let containerIdentifier: String
@@ -135,6 +163,11 @@ public final class AudioCaptureManager: ObservableObject {
         print("🎧 [AudioCaptureManager] audio session configured")
         #endif
 
+        recordingStartedAt = Date()
+        lastSignalAt = nil
+        lastVoiceAt = nil
+        levelHistory = Array(repeating: 0, count: Self.levelHistoryCount)
+
         // Initialize session tracking (first chunk of new session)
         let sessionId = UUID()
         currentSessionId = sessionId
@@ -238,7 +271,10 @@ public final class AudioCaptureManager: ObservableObject {
             fftSetup = nil
         }
         fftMagnitudes = Array(repeating: 0, count: 80)
-        
+        levelHistory = Array(repeating: 0, count: Self.levelHistoryCount)
+        currentAudioLevel = 0
+        recordingStartedAt = nil
+
         // Reset session state
         currentSessionId = nil
         currentChunkIndex = 0
@@ -546,7 +582,7 @@ public final class AudioCaptureManager: ObservableObject {
         format: AVAudioFormat,
         audioFile: AVAudioFile?,
         onError: (@Sendable (AudioCaptureError) -> Void)?,
-        onAudioLevel: (@Sendable (Float) -> Void)?,
+        onAudioLevel: (@Sendable ([Float]) -> Void)?,
         onFFTMagnitudes: (@Sendable ([Float]) -> Void)?
     ) {
         // Remove any existing tap
@@ -572,38 +608,34 @@ public final class AudioCaptureManager: ObservableObject {
                 }
             }
             
-            // Calculate RMS level for audio visualization (10Hz updates)
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { return }
+
+            // Loudness in dBFS of short slices of the buffer, so the meter follows speech
+            // (a 4096-frame buffer gives four readings, about 40 a second)
+            let sliceCount = max(1, frameLength / 1024)
+            let sliceLength = frameLength / sliceCount
+            var decibels: [Float] = []
+            for slice in 0..<sliceCount {
+                var meanSquare: Float = 0
+                vDSP_measqv(channelData + slice * sliceLength, 1, &meanSquare, vDSP_Length(sliceLength))
+                decibels.append(10 * log10(max(meanSquare, 1e-12)))
+            }
+            if let onAudioLevel = onAudioLevel {
+                DispatchQueue.main.async {
+                    onAudioLevel(decibels)
+                }
+            }
+
+            // FFT for frequency visualization (10Hz updates)
             let now = Date()
             if now.timeIntervalSince(lastLevelUpdate) >= 0.1 { // 10Hz = every 100ms
                 lastLevelUpdate = now
-                
-                guard let channelData = buffer.floatChannelData?[0] else { return }
-                let frameLength = Int(buffer.frameLength)
-                
-                // Calculate RMS (Root Mean Square)
-                var sum: Float = 0
-                for i in 0..<frameLength {
-                    let sample = channelData[i]
-                    sum += sample * sample
-                }
-                let rms = sqrt(sum / Float(frameLength))
-                
-                // Convert to decibels and normalize to 0-1 range
-                // Typical speech range: -40dB to 0dB
-                let db = 20 * log10(max(rms, 0.00001)) // Avoid log(0)
-                let normalizedLevel = max(0, min(1, (db + 40) / 40))
-                
-                // Perform FFT for frequency visualization
+
                 let floatData = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
                 let magnitudes = self.performFFTNonisolated(data: floatData)
-                
-                // Dispatch to main thread
-                if let onAudioLevel = onAudioLevel {
-                    DispatchQueue.main.async {
-                        onAudioLevel(normalizedLevel)
-                    }
-                }
-                
+
                 if let onFFTMagnitudes = onFFTMagnitudes {
                     DispatchQueue.main.async {
                         onFFTMagnitudes(magnitudes)
@@ -622,9 +654,9 @@ public final class AudioCaptureManager: ObservableObject {
         let capturedOnError = self.onError
         
         // Create callback for audio level updates
-        let onAudioLevel: (@Sendable (Float) -> Void) = { [weak self] level in
+        let onAudioLevel: (@Sendable ([Float]) -> Void) = { [weak self] decibels in
             Task { @MainActor in
-                self?.currentAudioLevel = level
+                self?.recordLevels(decibels)
             }
         }
         
@@ -647,6 +679,36 @@ public final class AudioCaptureManager: ObservableObject {
         )
     }
     
+    /// Take slice loudness readings (dBFS) from the tap: feed the meter and note when we last heard something
+    private func recordLevels(_ decibels: [Float]) {
+        guard isRecording else { return }
+        let now = Date()
+        if decibels.contains(where: { $0 > Self.silenceDecibels }) { lastSignalAt = now }
+        if decibels.contains(where: { $0 > Self.voiceDecibels }) { lastVoiceAt = now }
+
+        let range = Self.meterCeilingDecibels - Self.meterFloorDecibels
+        let levels = decibels.map { max(0, min(1, ($0 - Self.meterFloorDecibels) / range)) }
+        levelHistory = Array((levelHistory + levels).suffix(Self.levelHistoryCount))
+        currentAudioLevel = levels.last ?? 0
+    }
+
+    /// Whether the last (or current) recording ever heard something loud enough to be a voice.
+    /// Stays readable after the recording stops, until the next one starts.
+    public var lastRecordingHeardVoice: Bool {
+        lastVoiceAt != nil
+    }
+
+    /// Whether the mic seems to hear anything. Not published: poll it while recording.
+    /// No readings at all (a stalled or interrupted mic) also counts as no signal.
+    public func inputStatus(at now: Date = Date()) -> InputStatus {
+        guard isRecording, let started = recordingStartedAt else { return .hearing }
+        // Give the mic a moment to start before judging it
+        guard now.timeIntervalSince(started) > 3 else { return .hearing }
+        if now.timeIntervalSince(lastSignalAt ?? started) > 3 { return .noSignal }
+        if now.timeIntervalSince(lastVoiceAt ?? started) > 6 { return .quiet }
+        return .hearing
+    }
+
     private func startAudioEngine() throws {
         do {
             // Set up FFT before starting engine

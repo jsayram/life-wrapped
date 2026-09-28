@@ -1,34 +1,25 @@
 # Life Wrapped - AI Agent Instructions
 
-## 🚧 Project Status: Greenfield V1 Development
+## Project Status: Shipped on the App Store
 
-**This is an active V1 project under initial development.** All documentation describes the CURRENT state of the app, not historical changes or migrations.
-
-**Development Philosophy:**
-
-- ✅ Breaking changes are acceptable — this is day-one development
-- ✅ Data loss is fine — SQLite data can be regenerated from test recordings
-- ✅ No migration concerns unless explicitly requested by the developer
-- ✅ Treat all code changes as "what the app IS" not "what changed"
-- ✅ Documentation reflects current implementation, updated as features evolve
+**Life Wrapped is live on the App Store with real users and a paid in-app purchase (Cloud AI).** Their journals live only on their devices, so there's no server copy to fall back on. Treat user data as irreplaceable.
 
 **When making changes:**
 
-- Modify database schemas directly without ALTER TABLE migrations
-- Change model structures without backward compatibility concerns
-- Refactor architecture freely — no production users yet
-- Update this documentation to reflect the NEW current state
+- **Never lose user data.** Schema changes go through a new versioned migration in `Packages/Storage/Sources/Storage/Migrations/SchemaManager.swift` (bump `currentSchemaVersion`, add the step to `runMigrations`). Don't edit existing CREATE TABLE statements in a way that breaks older databases.
+- Keep stored raw values stable: `EngineTier` raw values (`basic`, `local`, `apple`, `external`), `PeriodType` raw values and the in-app purchase product ID `com.jsayram.lifewrapped.smartestai`.
+- Keep this file, the README and the website (`docs/`) describing the current app. When a feature changes what data leaves the device, update `docs/privacy.md` and `App/Views/Utility/PrivacyPolicyView.swift` in the same change.
 
 ---
 
 ## Architecture Overview
 
-**Privacy-First Audio Journaling App** — Transcription happens on-device using Swift 6 with strict concurrency; AI summaries via external API or offline fallback.
+**Privacy-First Audio Journaling App** for iPhone and iPad. Transcription always happens on the device. Summaries come from one of four engines the user picks; only Cloud AI sends text off the device, to the user's own OpenAI or Anthropic account.
 
 ### Core Data Flow
 
 ```
-Recording → Auto-Chunking → Storage (SQLite) → Parallel Transcription → Session Summary (External AI / Apple Intelligence / Basic) → Insights
+Recording → Auto-Chunking → Storage (SQLite) → Parallel Transcription → Session Summary (Cloud AI / Apple Intelligence / Offline AI / Key Sentences) → Insights
 ```
 
 **Key Architectural Pattern**: Session-based chunking
@@ -43,7 +34,7 @@ Recording → Auto-Chunking → Storage (SQLite) → Parallel Transcription → 
 - **Storage**: SQLite via raw `sqlite3` API (no dependencies), uses `actor` for thread safety
 - **AudioCapture**: AVAudioEngine recording + playback, `@MainActor` isolated
 - **Transcription**: Apple Speech framework with abandoned utterance detection
-- **Summarization**: External API adapter (OpenAI/Anthropic) with fallback to Apple Intelligence and Basic engine
+- **Summarization**: Four engines, shown in the UI as Key Sentences (`BasicEngine`), Offline AI (`LocalEngine`), Apple Intelligence (`AppleEngine`) and Cloud AI (`ExternalAPIEngine`, OpenAI/Anthropic). Tier raw values stay `basic`, `local`, `apple`, `external`
 - **InsightsRollup**: Time-based aggregations (hour/day/week/month buckets)
 - **WidgetCore**: Shared widget data models
 
@@ -108,13 +99,12 @@ Database schema lives in `Packages/Storage/Sources/Storage/DatabaseManager.swift
 
 **Session Category System:**
 
-- Users manually mark sessions as Work or Personal via picker in SessionDetailView
+- Users mark each recording as Work or Personal (the Record tab switch, or the recording screen)
 - Categories stored in `session_metadata` table (`category: SessionCategory?`)
-- Year Wrap generation fetches all session categories and passes to AI as context
-- AI classifies Year Wrap items as work/personal/both based on user's session categories
-- **Architecture**: User choice → Database → Context → AI classification (NOT AI inference from content)
+- Work and Personal are separate journals: each has its own month summaries (`MonthDigestBuilder`) and its own Year Wrap (`YearWrapBuilder`). "All" is combined in code, not by the model
+- **Architecture**: User choice → Database → per-journal month summaries → per-journal Year Wrap (NOT AI inference from content)
 
-**To modify schema**: Edit CREATE TABLE, delete app, reinstall. Test data regenerates from new recordings.
+**To modify schema**: add a versioned migration in `SchemaManager.swift`. Never require deleting the app.
 
 ### Testing Transcription
 
@@ -140,41 +130,27 @@ if newWordCount < currentWordCount {
 - `ClassifiedItem`: Year Wrap insight with category (text + category)
 - `ItemFilter`: PDF export filter (all, workOnly, personalOnly)
 
-### Year Wrap Work/Personal Classification
+### Year Wrap and month summaries
 
-**Architecture**: User-defined session categories → AI classification context
-
-Year Wrap items are classified based on which sessions they originated from:
-
-```swift
-// 1. User marks sessions in UI
-SessionDetailView → Picker → updateSessionCategory(category: .work/.personal)
-
-// 2. Year Wrap generation fetches categories
-fetchSessionCategoriesForYear(year:) → [UUID: SessionCategory]
-buildCategoryContext(categoryMap:) → String (context for AI)
-
-// 3. AI receives context and classifies items
-UniversalPrompt.buildMessages(categoryContext: "5 work sessions, 3 personal...")
-AI returns: [ClassifiedItem] with .work, .personal, or .both
-
-// 4. UI displays badges and PDF filters
-CategoryBadge(category: .work) → 💼 Work (blue)
-PDF Export with ItemFilter → filter items by category
-```
+- `SummaryCoordinator.updateMonthDigest` builds one `MonthDigest` per journal from that month's recording summaries, dates, labels and notes, and rebuilds it when those inputs change (hash check). Ended months are finished in the background when the app opens.
+- `SummaryCoordinator.wrapUpYear` builds one Year Wrap per journal from its month digests with the engine the user picked (Apple Intelligence or Cloud AI only, via `yearWrapGenerator`), then combines them for "All" with `YearWrapData.combining`.
+- `ItemCategory` (work, personal, both) and `ItemFilter` (all, workOnly, personalOnly) drive the filters and PDF export.
 
 **Key Files**:
 
-- [SessionDetailView.swift](../../App/Views/Details/SessionDetailView.swift) - Category picker UI
-- [SummaryCoordinator.swift](../../App/Coordinators/SummaryCoordinator.swift) - Category fetching logic
-- [UniversalPrompt.swift](../../Packages/Summarization/Sources/Summarization/UniversalPrompt.swift) - AI schema with category rules
-- [YearWrapDetailView.swift](../../App/Views/Overview/YearWrapDetailView.swift) - Category badges and PDF filters
+- [SummaryCoordinator.swift](../App/Coordinators/SummaryCoordinator.swift) - month digests, Year Wrap, titles
+- [MonthDigestBuilder.swift](../Packages/Summarization/Sources/Summarization/MonthDigestBuilder.swift) - month summaries
+- [YearWrapBuilder.swift](../Packages/Summarization/Sources/Summarization/YearWrapBuilder.swift) - Year Wrap
+- [YearWrapDetailView.swift](../App/Views/Overview/YearWrapDetailView.swift) - Year Wrap screen and PDF export
 
 ### Enum Extensions for Display
 
 ```swift
-public enum PeriodType: String, Codable {
-    case session, hour, day, week, month
+public enum PeriodType: String, Codable, Sendable, CaseIterable {
+    case session, hour, day, week, month, quarter, year
+    case yearWrap, yearWrapWork, yearWrapPersonal, monthDigest
+    // Only session, monthDigest and the yearWrap types are written now. The others stay
+    // so older databases still decode.
 
     public var displayName: String { /* ... */ }
 }
@@ -324,7 +300,7 @@ SessionDetailView implements:
 **Non-Negotiable Rules**:
 
 - ALL transcription uses `requiresOnDeviceRecognition = true`
-- NO network calls in production code (verify with `./Scripts/verify-privacy.sh`)
+- Network calls are limited to: the Offline AI model download (Hugging Face), StoreKit, and Cloud AI requests to api.openai.com / api.anthropic.com plus the www.apple.com connectivity check, both only when the user has saved an API key. Any new network call needs a privacy policy update first (verify with `./Scripts/verify-privacy.sh`)
 - SQLite with `FileProtectionType.completeUntilFirstUserAuthentication`
 - App Group sharing for widgets: `group.com.jsayram.lifewrapped`
 
@@ -337,16 +313,17 @@ Uses `.xcconfig` files in `Config/`:
 
 ## Documentation References
 
-- [auto-chunking-transcription.md](../Docs/auto-chunking-transcription.md) - Complete feature architecture
+- [auto-chunking-transcription.md](../App/appDocs/auto-chunking-transcription.md) - Complete feature architecture
+- [docs/privacy.md](../docs/privacy.md) - What leaves the device, as promised to users
 - [README.md](../README.md) - Setup and development workflow
 
 ---
 
 ## Key Principles
 
-1. **Greenfield Flexibility**: This is V1 development — make changes freely, no backward compatibility required
+1. **Protect User Data**: The app is shipped. Migrate, never wipe, and keep stored raw values stable
 2. **Session-Based Architecture**: Chunk-processing pipeline with parallel transcription
-3. **On-Device Only**: All processing local, privacy-first design
+3. **On-Device First**: Transcription and three of the four summary engines run on the device; Cloud AI is opt-in and uses the user's own key
 4. **Swift 6 Concurrency**: Maintain strict concurrency safety with actors and @MainActor
 5. **Session Integrity**: Keep sessionId + chunkIndex relationship intact
 6. **Documentation Currency**: Update this file to reflect current state, not change history

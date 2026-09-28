@@ -31,8 +31,8 @@ struct YearInsightsView: View {
                 }
             } else if sessions.isEmpty {
                 Section {
-                    ContentUnavailableView(
-                        "No Data for \(String(year))",
+                    GraphiteEmptyState(
+                        "No data for \(String(year))",
                         systemImage: "calendar.badge.exclamationmark",
                         description: Text("No recordings found for this year.")
                     )
@@ -51,7 +51,7 @@ struct YearInsightsView: View {
                             
                             Image(systemName: "calendar")
                                 .font(.title)
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(AppTheme.accent)
                         }
                         
                         // Stats grid
@@ -64,21 +64,21 @@ struct YearInsightsView: View {
                                 icon: "mic.circle.fill",
                                 value: "\(sessionCount)",
                                 label: "Sessions",
-                                color: .blue
+                                color: AppTheme.accent
                             )
                             
                             StatCard(
                                 icon: "timer",
                                 value: formatDuration(totalDuration),
                                 label: "Total Time",
-                                color: .green
+                                color: AppTheme.accent
                             )
                             
                             StatCard(
                                 icon: "text.word.spacing",
                                 value: formatWordCount(totalWordCount),
                                 label: "Words",
-                                color: .purple
+                                color: AppTheme.accent
                             )
                         }
                     }
@@ -112,7 +112,7 @@ struct YearInsightsView: View {
                             }
                         }
                     } header: {
-                        Text("Monthly Breakdown")
+                        Text("Monthly breakdown")
                     }
                 }
                 
@@ -144,17 +144,18 @@ struct YearInsightsView: View {
                     Button(role: .destructive) {
                         showDeleteAlert = true
                     } label: {
-                        Label("Delete All \(String(year)) Data", systemImage: "trash")
+                        Label("Delete all \(String(year)) data", systemImage: "trash")
                     }
                 } header: {
-                    Text("Danger Zone")
+                    Text("Danger zone")
                 } footer: {
                     Text("Permanently delete all recordings and data from \(String(year)). This cannot be undone.")
                 }
             }
         }
+        .themedScreen()
         .navigationTitle(String(year))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadYearData()
         }

@@ -93,6 +93,10 @@ public struct RecordingSession: Identifiable, Sendable, Hashable {
     
     public var id: UUID { sessionId }
     
+    /// The journal this recording belongs to. Recordings from before categories existed have
+    /// none and count as Personal, the recorder's default.
+    public var journal: SessionCategory { category ?? .personal }
+    
     public init(sessionId: UUID, chunks: [AudioChunk], title: String? = nil, notes: String? = nil, isFavorite: Bool = false, category: SessionCategory? = nil) {
         self.sessionId = sessionId
         self.chunks = chunks.sorted { $0.chunkIndex < $1.chunkIndex }
@@ -239,6 +243,8 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
     public let engineTier: String?  // "basic", "apple", "local", "external"
     public let sourceIds: String?  // JSON array of source UUIDs (session/summary IDs used as input)
     public let inputHash: String?  // SHA256 hash of input content for change detection
+    /// The journal a period summary was built for (Work or Personal). Nil when it isn't tied to one.
+    public let category: SessionCategory?
 
     public init(
         id: UUID = UUID(),
@@ -252,7 +258,8 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         entitiesJSON: String? = nil,
         engineTier: String? = nil,
         sourceIds: String? = nil,
-        inputHash: String? = nil
+        inputHash: String? = nil,
+        category: SessionCategory? = nil
     ) {
         self.id = id
         self.periodType = periodType
@@ -266,6 +273,7 @@ public struct Summary: Identifiable, Codable, Sendable, Hashable {
         self.engineTier = engineTier
         self.sourceIds = sourceIds
         self.inputHash = inputHash
+        self.category = category
     }
 }
 
@@ -282,6 +290,7 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
     case yearWrap
     case yearWrapWork
     case yearWrapPersonal
+    case monthDigest  // Structured month record (MonthDigest JSON) that Year Wrap is built from
 
     public var displayName: String {
         switch self {
@@ -305,6 +314,8 @@ public enum PeriodType: String, Codable, Sendable, CaseIterable {
             return "Year Wrap (Work)"
         case .yearWrapPersonal:
             return "Year Wrap (Personal)"
+        case .monthDigest:
+            return "Month Digest"
         }
     }
     
@@ -435,16 +446,38 @@ public enum ItemFilter: String, Codable, Sendable, CaseIterable, Identifiable {
     case personalOnly
     
     public var id: String { rawValue }
+    
+    /// Each filter has its own Year Wrap: All covers everything, Work and Personal only their recordings
+    public var yearWrapType: PeriodType {
+        switch self {
+        case .all: return .yearWrap
+        case .workOnly: return .yearWrapWork
+        case .personalOnly: return .yearWrapPersonal
+        }
+    }
+}
+
+extension SessionCategory {
+    /// The filter that shows this journal
+    public var itemFilter: ItemFilter {
+        switch self {
+        case .work: return .workOnly
+        case .personal: return .personalOnly
+        }
+    }
 }
 
 /// Classified item with work/personal designation
 public struct ClassifiedItem: Codable, Sendable, Hashable {
     public let text: String
     public let category: ItemCategory
+    /// Recordings this item came from. Nil for wraps made before digests existed.
+    public let sessionIds: [UUID]?
     
-    public init(text: String, category: ItemCategory) {
+    public init(text: String, category: ItemCategory, sessionIds: [UUID]? = nil) {
         self.text = text
         self.category = category
+        self.sessionIds = sessionIds
     }
 }
 
@@ -464,6 +497,10 @@ public struct YearWrapData: Codable, Sendable {
     public let opportunitiesMissed: [ClassifiedItem]
     public let peopleMentioned: [PersonMention]
     public let placesVisited: [PlaceVisit]
+    /// Numbers computed in code from the month digests. Nil for older wraps.
+    public let stats: YearWrapStats?
+    /// All only: each journal's own title and summary. Nil for a journal's wrap and for older wraps.
+    public let journals: [JournalStory]?
     
     public init(
         yearTitle: String,
@@ -479,7 +516,9 @@ public struct YearWrapData: Codable, Sendable {
         valuableActionsTaken: [ClassifiedItem],
         opportunitiesMissed: [ClassifiedItem],
         peopleMentioned: [PersonMention],
-        placesVisited: [PlaceVisit]
+        placesVisited: [PlaceVisit],
+        stats: YearWrapStats? = nil,
+        journals: [JournalStory]? = nil
     ) {
         self.yearTitle = yearTitle
         self.yearSummary = yearSummary
@@ -495,6 +534,43 @@ public struct YearWrapData: Codable, Sendable {
         self.opportunitiesMissed = opportunitiesMissed
         self.peopleMentioned = peopleMentioned
         self.placesVisited = placesVisited
+        self.stats = stats
+        self.journals = journals
+    }
+}
+
+/// One journal's title and summary inside the All wrap
+public struct JournalStory: Codable, Sendable, Hashable {
+    public let category: SessionCategory
+    public let title: String
+    public let summary: String
+
+    public init(category: SessionCategory, title: String, summary: String) {
+        self.category = category
+        self.title = title
+        self.summary = summary
+    }
+}
+
+/// Year-level numbers for the Wrapped screen, computed without the LLM
+public struct YearWrapStats: Codable, Sendable, Hashable {
+    public let sessionCount: Int
+    public let totalMinutes: Int
+    public let wordCount: Int
+    public let activeDays: Int
+    public let workCount: Int
+    public let personalCount: Int
+    /// Month number (1-12) with the most recordings
+    public let busiestMonth: Int?
+    
+    public init(sessionCount: Int, totalMinutes: Int, wordCount: Int, activeDays: Int, workCount: Int, personalCount: Int, busiestMonth: Int?) {
+        self.sessionCount = sessionCount
+        self.totalMinutes = totalMinutes
+        self.wordCount = wordCount
+        self.activeDays = activeDays
+        self.workCount = workCount
+        self.personalCount = personalCount
+        self.busiestMonth = busiestMonth
     }
 }
 
@@ -503,11 +579,16 @@ public struct PersonMention: Codable, Sendable {
     public let name: String
     public let relationship: String?
     public let impact: String?
+    public let sessionIds: [UUID]?
+    /// The journal this mention came from; set in the All wrap, where both journals are listed
+    public let category: ItemCategory?
     
-    public init(name: String, relationship: String? = nil, impact: String? = nil) {
+    public init(name: String, relationship: String? = nil, impact: String? = nil, sessionIds: [UUID]? = nil, category: ItemCategory? = nil) {
         self.name = name
         self.relationship = relationship
         self.impact = impact
+        self.sessionIds = sessionIds
+        self.category = category
     }
 }
 
@@ -516,10 +597,15 @@ public struct PlaceVisit: Codable, Sendable {
     public let name: String
     public let frequency: String?
     public let context: String?
+    public let sessionIds: [UUID]?
+    /// The journal this place came from; set in the All wrap, where both journals are listed
+    public let category: ItemCategory?
     
-    public init(name: String, frequency: String? = nil, context: String? = nil) {
+    public init(name: String, frequency: String? = nil, context: String? = nil, sessionIds: [UUID]? = nil, category: ItemCategory? = nil) {
         self.name = name
         self.frequency = frequency
         self.context = context
+        self.sessionIds = sessionIds
+        self.category = category
     }
 }

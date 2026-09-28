@@ -13,90 +13,59 @@ struct SessionRowClean: View {
     let hasSummary: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    // Title or date/time
-                    if let title = session.title, !title.isEmpty {
-                        Text(title)
-                            .font(.headline)
-                            .lineLimit(2)
-                    } else {
-                        Text(session.startTime, format: .dateTime.month().day().hour().minute())
-                            .font(.headline)
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: session.journal.outlineSymbol)
+                .scaledFont(size: 17, weight: .regular)
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 22, height: 22)
+                .padding(.top, 1)
+                .accessibilityLabel(session.journal.displayName)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(displayTitle)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .lineLimit(2)
+                    if session.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.caption)
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .accessibilityLabel("Favorite")
                     }
-                    
+                }
+
+                // Meta line: time, duration, words or status
+                HStack(spacing: 10) {
                     Text(timeString)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                // Category badge
-                if let category = session.category {
-                    Label(category.displayName, systemImage: category.systemImage)
-                        .font(.caption2)
-                        .foregroundStyle(Color(hex: category.colorHex))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(Color(hex: category.colorHex).opacity(0.15))
-                        )
-                }
-                
-                // Favorite star
-                if session.isFavorite {
-                    Image(systemName: "star.fill")
-                        .font(.caption)
-                        .foregroundStyle(.yellow)
-                }
-            }
-            
-            // Duration and word count
-            HStack(spacing: 12) {
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
                     Text(formatDuration(session.totalDuration))
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                
-                if let count = wordCount, count > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "text.alignleft")
-                        Text("\(count) words")
+                        .monospacedDigit()
+                    Text(statusText)
+                    if hasSummary {
+                        Image(systemName: "checkmark.circle")
+                            .accessibilityLabel("Summarized")
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
+                .font(.footnote)
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineLimit(1)
             }
-            .foregroundStyle(.secondary)
-            
-            // Status indicators
-            HStack(spacing: 6) {
-                if session.chunkCount > 1 {
-                    StatusPill(text: "\(session.chunkCount) parts", color: .blue, icon: "waveform")
-                }
-                
-                if hasSummary {
-                    StatusPill(text: "Summarized", color: .green, icon: "checkmark.circle.fill")
-                }
-                
-                // Show processing if wordCount is nil (still being transcribed)
-                if wordCount == nil {
-                    StatusPill(text: "Processing", color: .orange, icon: "gearshape.fill")
-                }
-                // Show "No Words" badge if transcription complete but 0 words
-                else if let count = wordCount, count == 0 {
-                    StatusPill(text: "No Words To Transcribe", color: .gray, icon: "mic.slash.fill")
-                }
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 6)
     }
-    
+
+    private var displayTitle: String {
+        if let title = session.title, !title.isEmpty { return title }
+        return "Untitled recording"
+    }
+
+    private var statusText: String {
+        guard let count = wordCount else { return "Transcribing" }
+        if count == 0 { return "No speech" }
+        return "\(count.formatted()) words"
+    }
+
     private var timeString: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
@@ -106,10 +75,6 @@ struct SessionRowClean: View {
     private func formatDuration(_ duration: TimeInterval) -> String {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
-        if minutes > 0 {
-            return "\(minutes)m \(seconds)s"
-        } else {
-            return "\(seconds)s"
-        }
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }

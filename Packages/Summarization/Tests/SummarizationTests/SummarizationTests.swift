@@ -240,7 +240,7 @@ struct AppleEngineTierTests {
     @Test("Apple tier has correct display name")
     func testAppleTierDisplayName() {
         let tier = EngineTier.apple
-        #expect(tier.displayName == "Smarter")
+        #expect(tier.displayName == "Apple Intelligence")
     }
     
     @Test("Apple tier has correct subtitle")
@@ -286,7 +286,7 @@ struct AppleEngineLegacyTests {
     @available(iOS 18.1, *)
     func testLegacyEngineTier() async throws {
         // Test tier without needing actual storage
-        #expect(EngineTier.apple.displayName == "Smarter")
+        #expect(EngineTier.apple.displayName == "Apple Intelligence")
     }
     
     @Test("Legacy engine error message contains correct iOS version")
@@ -622,9 +622,11 @@ struct AppStoreGuideline423ComplianceTests {
     
     @Test("4.2.3(ii): Download size is clearly disclosed")
     func testDownloadSizeDisclosed() async throws {
-        // All download UI must show the size before user initiates download
-        let expectedSizeFormat = "~2.3 GB"
-        #expect(expectedSizeFormat.contains("GB"), "Download size must be displayed in GB for large files")
+        // All download UI must show the size before user initiates download.
+        // This is the exact string every download button and prompt uses.
+        let shownSize = LocalEngine.modelDownloadSize
+        // Qwen3 4B (2.28 GB) on 6 GB devices, Qwen3 1.7B (0.98 GB) on 4 GB phones
+        #expect(["~2.3 GB", "~1.0 GB"].contains(shownSize), "Shown size must match the model this device downloads")
     }
     
     @Test("4.2.3(ii): User must explicitly initiate download")
@@ -678,9 +680,10 @@ struct UserConsentDownloadTests {
     
     @Test("Download button must show file size")
     func testDownloadButtonShowsSize() async throws {
-        // Expected model size format should be displayed
-        let expectedSizeFormat = "~2.3 GB"
-        #expect(expectedSizeFormat.contains("GB") || expectedSizeFormat.contains("MB"))
+        // The size string shown on download buttons
+        let shownSize = LocalEngine.modelDownloadSize
+        #expect(shownSize.contains("GB") || shownSize.contains("MB"))
+        #expect(!LocalEngine.modelDisplayName.isEmpty)
     }
     
     @Test("Model size is non-trivial and must be disclosed")

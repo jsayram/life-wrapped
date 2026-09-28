@@ -3,6 +3,7 @@
 // =============================================================================
 
 import SwiftUI
+import AudioCapture
 
 // MARK: - Recording Button
 
@@ -11,35 +12,57 @@ struct RecordingButton: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var recordingDuration: TimeInterval = 0
-    @State private var waveAmplitude: CGFloat = 0.5
-    @State private var wavePhase: CGFloat = 0.0
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// Bigger on iPad so the button holds the larger screen
+    private var faceScale: CGFloat { sizeClass == .regular ? 1.35 : 1 }
     
     // Timer that fires every 0.1 seconds to update the recording duration
     private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Spacer()
-            
+        VStack(spacing: 28) {
+            Spacer(minLength: 0)
+
+            if coordinator.recordingState.isRecording {
+                VStack(spacing: 20) {
+                    Text(formatDuration(recordingDuration))
+                        .scaledFont(size: 48, weight: .light, design: .monospaced)
+                        .monospacedDigit()
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .accessibilityLabel("Recording time \(formatDuration(recordingDuration))")
+                    LevelBars(audio: coordinator.audioCapture)
+                        .frame(height: 48)
+                        .accessibilityHidden(true)
+                    InputWarning(audio: coordinator.audioCapture)
+                }
+                .transition(.opacity)
+            }
+
             Button(action: handleRecordingAction) {
-                waveformView
+                recordButtonFace
                     .contentShape(Circle())
             }
             .disabled(coordinator.recordingState.isProcessing)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityHint(accessibilityHint)
             .buttonStyle(.plain)
-            
-            Text(statusText)
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            
-            Spacer()
-            Spacer()
-            Spacer()
+
+            VStack(spacing: 4) {
+                Text(statusText)
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.textPrimary)
+                if case .idle = coordinator.recordingState {
+                    Text("Transcribed privately on this \(DeviceName.current)")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+            }
+            .padding(.top, -8)
+
+            Spacer(minLength: 0)
         }
+        .animation(.easeInOut(duration: 0.2), value: coordinator.recordingState.isRecording)
         .onReceive(timer) { _ in
             if case .recording(let startTime) = coordinator.recordingState {
                 recordingDuration = Date().timeIntervalSince(startTime)
@@ -61,114 +84,47 @@ struct RecordingButton: View {
             }
         }
     }
-    
+
     // MARK: - Subviews
-    
-    private var waveformView: some View {
+
+    /// Flat record button: a card-colored ring with a hairline border around a solid ink circle.
+    /// Idle shows a microphone; recording shows a red stop square.
+    private var recordButtonFace: some View {
         ZStack {
+            Circle()
+                .fill(AppTheme.card)
+                .overlay(Circle().strokeBorder(AppTheme.hairline, lineWidth: 1))
+                .frame(width: 168 * faceScale, height: 168 * faceScale)
+
+            Circle()
+                .fill(AppTheme.accent)
+                .frame(width: 132 * faceScale, height: 132 * faceScale)
+
             if coordinator.recordingState.isRecording {
-                // Background gradient pulse
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(hex: "#A855F7").opacity(0.3),
-                                Color(hex: "#3B82F6").opacity(0.2),
-                                Color.clear
-                            ],
-                            center: .center,
-                            startRadius: 20,
-                            endRadius: 90
-                        )
-                    )
-                    .frame(width: 180, height: 180)
-                    .scaleEffect(waveAmplitude * 0.3 + 0.9)
-                    .animation(.easeInOut(duration: 0.15), value: waveAmplitude)
-                
-                // Floating orbs
-                ForEach(0..<6, id: \.self) { index in
-                    Circle()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: CGFloat.random(in: 15...30), height: CGFloat.random(in: 15...30))
-                        .blur(radius: 8)
-                        .offset(
-                            x: cos(wavePhase * 0.5 + CGFloat(index) * .pi / 3) * 50,
-                            y: sin(wavePhase * 0.5 + CGFloat(index) * .pi / 3) * 50
-                        )
-                }
-                
-                // Siri-style wave animation clipped to circle
-                SiriWaveView(amplitude: waveAmplitude, phase: wavePhase)
-                    .frame(width: 180, height: 180)
-                    .clipShape(Circle())
-                
-                // Thin circle outline
-                Circle()
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color(hex: "#A855F7").opacity(0.4),
-                                Color(hex: "#3B82F6").opacity(0.4),
-                                Color(hex: "#06B6D4").opacity(0.4)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-                    .frame(width: 180, height: 180)
-                    .onAppear {
-                        startWaveAnimation()
-                    }
+                RoundedRectangle(cornerRadius: 8 * faceScale, style: .continuous)
+                    .fill(AppTheme.recording)
+                    .frame(width: 36 * faceScale, height: 36 * faceScale)
+            } else if coordinator.recordingState.isProcessing {
+                ProgressView()
+                    .tint(AppTheme.onAccent)
+                    .controlSize(.large)
             } else {
-                // Static circle when idle
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(hex: "#A855F7"),
-                                Color(hex: "#3B82F6")
-                            ],
-                            center: .center,
-                            startRadius: 30,
-                            endRadius: 75
-                        )
-                    )
-                    .frame(width: 150, height: 150)
-                    .opacity(0.7)
+                Image(systemName: "mic")
+                    .scaledFont(size: 40 * faceScale, weight: .regular)
+                    .foregroundStyle(AppTheme.onAccent)
             }
         }
-        .frame(width: 180, height: 180)
-        .shadow(color: Color(hex: "#A855F7").opacity(0.5), radius: 30, x: 0, y: 0)
-        .shadow(color: Color(hex: "#3B82F6").opacity(0.3), radius: 50, x: 0, y: 0)
+        .frame(width: 168 * faceScale, height: 168 * faceScale)
     }
-    
-    private func startWaveAnimation() {
-        withAnimation(Animation.linear(duration: 0.15).repeatForever(autoreverses: false)) {
-            wavePhase -= 1.5
-        }
-        
-        // Random amplitude changes
-        Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak coordinator] _ in
-            Task { @MainActor in
-                guard let coordinator = coordinator else { return }
-                guard coordinator.recordingState.isRecording else { return }
-                withAnimation(.linear(duration: 0.15)) {
-                    self.waveAmplitude = CGFloat.random(in: 0.3...0.9)
-                }
-            }
-        }
-    }
-    
+
     // MARK: - Helpers
     
     private var statusText: String {
         switch coordinator.recordingState {
-        case .idle: return "Tap to start recording"
-        case .recording: 
-            return "Tap to stop Recording... \(formatDuration(recordingDuration))"
-        case .processing: return "Processing..."
-        case .completed: return "Saved!"
+        case .idle: return "Tap to record"
+        case .recording: return "Tap to stop"
+        case .processing: return "Saving"
+        case .completed: return "Saved"
         case .failed(let message): return message
         }
     }
@@ -226,6 +182,53 @@ struct RecordingButton: View {
                 errorMessage = error.localizedDescription
                 showError = true
             }
+        }
+    }
+}
+
+// MARK: - Level Bars
+
+/// Scrolling level meter driven by the microphone: newest reading on the right.
+private struct LevelBars: View {
+    @ObservedObject var audio: AudioCaptureManager
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(Array(audio.levelHistory.enumerated()), id: \.offset) { index, level in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(index < 4 ? AppTheme.textSecondary : AppTheme.textPrimary)
+                    .frame(width: 3, height: max(4, 46 * CGFloat(level)))
+            }
+        }
+        .animation(.easeOut(duration: 0.08), value: audio.levelHistory)
+    }
+}
+
+// MARK: - Input Warning
+
+/// Tells the user when the mic isn't picking them up, so a silent recording isn't a surprise later.
+private struct InputWarning: View {
+    let audio: AudioCaptureManager
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            let message = message(for: audio.inputStatus(at: context.date))
+            Label(message ?? " ", systemImage: "mic.slash")
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .opacity(message == nil ? 0 : 1)
+                .animation(.easeInOut(duration: 0.25), value: message)
+                .accessibilityHidden(message == nil)
+        }
+        .frame(minHeight: 40)
+    }
+
+    private func message(for status: AudioCaptureManager.InputStatus) -> String? {
+        switch status {
+        case .hearing: return nil
+        case .quiet: return "Can't hear you. Move closer or speak up."
+        case .noSignal: return "The mic isn't picking up any sound. It may be blocked or in use by another app."
         }
     }
 }

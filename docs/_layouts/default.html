@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title %}{{ page.title }} · {% endif %}Life Wrapped</title>
+  <meta name="description" content="{{ site.description }}">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{% if page.title %}{{ page.title }} · {% endif %}Life Wrapped">
+  <meta property="og:description" content="{{ site.description }}">
+  <meta property="og:image" content="{{ '/assets/icons/icon-512.png' | absolute_url }}">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+  <link rel="icon" href="{{ '/assets/icons/favicon.ico' | relative_url }}" sizes="any">
+  <link rel="icon" type="image/png" href="{{ '/assets/icons/icon-192.png' | relative_url }}">
+  <link rel="apple-touch-icon" href="{{ '/assets/icons/apple-touch-icon.png' | relative_url }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="{{ '/' | relative_url }}" aria-label="Life Wrapped home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 1024 1024" fill="none" stroke="currentColor" stroke-width="70"><path d="M541 243 H302 Q273 243 273 272 V750 Q273 780 302 780 H632 Q661 780 661 750 V690"/><path d="M362 571 H512 M362 661 H572"/><rect x="602" y="213" width="118" height="238" rx="59" fill="currentColor" stroke="none"/><path d="M527 392 A134 134 0 0 0 795 392"/><path d="M661 525 V631"/></svg>
+        </span>
+        <span class="brand-name">Life Wrapped</span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="{{ '/privacy' | relative_url }}"{% if page.url contains 'privacy' %} aria-current="page"{% endif %}>Privacy</a>
+        <a href="{{ '/support' | relative_url }}"{% if page.url contains 'support' %} aria-current="page"{% endif %}>Support</a>
+        <a href="{{ '/terms' | relative_url }}"{% if page.url contains 'terms' %} aria-current="page"{% endif %}>Terms</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="wrap-narrow">
+      {{ content }}
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>© {{ 'now' | date: '%Y' }} Jose Ramirez-Villa · Life Wrapped</span>
+      <span><a href="{{ '/privacy' | relative_url }}">Privacy</a> · <a href="{{ '/support' | relative_url }}">Support</a> · <a href="{{ '/terms' | relative_url }}">Terms</a></span>
+    </div>
+  </footer>
+  <script>
+    // Let wide tables scroll sideways on small screens instead of the whole page
+    document.querySelectorAll('.page table').forEach(function (t) {
+      var d = document.createElement('div');
+      d.className = 'table-scroll';
+      t.parentNode.insertBefore(d, t);
+      d.appendChild(t);
+    });
+  </script>
+</body>
+</html>

@@ -1,249 +1,92 @@
 import SwiftUI
 import SharedModels
-
-/// Full-screen loading overlay for Year Wrap generation with animated progress indicator
-fileprivate struct YearWrapLoadingOverlay: View {
-    let statusMessage: String
-    
-    @State private var animationRotation: Double = 0
-    @State private var pulseScale: CGFloat = 1.0
-    
-    var body: some View {
-        ZStack {
-            // Blurred background
-            Color.black.opacity(0.7)
-                .ignoresSafeArea()
-            
-            VStack(spacing: 30) {
-                // Animated year wrap icon
-                ZStack {
-                    // Outer pulsing ring
-                    Circle()
-                        .stroke(
-                            LinearGradient(
-                                colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 4
-                        )
-                        .frame(width: 120, height: 120)
-                        .scaleEffect(pulseScale)
-                        .animation(
-                            .easeInOut(duration: 1.5).repeatForever(autoreverses: true),
-                            value: pulseScale
-                        )
-                    
-                    // Rotating gradient ring
-                    Circle()
-                        .trim(from: 0, to: 0.75)
-                        .stroke(
-                            AngularGradient(
-                                gradient: Gradient(colors: [
-                                    AppTheme.purple,
-                                    .blue,
-                                    .cyan,
-                                    AppTheme.purple
-                                ]),
-                                center: .center,
-                                startAngle: .degrees(0),
-                                endAngle: .degrees(360)
-                            ),
-                            style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                        )
-                        .frame(width: 100, height: 100)
-                        .rotationEffect(.degrees(animationRotation))
-                        .animation(
-                            .linear(duration: 2).repeatForever(autoreverses: false),
-                            value: animationRotation
-                        )
-                    
-                    // Center icon
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [AppTheme.purple.opacity(0.3), AppTheme.purple.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 70, height: 70)
-                        
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 32, weight: .medium))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [AppTheme.purple, .cyan],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .symbolEffect(.pulse.byLayer)
-                    }
-                }
-                .frame(width: 120, height: 120)
-                
-                VStack(spacing: 12) {
-                    // Title
-                    Text("Generating Year Wrap")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                    
-                    // Status message with detailed steps
-                    VStack(spacing: 8) {
-                        Text(statusMessage)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                            .animation(.easeInOut, value: statusMessage)
-                        
-                        // Progress indicators
-                        if statusMessage.contains("Step") {
-                            HStack(spacing: 8) {
-                                ForEach(1...3, id: \.self) { step in
-                                    Circle()
-                                        .fill(getStepColor(for: step, current: statusMessage))
-                                        .frame(width: 10, height: 10)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                                        )
-                                }
-                            }
-                            .padding(.top, 4)
-                        }
-                    }
-                    
-                    // Animated progress dots
-                    HStack(spacing: 4) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Circle()
-                                .fill(Color.white.opacity(0.6))
-                                .frame(width: 6, height: 6)
-                                .scaleEffect(pulseScale)
-                                .animation(
-                                    .easeInOut(duration: 0.6)
-                                        .repeatForever(autoreverses: true)
-                                        .delay(Double(index) * 0.2),
-                                    value: pulseScale
-                                )
-                        }
-                    }
-                    .padding(.top, 8)
-                }
-            }
-            .padding(40)
-            .background(
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 30, x: 0, y: 10)
-            )
-            .padding(.horizontal, 40)
-        }
-        .onAppear {
-            animationRotation = 360
-            pulseScale = 1.2
-        }
-    }
-    
-    /// Determines the color for step progress indicators
-    private func getStepColor(for step: Int, current statusMessage: String) -> Color {
-        // Extract step number from message like "Step 1 of 3: Combined Year Wrap"
-        if let range = statusMessage.range(of: "Step \\d+", options: .regularExpression),
-           let currentStepString = statusMessage[range].split(separator: " ").last,
-           let currentStep = Int(currentStepString) {
-            if step < currentStep {
-                return AppTheme.emerald // Completed
-            } else if step == currentStep {
-                return AppTheme.purple // In progress
-            } else {
-                return Color.white.opacity(0.3) // Pending
-            }
-        }
-        return Color.white.opacity(0.3) // Default
-    }
-}
+import Summarization
 
 struct OverviewTab: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @Environment(\.colorScheme) var colorScheme
-    @State private var periodSummary: Summary?
     @State private var sessionCount: Int = 0
     @State private var sessionsInPeriod: [RecordingSession] = []
-    @State private var yearWrapSummary: Summary?
-    @State private var yearWrapWorkSummary: Summary?
-    @State private var yearWrapPersonalSummary: Summary?
-    @State private var yearWrapFilter: ItemFilter = .all
-    @State private var isWrappingUpYear = false
-    @State private var yearWrapGenerationStatus: String = ""
-    @State private var isRegeneratingPeriodSummary = false
+    /// This year's wraps: All, Work and Personal each have their own
+    @State private var yearWraps: [ItemFilter: Summary] = [:]
+    /// All / Work / Personal, shared by Month and Year so the choice carries between them
+    @State private var categoryFilter: ItemFilter = .all
+    @State private var monthDigest: MonthDigest?
+    /// The shown month still comes from a digest saved before work and personal were separate
+    @State private var monthDigestIsOld = false
+    /// First day of the month the Month view shows; starts on the current month
+    @State private var selectedMonth: Date = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+    /// Months with recordings, newest first, for the month switcher
+    @State private var availableMonths: [Date] = []
+    @State private var isUpdatingMonthDigest = false
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
     @State private var showPurchaseSheet = false
-    @State private var showLocalAIConfirmation = false
-    @State private var showExternalAIConfirmation = false
-    @State private var pendingAIEngine: AIEngine?
-    
-    enum AIEngine {
-        case local
-        case external
-    }
+    @State private var reopenYearWrapAfterPurchase = false
     
     // Session summaries for Today/Yesterday feed
     @State private var sessionSummaries: [Summary] = []
-    // Period rollups for Week/Month/Year feed
-    @State private var periodRollups: [Summary] = []
+    /// Journal of each recording in the Today/Yesterday feed, from its saved category
+    @State private var sessionJournals: [UUID: SessionCategory] = [:]
     
     // Navigation state for session detail
     @State private var selectedSession: RecordingSession?
     @State private var showSessionDetail = false
-    
-    /// The currently active Year Wrap based on filter selection
-    private var activeYearWrap: Summary? {
-        switch yearWrapFilter {
-        case .all:
-            return yearWrapSummary
-        case .workOnly:
-            return yearWrapWorkSummary
-        case .personalOnly:
-            return yearWrapPersonalSummary
-        }
-    }
 
+    /// Overview's width, to put summary cards two-up when there's room (iPad)
+    @State private var contentWidth: CGFloat = 0
+    /// On iPad the Overview stays in one centered column instead of spanning the screen
+    private let columnWidth: CGFloat = 860
+    private var cardsTwoUp: Bool { min(contentWidth, columnWidth) >= 760 }
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Time Range Picker - ALWAYS show so users can switch periods
-                Picker("Time Range", selection: $selectedTimeRange) {
-                    ForEach(TimeRange.allCases) { range in
-                        Text(range.rawValue).tag(range)
-                    }
+                // iPad: the title sits over the centered column, not at the screen's left edge
+                if sizeClass == .regular {
+                    ColumnTitle("Overview")
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                        .readableColumn(columnWidth)
                 }
-                .pickerStyle(.segmented)
-                .tint(AppTheme.purple)
+
+                // Time Range Picker - ALWAYS show so users can switch periods
+                GraphiteSegmentedControl(
+                    options: TimeRange.allCases.map { .init(value: $0, title: $0.rawValue) },
+                    selection: $selectedTimeRange
+                )
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .disabled(isLoading)
+                .readableColumn(columnWidth)
+                
+                // Which journal: one switch for every range, so the choice carries between them
+                GraphiteSegmentedControl(
+                    options: ItemFilter.allCases.map { .init(value: $0, title: $0.displayName.capitalized) },
+                    selection: $categoryFilter
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .readableColumn(columnWidth)
                 
                 // Content area
                 Group {
                     if isLoading {
                         LoadingView(size: .medium)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if periodSummary == nil && sessionsInPeriod.isEmpty {
-                        ContentUnavailableView(
-                            "No Overview Yet",
+                    } else if sessionsInPeriod.isEmpty && yearWraps.isEmpty {
+                        GraphiteEmptyState(
+                            "No overview yet",
                             systemImage: "doc.text",
                             description: Text("Record more journal entries to generate summaries.")
                         )
                     } else {
                         // Copy All button
-                        if !sessionSummaries.isEmpty {
+                        if !visibleSessionSummaries.isEmpty {
                             HStack {
                                 Spacer()
                                 Button {
@@ -252,181 +95,105 @@ struct OverviewTab: View {
                                     HStack(spacing: 6) {
                                         Image(systemName: "doc.on.doc")
                                             .font(.caption)
-                                        Text("Copy \(sessionSummaries.count)")
+                                        Text("Copy \(visibleSessionSummaries.count)")
                                             .font(.caption)
                                             .fontWeight(.medium)
                                     }
-                                    .foregroundStyle(AppTheme.purple)
+                                    .foregroundStyle(AppTheme.textPrimary)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(
-                                                RadialGradient(
-                                                    colors: [AppTheme.purple.opacity(0.15), AppTheme.purple.opacity(0.05)],
-                                                    center: .center,
-                                                    startRadius: 0,
-                                                    endRadius: 40
-                                                )
-                                            )
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(
-                                                LinearGradient(
-                                                    colors: [AppTheme.purple.opacity(0.4), AppTheme.magenta.opacity(0.3)],
-                                                    startPoint: .leading,
-                                                    endPoint: .trailing
-                                                ),
-                                                lineWidth: 1.5
-                                            )
-                                    )
+                                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                                 }
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
+                            .readableColumn(columnWidth)
                         }
                         
                         // New Feed Layout
                         ScrollView {
                             LazyVStack(spacing: 16) {
-                                // Local period summary card for Today/Week/Month
-                                if [.today, .week, .month].contains(selectedTimeRange) {
-                                    if let periodSummary {
-                                        PeriodSummaryCard(
-                                            title: periodSummaryTitle(for: selectedTimeRange),
-                                            subtitle: "Local AI rollup (on-device)",
-                                            summary: periodSummary,
-                                            isRegenerating: isRegeneratingPeriodSummary,
-                                            onCopy: {
-                                                UIPasteboard.general.string = periodSummary.text
-                                                coordinator.showSuccess("Summary copied")
-                                            },
-                                            onRegenerate: {
-                                                Task {
-                                                    await regenerateAndReloadPeriodSummary()
-                                                }
-                                            }
-                                        )
+                                if selectedTimeRange == .month {
+                                    monthSwitcher
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
-                                    } else if !sessionsInPeriod.isEmpty {
-                                        GeneratePeriodSummaryCard(
-                                            title: periodSummaryTitle(for: selectedTimeRange),
-                                            isGenerating: isRegeneratingPeriodSummary,
-                                            onGenerate: {
-                                                Task {
-                                                    await regenerateAndReloadPeriodSummary()
-                                                }
-                                            }
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
+                                }
+                                
+                                // Month digest while it's being built for the first time
+                                if selectedTimeRange == .month && monthDigest == nil && isUpdatingMonthDigest {
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                        Text("Building the \(selectedMonth.formatted(.dateTime.month(.wide))) digest…")
+                                            .font(.footnote)
+                                            .foregroundStyle(AppTheme.textSecondary)
                                     }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 8)
+                                }
+                                
+                                // The month's digest: both journals, or the one chosen above
+                                if selectedTimeRange == .month, let monthDigest {
+                                    MonthDigestCard(
+                                        digest: monthDigest,
+                                        filter: categoryFilter,
+                                        isUpdating: isUpdatingMonthDigest,
+                                        isSplitting: monthDigestIsOld && isUpdatingMonthDigest,
+                                        onCopy: {
+                                            UIPasteboard.general.string = monthDigest.plainText(filter: categoryFilter)
+                                            coordinator.showSuccess("Month copied")
+                                        },
+                                        onRegenerate: {
+                                            Task { await refreshMonthDigest(force: true) }
+                                            }
+                                        )
+                                        .padding(.horizontal, 16)
+                                        .padding(.top, 8)
                                 }
                                 
                                 // Year Wrapped Summary (only show for Year timerange)
                                 if selectedTimeRange == .allTime {
-                                    // Filter picker for Year Wrap
-                                    HStack(spacing: 0) {
-                                        ForEach(ItemFilter.allCases) { filter in
-                                            Button {
-                                                withAnimation(.easeInOut(duration: 0.2)) {
-                                                    yearWrapFilter = filter
-                                                }
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: filter.icon)
-                                                        .font(.caption2)
-                                                    Text(filter.displayName)
-                                                        .font(.caption)
-                                                        .fontWeight(.medium)
-                                                }
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
-                                                .frame(maxWidth: .infinity)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 8)
-                                                        .fill(yearWrapFilter == filter ? filterColor(for: filter) : Color.clear)
-                                                )
-                                                .foregroundStyle(yearWrapFilter == filter ? .white : .secondary)
-                                            }
-                                        }
-                                    }
-                                    .padding(4)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color(.tertiarySystemBackground))
-                                    )
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 8)
-                                    
-                                    if let yearWrap = activeYearWrap {
-                                        YearWrappedCard(
-                                            summary: yearWrap,
-                                            coordinator: coordinator,
-                                            filter: yearWrapFilter,
-                                            onRegenerate: {
-                                                showYearWrapConfirmation = true
-                                            },
-                                            isRegenerating: isWrappingUpYear
-                                        )
+                                    yearWrapSection
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
-                                    } else if yearWrapFilter != .all && yearWrapSummary != nil {
-                                        // Show message if category-specific wrap doesn't exist yet
-                                        VStack(spacing: 12) {
-                                            Image(systemName: yearWrapFilter == .workOnly ? "briefcase" : "house")
-                                                .font(.title)
-                                                .foregroundStyle(.secondary)
-                                            Text("No \(yearWrapFilter.displayName) Year Wrap")
-                                                .font(.headline)
-                                                .foregroundStyle(.secondary)
-                                            Text("Add Category in a session for Year Wrap to create category-specific summaries")
-                                                .font(.caption)
-                                                .foregroundStyle(.tertiary)
-                                                .multilineTextAlignment(.center)
-                                            Button {
-                                                showYearWrapConfirmation = true
-                                            } label: {
-                                                Label("Generate", systemImage: "sparkles")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                            }
-                                            .buttonStyle(.borderedProminent)
-                                            .tint(filterColor(for: yearWrapFilter))
-                                        }
-                                        .padding(24)
-                                        .frame(maxWidth: .infinity)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 16)
-                                                .fill(Color(.secondarySystemBackground))
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                    } else if !sessionsInPeriod.isEmpty {
-                                        // Show generate button if no Year Wrap exists
-                                        GenerateYearWrapCard(
-                                            onGenerate: {
-                                                showYearWrapConfirmation = true
-                                            },
-                                            isGenerating: isWrappingUpYear
-                                        )
-                                        .padding(.horizontal, 16)
-                                        .padding(.top, 8)
-                                    }
+                                        .animation(.easeInOut, value: coordinator.isGeneratingYearWrap)
                                 }
                             }
-                            
+                            .readableColumn(columnWidth)
+
+                            // Wide screens: the day's cards two-up. Each card shows its time, so the
+                            // hour headers are left out there.
+                            if cardsTwoUp && [.today, .yesterday].contains(selectedTimeRange) && !visibleSessionSummaries.isEmpty {
+                                let cards = groupSessionsByTimeBucket().flatMap(\.summaries)
+                                Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                                    ForEach(Array(stride(from: 0, to: cards.count, by: 2)), id: \.self) { index in
+                                        GridRow(alignment: .top) {
+                                            summaryCard(cards[index])
+                                            if index + 1 < cards.count {
+                                                summaryCard(cards[index + 1])
+                                            } else {
+                                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .readableColumn(columnWidth)
+                            } else {
                             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                                let timeBuckets = groupSessionsByTimeBucket()
+                                // Only buckets with summaries; empty hours add noise
+                                let timeBuckets = groupSessionsByTimeBucket().filter { !$0.isEmpty }
                                 
-                                if timeBuckets.isEmpty {
-                                    // No session summaries found
-                                    ContentUnavailableView(
-                                        "No Summaries Yet",
+                                if timeBuckets.isEmpty && [.today, .yesterday].contains(selectedTimeRange) {
+                                    // Today and Yesterday list session summaries; the other ranges already
+                                    // show their summary card, a generate card or the Year Wrap above
+                                    GraphiteEmptyState(
+                                        categoryFilter == .all ? "No summaries yet" : "No \(categoryFilter.displayName.lowercased()) recordings",
                                         systemImage: "doc.text",
-                                        description: Text("Session summaries will appear here once recordings are summarized.")
+                                        description: Text(categoryFilter == .all
+                                            ? "Session summaries will appear here once recordings are summarized."
+                                            : "Recordings you make as \(categoryFilter.displayName.capitalized) will appear here.")
                                     )
                                     .padding(.top, 60)
                                 } else {
@@ -456,38 +223,35 @@ struct OverviewTab: View {
                                             // Time bucket header
                                             HStack {
                                                 Text(bucket.header)
-                                                    .font(.headline)
-                                                    .fontWeight(.semibold)
-                                                    .foregroundStyle(bucket.isEmpty ? .secondary : .primary)
+                                                    .font(.footnote.weight(.semibold))
+                                                    .foregroundStyle(AppTheme.textPrimary)
                                                 
                                                 Spacer()
                                                 
                                                 if !bucket.isEmpty {
-                                                    Text("\(bucket.summaries.count)")
-                                                        .font(.caption)
-                                                        .fontWeight(.medium)
-                                                        .foregroundStyle(.secondary)
-                                                        .padding(.horizontal, 8)
-                                                        .padding(.vertical, 4)
-                                                        .background(
-                                                            Capsule()
-                                                                .fill(Color(.tertiarySystemFill))
-                                                        )
+                                                    Text("\(bucket.summaries.count) summar\(bucket.summaries.count == 1 ? "y" : "ies")")
+                                                        .font(.footnote)
+                                                        .foregroundStyle(AppTheme.textSecondary)
                                                 }
                                             }
                                             .padding(.horizontal, 16)
                                             .padding(.vertical, 12)
-                                            .background(Color(.systemGroupedBackground))
+                                            .background(AppTheme.background)
                                         }
                                     }
                                 }
+                            }
+                            .readableColumn(columnWidth)
                             }
                         }
                     }
                 }
             }
-            .background(Color(.systemGroupedBackground))
+            .background(AppTheme.background)
+            .onWidthChange { contentWidth = $0 }
+            .themedScreen()
             .navigationTitle("Overview")
+            .toolbar(sizeClass == .regular ? .hidden : .automatic, for: .navigationBar)
             .navigationDestination(isPresented: $showSessionDetail) {
                 if let session = selectedSession {
                     SessionDetailView(session: session)
@@ -504,47 +268,25 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
-            .onChange(of: selectedTimeRange) { oldValue, newValue in
+            .onChange(of: selectedMonth) { _, _ in
+                monthDigest = nil
                 Task {
                     await loadInsights()
                 }
             }
-            .alert("Generate Year Wrap?", isPresented: $showLocalAIConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Generate", role: .destructive) {
-                    Task {
-                        await wrapUpYear(forceRegenerate: true, useLocalAI: true)
-                    }
+            .onChange(of: selectedTimeRange) { oldValue, newValue in
+                Task {
+                    await loadInsights()
                 }
-            } message: {
-                Text("⚠️ This will take 2-3 minutes and cannot be stopped once started.\n\n‼️ IMPORTANT: Keep the app open and screen unlocked during generation. Don't minimize or switch apps.\n\nAre you sure you want to continue?")
-            }
-            .alert("Generate Year Wrap with External AI?", isPresented: $showExternalAIConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Generate", role: .destructive) {
-                    Task {
-                        await wrapUpYear(forceRegenerate: true, useLocalAI: false)
-                    }
-                }
-            } message: {
-                Text("⚠️ This will take 1-2 minutes and cannot be stopped once started.\n\nYour transcript will be sent to your configured AI provider for processing.\n\nAre you sure you want to continue?")
             }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
                     smartestAIPrice: coordinator.storeManager.smartestAIProduct?.displayPrice,
                     isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
-                    onGenerateWithExternal: {
+                    onGenerate: { engine in
                         showYearWrapConfirmation = false
-                        Task {
-                            await wrapUpYear(forceRegenerate: true, useLocalAI: false)
-                        }
-                    },
-                    onGenerateWithLocal: {
-                        showYearWrapConfirmation = false
-                        Task {
-                            await wrapUpYear(forceRegenerate: true, useLocalAI: true)
-                        }
+                        coordinator.startYearWrap(engine: engine)
                     },
                     onPurchaseSmartestAI: {
                         // Close this sheet and show purchase sheet
@@ -555,45 +297,25 @@ struct OverviewTab: View {
                     },
                     onCancel: {
                         showYearWrapConfirmation = false
-                    },
-                    showLocalAIConfirmation: $showLocalAIConfirmation,
-                    showExternalAIConfirmation: $showExternalAIConfirmation
+                    }
                 )
                 .environmentObject(coordinator)
-                .presentationDetents([.medium])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
-            .sheet(isPresented: $showPurchaseSheet) {
+            .sheet(isPresented: $showPurchaseSheet, onDismiss: {
+                // Back to the wrap choices, where Cloud AI is now ready or asks for an API key
+                if reopenYearWrapAfterPurchase {
+                    reopenYearWrapAfterPurchase = false
+                    showYearWrapConfirmation = true
+                }
+            }) {
                 SmartestPurchaseSheet(
-                    price: coordinator.storeManager.smartestAIProduct?.displayPrice,
-                    isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
-                    isRestoring: coordinator.storeManager.purchaseState == .restoring,
-                    onPurchase: {
-                        Task {
-                            let success = await coordinator.storeManager.purchaseSmartestAI()
-                            if success {
-                                showPurchaseSheet = false
-                                coordinator.showSuccess("Smartest AI unlocked! Configure your API key in Settings.")
-                            }
-                        }
-                    },
-                    onRestore: {
-                        Task {
-                            await coordinator.storeManager.restorePurchases()
-                            if coordinator.storeManager.isSmartestAIUnlocked {
-                                showPurchaseSheet = false
-                                coordinator.showSuccess("Purchases restored!")
-                            }
-                        }
-                    },
-                    onRedeem: {
-                        Task {
-                            await coordinator.storeManager.presentRedeemCode()
-                            if coordinator.storeManager.isSmartestAIUnlocked {
-                                showPurchaseSheet = false
-                                coordinator.showSuccess("Code redeemed!")
-                            }
-                        }
+                    store: coordinator.storeManager,
+                    onUnlocked: {
+                        reopenYearWrapAfterPurchase = true
+                        showPurchaseSheet = false
+                        coordinator.showSuccess("Cloud AI unlocked")
                     },
                     onCancel: {
                         showPurchaseSheet = false
@@ -603,22 +325,6 @@ struct OverviewTab: View {
                 .presentationDragIndicator(.visible)
             }
         }
-        .overlay {
-            if isWrappingUpYear {
-                YearWrapLoadingOverlay(statusMessage: coordinator.yearWrapProgress.isEmpty ? yearWrapGenerationStatus : coordinator.yearWrapProgress)
-            }
-        }
-    }
-    
-    private func filterColor(for filter: ItemFilter) -> Color {
-        switch filter {
-        case .all:
-            return AppTheme.purple
-        case .workOnly:
-            return .blue
-        case .personalOnly:
-            return .green
-        }
     }
     
     private func loadInsights() async {
@@ -627,29 +333,17 @@ struct OverviewTab: View {
         // Get date range for filtering
         let dateRange = getDateRange(for: selectedTimeRange)
         
-        // Load period summary based on selected time range
-        let periodType: PeriodType = {
-            switch selectedTimeRange {
-            case .yesterday: return .day
-            case .today: return .day
-            case .week: return .week
-            case .month: return .month
-            case .allTime: return .year // Show yearly summary for current year
-            }
-        }()
-        
         // Clear previous data to avoid stale counts when DB is unavailable
         sessionsInPeriod = []
         sessionCount = 0
         sessionSummaries = []
-        periodRollups = []
         
         // Load sessions in this period first
         if let dbManager = coordinator.getDatabaseManager() {
             if selectedTimeRange == .today || selectedTimeRange == .yesterday {
                 sessionsInPeriod = (try? await dbManager.fetchSessionsByDate(date: dateRange.start)) ?? []
             } else {
-                // For week/month/all, fetch ALL sessions and filter by date range
+                // For month/year, fetch ALL sessions and filter by date range
                 let allSessions = try? await coordinator.fetchRecentSessions(limit: 10000)
                 sessionsInPeriod = allSessions?.filter { session in
                     session.startTime >= dateRange.start && session.startTime < dateRange.end
@@ -661,193 +355,106 @@ struct OverviewTab: View {
             switch selectedTimeRange {
             case .today, .yesterday:
                 // Load session summaries for individual sessions
-                sessionSummaries = (try? await dbManager.fetchSessionSummariesInDateRange(
+                let summaries = (try? await dbManager.fetchSessionSummariesInDateRange(
                     from: dateRange.start,
                     to: dateRange.end
                 )) ?? []
+                let ids = summaries.compactMap { $0.sessionId }
+                // A deleted recording's summary can outlive it; only list recordings that still exist
+                let existing = (try? await dbManager.existingSessionIds(among: ids)) ?? Set(ids)
+                sessionSummaries = summaries.filter { $0.sessionId.map(existing.contains) ?? false }
+                let metadata = (try? await dbManager.fetchSessionMetadataBatch(sessionIds: ids)) ?? [:]
+                sessionJournals = metadata.compactMapValues { $0.category }
                 print("✅ [OverviewTab] Loaded \(sessionSummaries.count) session summaries")
                 
-            case .week:
-                // Load weekly rollup summaries (one card per week)
-                periodRollups = (try? await dbManager.fetchWeeklySummaries(
-                    from: dateRange.start,
-                    to: dateRange.end
-                )) ?? []
-                print("✅ [OverviewTab] Loaded \(periodRollups.count) weekly rollups")
-                
-            case .month:
-                // Load monthly rollup summaries (one card per month)
-                periodRollups = (try? await dbManager.fetchMonthlySummaries(
-                    from: dateRange.start,
-                    to: dateRange.end
-                )) ?? []
-                print("✅ [OverviewTab] Loaded \(periodRollups.count) monthly rollups")
-                
-            case .allTime:
-                // Load yearly rollup summary (single card for whole year)
-                let allYearlySummaries = (try? await dbManager.fetchSummaries(periodType: .year)) ?? []
-                periodRollups = allYearlySummaries.filter { summary in
-                    summary.periodStart >= dateRange.start && summary.periodStart < dateRange.end
-                }
-                print("✅ [OverviewTab] Loaded \(periodRollups.count) yearly rollup")
+            case .month, .allTime:
+                // Month digests and Year Wraps are loaded below
+                break
             }
         }
         
-        // Try to fetch existing period summary (don't auto-generate on view load)
-        // For week/month/year, use Date() to get current period, for day use startDate
-        let dateForFetch = (periodType == .day) ? dateRange.start : Date()
-        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForFetch)
+        // Year Wraps are for the current year
+        let dateForFetch = Date()
 
-        if selectedTimeRange == .allTime {
-            yearWrapSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForFetch)
-            yearWrapWorkSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForFetch)
-            yearWrapPersonalSummary = try? await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForFetch)
-            
-            print("📊 [OverviewTab] Year Wraps loaded - Combined: \(yearWrapSummary != nil), Work: \(yearWrapWorkSummary != nil), Personal: \(yearWrapPersonalSummary != nil)")
-            
-            // Check for staleness after fetching Year Wrap
-            if let yearWrap = yearWrapSummary {
-                let calendar = Calendar.current
-                let year = calendar.component(.year, from: dateForFetch)
-                
-                if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                    await MainActor.run {
-                        coordinator.updateYearWrapNewSessionCount(newCount)
-                    }
-                }
-            } else {
-                // No Year Wrap exists, reset staleness count
-                coordinator.updateYearWrapNewSessionCount(0)
+        if selectedTimeRange == .month {
+            availableMonths = await coordinator.monthsWithRecordings()
+            let status = await coordinator.fetchMonthDigestStatus(date: selectedMonth)
+            monthDigest = status?.digest
+            monthDigestIsOld = status?.usesLegacy ?? false
+            // Build or refresh in the background; returns right away when nothing changed
+            if !sessionsInPeriod.isEmpty || monthDigest == nil {
+                Task { await refreshMonthDigest(force: false) }
             }
         } else {
-            yearWrapSummary = nil
-            yearWrapWorkSummary = nil
-            yearWrapPersonalSummary = nil
-            // Reset staleness count when not viewing Year
-            coordinator.updateYearWrapNewSessionCount(0)
+            monthDigest = nil
         }
-        
-        // Debug logging
-        if periodSummary == nil && !sessionsInPeriod.isEmpty {
-            print("ℹ️ [OverviewTab] No \(periodType.rawValue) summary found for \(dateForFetch.formatted()), use Regenerate to create one")
-            print("   Searched for: type=\(periodType.rawValue), date=\(dateForFetch.ISO8601Format())")
-            print("   Sessions in period: \(sessionsInPeriod.count)")
-        } else if periodSummary != nil {
-            print("✅ [OverviewTab] Found \(periodType.rawValue) summary for \(dateForFetch.formatted())")
+
+        if selectedTimeRange == .allTime {
+            var wraps: [ItemFilter: Summary] = [:]
+            for filter in ItemFilter.allCases {
+                wraps[filter] = await coordinator.fetchYearWrap(for: filter, date: dateForFetch)
+            }
+            yearWraps = wraps
+            
+            // Staleness is measured against the All wrap, which every run writes, and counted per
+            // journal so each card only reports changes that affect its own wrap
+            if let yearWrap = wraps[.all] {
+                let year = Calendar.current.component(.year, from: dateForFetch)
+                var counts: [ItemFilter: Int] = [:]
+                counts[.all] = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year)
+                counts[.workOnly] = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year, journal: .work)
+                counts[.personalOnly] = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year, journal: .personal)
+                coordinator.updateYearWrapOutdatedCounts(counts)
+            } else {
+                coordinator.updateYearWrapOutdatedCounts([:])
+            }
+        } else {
+            yearWraps = [:]
+            // Reset staleness count when not viewing Year
+            coordinator.updateYearWrapOutdatedCounts([:])
         }
         
         isLoading = false
     }
     
-    private func regenerateAndReloadPeriodSummary() async {
-        guard !isRegeneratingPeriodSummary else { return }
-        isRegeneratingPeriodSummary = true
-        defer { isRegeneratingPeriodSummary = false }
-        await regeneratePeriodSummary()
-        await loadInsights()
-    }
-
-    private func regeneratePeriodSummary() async {
-        let (startDate, _) = getDateRange(for: selectedTimeRange)
-        
-        let periodType: PeriodType = {
-            switch selectedTimeRange {
-            case .yesterday: return .day
-            case .today: return .day
-            case .week: return .week
-            case .month: return .month
-            case .allTime: return .year
-            }
-        }()
-        
-        // Use Date() (today) for week/month/year calculations, startDate for day
-        let dateForGeneration = (periodType == .day) ? startDate : Date()
-        
-        print("🔄 [OverviewTab] Regenerating \(periodType.rawValue) summary...")
-        
-        switch periodType {
-        case .day:
-            await coordinator.updateDailySummary(date: dateForGeneration, forceRegenerate: true)
-        case .week:
-            await coordinator.updateWeeklySummary(date: dateForGeneration, forceRegenerate: true)
-        case .month:
-            await coordinator.updateMonthlySummary(date: dateForGeneration, forceRegenerate: true)
-        case .year:
-            await coordinator.updateYearlySummary(date: dateForGeneration, forceRegenerate: true)
-        default:
-            break
-        }
-        
-        // Fetch again after regeneration
-        try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s
-        periodSummary = try? await coordinator.fetchPeriodSummary(type: periodType, date: dateForGeneration)
-        
-        if periodSummary != nil {
-            coordinator.showSuccess("Summary regenerated")
-        } else {
-            coordinator.showError("Failed to regenerate summary")
+    private func refreshMonthDigest(force: Bool) async {
+        guard !isUpdatingMonthDigest else { return }
+        isUpdatingMonthDigest = true
+        defer { isUpdatingMonthDigest = false }
+        let month = selectedMonth
+        let digest = await coordinator.updateMonthDigest(date: month, forceRegenerate: force)
+        // Ignore a result for a month the user has already moved away from
+        if selectedTimeRange == .month, month == selectedMonth, let digest {
+            monthDigest = digest
+            monthDigestIsOld = false
         }
     }
-
-    private func wrapUpYear(forceRegenerate: Bool, useLocalAI: Bool) async {
-        guard !isWrappingUpYear else { return }
-        
-        // Update UI state on MainActor
-        isWrappingUpYear = true
-        coordinator.isGeneratingYearWrap = true
-        yearWrapGenerationStatus = "Preparing Year Wrap..."
-        
-        let dateForGeneration = Date()
-
-        print("🎁 [OverviewTab] Starting Year Wrap generation with AI: \(useLocalAI ? "Local" : "External")")
-        
-        // Update status to show AI processing
-        yearWrapGenerationStatus = useLocalAI ? "Analyzing with Local AI...\n\n⚠️ IMPORTANT: Keep this app open\nDon't minimize or lock screen\n\nThis takes 2-3 minutes" : "Analyzing with External AI...\nProcessing your year"
-        
-        await coordinator.wrapUpYear(date: dateForGeneration, forceRegenerate: forceRegenerate, useLocalAI: useLocalAI)
-        print("✅ [OverviewTab] Year Wrap generation completed successfully")
-        
-        // Update status to show fetching results
-        yearWrapGenerationStatus = "Finalizing results..."
-        
-        // Wait briefly for database transaction to complete
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        // Update status before fetching
-        yearWrapGenerationStatus = "Loading Year Wrap..."
-        
-        // Fetch all Year Wrap summaries (with error handling)
-        do {
-            yearWrapSummary = try await coordinator.fetchPeriodSummary(type: .yearWrap, date: dateForGeneration)
-            yearWrapWorkSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapWork, date: dateForGeneration)
-            yearWrapPersonalSummary = try await coordinator.fetchPeriodSummary(type: .yearWrapPersonal, date: dateForGeneration)
-        } catch {
-            print("⚠️ [OverviewTab] Failed to fetch Year Wrap summaries: \(error)")
-            // Non-fatal - just log it
-        }
-        
-        // Check for staleness after fetching Year Wrap
-        if let yearWrap = yearWrapSummary {
-            let calendar = Calendar.current
-            let year = calendar.component(.year, from: dateForGeneration)
-            
-            print("🔍 [OverviewTab] Year Wrap fetched with createdAt: \(yearWrap.createdAt)")
-            
-            if let newCount = try? await coordinator.getNewSessionsSinceYearWrap(yearWrap: yearWrap, year: year) {
-                coordinator.updateYearWrapNewSessionCount(newCount)
-                print("📊 [OverviewTab] Updated staleness count to \(newCount)")
+    
+    /// The Year view's wrap for the chosen filter, its progress while generating, or a way to make one
+    @ViewBuilder
+    private var yearWrapSection: some View {
+        let year = Calendar.current.component(.year, from: Date())
+        if coordinator.isGeneratingYearWrap {
+            YearWrapProgressCard(year: year, progress: coordinator.yearWrapProgress)
+                .transition(.opacity)
+        } else if let wrap = yearWraps[categoryFilter] {
+            YearWrappedCard(
+                summary: wrap,
+                wraps: yearWraps,
+                coordinator: coordinator,
+                filter: categoryFilter,
+                onRegenerate: { showYearWrapConfirmation = true }
+            )
+            .transition(.opacity)
+        } else if yearWraps[.all] != nil {
+            MissingCategoryWrapCard(filter: categoryFilter) {
+                showYearWrapConfirmation = true
             }
-        } else {
-            // Reset count if no Year Wrap found
-            coordinator.updateYearWrapNewSessionCount(0)
+        } else if !sessionsInPeriod.isEmpty {
+            GenerateYearWrapCard {
+                showYearWrapConfirmation = true
+            }
         }
-        
-        // Success - clear state
-        isWrappingUpYear = false
-        coordinator.isGeneratingYearWrap = false
-        yearWrapGenerationStatus = ""
-        coordinator.showSuccess("Year Wrap generated successfully!")
-        print("✨ [OverviewTab] Year Wrap UI update completed")
     }
     
     private func formatHour(_ hour: Int) -> String {
@@ -880,6 +487,62 @@ struct OverviewTab: View {
         return days[dayOfWeek]
     }
     
+    // MARK: - Month switcher
+    
+    /// Current month plus every month with recordings, newest first
+    private var switchableMonths: [Date] {
+        let current = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: Date())) ?? Date()
+        return Array(Set(availableMonths + [current, selectedMonth])).sorted(by: >)
+    }
+    
+    /// ‹ September 2026 › — steps through months with recordings; tap the name to jump to any of them
+    private var monthSwitcher: some View {
+        let months = switchableMonths
+        let index = months.firstIndex(of: selectedMonth)
+        let older = index.flatMap { months.indices.contains($0 + 1) ? months[$0 + 1] : nil }
+        let newer = index.flatMap { $0 > 0 ? months[$0 - 1] : nil }
+        return HStack {
+            Button {
+                if let older { selectedMonth = older }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(older == nil ? AppTheme.hairline : AppTheme.textPrimary)
+            }
+            .disabled(older == nil)
+            .accessibilityLabel("Previous month")
+            
+            Spacer()
+            
+            Menu {
+                ForEach(months, id: \.self) { month in
+                    Button(month.formatted(.dateTime.month(.wide).year())) { selectedMonth = month }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selectedMonth.formatted(.dateTime.month(.wide).year()))
+                        .font(.headline)
+                    Image(systemName: "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundStyle(AppTheme.textPrimary)
+            }
+            .accessibilityLabel("Choose month, \(selectedMonth.formatted(.dateTime.month(.wide).year()))")
+            
+            Spacer()
+            
+            Button {
+                if let newer { selectedMonth = newer }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 44)
+                    .foregroundStyle(newer == nil ? AppTheme.hairline : AppTheme.textPrimary)
+            }
+            .disabled(newer == nil)
+            .accessibilityLabel("Next month")
+        }
+    }
+    
     private func getDateRange(for timeRange: TimeRange) -> (start: Date, end: Date) {
         let calendar = Calendar.current
         let now = Date()
@@ -894,16 +557,9 @@ struct OverviewTab: View {
         case .today:
             let start = calendar.startOfDay(for: now)
             return (start, now)
-        case .week:
-            // Current week: Monday to Sunday (or today if mid-week)
-            var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-            components.weekday = 2 // Monday
-            let startOfWeek = calendar.date(from: components) ?? now
-            let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfWeek) ?? now
-            return (startOfWeek, endOfWeek)
         case .month:
-            // Current month: 1st of month to end of month
-            let components = calendar.dateComponents([.year, .month], from: now)
+            // The month picked in the switcher: 1st of month to end of month
+            let components = calendar.dateComponents([.year, .month], from: selectedMonth)
             let startOfMonth = calendar.date(from: components) ?? now
             let endOfMonth = calendar.date(byAdding: DateComponents(month: 1), to: startOfMonth) ?? now
             return (startOfMonth, endOfMonth)
@@ -916,15 +572,6 @@ struct OverviewTab: View {
         }
     }
 
-    private func periodSummaryTitle(for range: TimeRange) -> String {
-        switch range {
-        case .today: return "Today's Recordings"
-        case .week: return "This Week's Recordings"
-        case .month: return "This Month's Recordings"
-        default: return "Recordings"
-        }
-    }
-    
     private func filterSession(_ session: (sessionId: UUID, duration: TimeInterval, date: Date)?, in range: (start: Date, end: Date)) -> (sessionId: UUID, duration: TimeInterval, date: Date)? {
         guard let session = session else { return nil }
         return session.date >= range.start && session.date <= range.end ? session : nil
@@ -980,6 +627,23 @@ struct OverviewTab: View {
         let isEmpty: Bool
     }
     
+    /// Today/Yesterday session summaries for the chosen journal
+    private var visibleSessionSummaries: [Summary] {
+        guard categoryFilter != .all else { return sessionSummaries }
+        return sessionSummaries.filter { summary in
+            guard let id = summary.sessionId else { return false }
+            // No saved category means Personal, the recorder's default
+            return (sessionJournals[id] ?? .personal).itemFilter == categoryFilter
+        }
+    }
+    
+    private func summaryCard(_ summary: Summary) -> some View {
+        SessionSummaryCard(summary: summary, coordinator: coordinator) { session in
+            selectedSession = session
+            showSessionDetail = true
+        }
+    }
+
     private func groupSessionsByTimeBucket() -> [TimeBucket] {
         let calendar = Calendar.current
         let dateRange = getDateRange(for: selectedTimeRange)
@@ -989,17 +653,10 @@ struct OverviewTab: View {
             // Show individual session summaries grouped by hour
             return groupByHour(dateRange: dateRange, calendar: calendar)
             
-        case .week:
-            // Show weekly rollup summaries (one card per week)
-            return groupByWeekRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
-            
-        case .month:
-            // Show monthly rollup summaries (one card per month)
-            return groupByMonthRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
-            
-        case .allTime:
-            // Show yearly rollup summary (single card for whole year)
-            return groupByYearRollup(dateRange: dateRange, calendar: calendar, rollups: periodRollups)
+        case .month, .allTime:
+            // The month digest and the Year Wrap are the content here. The older text rollups
+            // mixed both journals together, so they aren't listed.
+            return []
         }
     }
     
@@ -1008,7 +665,7 @@ struct OverviewTab: View {
         var summariesByHour: [Int: [Summary]] = [:]
         
         // Group existing summaries by hour
-        for summary in sessionSummaries {
+        for summary in visibleSessionSummaries {
             let hour = calendar.component(.hour, from: summary.periodStart)
             summariesByHour[hour, default: []].append(summary)
         }
@@ -1029,133 +686,6 @@ struct OverviewTab: View {
         }
         
         return buckets.reversed() // Newest first (oldest at bottom)
-    }
-    
-    private func groupByDayRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByDay: [Date: [Summary]] = [:]
-        for summary in rollups {
-            let dayStart = calendar.startOfDay(for: summary.periodStart)
-            summariesByDay[dayStart, default: []].append(summary)
-        }
-        
-        // Create buckets for all days in range
-        var currentDate = calendar.startOfDay(for: dateRange.start)
-        let endDate = calendar.startOfDay(for: dateRange.end)
-        
-        while currentDate <= endDate {
-            let formatter = DateFormatter()
-            if calendar.isDateInToday(currentDate) {
-                formatter.dateFormat = "'Today' - EEEE, MMM d"
-            } else if calendar.isDateInYesterday(currentDate) {
-                formatter.dateFormat = "'Yesterday' - EEEE, MMM d"
-            } else {
-                formatter.dateFormat = "EEEE, MMM d"
-            }
-            let header = formatter.string(from: currentDate)
-            
-            let summaries = summariesByDay[currentDate] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-            
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
-        }
-        
-        return buckets.reversed() // Most recent first
-    }
-    
-    private func groupByWeekRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByWeek: [Date: [Summary]] = [:]
-        for summary in rollups {
-            let weekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: summary.periodStart)
-            if let weekStartDate = calendar.date(from: weekStart) {
-                summariesByWeek[weekStartDate, default: []].append(summary)
-            }
-        }
-        
-        // Create buckets for all weeks in range
-        let currentWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.start)
-        let endWeekStart = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: dateRange.end)
-        
-        guard var currentWeekDate = calendar.date(from: currentWeekStart),
-              let endWeekDate = calendar.date(from: endWeekStart) else {
-            return buckets
-        }
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMM d"
-        
-        while currentWeekDate <= endWeekDate {
-            let weekEnd = calendar.date(byAdding: .day, value: 6, to: currentWeekDate) ?? currentWeekDate
-            // Format: "Monday, Dec 16 - Sunday, Dec 22"
-            let header = "Monday, \(dateFormatter.string(from: currentWeekDate)) - Sunday, \(dateFormatter.string(from: weekEnd))"
-            
-            let summaries = summariesByWeek[currentWeekDate] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-            
-            currentWeekDate = calendar.date(byAdding: .weekOfYear, value: 1, to: currentWeekDate) ?? currentWeekDate
-        }
-        
-        return buckets.reversed() // Most recent first
-    }
-    
-    private func groupByMonthRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByMonth: [Date: [Summary]] = [:]
-        for summary in rollups {
-            let monthStart = calendar.dateComponents([.year, .month], from: summary.periodStart)
-            if let monthStartDate = calendar.date(from: monthStart) {
-                summariesByMonth[monthStartDate, default: []].append(summary)
-            }
-        }
-        
-        // Create buckets for all months in range
-        let currentMonthStart = calendar.dateComponents([.year, .month], from: dateRange.start)
-        let endMonthStart = calendar.dateComponents([.year, .month], from: dateRange.end)
-        
-        guard var currentMonthDate = calendar.date(from: currentMonthStart),
-              let endMonthDate = calendar.date(from: endMonthStart) else {
-            return buckets
-        }
-        
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMMM yyyy"
-        
-        while currentMonthDate <= endMonthDate {
-            let header = dateFormatter.string(from: currentMonthDate)
-            
-            let summaries = summariesByMonth[currentMonthDate] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-            
-            currentMonthDate = calendar.date(byAdding: .month, value: 1, to: currentMonthDate) ?? currentMonthDate
-        }
-        
-        return buckets.reversed() // Most recent first
-    }
-    
-    private func groupByYearRollup(dateRange: (start: Date, end: Date), calendar: Calendar, rollups: [Summary]) -> [TimeBucket] {
-        var buckets: [TimeBucket] = []
-        
-        var summariesByYear: [Int: [Summary]] = [:]
-        for summary in rollups {
-            let year = calendar.component(.year, from: summary.periodStart)
-            summariesByYear[year, default: []].append(summary)
-        }
-        
-        // Create buckets for all years in range
-        let startYear = calendar.component(.year, from: dateRange.start)
-        let endYear = calendar.component(.year, from: dateRange.end)
-        
-        for year in startYear...endYear {
-            let header = "\(year)"
-            let summaries = summariesByYear[year] ?? []
-            buckets.append(TimeBucket(header: header, summaries: summaries, isEmpty: summaries.isEmpty))
-        }
-        
-        return buckets.reversed() // Most recent first
     }
     
     // MARK: - Copy All Functionality
@@ -1219,12 +749,12 @@ struct YearWrapGenerationSheet: View {
     let isSmartestAIUnlocked: Bool
     let smartestAIPrice: String?
     let isPurchasing: Bool
-    let onGenerateWithExternal: () -> Void
-    let onGenerateWithLocal: () -> Void
+    let onGenerate: (EngineTier) -> Void
     let onPurchaseSmartestAI: () -> Void
     let onCancel: () -> Void
-    @Binding var showLocalAIConfirmation: Bool
-    @Binding var showExternalAIConfirmation: Bool
+    
+    /// Engines that can run a wrap right now; nil while checking
+    @State private var engines: [EngineTier]?
     
     private var hasExternalAPIConfigured: Bool {
         let openaiKey = KeychainHelper.load(key: "openai_api_key")
@@ -1236,203 +766,39 @@ struct YearWrapGenerationSheet: View {
         UserDefaults.standard.string(forKey: "externalAPIProvider") ?? "OpenAI"
     }
     
+    private var appleAvailable: Bool { engines?.contains(.apple) ?? false }
+    private var smartestReady: Bool { isSmartestAIUnlocked && hasExternalAPIConfigured && (engines?.contains(.external) ?? false) }
+    
     var body: some View {
         VStack(spacing: 20) {
-            // Header
             VStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 40))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.magenta, AppTheme.purple],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .scaledFont(size: 28, weight: .regular)
+                    .foregroundStyle(AppTheme.textPrimary)
                 
-                Text("Generate Year Wrap")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                Text("Wrap your year")
+                    .scaledFont(size: 24, design: .serif)
                 
-                Text("Choose your AI engine")
+                Text("One wrap for work and one for personal, side by side under All")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
             .padding(.top, 8)
             
-            Divider()
-            
-            // Options
             VStack(spacing: 12) {
-                // Local AI - Always available as primary option
-                Button(action: {
-                    onCancel()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        showLocalAIConfirmation = true
-                    }
-                }) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "iphone")
-                            .font(.title2)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Smart (Local AI)")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                            Text("Privacy-first • No internet needed")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.9))
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Free")
-                                .font(.caption2)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.white.opacity(0.2))
-                                .clipShape(Capsule())
-                            Text("2-3 min")
-                                .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.7))
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .padding()
-                    .background(
-                        LinearGradient(
-                            colors: [AppTheme.purple, AppTheme.purple.opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: AppTheme.purple.opacity(0.3), radius: 8, y: 4)
-                }
-                .buttonStyle(.plain)
-                
-                // Smartest AI - Purchase required
-                if isSmartestAIUnlocked && hasExternalAPIConfigured {
-                    // Unlocked AND API configured - can use directly
-                    Button(action: {
-                        onCancel()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showExternalAIConfirmation = true
-                        }
-                    }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Smartest (\(provider))")
-                                    .font(.headline)
-                                Text("Best quality, most detailed")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                } else if isSmartestAIUnlocked && !hasExternalAPIConfigured {
-                    // Unlocked but no API key - prompt to configure
-                    Button {
-                        onCancel()
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("NavigateToSmartestConfig"),
-                            object: nil
-                        )
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Smartest (External AI)")
-                                    .font(.headline)
-                                Text("Configure API key to use")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    // Not unlocked - show purchase option
-                    Button(action: onPurchaseSmartestAI) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "sparkles")
-                                .font(.title2)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text("Smartest (External AI)")
-                                        .font(.headline)
-                                    Image(systemName: "lock.fill")
-                                        .font(.caption)
-                                }
-                                Text("OpenAI or Anthropic • Best quality")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            if isPurchasing {
-                                ProgressView()
-                            } else if let price = smartestAIPrice {
-                                Text(price)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(AppTheme.purple)
-                                    .clipShape(Capsule())
-                            } else {
-                                Text("Unlock")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(AppTheme.purple)
-                                    .clipShape(Capsule())
-                            }
-                        }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isPurchasing)
-                }
+                smartestRow
+                appleRow
             }
+            .opacity(engines == nil ? 0.5 : 1)
+            .disabled(engines == nil)
             
-            // Timing note
-            Text("This may take 30-60 seconds")
+            Text("It runs in the background, so you can keep using the app. Progress shows on the Year screen.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             
-            // Purchase disclaimer (shown when purchase option visible)
             if !isSmartestAIUnlocked {
                 Text("All sales are final. Refund requests are handled by Apple per their App Store policies.")
                     .font(.caption2)
@@ -1441,13 +807,125 @@ struct YearWrapGenerationSheet: View {
                     .padding(.horizontal)
             }
             
-            Spacer()
+            Spacer(minLength: 0)
             
-            // Cancel button
             Button("Cancel", action: onCancel)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 8)
         }
         .padding()
+        .task {
+            engines = await coordinator.yearWrapEngines()
+        }
+    }
+    
+    // MARK: - Rows
+    
+    @ViewBuilder
+    private var smartestRow: some View {
+        if smartestReady {
+            engineButton(
+                icon: "cloud",
+                title: "Cloud AI (\(provider))",
+                detail: "Best quality. Sends your month notes, not recordings, to \(provider).",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.external)
+            }
+        } else if isSmartestAIUnlocked {
+            engineButton(
+                icon: "cloud",
+                title: "Cloud AI",
+                detail: "Add your API key in Settings to use it",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onCancel()
+                NotificationCenter.default.post(name: NSNotification.Name("NavigateToSmartestConfig"), object: nil)
+            }
+        } else {
+            engineButton(
+                icon: "cloud",
+                title: "Cloud AI",
+                detail: "OpenAI or Anthropic. Best quality.",
+                trailing: AnyView(purchaseBadge)
+            ) {
+                onPurchaseSmartestAI()
+            }
+            .disabled(isPurchasing)
+        }
+    }
+    
+    @ViewBuilder
+    private var appleRow: some View {
+        if appleAvailable {
+            engineButton(
+                icon: "apple.logo",
+                title: "Apple Intelligence",
+                detail: "Free and private. Runs on this \(DeviceName.current).",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.apple)
+            }
+        } else if engines != nil {
+            HStack(spacing: 12) {
+                Image(systemName: "apple.logo")
+                    .font(.title3)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Apple Intelligence")
+                        .font(.headline)
+                    Text("Not available on this device. It needs a supported \(DeviceName.current) with Apple Intelligence turned on.")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+        }
+    }
+    
+    private var purchaseBadge: some View {
+        Group {
+            if isPurchasing {
+                ProgressView()
+            } else {
+                Text(smartestAIPrice ?? "Unlock")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(AppTheme.onAccent)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(AppTheme.purple)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+    
+    private func engineButton(icon: String, title: String, detail: String, trailing: AnyView, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                trailing
+            }
+            .padding()
+            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -23,15 +23,7 @@ struct SiriWaveView: View {
         
         return SiriWave(phase: phase, normedAmplitude: normedAmplitude)
             .stroke(
-                LinearGradient(
-                    colors: [
-                        Color(hex: "#A855F7").opacity(Double(alphaComponent)),
-                        Color(hex: "#3B82F6").opacity(Double(alphaComponent)),
-                        Color(hex: "#06B6D4").opacity(Double(alphaComponent))
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
+                AppTheme.accent.opacity(Double(alphaComponent)),
                 lineWidth: 1.5 / CGFloat(index + 1)
             )
     }

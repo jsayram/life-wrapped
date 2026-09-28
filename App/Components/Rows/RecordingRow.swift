@@ -36,7 +36,7 @@ struct RecordingRow: View {
             if showPlayButton {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(AppTheme.accent)
             }
         }
         .padding(.vertical, 4)

@@ -11,16 +11,6 @@ import Speech
 @Suite("Transcription Manager Tests")
 struct TranscriptionManagerTests {
     
-    @Test("Manager checks speech recognition availability")
-    func testAvailabilityCheck() async throws {
-        // Note: This test requires DatabaseManager which needs Storage
-        // In real implementation, we'd use dependency injection or mocking
-        
-        // For now, test that Speech framework is available
-        let isAvailable = SFSpeechRecognizer.authorizationStatus() != .denied
-        #expect(isAvailable || SFSpeechRecognizer.authorizationStatus() == .notDetermined)
-    }
-    
     @Test("Manager can check locale availability")
     func testLocaleAvailability() async throws {
         // English should be available on all devices

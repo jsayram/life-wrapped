@@ -1,97 +1,126 @@
-# Privacy Policy for Life Wrapped
+---
+title: Privacy policy
+---
 
-**Last Updated: December 29, 2025**
+<p class="overline">Privacy</p>
 
-## Overview
+# Privacy policy
 
-Life Wrapped is designed with privacy as a core principle. We believe your personal audio journal should remain truly personal.
+**Last updated: September 27, 2026**
+
+Life Wrapped is an audio journal, so privacy comes first. Your recordings stay on your iPhone or iPad, and nothing is sent to us.
 
 ---
 
-## Data Collection
+## Data collection
 
-### What We Collect
+### What we collect
 
-**Nothing.** We do not collect, transmit, or store any of your personal data on our servers.
+**Nothing.** We don't collect, receive or store any of your data. There's no account to create and no server of ours for the app to talk to.
 
-### What Stays on Your Device
+### What stays on your device
 
-- **Audio recordings** – Stored locally in your device's protected storage
-- **Transcripts** – Generated on-device using Apple's Speech framework
-- **AI summaries** – Processed on-device (Basic/Local AI) or via your own API keys
-- **App settings** – Stored locally in UserDefaults and Keychain
-
----
-
-## On-Device Processing
-
-### Transcription (100% Local)
-
-All speech-to-text transcription happens **entirely on your device** using Apple's Speech Recognition framework with `requiresOnDeviceRecognition = true`. No audio or transcript data is ever sent to Apple's servers or our servers.
-
-### AI Summaries (Your Choice)
-
-Life Wrapped offers multiple AI summarization options:
-
-| Engine                  | Processing Location   | Data Sent |
-| ----------------------- | --------------------- | --------- |
-| **Basic**               | 100% On-Device        | None      |
-| **Local AI**            | 100% On-Device        | None      |
-| **Apple Intelligence**  | On-Device (iOS 18.1+) | None      |
-| **External API (BYOK)** | Cloud                 | See below |
+- **Audio recordings**, in the app's protected storage
+- **Transcripts**, made on your device with Apple's Speech framework
+- **Summaries, titles and month digests**, made on your device (Key Sentences, Offline AI, Apple Intelligence) or by the provider you connect (Cloud AI)
+- **Your notes, favorites and Work or Personal labels**
+- **App settings**, in UserDefaults, and **API keys**, in the iOS Keychain
 
 ---
 
-## Third-Party Services (Bring Your Own Key)
+## Permissions
 
-If you choose to use the **External API** option with your own API keys:
+- **Microphone**, to record
+- **Speech recognition**, to transcribe on your device
 
-### What Happens
+The app doesn't ask for your location, contacts, photos or notifications.
 
-- Your transcript text is sent to **OpenAI** (api.openai.com) or **Anthropic** (api.anthropic.com)
-- The connection uses **YOUR API keys**, not ours
-- You are billed directly by the API provider
+---
 
-### Your Responsibility
+## On-device processing
 
-By using the BYOK (Bring Your Own Key) feature, **you acknowledge and accept that**:
+### Transcription (always on your device)
+
+All speech-to-text happens on your device using Apple's Speech framework with `requiresOnDeviceRecognition = true`. Your audio is never sent to Apple, to us or to anyone else.
+
+### Summaries (your choice)
+
+| Summary quality | Engine | Where it runs | Data sent |
+| --- | --- | --- | --- |
+| **Key Sentences** | Apple's NaturalLanguage framework picks out key sentences | On your device | None |
+| **Offline AI** | Qwen3 4B (Qwen3 1.7B on devices with 4 GB of memory), downloaded once | On your device | None |
+| **Apple Intelligence** | Apple's on-device model (iOS or iPadOS 26 or later, on supported devices) | On your device | None |
+| **Cloud AI** | OpenAI or Anthropic, with your own API key | The provider's servers | Text only, see below |
+
+Year Wrap is made with Apple Intelligence or Cloud AI, whichever you pick when you create it.
+
+---
+
+## Network connections
+
+Life Wrapped only goes online in these cases:
+
+- **Downloading the Offline AI model.** If you choose to download it, the model files come from Hugging Face (huggingface.co). No journal data is sent.
+- **Purchases.** Unlocking Cloud AI, restoring a purchase and redeeming a code go through Apple's App Store.
+- **Cloud AI.** Once you've saved an API key and chosen Cloud AI, text is sent to OpenAI (api.openai.com) or Anthropic (api.anthropic.com) as described below. Before using Cloud AI, the app checks the connection by loading apple.com, which sends no journal data. Without a saved key, the app makes neither request.
+- **Testing your API key.** The Test button sends the word "Hi" to the provider you picked, not your journal.
+
+Everything else works offline. Links in the app, such as "Get API key" and "View models", open in your web browser.
+
+---
+
+## Third-party services (bring your own key)
+
+### What is sent
+
+When Cloud AI is your summary quality, the app sends text, never audio, to **OpenAI** or **Anthropic**, whichever you connect:
+
+- **A recording's summary:** its transcript and its Work or Personal label
+- **A recording's title:** the first 400 characters of its summary. Recordings that don't have a title yet are titled in the background when you open the app
+- **A month summary:** that month's recording summaries, their dates and Work or Personal labels, and any notes you added to those recordings. A month that has ended is finished in the background when you open the app
+- **Year Wrap, if you choose Cloud AI for it:** your month summaries, and for any month that needs rebuilding first, that month's recording summaries and notes
+
+The request uses the model you enter in Settings, then AI & Summaries. It's made with **your API key**, not ours, and the provider bills you directly.
+
+### Your responsibility
+
+By using the bring-your-own-key feature, **you acknowledge and accept that**:
 
 1. **You are solely responsible** for any costs incurred through your API provider
 2. **You are solely responsible** for the personal data you send to these services
 3. **You must review and agree to** OpenAI's or Anthropic's terms of service and privacy policies
 4. **We have no control over** how these third-party providers handle your data
 
-### Third-Party Privacy Policies
+### Third-party privacy policies
 
-- [OpenAI Privacy Policy](https://openai.com/privacy)
-- [Anthropic Privacy Policy](https://www.anthropic.com/privacy)
+- [OpenAI privacy policy](https://openai.com/policies/privacy-policy/) and [OpenAI services agreement](https://openai.com/policies/services-agreement/) (covers API use)
+- [Anthropic privacy policy](https://www.anthropic.com/legal/privacy) and [Anthropic commercial terms](https://www.anthropic.com/legal/commercial-terms) (covers API use)
 
-### Opting Out
+### Opting out
 
-If you prefer not to share data with external AI providers:
-
-- Use the **Local AI** option (runs Phi-3.5 Mini entirely on-device)
-- Use the **Basic** option (uses Apple's NaturalLanguage framework)
-- Both options process data 100% locally with no network calls
+If you'd rather not share anything with an AI provider, use **Key Sentences**, **Offline AI** or **Apple Intelligence**. All three make summaries on your device, and nothing is sent. Offline AI needs a one-time model download; after that it works offline. Removing your API key in Settings, then AI & Summaries, stops all Cloud AI requests.
 
 ---
 
-## Data Storage & Security
+## Data storage and security
 
-### Local Storage
+### Local storage
 
-- All data is stored in your device's app sandbox
-- Database uses SQLite with iOS file protection (`completeUntilFirstUserAuthentication`)
-- API keys are stored in the iOS Keychain (hardware-encrypted)
+- Recordings and the database are stored in the app's private App Group container on your device
+- The database uses SQLite in a folder protected with iOS file protection (`completeUntilFirstUserAuthentication`)
+- API keys are stored in the iOS Keychain and never leave your device, except to authenticate your own requests to your provider
 
-### App Group (Widgets)
+### Device backups
 
-- Widget data is shared via a secure App Group container
-- Only summary statistics are shared (no audio or full transcripts)
+Life Wrapped doesn't sync to any cloud. If you back up your iPhone or iPad with iCloud Backup or to a computer, iOS includes the app's data in that backup, as it does for other apps.
+
+### Widgets
+
+The Home Screen and Lock Screen widgets read a few numbers from the shared App Group container: your streak, and today's recording count, minutes, words and last recording time. Audio, transcripts and summaries are never shared with the widget.
 
 ---
 
-## Analytics & Tracking
+## Analytics and tracking
 
 **We do not use:**
 
@@ -103,52 +132,52 @@ If you prefer not to share data with external AI providers:
 
 ---
 
-## Your Rights
+## Your rights
 
-### Data Control
+### Data control
 
-- **Export**: Export all your data anytime via Settings → Data
-- **Delete**: Delete all recordings and transcripts with one tap
-- **No Account Required**: Use the app without creating any account
+- **Export**: export anytime from Settings, then Data, then Export & backup
+- **Delete**: on the same screen, delete one year or everything. Deleting everything removes your recordings, transcripts, summaries and notes, your saved API keys and the downloaded Offline AI model
+- **No account required**: use the app without creating any account
 
-### Data Portability
+### Data portability
 
-Your data is stored in standard formats (SQLite, audio files) and can be exported at any time.
+Exports are available as JSON (transcripts and summaries), Markdown (summaries) or PDF (summaries). Exports don't include audio.
 
 ---
 
-## Children's Privacy
+## Children's privacy
 
 Life Wrapped does not knowingly collect information from children under 13. The app is rated 4+ and is intended for general audiences.
 
 ---
 
-## Changes to This Policy
+## Changes to this policy
 
-We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last Updated" date.
+We may update this privacy policy from time to time. Changes are posted on this page with a new "Last updated" date.
 
 ---
 
-## Contact Us
+## Contact us
 
-If you have questions about this Privacy Policy, please:
+If you have questions about this privacy policy:
 
 - Open an issue on our [GitHub repository](https://github.com/jsayram/life-wrapped/issues)
-- Review our [Terms of Service](terms)
+- Review our [terms of service](terms)
 
 ---
 
 ## Summary
 
-| Aspect                     | Status                    |
-| -------------------------- | ------------------------- |
-| Audio Recording            | 🟢 Local only             |
-| Transcription              | 🟢 On-device only         |
-| AI Summaries (Basic/Local) | 🟢 On-device only         |
-| AI Summaries (BYOK)        | 🟡 Your choice, your keys |
-| Analytics                  | 🟢 None                   |
-| Tracking                   | 🟢 None                   |
-| Cloud Sync                 | 🟢 None                   |
-| Data Collection            | 🟢 None                   |
+| Aspect | Status |
+| --- | --- |
+| Audio recording | On your device only |
+| Transcription | On your device only |
+| Summaries (Key Sentences, Offline AI, Apple Intelligence) | On your device only |
+| Summaries (Cloud AI) | Your choice, your key, text only |
+| Analytics | None |
+| Tracking | None |
+| Cloud sync | None |
+| Data collection | None |
 
 **Your journal. Your device. Your privacy.**

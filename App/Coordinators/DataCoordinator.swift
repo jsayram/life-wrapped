@@ -21,18 +21,10 @@ public final class DataCoordinator {
     
     // MARK: - Stats & Rollups
     
-    /// Calculate current streak from recording sessions (not transcript segments)
-    /// This ensures streak updates immediately when a recording is made,
-    /// without waiting for transcription to complete.
-    public func calculateStreak() async throws -> Int {
-        // Get all sessions (up to 365 for a year of data)
-        let sessions = try await databaseManager.fetchSessions(limit: 365)
-        
-        // Extract unique dates from session start times
-        let activityDates = sessions.map { $0.firstChunkTime }
-        
-        let streakInfo = StreakCalculator.calculateStreak(from: activityDates)
-        return streakInfo.currentStreak
+    /// Streak from recording days (not transcripts), so it counts a recording as soon as it's saved.
+    /// Uses every day with a recording, however many recordings each day has.
+    public func calculateStreak() async throws -> StreakCalculator.StreakInfo {
+        StreakCalculator.calculateStreak(from: try await databaseManager.fetchRecordingDays())
     }
     
     /// Fetch today's stats from rollup
@@ -193,13 +185,10 @@ public final class DataCoordinator {
     public func deleteDataForYear(year: Int) async throws {
         // Get all sessions for this year
         let yearData = try await databaseManager.fetchSessionsByYear()
-        guard let yearInfo = yearData.first(where: { $0.year == year }) else {
-            print("⚠️ [DataCoordinator] No data found for year \(year)")
-            return
-        }
+        let sessionIds = yearData.first(where: { $0.year == year })?.sessionIds ?? []
         
         // Delete each session's data
-        for sessionId in yearInfo.sessionIds {
+        for sessionId in sessionIds {
             // Fetch chunks for this session
             let chunks = try await databaseManager.fetchChunksBySession(sessionId: sessionId)
             
@@ -226,6 +215,17 @@ public final class DataCoordinator {
             
             // Delete session summary
             if let summary = try await databaseManager.fetchSummaryForSession(sessionId: sessionId) {
+                try await databaseManager.deleteSummary(id: summary.id)
+            }
+        }
+        
+        // Delete day, week, month, year and Year Wrap summaries that start in this year,
+        // so nothing written from the deleted recordings is left behind
+        let calendar = Calendar.current
+        let rollupTypes = PeriodType.allCases.filter { $0 != .session }
+        for periodType in rollupTypes {
+            let summaries = try await databaseManager.fetchSummaries(periodType: periodType, limit: 100_000)
+            for summary in summaries where calendar.component(.year, from: summary.periodStart) == year {
                 try await databaseManager.deleteSummary(id: summary.id)
             }
         }
@@ -293,6 +293,7 @@ public final class DataCoordinator {
     /// Update session notes
     public func updateSessionNotes(sessionId: UUID, notes: String?) async throws {
         try await databaseManager.updateSessionNotes(sessionId: sessionId, notes: notes)
+        try await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         print("📝 [DataCoordinator] Updated session notes")
     }
     
@@ -306,6 +307,7 @@ public final class DataCoordinator {
     /// Update session category
     public func updateSessionCategory(sessionId: UUID, category: SessionCategory?) async throws {
         try await databaseManager.updateSessionCategory(sessionId: sessionId, category: category)
+        try await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         print("🏷️ [DataCoordinator] Session category updated: \(category?.displayName ?? "None")")
     }
     
@@ -316,10 +318,23 @@ public final class DataCoordinator {
     
     // MARK: - Transcript Editing
     
-    /// Update transcript segment text (for user edits)
-    public func updateTranscriptText(segmentId: UUID, newText: String) async throws {
+    /// Replace a transcript part's text with the user's edit. The edit holds the whole part, so the
+    /// part's other segments (older recordings were stored one per word) are removed instead of
+    /// showing up again after the edited text.
+    public func updateTranscriptText(sessionId: UUID, segmentId: UUID, newText: String) async throws {
         try await databaseManager.updateTranscriptSegmentText(id: segmentId, newText: newText)
+        if let segment = try await databaseManager.fetchTranscriptSegment(id: segmentId) {
+            for other in try await databaseManager.fetchTranscriptSegments(audioChunkID: segment.audioChunkID) where other.id != segmentId {
+                try await databaseManager.deleteTranscriptSegment(id: other.id)
+            }
+        }
+        try await databaseManager.markSessionChanged(sessionId: sessionId, transcript: true)
         print("✏️ [DataCoordinator] Updated transcript segment: \(segmentId)")
+    }
+
+    /// When the recording's transcript was last edited, or nil if never
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        try await databaseManager.fetchTranscriptEditedAt(sessionId: sessionId)
     }
     
     /// Search for sessions by transcript text

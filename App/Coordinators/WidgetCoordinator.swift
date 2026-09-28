@@ -29,11 +29,7 @@ public final class WidgetCoordinator: Sendable {
     public func updateWidgetData() async {
         do {
             // Get all sessions for streak calculation (uses recording dates, not transcripts)
-            let allSessions = try await databaseManager.fetchSessions(limit: 365)
-            
-            // Extract dates from session start times for streak calculation
-            let activityDates = allSessions.map { $0.firstChunkTime }
-            let streakInfo = StreakCalculator.calculateStreak(from: activityDates)
+            let streakInfo = StreakCalculator.calculateStreak(from: try await databaseManager.fetchRecordingDays())
             
             // Get today's actual session count
             let today = Date()

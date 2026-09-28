@@ -1,32 +1,37 @@
-# Terms of Service for Life Wrapped
+---
+title: Terms of service
+---
 
-**Last Updated: December 29, 2025**
+<p class="overline">Legal</p>
+
+# Terms of service
+
+**Last updated: September 27, 2026**
 
 ---
 
-## 1. Acceptance of Terms
+## 1. Acceptance of terms
 
 By downloading, installing, or using Life Wrapped ("the App"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the App.
 
 ---
 
-## 2. License Grant
+## 2. License grant
 
 We grant you a limited, non-exclusive, non-transferable, revocable license to use Life Wrapped for personal, non-commercial purposes on Apple devices you own or control, subject to these Terms and the App Store Terms of Service.
 
 ---
 
-## 3. Purchases & Refunds
+## 3. Purchases and refunds
 
-### All Sales Are Final
+### All sales are final
 
-All purchases made through the Apple App Store, including in-app purchases such as "Smartest AI Year Wrap," are **final and non-refundable** once completed.
+All purchases made through the Apple App Store, including the "Cloud AI" in-app purchase, are **final**. We do not issue refunds ourselves.
 
-### Refund Requests
+### Refund requests
 
-- **We do not process refunds directly.**
-- All refund requests must be submitted to Apple through the App Store.
-- Apple's refund policy applies to all purchases made through the App Store.
+- Apple processes all payments, so refund requests go to Apple, not to us.
+- Apple decides refund requests under its own App Store policies.
 - To request a refund from Apple, visit [reportaproblem.apple.com](https://reportaproblem.apple.com)
 
 ### Acknowledgment
@@ -39,22 +44,22 @@ By making a purchase, you acknowledge and agree that:
 
 ---
 
-## 4. Bring Your Own Key (BYOK) & Third-Party Services
+## 4. Bring your own key (BYOK) and third-party services
 
-Life Wrapped offers optional integration with third-party AI services (OpenAI, Anthropic) using your own API keys.
+Life Wrapped offers optional integration with third-party AI services (OpenAI, Anthropic) using your own API keys. This is the "Cloud AI" summary option, unlocked with a one-time "Cloud AI" in-app purchase. Your API usage is billed by the provider, separately from that purchase.
 
-### Your Responsibilities
+### Your responsibilities
 
 By using the BYOK feature, **YOU ACKNOWLEDGE AND AGREE THAT**:
 
 1. **API Costs**: You are solely responsible for any costs, charges, usage fees, or overage charges incurred through your API provider (OpenAI, Anthropic, or others).
 
-2. **Data Responsibility**: You are solely responsible for the personal data, audio transcripts, and other content you choose to send to third-party AI services.
+2. **Data Responsibility**: You are solely responsible for the personal data you choose to send to third-party AI services, including transcripts, summaries and notes. The [privacy policy](privacy) lists exactly what the app sends.
 
 3. **Third-Party Terms**: You must independently review and agree to the terms of service and privacy policies of:
 
-   - [OpenAI Terms of Use](https://openai.com/terms)
-   - [Anthropic Terms of Service](https://www.anthropic.com/terms)
+   - [OpenAI Services Agreement](https://openai.com/policies/services-agreement/) and [OpenAI Privacy Policy](https://openai.com/policies/privacy-policy/)
+   - [Anthropic Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms) and [Anthropic Privacy Policy](https://www.anthropic.com/legal/privacy)
 
 4. **No Liability**: We are not responsible for:
 
@@ -63,18 +68,19 @@ By using the BYOK feature, **YOU ACKNOWLEDGE AND AGREE THAT**:
    - Changes to third-party pricing, terms, or availability
    - Any issues arising from your use of third-party services
 
-5. **API Key Security**: While we store your API keys in the iOS Keychain (hardware-encrypted storage), you are responsible for keeping your keys confidential and not sharing them.
+5. **API Key Security**: While we store your API keys in the iOS Keychain on your device, you are responsible for keeping your keys confidential and not sharing them.
 
-### Alternative Options
+### Alternative options
 
 If you do not wish to share data with external AI providers, you may use:
 
-- **Local AI**: Runs entirely on your device (no network required)
-- **Basic**: Uses Apple's NaturalLanguage framework (no network required)
+- **Key Sentences**: Uses Apple's NaturalLanguage framework on your device
+- **Offline AI**: Runs a downloaded model on your device (the one-time download needs a network connection)
+- **Apple Intelligence**: Uses Apple Intelligence on your device, where available
 
 ---
 
-## 5. User Responsibilities
+## 5. User responsibilities
 
 You agree to:
 
@@ -86,13 +92,13 @@ You agree to:
 
 ---
 
-## 6. Intellectual Property
+## 6. Intellectual property
 
-### Our Rights
+### Our rights
 
-Life Wrapped and its original content, features, functionality, design, and branding are owned by the developer and are protected by copyright, trademark, and other intellectual property laws.
+Life Wrapped and its original content, features, functionality, design, and branding are owned by the developer and are protected by copyright, trademark, and other intellectual property laws. The source code is published separately under the [MIT License](https://github.com/jsayram/life-wrapped/blob/main/LICENSE); that license covers the code only and does not grant rights to the Life Wrapped name or branding.
 
-### Your Rights
+### Your rights
 
 - Your audio recordings remain your property
 - Your transcripts and generated content remain your property
@@ -100,11 +106,11 @@ Life Wrapped and its original content, features, functionality, design, and bran
 
 ---
 
-## 7. Disclaimer of Warranties
+## 7. Disclaimer of warranties
 
 THE APP IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 
-### We Do Not Warrant That:
+### We do not warrant that:
 
 - The App will be uninterrupted, timely, secure, or error-free
 - Transcriptions will be 100% accurate
@@ -112,7 +118,7 @@ THE APP IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY KIND, EXP
 - The App will meet your specific requirements or expectations
 - Any errors in the App will be corrected
 
-### Accuracy Limitations
+### Accuracy limitations
 
 Speech recognition accuracy depends on many factors beyond our control, including:
 
@@ -125,11 +131,11 @@ AI-generated summaries are provided for informational purposes only and should n
 
 ---
 
-## 8. Limitation of Liability
+## 8. Limitation of liability
 
 TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW:
 
-### We Shall Not Be Liable For:
+### We shall not be liable for:
 
 - Any indirect, incidental, special, consequential, or punitive damages
 - Loss of data, profits, revenue, or business opportunities
@@ -138,7 +144,7 @@ TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW:
 - Personal injury or property damage resulting from your use of the App
 - Unauthorized access to or alteration of your data
 
-### Maximum Liability
+### Maximum liability
 
 Our total aggregate liability for all claims arising from or related to the App shall not exceed the amount you actually paid for the App or in-app purchases in the twelve (12) months preceding the claim.
 
@@ -155,33 +161,33 @@ You agree to indemnify, defend, and hold harmless the developer from any claims,
 
 ---
 
-## 10. Data & Privacy
+## 10. Data and privacy
 
-Your use of Life Wrapped is also governed by our [Privacy Policy](privacy). Key points:
+Your use of Life Wrapped is also governed by our [privacy policy](privacy). Key points:
 
-- Audio recordings and transcripts are stored locally on your device
+- Audio recordings, transcripts and summaries are stored locally on your device
 - We do not collect, transmit, or store your personal data on our servers
-- External API usage (BYOK) is your choice and responsibility
+- Text from your journal (transcripts, summaries and notes, never audio) is sent to a third-party AI provider only if you choose Cloud AI with your own API key, and that use is your choice and responsibility
 
 ---
 
 ## 11. Termination
 
-### Our Rights
+### Our rights
 
 We reserve the right to terminate or suspend your access to the App at any time, without prior notice, for any reason, including violation of these Terms.
 
-### Your Rights
+### Your rights
 
 You may stop using the App at any time by deleting it from your device.
 
-### Effect of Termination
+### Effect of termination
 
 Upon termination, your license to use the App ends immediately. Provisions that by their nature should survive termination will survive.
 
 ---
 
-## 12. Changes to Terms
+## 12. Changes to terms
 
 We reserve the right to modify these Terms at any time. Changes will be effective when posted. Your continued use of the App after changes are posted constitutes acceptance of the modified Terms.
 
@@ -189,7 +195,7 @@ We encourage you to review these Terms periodically.
 
 ---
 
-## 13. Governing Law
+## 13. Governing law
 
 These Terms shall be governed by and construed in accordance with the laws of the jurisdiction in which the developer resides, without regard to conflict of law principles.
 
@@ -201,7 +207,7 @@ If any provision of these Terms is found to be unenforceable or invalid, that pr
 
 ---
 
-## 15. Entire Agreement
+## 15. Entire agreement
 
 These Terms, together with our Privacy Policy, constitute the entire agreement between you and the developer regarding the App and supersede all prior agreements and understandings.
 
@@ -212,7 +218,7 @@ These Terms, together with our Privacy Policy, constitute the entire agreement b
 For questions about these Terms of Service:
 
 - Open an issue on our [GitHub repository](https://github.com/jsayram/life-wrapped/issues)
-- Review our [Privacy Policy](privacy)
+- Review our [privacy policy](privacy)
 
 ---
 

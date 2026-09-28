@@ -30,7 +30,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SummarizationTests",
-            dependencies: ["Summarization"]
+            dependencies: ["Summarization", "Storage", "SharedModels"]
         )
     ]
 )

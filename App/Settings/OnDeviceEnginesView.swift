@@ -22,13 +22,15 @@ struct OnDeviceEnginesView: View {
                     }
                 }
             } header: {
-                Text("Select Engine")
+                Text("Select engine")
             } footer: {
                 Text("Tap an engine to activate it. All on-device engines process data locally for privacy.")
             }
         }
+        .themedScreen()
+        .readableMargins()
         .navigationTitle("On-Device Engines")
-        .navigationBarTitleDisplayMode(.inline)
+        .columnScreenTitleDisplayMode()
         .task {
             await loadEngineStatus()
         }
@@ -76,7 +78,7 @@ struct OnDeviceEnginesView: View {
     private func unavailableMessage(for tier: EngineTier) -> String {
         switch tier {
         case .basic:
-            return "Basic engine should always be available. Please restart the app."
+            return "Key Sentences should always be available. Please restart the app."
         case .local:
             return "Download the local AI model to use on-device intelligence."
         case .apple:

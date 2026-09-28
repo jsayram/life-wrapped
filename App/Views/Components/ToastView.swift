@@ -3,6 +3,7 @@
 // =============================================================================
 
 import SwiftUI
+import UIKit
 
 /// Toast notification style
 public enum ToastStyle {
@@ -22,10 +23,10 @@ public enum ToastStyle {
     
     var color: Color {
         switch self {
-        case .success: return .green
-        case .error: return .red
-        case .info: return .blue
-        case .warning: return .orange
+        case .success: return AppTheme.accent
+        case .error: return AppTheme.destructive
+        case .info: return AppTheme.accent
+        case .warning: return AppTheme.textSecondary
         }
     }
 }
@@ -64,7 +65,9 @@ struct ToastModifier: ViewModifier {
                     .onAppear {
                         scheduleAutoDismiss(duration: toast.duration)
                     }
-                    .padding(.top, 50)
+                    // On iPad the tab bar sits at the top, so the toast drops below it and stays narrow
+                    .frame(maxWidth: 560)
+                    .padding(.top, UIDevice.current.userInterfaceIdiom == .pad ? 110 : 50)
                     .zIndex(999)
                 }
             }
@@ -127,7 +130,7 @@ struct ToastView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemBackground))
+                .fill(AppTheme.background)
                 .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 5)
         )
         .padding(.horizontal)

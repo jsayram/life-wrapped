@@ -16,27 +16,20 @@ struct RecordingDetailView: View {
             VStack(alignment: .leading, spacing: 24) {
                 // Recording Info Card
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Recording Details")
+                    Text("Recording details")
                         .font(.headline)
                     
                     InfoRow(label: "Date", value: recording.startTime.formatted(date: .abbreviated, time: .shortened))
                     InfoRow(label: "Duration", value: formatDuration(recording.duration))
                     InfoRow(label: "Format", value: "\(recording.sampleRate) Hz")
                 }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(AppTheme.cardGradient(for: colorScheme))
-                        .allowsHitTesting(false)
-                )
-                .cornerRadius(12)
+                .graphiteCard()
                 
                 // Playback Controls
                 VStack(spacing: 16) {
                     // Waveform placeholder
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.tertiarySystemBackground))
+                        .fill(AppTheme.fill)
                         .frame(height: 60)
                         .overlay {
                             if coordinator.audioPlayback.currentlyPlayingURL == recording.fileURL {
@@ -48,7 +41,7 @@ struct RecordingDetailView: View {
                                     
                                     HStack(spacing: 0) {
                                         Rectangle()
-                                            .fill(Color.blue.opacity(0.3))
+                                            .fill(AppTheme.accent.opacity(0.3))
                                             .frame(width: geometry.size.width * progress)
                                         Spacer()
                                     }
@@ -62,14 +55,8 @@ struct RecordingDetailView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 32))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [AppTheme.purple, AppTheme.magenta],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
+                                .scaledFont(size: 32)
+                                .foregroundStyle(AppTheme.textPrimary)
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 if isPlaying {
@@ -99,16 +86,12 @@ struct RecordingDetailView: View {
                         .padding(16)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(.secondarySystemBackground))
+                                .fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
                                 .stroke(
-                                    LinearGradient(
-                                        colors: [AppTheme.purple.opacity(0.3), AppTheme.magenta.opacity(0.2)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    ),
+                                    AppTheme.purple.opacity(0.3),
                                     lineWidth: 2
                                 )
                         )
@@ -116,14 +99,7 @@ struct RecordingDetailView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(AppTheme.cardGradient(for: colorScheme))
-                        .allowsHitTesting(false)
-                )
-                .cornerRadius(12)
+                .graphiteCard()
                 
                 // Transcription Section
                 VStack(alignment: .leading, spacing: 12) {
@@ -136,7 +112,7 @@ struct RecordingDetailView: View {
                             .padding()
                     } else if let error = loadError {
                         Text("Error: \(error)")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(AppTheme.destructive)
                             .font(.subheadline)
                             .padding()
                     } else if transcriptSegments.isEmpty {
@@ -155,17 +131,11 @@ struct RecordingDetailView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(AppTheme.cardGradient(for: colorScheme))
-                        .allowsHitTesting(false)
-                )
-                .cornerRadius(12)
+                .graphiteCard()
             }
             .padding()
         }
+        .themedScreen()
         .navigationTitle("Recording")
         .navigationBarTitleDisplayMode(.inline)
         .task {

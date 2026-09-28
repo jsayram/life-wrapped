@@ -16,7 +16,9 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ml-explore/mlx-swift", from: "0.29.1"),
-        .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+        // Pinned to the exact commit the app is built and tested with. Following "main" would pull
+        // in mlx-swift-lm 3.x, which changes its API, the next time packages are resolved.
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", revision: "d9f46e3a1fe715d01304372089aba5f39c585327"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.0")
     ],
     targets: [

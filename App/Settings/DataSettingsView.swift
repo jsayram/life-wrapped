@@ -14,26 +14,26 @@ struct DataSettingsView: View {
                 } label: {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Export & Backup")
+                            Text("Export & backup")
                             Text("Export your data or create backups")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     } icon: {
                         Image(systemName: "square.and.arrow.up")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(AppTheme.accent)
                     }
                 }
                 .foregroundStyle(.primary)
             } header: {
-                Text("Data Management")
+                Text("Backup")
             }
             
             Section {
                 if let info = storageInfo {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Audio Recordings")
+                            Text("Audio recordings")
                                 .font(.body)
                             Text("\(info.audioChunkCount) files")
                                 .font(.caption)
@@ -59,7 +59,7 @@ struct DataSettingsView: View {
                     
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Local AI Model")
+                            Text("Offline AI model")
                                 .font(.body)
                         }
                         Spacer()
@@ -87,8 +87,10 @@ struct DataSettingsView: View {
                 Text("Includes recordings, transcripts, and AI models.")
             }
         }
+        .themedScreen()
+        .readableMargins()
         .navigationTitle("Data")
-        .navigationBarTitleDisplayMode(.inline)
+        .columnScreenTitleDisplayMode()
         .sheet(isPresented: $showDataManagement) {
             DataManagementView()
                 .environmentObject(coordinator)

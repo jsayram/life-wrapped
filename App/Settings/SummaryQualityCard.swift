@@ -2,64 +2,66 @@ import SwiftUI
 import Summarization
 
 struct SummaryQualityCard: View {
-    let emoji: String
+    let systemImage: String
     let title: String
     let subtitle: String
     let detail: String
     let tier: EngineTier
     let isSelected: Bool
     let isAvailable: Bool
+    var showsLock: Bool = false
     let onSelect: () -> Void
     
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 12) {
-                // Selection indicator
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: systemImage)
+                    .scaledFont(size: 18, weight: .regular)
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        if showsLock {
+                            Image(systemName: "lock")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AppTheme.textSecondary)
+                                .accessibilityLabel("Locked")
+                        }
+                    }
+
+                    // Fixed two-line slot so rows never change height when the
+                    // text changes (e.g. switching provider or model on Smartest)
+                    Text("\(subtitle)\n\(detail)")
+                        .font(.footnote)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .lineLimit(2, reservesSpace: true)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Radio on the right
                 ZStack {
                     Circle()
-                        .strokeBorder(isSelected ? AppTheme.purple : Color.gray.opacity(0.5), lineWidth: 2)
-                        .frame(width: 24, height: 24)
-                    
+                        .strokeBorder(isSelected ? AppTheme.accent : AppTheme.hairline, lineWidth: isSelected ? 2 : 1.5)
+                        .frame(width: 22, height: 22)
                     if isSelected {
                         Circle()
-                            .fill(AppTheme.purple)
-                            .frame(width: 12, height: 12)
+                            .fill(AppTheme.accent)
+                            .frame(width: 10, height: 10)
                     }
                 }
-                
-                // Emoji
-                Text(emoji)
-                    .font(.title2)
-                
-                // Content
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                    
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(isAvailable ? .secondary : Color.orange)
-                }
-                
-                Spacer()
-                
-                // Lock icon if unavailable
-                if !isAvailable {
-                    Image(systemName: "lock.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
+                .accessibilityHidden(true)
             }
-            .padding()
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(12)
-            .opacity(isAvailable ? 1.0 : 0.6)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+            .opacity(isAvailable ? 1.0 : 0.5)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

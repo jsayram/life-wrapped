@@ -1,5 +1,7 @@
 # Year Wrap Progress Tracking Enhancement
 
+> **Status, September 27, 2026:** written when Year Wrap ran on the downloaded model (then called Local AI). Year Wrap now runs on Apple Intelligence or Cloud AI only, one journal at a time, in the background; progress shows on the Year screen (`YearWrapProgress` in `SummaryCoordinator.swift`). Timings and steps below are from the old design.
+
 ## Overview
 
 Added detailed real-time progress tracking for Year Wrap generation to improve user experience during the 2-3 minute Local AI processing time.
@@ -227,7 +229,7 @@ Processing work sessions...
 
 ## Related Documentation
 
-- [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Phi-3.5 Mini implementation details
+- [Local AI Architecture](LOCAL_AI_ARCHITECTURE.md) - Local model (Qwen3 4B) implementation details
 - [Work/Personal Classification](WORK_PERSONAL_CLASSIFICATION_TEST.md) - Category system
 - [AI Architecture](AI_ARCHITECTURE.md) - Multi-tier summarization overview
 

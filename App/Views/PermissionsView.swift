@@ -5,6 +5,7 @@
 import SwiftUI
 import AVFoundation
 import Speech
+import Summarization
 
 /// Permission request view shown on first launch or when permissions are needed
 struct PermissionsView: View {
@@ -15,10 +16,12 @@ struct PermissionsView: View {
     @State private var isRequestingPermissions = false
     
     // Model download state
-    @State private var setupStep: SetupStep = .modelDownload  // Start with AI download
+    // Start with the AI download, unless this device can't run the model
+    @State private var setupStep: SetupStep = LocalEngine.isSupportedOnThisDevice ? .modelDownload : .permissions
     @State private var downloadProgress: Double = 0.0
     @State private var isDownloading = false
     @State private var downloadError: String? = nil
+    @State private var downloadTask: Task<Void, Never>? = nil
     
     enum SetupStep {
         case modelDownload  // Download AI first
@@ -35,9 +38,16 @@ struct PermissionsView: View {
                     permissionsContent
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(AppTheme.background.ignoresSafeArea())
             .navigationBarHidden(true)
         }
         .task {
+            // Devices that can't run Smart start on the permissions step, so check them right away
+            if setupStep == .permissions {
+                proceedToPermissions()
+            }
+
             // Initialize minimal components needed for model download
             print("🔧 [PermissionsView] Initializing AppCoordinator for model download...")
             await coordinator.initializeForModelDownload()
@@ -62,43 +72,42 @@ struct PermissionsView: View {
         ScrollView {
                 VStack(spacing: 32) {
                     // Header
-                    VStack(spacing: 16) {
-                        Image(systemName: "mic.circle.fill")
-                            .font(.system(size: 80))
-                            .foregroundStyle(.blue.gradient)
-                        
-                        Text("Life Wrapped")
-                            .font(.title.bold())
-                        
-                        Text("Your personal audio journal")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 14) {
+                        OnboardingAppMark()
+
+                        Text("Your year,\nin your own words.")
+                            .scaledFont(size: 34, design: .serif)
+                            .foregroundStyle(AppTheme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+
+                        Text("Life Wrapped is a private audio journal. Speak, and it turns your days into summaries and a year in review.")
+                            .font(.body)
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
                     .padding(.top, 40)
                     
                     // Permissions List
                     VStack(spacing: 20) {
                         PermissionCard(
-                            icon: "mic.fill",
-                            title: "Microphone Access",
+                            icon: "mic",
+                            title: "Microphone",
                             description: "Record audio throughout your day to create your personal journal",
                             status: microphoneStatus
                         )
                         
                         // Info card about speech recognition (requested later)
                         HStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.blue.opacity(0.1))
-                                    .frame(width: 50, height: 50)
-                                
-                                Image(systemName: "waveform")
-                                    .font(.title2)
-                                    .foregroundColor(.blue)
-                            }
+                            Image(systemName: "waveform")
+                .scaledFont(size: 20, weight: .regular)
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 28)
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Speech Recognition")
+                                Text("Speech recognition")
                                     .font(.headline)
                                 
                                 Text("Requested when you start recording")
@@ -108,39 +117,35 @@ struct PermissionsView: View {
                             
                             Spacer()
                             
-                            Image(systemName: "clock.fill")
-                                .font(.title2)
-                                .foregroundColor(.orange)
+                            Image(systemName: "clock")
+                                .scaledFont(size: 18, weight: .regular)
+                                .foregroundColor(AppTheme.textSecondary)
                         }
-                        .padding()
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                         
                         // Privacy Note
                         HStack(alignment: .top, spacing: 12) {
-                            Image(systemName: "lock.shield.fill")
-                                .foregroundColor(.green)
+                            Image(systemName: "lock.shield")
+                                .foregroundColor(AppTheme.accent)
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Your Privacy Matters")
+                                Text("Private by design")
                                     .font(.subheadline.bold())
                                 
-                                Text("Transcription happens entirely on your device. Nothing is sent to the cloud.")
+                                Text("Transcription happens on your \(DeviceName.current). Nothing is sent to the cloud unless you choose Cloud AI.")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                         }
-                        .padding()
-                        .background(Color.green.opacity(0.1))
-                        .cornerRadius(12)
+                        .padding(.horizontal, 4)
                         
                         // AI Tiers Comparison
                         VStack(alignment: .leading, spacing: 16) {
                             HStack(spacing: 12) {
                                 Image(systemName: "sparkles")
                                     .font(.title2)
-                                    .foregroundStyle(.purple.gradient)
+                                    .foregroundStyle(AppTheme.accent)
                                 
                                 Text("AI-Powered Summaries")
                                     .font(.headline)
@@ -154,77 +159,72 @@ struct PermissionsView: View {
                                 VStack(alignment: .leading, spacing: 10) {
                                     HStack {
                                         Image(systemName: "iphone")
-                                            .foregroundColor(.green)
+                                            .foregroundColor(AppTheme.accent)
                                         Text("On-Device")
                                             .font(.subheadline.bold())
                                         Spacer()
                                     }
                                     
-                                    Text("FREE")
+                                    Text("INCLUDED")
                                         .font(.caption.bold())
-                                        .foregroundColor(.green)
+                                        .foregroundColor(AppTheme.accent)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .background(Color.green.opacity(0.2))
+                                        .background(AppTheme.fill)
                                         .cornerRadius(6)
                                     
                                     VStack(alignment: .leading, spacing: 6) {
-                                        FeatureBullet(text: "Works offline", color: .green)
-                                        FeatureBullet(text: "100% private", color: .green)
-                                        FeatureBullet(text: "Good summaries", color: .green)
-                                        FeatureBullet(text: "Always available", color: .green)
+                                        FeatureBullet(text: "Works offline", color: AppTheme.accent)
+                                        FeatureBullet(text: "100% private", color: AppTheme.accent)
+                                        FeatureBullet(text: "Good summaries", color: AppTheme.accent)
+                                        FeatureBullet(text: "Always available", color: AppTheme.accent)
                                     }
                                     .font(.caption2)
                                     
                                     Spacer()
                                     
                                     HStack {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.green)
+                                        Image(systemName: "checkmark.circle")
+                                            .foregroundColor(AppTheme.accent)
                                         Text("Included")
                                             .font(.caption.bold())
-                                            .foregroundColor(.green)
+                                            .foregroundColor(AppTheme.accent)
                                     }
                                 }
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.green.opacity(0.08))
-                                .cornerRadius(12)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
-                                )
+                                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                                 
                                 // Smartest AI (Premium) Card
                                 VStack(alignment: .leading, spacing: 10) {
                                     HStack {
                                         Image(systemName: "sparkles")
-                                            .foregroundColor(.purple)
-                                        Text("Smartest")
+                                            .foregroundColor(AppTheme.accent)
+                                        Text("Cloud AI")
                                             .font(.subheadline.bold())
                                         Spacer()
                                     }
                                     
-                                    Text("PREMIUM")
+                                    Text("OPTIONAL")
                                         .font(.caption.bold())
-                                        .foregroundColor(.purple)
+                                        .foregroundColor(AppTheme.accent)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .background(Color.purple.opacity(0.2))
+                                        .background(AppTheme.fill)
                                         .cornerRadius(6)
                                     
                                     VStack(alignment: .leading, spacing: 6) {
-                                        FeatureBullet(text: "GPT-4 & Claude", color: .purple)
-                                        FeatureBullet(text: "Best quality", color: .purple)
-                                        FeatureBullet(text: "Deep insights", color: .purple)
-                                        FeatureBullet(text: "Detailed analysis", color: .purple)
+                                        FeatureBullet(text: "OpenAI & Anthropic", color: AppTheme.accent)
+                                        FeatureBullet(text: "Best quality", color: AppTheme.accent)
+                                        FeatureBullet(text: "Deep insights", color: AppTheme.accent)
+                                        FeatureBullet(text: "Detailed analysis", color: AppTheme.accent)
                                     }
                                     .font(.caption2)
                                     
                                     Spacer()
                                     
                                     HStack {
-                                        Image(systemName: "lock.fill")
+                                        Image(systemName: "lock")
                                             .foregroundColor(.secondary)
                                         Text("Unlock in Settings")
                                             .font(.caption2)
@@ -233,24 +233,17 @@ struct PermissionsView: View {
                                 }
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.purple.opacity(0.08))
-                                .cornerRadius(12)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.purple.opacity(0.3), lineWidth: 1)
-                                )
+                                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
                             }
                             .fixedSize(horizontal: false, vertical: true)
                             
                             // Reassurance text
-                            Text("✓ App is fully functional with On-Device AI")
+                            Label("App is fully functional with On-Device AI", systemImage: "checkmark")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
-                        .padding()
-                        .background(Color(.systemGray6).opacity(0.5))
-                        .cornerRadius(12)
+                        .padding(.vertical, 4)
                     }
                     .padding(.horizontal)
                     
@@ -264,10 +257,10 @@ struct PermissionsView: View {
                             } label: {
                                 Text("Continue")
                                     .font(.headline)
-                                    .foregroundColor(.white)
+                                    .foregroundStyle(AppTheme.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding()
-                                    .background(Color.blue)
+                                    .background(AppTheme.accent)
                                     .cornerRadius(12)
                             }
                         } else {
@@ -282,10 +275,10 @@ struct PermissionsView: View {
                                         .font(.headline)
                                 }
                             }
-                            .foregroundColor(.white)
+                            .foregroundStyle(AppTheme.onAccent)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.blue)
+                            .background(AppTheme.accent)
                             .cornerRadius(12)
                             .disabled(isRequestingPermissions)
                             
@@ -312,27 +305,30 @@ struct PermissionsView: View {
             Spacer()
             
             // Header
-            VStack(spacing: 16) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 80))
-                    .foregroundStyle(.purple.gradient)
-                
-                Text("Initializing On Device AI")
-                    .font(.title.bold())
-                
-                Text("This might take a minute...")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 14) {
+                OnboardingAppMark()
+
+                Text("Setting up\non-device AI")
+                    .scaledFont(size: 34, design: .serif)
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+
+                Text("This might take a minute.")
+                    .font(.body)
+                    .foregroundStyle(AppTheme.textSecondary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
             
             // Description
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "bolt.fill")
-                        .foregroundColor(.purple)
+                    Image(systemName: "bolt")
+                        .foregroundColor(AppTheme.accent)
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("On-Device AI Processing")
+                        Text("On-device AI")
                             .font(.subheadline.bold())
                         
                         Text("This model powers real-time chunk summarization as you record. It runs entirely on your device for maximum privacy.")
@@ -342,22 +338,21 @@ struct PermissionsView: View {
                 }
                 
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundColor(.green)
+                    Image(systemName: "lock.shield")
+                        .foregroundColor(AppTheme.accent)
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text("100% Private")
                             .font(.subheadline.bold())
                         
-                        Text("Your transcripts and summaries never leave your device. No cloud processing required.")
+                        Text("With on-device AI, your transcripts and summaries stay on your \(DeviceName.current).")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
             }
-            .padding()
-            .background(Color.purple.opacity(0.08))
-            .cornerRadius(12)
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
             .padding(.horizontal)
             
             Spacer()
@@ -368,13 +363,13 @@ struct PermissionsView: View {
                     VStack(spacing: 16) {
                         ProgressView(value: downloadProgress)
                             .progressViewStyle(.linear)
-                            .tint(.purple)
+                            .tint(AppTheme.accent)
                             .scaleEffect(x: 1, y: 2, anchor: .center)
                         
                         Text("Downloading AI Model... \(Int(downloadProgress * 100))%")
                             .font(.headline)
                         
-                        Text("Phi-3.5 Mini • \(coordinator.expectedLocalModelSizeMB)")
+                        Text("\(coordinator.localModelDisplayName) • \(coordinator.expectedLocalModelSizeMB)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -382,14 +377,14 @@ struct PermissionsView: View {
                         Button {
                             cancelDownload()
                         } label: {
-                            Text("Cancel Download")
+                            Text("Cancel download")
                                 .font(.subheadline.weight(.medium))
-                                .foregroundColor(.red)
+                                .foregroundColor(AppTheme.destructive)
                                 .padding(.vertical, 8)
                                 .padding(.horizontal, 24)
                                 .background(
                                     Capsule()
-                                        .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
+                                        .strokeBorder(AppTheme.destructive.opacity(0.5), lineWidth: 1)
                                 )
                         }
                         .padding(.top, 8)
@@ -399,19 +394,19 @@ struct PermissionsView: View {
                     VStack(spacing: 12) {
                         Text(error)
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(AppTheme.destructive)
                             .multilineTextAlignment(.center)
                             .padding(.bottom, 8)
                         
                         Button {
                             startModelDownload()
                         } label: {
-                            Text("Retry Download")
+                            Text("Retry download")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundStyle(AppTheme.onAccent)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.purple)
+                                .background(AppTheme.accent)
                                 .cornerRadius(12)
                         }
                     }
@@ -419,10 +414,10 @@ struct PermissionsView: View {
                 } else {
                     // Explicit download confirmation (App Store Guideline 4.2.3)
                     VStack(spacing: 16) {
-                        Text("Download AI Model")
+                        Text("Download AI model")
                             .font(.headline)
                         
-                        Text("This will download the Phi-3.5 Mini model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
+                        Text("This will download the \(coordinator.localModelDisplayName) model (\(coordinator.expectedLocalModelSizeMB)). Wi-Fi recommended.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -432,17 +427,17 @@ struct PermissionsView: View {
                         } label: {
                             Text("Download (\(coordinator.expectedLocalModelSizeMB))")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundStyle(AppTheme.onAccent)
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(Color.purple)
+                                .background(AppTheme.accent)
                                 .cornerRadius(12)
                         }
                         
                         Button {
                             skipModelDownload()
                         } label: {
-                            Text("Skip for Now")
+                            Text("Skip for now")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -492,6 +487,9 @@ struct PermissionsView: View {
     
     private func cancelDownload() {
         print("⏹️ [PermissionsView] User cancelled download")
+        // Stop the download itself, then let the coordinator reset its state and remove partial files
+        downloadTask?.cancel()
+        downloadTask = nil
         coordinator.getLocalModelCoordinator()?.cancelDownload()
         
         // Reset state to show Download/Skip buttons again
@@ -513,23 +511,31 @@ struct PermissionsView: View {
         downloadError = nil
         downloadProgress = 0.0
         
-        Task {
+        downloadTask = Task {
             do {
                 try await coordinator.downloadLocalModel { progress in
                     Task { @MainActor in
+                        // Ignore late updates after Cancel
+                        guard self.isDownloading else { return }
                         self.downloadProgress = progress
                     }
                 }
                 
+                // Cancelled at the last moment: stay on this screen
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     print("✅ [PermissionsView] Model download complete")
                     isDownloading = false
+                    downloadTask = nil
                     proceedToPermissions()  // Move to permissions after download
                 }
             } catch {
+                // Cancel already reset the screen, so a cancelled download shows no error
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     print("❌ [PermissionsView] Model download failed: \(error)")
                     isDownloading = false
+                    downloadTask = nil
                     downloadError = "Download failed: \(error.localizedDescription)"
                 }
             }
@@ -633,16 +639,16 @@ enum PermissionStatus {
     var icon: String {
         switch self {
         case .notDetermined: return "questionmark.circle"
-        case .authorized: return "checkmark.circle.fill"
-        case .denied, .restricted: return "xmark.circle.fill"
+        case .authorized: return "checkmark.circle"
+        case .denied, .restricted: return "xmark.circle"
         }
     }
     
     var color: Color {
         switch self {
         case .notDetermined: return .gray
-        case .authorized: return .green
-        case .denied, .restricted: return .red
+        case .authorized: return AppTheme.accent
+        case .denied, .restricted: return AppTheme.destructive
         }
     }
 }
@@ -658,15 +664,10 @@ struct PermissionCard: View {
     var body: some View {
         HStack(spacing: 16) {
             // Icon
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.1))
-                    .frame(width: 50, height: 50)
-                
-                Image(systemName: icon)
-                    .font(.title2)
-                    .foregroundColor(.blue)
-            }
+            Image(systemName: icon)
+                .scaledFont(size: 20, weight: .regular)
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(width: 28)
             
             // Text
             VStack(alignment: .leading, spacing: 4) {
@@ -683,13 +684,11 @@ struct PermissionCard: View {
             
             // Status
             Image(systemName: status.icon)
-                .font(.title2)
+                .scaledFont(size: 18, weight: .regular)
                 .foregroundColor(status.color)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(AppTheme.card).stroke(AppTheme.hairline, lineWidth: 1))
     }
 }
 
@@ -716,5 +715,22 @@ struct PermissionsView_Previews: PreviewProvider {
     static var previews: some View {
         PermissionsView()
             .environmentObject(AppCoordinator())
+    }
+}
+
+// MARK: - Onboarding App Mark
+
+/// Small ink square with a waveform, echoing the app icon at the top of onboarding.
+private struct OnboardingAppMark: View {
+    var body: some View {
+        Image(systemName: "waveform")
+            .scaledFont(size: 24, weight: .regular)
+            .foregroundStyle(AppTheme.onAccent)
+            .frame(width: 56, height: 56)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(AppTheme.accent)
+            )
+            .accessibilityHidden(true)
     }
 }

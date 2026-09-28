@@ -224,7 +224,7 @@ struct InsightsRollupModelTests {
     func testPeriodTypesIterable() throws {
         let types = PeriodType.allCases
         
-        #expect(types.count == 7)
+        #expect(types.count == 11)
         #expect(types.contains(.session))
         #expect(types.contains(.hour))
         #expect(types.contains(.day))
@@ -232,6 +232,7 @@ struct InsightsRollupModelTests {
         #expect(types.contains(.month))
         #expect(types.contains(.year))
         #expect(types.contains(.yearWrap))
+        #expect(types.contains(.monthDigest))
     }
     
     @Test("Period type display names are meaningful")

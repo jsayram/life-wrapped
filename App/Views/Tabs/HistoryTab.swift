@@ -11,9 +11,14 @@ struct HistoryTab: View {
     @State private var searchText = ""
     @State private var showFavoritesOnly = false
     @State private var categoryFilter: SessionCategory? = nil
+    /// Set once the user dismisses the note about older recordings filed under Personal
+    @AppStorage("uncategorizedNoticeDismissed") private var uncategorizedNoticeDismissed = false
     @State private var transcriptMatchingSessionIds: Set<UUID> = []
     @State private var isSearchingTranscripts = false
     @State private var searchDebounceTask: Task<Void, Never>?
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The recording shown beside the list on iPad
+    @State private var selectedSessionId: UUID?
     
     private var filteredSessions: [RecordingSession] {
         var result = sessions
@@ -25,7 +30,7 @@ struct HistoryTab: View {
         
         // Filter by category if selected
         if let category = categoryFilter {
-            result = result.filter { $0.category == category }
+            result = result.filter { $0.journal == category }
         }
         
         // Filter by search text
@@ -57,11 +62,47 @@ struct HistoryTab: View {
         return result
     }
     
+    /// iPad (regular width): list on the left, the chosen recording on the right
+    private var usesSplitView: Bool { sizeClass == .regular }
+
+    private var selectedSession: RecordingSession? {
+        sessions.first { $0.sessionId == selectedSessionId }
+    }
+
     var body: some View {
-        NavigationStack {
-            contentView
+        if usesSplitView {
+            NavigationSplitView {
+                listScreen
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 460)
+            } detail: {
+                NavigationStack {
+                    if let session = selectedSession {
+                        SessionDetailView(session: session)
+                            .id(session.sessionId)
+                    } else {
+                        GraphiteEmptyState(
+                            "No recording selected",
+                            systemImage: "waveform",
+                            description: Text("Choose a recording to read its summary and transcript.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .themedScreen()
+                    }
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
+            NavigationStack {
+                listScreen
+            }
+        }
+    }
+
+    private var listScreen: some View {
+        contentView
+                .themedScreen()
                 .navigationTitle("History")
-                .searchable(text: $searchText, prompt: "Search titles, notes, transcripts...")
+                .searchable(text: $searchText, prompt: "Search recordings")
                 .onChange(of: searchText) { _, newValue in
                     // Debounce transcript search
                     searchDebounceTask?.cancel()
@@ -83,36 +124,11 @@ struct HistoryTab: View {
                                     .scaleEffect(0.7)
                             }
                             
-                            // Category filter menu
-                            Menu {
-                                Button {
-                                    categoryFilter = nil
-                                } label: {
-                                    Label("All", systemImage: categoryFilter == nil ? "checkmark" : "")
-                                }
-                                
-                                Divider()
-                                
-                                ForEach(SessionCategory.allCases, id: \.self) { category in
-                                    Button {
-                                        categoryFilter = categoryFilter == category ? nil : category
-                                    } label: {
-                                        Label(
-                                            category.displayName,
-                                            systemImage: categoryFilter == category ? "checkmark" : category.systemImage
-                                        )
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: categoryFilter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                                    .foregroundStyle(categoryFilter == nil ? .secondary : Color(hex: categoryFilter!.colorHex))
-                            }
-                            
                             Button {
                                 showFavoritesOnly.toggle()
                             } label: {
                                 Image(systemName: showFavoritesOnly ? "star.fill" : "star")
-                                    .foregroundStyle(showFavoritesOnly ? .yellow : .secondary)
+                                    .foregroundStyle(showFavoritesOnly ? AppTheme.textSecondary : .secondary)
                             }
                         }
                     }
@@ -123,6 +139,14 @@ struct HistoryTab: View {
                 .refreshable {
                     await loadSessions()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .recordingTitlesUpdated)) { _ in
+                    Task { await loadSessions() }
+                }
+                // Keep the row in step with edits made in the recording (side by side on iPad)
+                .onReceive(NotificationCenter.default.publisher(for: .sessionMetadataChanged)) { note in
+                    guard let id = note.object as? UUID else { return }
+                    Task { await refreshSession(id) }
+                }
                 .alert("Playback Error", isPresented: .constant(playbackError != nil)) {
                     Button("OK") {
                         playbackError = nil
@@ -132,7 +156,6 @@ struct HistoryTab: View {
                         Text(error)
                     }
                 }
-        }
     }
     
     @ViewBuilder
@@ -140,14 +163,14 @@ struct HistoryTab: View {
         if isLoading {
             LoadingView(size: .medium)
         } else if sessions.isEmpty {
-            ContentUnavailableView(
-                "No Recordings Yet",
+            GraphiteEmptyState(
+                "No recordings yet",
                 systemImage: "mic.slash",
-                description: Text("Tap the record button on the Home tab to start your first journal entry.")
+                description: Text("Tap the record button on the Record tab to start your first entry.")
             )
-        } else if filteredSessions.isEmpty {
-            ContentUnavailableView(
-                "No Results",
+        } else if filteredSessions.isEmpty && !searchText.isEmpty {
+            GraphiteEmptyState(
+                "No results",
                 systemImage: "magnifyingglass",
                 description: Text("No recordings match '\(searchText)'")
             )
@@ -158,6 +181,56 @@ struct HistoryTab: View {
     
     private var sessionsList: some View {
         List {
+            // Category filter chips
+            Section {
+                categoryChips
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+            }
+            .listSectionSpacing(8)
+
+            // Recordings from before categories existed count as Personal; say so once
+            let uncategorized = sessions.filter { $0.category == nil }.count
+            if uncategorized > 0 && !uncategorizedNoticeDismissed {
+                Section {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "house")
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .accessibilityHidden(true)
+                        Text(uncategorized == 1
+                             ? "1 older recording was made before Work and Personal existed, so it's in Personal. Open it to move it to Work."
+                             : "\(uncategorized) older recordings were made before Work and Personal existed, so they're in Personal. Open one to move it to Work.")
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button {
+                            uncategorizedNoticeDismissed = true
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(AppTheme.textSecondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss")
+                    }
+                }
+            }
+
+            // Empty filter result (chips stay visible so the filter can be changed)
+            if filteredSessions.isEmpty {
+                Section {
+                    Text(showFavoritesOnly ? "No favorites in this filter." : "No recordings in this filter.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 24)
+                        .listRowBackground(Color.clear)
+                }
+            }
+
             // Stats summary at top
             if !searchText.isEmpty {
                 Section {
@@ -170,13 +243,7 @@ struct HistoryTab: View {
             ForEach(sortedDates, id: \.self) { date in
                 Section {
                     ForEach(sessionsForDate(date), id: \.id) { session in
-                        NavigationLink(destination: sessionDetailView(for: session)) {
-                            SessionRowClean(
-                                session: session,
-                                wordCount: sessionWordCounts[session.sessionId],
-                                hasSummary: sessionHasSummary[session.sessionId] ?? false
-                            )
-                        }
+                        sessionRow(session)
                     }
                     .onDelete { offsets in
                         deleteSession(at: offsets, in: date)
@@ -184,19 +251,64 @@ struct HistoryTab: View {
                 } header: {
                     HStack {
                         Text(formatSectionDate(date))
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
                         Spacer()
                         Text("\(sessionsForDate(date).count) recording\(sessionsForDate(date).count == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .font(.footnote)
+                            .foregroundStyle(AppTheme.textSecondary)
                     }
+                    .textCase(nil)
                 }
             }
         }
         .listStyle(.insetGrouped)
     }
     
-    private func sessionDetailView(for session: RecordingSession) -> some View {
-        SessionDetailView(session: session)
+    private var categoryChips: some View {
+        HStack(spacing: 8) {
+            FilterChip(title: "All", isSelected: categoryFilter == nil) { categoryFilter = nil }
+            ForEach(SessionCategory.allCases, id: \.self) { category in
+                FilterChip(title: category.displayName, isSelected: categoryFilter == category) {
+                    categoryFilter = categoryFilter == category ? nil : category
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// iPhone pushes the recording; iPad selects it and shows it beside the list
+    @ViewBuilder
+    private func sessionRow(_ session: RecordingSession) -> some View {
+        let row = SessionRowClean(
+            session: session,
+            wordCount: sessionWordCounts[session.sessionId],
+            hasSummary: sessionHasSummary[session.sessionId] ?? false
+        )
+        if usesSplitView {
+            let isSelected = selectedSessionId == session.sessionId
+            Button {
+                selectedSessionId = session.sessionId
+            } label: {
+                row.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // White rows with the chosen one in grey; the sidebar's default row color hides the selection
+            .listRowBackground(isSelected ? AppTheme.fill : AppTheme.card)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+        } else {
+            NavigationLink(destination: SessionDetailView(session: session)) {
+                row
+            }
+            .hidesNavigationChevron()
+        }
+    }
+
+    /// Reload one recording after its title, notes, star or journal changed
+    private func refreshSession(_ id: UUID) async {
+        guard let index = sessions.firstIndex(where: { $0.sessionId == id }),
+              let updated = try? await coordinator.fetchSessions(ids: [id]).first else { return }
+        sessions[index] = updated
     }
     
     private func sessionsForDate(_ date: Date) -> [RecordingSession] {
@@ -235,11 +347,17 @@ struct HistoryTab: View {
     }
     
     private func loadSessions() async {
-        isLoading = true
+        // Only the first load shows the spinner; later reloads update the list in place
+        if sessions.isEmpty { isLoading = true }
         do {
             sessions = try await coordinator.fetchRecentSessions(limit: 100)
             print("✅ [HistoryTab] Loaded \(sessions.count) sessions")
-            
+
+            // On iPad, open the newest recording so the right side isn't empty
+            if usesSplitView && selectedSession == nil {
+                selectedSessionId = sessions.max(by: { $0.startTime < $1.startTime })?.sessionId
+            }
+
             // Load word counts and summary status in parallel
             guard let dbManager = coordinator.getDatabaseManager() else { return }
             await withTaskGroup(of: (UUID, Int, Bool).self) { group in
@@ -294,6 +412,7 @@ struct HistoryTab: View {
                 }
                 do {
                     try await coordinator.deleteSession(session.sessionId)
+                    if selectedSessionId == session.sessionId { selectedSessionId = nil }
                     sessions.removeAll { $0.sessionId == session.sessionId }
                     sessionWordCounts.removeValue(forKey: session.sessionId)
                     sessionHasSummary.removeValue(forKey: session.sessionId)
@@ -302,5 +421,30 @@ struct HistoryTab: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Filter Chip
+
+private struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? AppTheme.onAccent : AppTheme.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? AppTheme.accent : AppTheme.card)
+                        .stroke(isSelected ? Color.clear : AppTheme.hairline, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

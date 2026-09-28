@@ -232,17 +232,17 @@ struct StopWords {
     }
     
     static let categories: [Category] = [
-        Category(name: "Articles", icon: "a.circle.fill", color: .blue, words: articles),
-        Category(name: "Pronouns", icon: "person.circle.fill", color: .green, words: pronouns),
-        Category(name: "Prepositions", icon: "arrow.left.and.right.circle.fill", color: .orange, words: prepositions),
-        Category(name: "Conjunctions", icon: "link.circle.fill", color: .purple, words: conjunctions),
-        Category(name: "Common Verbs", icon: "bolt.circle.fill", color: .red, words: commonVerbs),
-        Category(name: "Adverbs & Intensifiers", icon: "star.circle.fill", color: .teal, words: adverbs),
-        Category(name: "Determiners", icon: "number.circle.fill", color: .cyan, words: determiners),
-        Category(name: "Negations", icon: "xmark.circle.fill", color: .pink, words: negations),
-        Category(name: "Contractions", icon: "ellipsis.circle.fill", color: .indigo, words: contractions),
-        Category(name: "Fillers & Discourse", icon: "bubble.circle.fill", color: .mint, words: fillers),
-        Category(name: "Question Words", icon: "questionmark.circle.fill", color: .yellow, words: questionWords),
-        Category(name: "Conjunctive Adverbs", icon: "arrow.triangle.branch", color: .brown, words: conjunctiveAdverbs)
+        Category(name: "Articles", icon: "a.circle", color: AppTheme.textPrimary, words: articles),
+        Category(name: "Pronouns", icon: "person.circle", color: AppTheme.textPrimary, words: pronouns),
+        Category(name: "Prepositions", icon: "arrow.left.and.right.circle", color: AppTheme.textPrimary, words: prepositions),
+        Category(name: "Conjunctions", icon: "link.circle", color: AppTheme.textPrimary, words: conjunctions),
+        Category(name: "Common verbs", icon: "bolt.circle", color: AppTheme.textPrimary, words: commonVerbs),
+        Category(name: "Adverbs & intensifiers", icon: "star.circle", color: AppTheme.textPrimary, words: adverbs),
+        Category(name: "Determiners", icon: "number.circle", color: AppTheme.textPrimary, words: determiners),
+        Category(name: "Negations", icon: "xmark.circle", color: AppTheme.textPrimary, words: negations),
+        Category(name: "Contractions", icon: "ellipsis.circle", color: AppTheme.textPrimary, words: contractions),
+        Category(name: "Fillers & discourse", icon: "bubble.circle", color: AppTheme.textPrimary, words: fillers),
+        Category(name: "Question words", icon: "questionmark.circle", color: AppTheme.textPrimary, words: questionWords),
+        Category(name: "Conjunctive adverbs", icon: "arrow.triangle.branch", color: AppTheme.textPrimary, words: conjunctiveAdverbs)
     ]
 }

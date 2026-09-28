@@ -2,24 +2,25 @@
 
 ## Data Collection Overview
 
-### Transcription: 100% On-Device ✅
+The App Store label is **Data Not Collected**. The developer has no servers and receives nothing. The one feature that sends data off the device, Cloud AI, sends it straight from the device to the user's own OpenAI or Anthropic account under the user's own API key.
 
-- Audio recordings NEVER leave your device
-- Speech recognition uses Apple's on-device framework
-- All transcriptions stored locally in SQLite
+### Transcription: on-device
 
-### AI Summaries: User-Controlled 🔑
+- Audio recordings never leave the device
+- Speech recognition uses Apple's Speech framework with `requiresOnDeviceRecognition = true`
+- Transcripts are stored locally in SQLite
 
-- **Optional**: Users can provide their own OpenAI/Anthropic API keys
-- **Transparent**: Only external AI API calls use these keys
-- **Your Control**: Keys stored securely in Keychain, managed by you
-- **Offline Mode**: Basic summaries work without internet or API keys
+### Summaries: user-controlled
 
-### Network Activity
+- **Key Sentences, Offline AI and Apple Intelligence** make summaries on the device and send nothing
+- **Cloud AI** (optional one-time purchase) sends text, never audio, to the provider the user connects: a recording's transcript and Work or Personal label, the first 400 characters of a summary for its title, and recording summaries, dates, labels and notes for month summaries and Year Wrap
+- API keys are stored in the Keychain and only used to authenticate the user's own requests
 
-- **Without API Keys**: Zero network calls, 100% offline
-- **With API Keys**: Only external AI API calls to OpenAI/Anthropic (using YOUR keys)
-- **Your Choice**: You control if/when network access occurs
+### Network activity
+
+- **Without an API key:** no network use except the optional Offline AI model download (Hugging Face) and App Store purchases
+- **With an API key and Cloud AI chosen:** requests to api.openai.com or api.anthropic.com, plus a connectivity check to www.apple.com before using Cloud AI (no journal data)
+- The full list is on the [privacy policy](https://jsayram.github.io/life-wrapped/privacy)
 
 ## Data Not Collected By Developer
 
@@ -109,88 +110,65 @@ No data is used to track you across apps and websites owned by other companies.
 
 ## Privacy Policy
 
-Life Wrapped is designed with privacy as the core principle:
+The published policy is at [jsayram.github.io/life-wrapped/privacy](https://jsayram.github.io/life-wrapped/privacy), and a short version is in the app under Settings, then Privacy policy. Keep both in step with this page.
 
-### On-Device Processing
+### Your data, your control
 
-- All audio recording happens locally
-- Speech recognition uses Apple's on-device Speech framework
-- Transcriptions never leave your device
-- All data stored in local SQLite database
-
-### AI Summaries (User-Controlled)
-
-- **Transcription**: Always on-device, zero network calls
-- **Basic Summaries**: On-device, zero network calls
-- **Apple Intelligence**: On-device (iOS 18.1+), zero external network calls
-- **External AI**: Optional feature using YOUR API keys
-  - You provide OpenAI or Anthropic keys
-  - Keys stored securely in Keychain
-  - Network calls only to OpenAI/Anthropic APIs (not developer servers)
-  - Automatic fallback to Basic summaries when offline
-
-### Your Data, Your Control
-
-- Export data anytime (JSON, Markdown)
-- Delete all data with one tap
-- No account required
-- No sign-up process
-- API keys optional and user-managed
+- Export anytime as JSON, Markdown or PDF (no audio)
+- Delete one year or everything from Settings, then Data
+- No account and no sign-up
+- API keys are optional and managed by the user
 
 ### Verification
 
-Users can verify our privacy claims:
-
-1. Without API keys: Enable Airplane Mode → App works perfectly
-2. With API keys: Network monitoring shows only OpenAI/Anthropic API calls (YOUR keys)
+1. Without an API key, turn on Airplane Mode: recording, transcription, on-device summaries, History, Overview and export all work
+2. With Cloud AI set up, a network monitor shows requests only to the chosen provider and the www.apple.com connectivity check
 3. Transcription always works offline
 
 ## Permissions Required
 
-### Microphone (Required)
+### Microphone (required)
 
-- **Purpose:** Record your voice for journaling
-- **When:** Only when actively recording
-- **Storage:** Audio files stored locally in App Group container
-- **Deletion:** Files deleted with recordings
+- **Purpose:** Record the user's voice for journaling
+- **When:** Only while recording
+- **Storage:** Audio files stored locally in the App Group container
+- **Deletion:** Files are deleted with their recordings
 
-### Speech Recognition (Required)
+### Speech Recognition (required)
 
-- **Purpose:** Transcribe audio to text on-device
-- **When:** After recording stops
-- **Method:** Apple Speech Framework with requiresOnDeviceRecognition=true
-- **Network:** Zero - all transcription happens locally
+- **Purpose:** Transcribe audio to text on the device
+- **When:** Part by part, while recording and right after
+- **Method:** Apple Speech framework with `requiresOnDeviceRecognition = true`
+- **Network:** None; iOS may download on-device speech assets for a language once
 
-### App Group (Internal)
+### App Group (internal)
 
-- **Purpose:** Share data between main app and widget
-- **Scope:** Only within Life Wrapped family
-- **Network:** No external sharing
+- **Purpose:** Share a few numbers with the widget (streak, today's recording count, minutes, words, last recording time)
+- **Scope:** Only Life Wrapped and its widget
+- **Network:** None
 
 ## Security
 
-### Data Protection
+### Data protection
 
-- Files encrypted at rest (FileProtectionType.completeUntilFirstUserAuthentication)
-- Database uses SQLCipher encryption (planned for v1.1)
-- No transmission of sensitive data
+- The database folder uses iOS file protection (`FileProtectionType.completeUntilFirstUserAuthentication`)
+- The database is not encrypted beyond iOS file protection
+- API keys are stored in the Keychain (`kSecAttrAccessibleAfterFirstUnlock`)
 
-### Code Signing
+### Code
 
-- App signed with Apple Developer certificate
-- No third-party SDKs
-- No analytics frameworks
-- No tracking libraries
+- No analytics, crash reporting, advertising or tracking SDKs
+- The only third-party libraries are MLX (ml-explore) and Hugging Face swift-transformers, used to run the optional Offline AI model on the device
 
 ## Compliance
 
-- ✅ GDPR Compliant (no personal data collection)
-- ✅ CCPA Compliant (no personal data sale)
-- ✅ COPPA Compliant (no data collection from children)
-- ✅ Apple Privacy Guidelines Compliant
+- ✅ GDPR: no personal data is collected by the developer
+- ✅ CCPA: no personal data is sold or shared by the developer
+- ✅ COPPA: no data is collected from children
+- ✅ App Store privacy label: Data Not Collected
 
 ## Contact
 
-For privacy questions: [Your Support Email]
+Privacy questions: [open an issue](https://github.com/jsayram/life-wrapped/issues)
 
-**Last Updated:** December 22, 2025
+**Last Updated:** September 27, 2026

@@ -82,3 +82,11 @@ extension Array {
         return indices.contains(index) ? self[index] : nil
     }
 }
+
+extension String {
+    /// Older Smarter (Apple Intelligence) summaries were saved as "[Title] summary".
+    /// Recordings have their own titles, so the bracketed prefix is hidden when shown.
+    var withoutSummaryTitlePrefix: String {
+        replacingOccurrences(of: #"^\s*\[[^\]\n]{1,80}\]\s*"#, with: "", options: .regularExpression)
+    }
+}

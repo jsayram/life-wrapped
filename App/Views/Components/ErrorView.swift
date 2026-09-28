@@ -20,8 +20,8 @@ struct ErrorView: View {
         VStack(spacing: 20) {
             // Icon
             Image(systemName: errorIcon)
-                .font(.system(size: 60))
-                .foregroundStyle(.red.gradient)
+                .scaledFont(size: 60)
+                .foregroundStyle(AppTheme.destructive)
             
             // Title
             Text(errorTitle)
@@ -43,12 +43,12 @@ struct ErrorView: View {
                             await onRetry()
                         }
                     } label: {
-                        Label("Try Again", systemImage: "arrow.clockwise")
+                        Label("Try again", systemImage: "arrow.clockwise")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundStyle(AppTheme.onAccent)
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Color.blue)
+                            .background(AppTheme.accent)
                             .cornerRadius(12)
                     }
                 }
@@ -152,7 +152,7 @@ struct ErrorBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
+                .foregroundColor(AppTheme.textSecondary)
             
             Text(message)
                 .font(.subheadline)
@@ -172,7 +172,7 @@ struct ErrorBanner: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.orange.opacity(0.1))
+                .fill(AppTheme.textSecondary.opacity(0.1))
         )
     }
 }

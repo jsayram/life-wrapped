@@ -49,8 +49,7 @@ struct DataManagementView: View {
                                 // Year header with stats
                                 HStack {
                                     Text(String(yearData.year))
-                                        .font(.title2)
-                                        .fontWeight(.bold)
+                                        .font(.title3.weight(.semibold))
                                     Spacer()
                                     VStack(alignment: .trailing, spacing: 2) {
                                         Text("\(yearData.sessionCount) sessions")
@@ -67,7 +66,7 @@ struct DataManagementView: View {
                                     } label: {
                                         Image(systemName: "trash")
                                             .font(.title3)
-                                            .foregroundColor(.red)
+                                            .foregroundColor(AppTheme.destructive)
                                             .padding(8)
                                     }
                                     .buttonStyle(.plain)
@@ -106,7 +105,7 @@ struct DataManagementView: View {
                             .padding(.vertical, 8)
                         }
                     } header: {
-                        Text("Export by Year")
+                        Text("Export by year")
                     } footer: {
                         Text("Export data for specific years. Choose your preferred format.")
                     }
@@ -114,11 +113,11 @@ struct DataManagementView: View {
                 
                 // Export All All Section
                 Section {
-                    Picker("Export Format", selection: $exportFormat) {
-                        ForEach(ExportFormat.allCases, id: \.self) { format in
-                            Text(format.rawValue).tag(format)
-                        }
-                    }
+                    GraphiteSegmentedControl(
+                        options: ExportFormat.allCases.map { .init(value: $0, title: $0.rawValue) },
+                        selection: $exportFormat
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .onChange(of: exportFormat) { _, newValue in
                         UserDefaults.standard.lastExportFormat = newValue.rawValue
                     }
@@ -134,7 +133,8 @@ struct DataManagementView: View {
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.up")
-                            Text("Export All Data")
+                            Text("Export all data")
+                                .fontWeight(.semibold)
                             
                             if isExporting {
                                 Spacer()
@@ -144,7 +144,7 @@ struct DataManagementView: View {
                     }
                     .disabled(isExporting)
                 } header: {
-                    Text("Export All")
+                    Text("Export all")
                 } footer: {
                     Text("Export all your journal entries and summaries across all years.")
                 }
@@ -156,7 +156,7 @@ struct DataManagementView: View {
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.down")
-                            Text("Import JSON Data")
+                            Text("Import JSON backup")
                             
                             if isImporting {
                                 Spacer()
@@ -198,18 +198,20 @@ struct DataManagementView: View {
                         }
                     } label: {
                         HStack {
-                            Image(systemName: "trash.fill")
-                            Text("Delete All Data")
+                            Image(systemName: "trash")
+                            Text("Delete all data")
                         }
                     }
                 } header: {
-                    Text("Danger Zone")
+                    Text("Danger zone")
                 } footer: {
                     Text("This will permanently delete all recordings, transcriptions, and summaries.")
                 }
             }
-            .navigationTitle("Data Management")
-            .navigationBarTitleDisplayMode(.inline)
+            .themedScreen()
+            .readableMargins()
+            .navigationTitle("Export & backup")
+            .columnScreenTitleDisplayMode()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -267,17 +269,19 @@ struct DataManagementView: View {
                                             .foregroundColor(.secondary)
                                         Text(error.message)
                                             .font(.body)
-                                            .foregroundColor(.red)
+                                            .foregroundColor(AppTheme.destructive)
                                     }
                                 }
                             }
                         }
                     }
+                    .themedScreen()
+                    .readableMargins()
                     .navigationTitle("Import Details")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Copy All") {
+                            Button("Copy all") {
                                 let allErrors = importErrors.map { "\($0.id): \($0.message)" }.joined(separator: "\n")
                                 UIPasteboard.general.string = allErrors
                             }
@@ -290,19 +294,19 @@ struct DataManagementView: View {
                     }
                 }
             }
-            .alert("Delete All Data?", isPresented: $showDeleteConfirmation) {
+            .alert("Delete all data?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     deleteAllData()
                 }
             } message: {
                 if let stats = deleteStats {
-                    Text("This will permanently delete:\n\n• \(stats.chunks) recordings\n• \(stats.transcripts) transcripts\n• \(stats.summaries) summaries\n• API keys (OpenAI/Anthropic)\n• Local AI model (\(stats.modelSize))\n\nThis action cannot be undone.")
+                    Text("This will permanently delete:\n\n• \(stats.chunks) recordings\n• \(stats.transcripts) transcripts\n• \(stats.summaries) summaries\n• API keys (OpenAI/Anthropic)\n• Offline AI model (\(stats.modelSize))\n\nThis action cannot be undone.")
                 } else {
                     Text("This action cannot be undone. All your recordings, transcriptions, and summaries will be permanently deleted.")
                 }
             }
-            .alert("Delete \(yearToDelete ?? 0) Data?", isPresented: $showYearDeleteConfirmation) {
+            .alert("Delete \(yearToDelete.map { String($0) } ?? "this year's") data?", isPresented: $showYearDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
                     if let year = yearToDelete {
@@ -312,7 +316,7 @@ struct DataManagementView: View {
             } message: {
                 if let year = yearToDelete,
                    let yearInfo = yearlyData.first(where: { $0.year == year }) {
-                    Text("This will permanently delete all data from \(year):\n\n• \(yearInfo.sessionCount) sessions\n• \(yearInfo.wordCount.formatted()) words\n\nThis action cannot be undone.")
+                    Text("This will permanently delete all data from \(String(year)):\n\n• \(yearInfo.sessionCount) sessions\n• \(yearInfo.wordCount.formatted()) words\n\nThis action cannot be undone.")
                 } else {
                     Text("This will permanently delete all data from this year. This action cannot be undone.")
                 }
@@ -448,11 +452,11 @@ struct DataManagementView: View {
                     }
                     
                     if result.isSuccessful {
-                        coordinator.showSuccess("✅ \(result.summary)")
+                        coordinator.showSuccess(result.summary)
                     } else if result.hasPartialSuccess {
-                        coordinator.showError("⚠️ Partial import: \(result.summary)")
+                        coordinator.showError("Partial import: \(result.summary)")
                     } else {
-                        coordinator.showError("❌ Import failed: \(result.errors.first?.error ?? "Unknown error")")
+                        coordinator.showError("Import failed: \(result.errors.first?.error ?? "Unknown error")")
                     }
                 }
             }

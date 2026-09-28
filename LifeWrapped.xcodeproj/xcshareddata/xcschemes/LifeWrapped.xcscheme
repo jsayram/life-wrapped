@@ -37,6 +37,76 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "SharedModelsTests"
+               BuildableName = "SharedModelsTests"
+               BlueprintName = "SharedModelsTests"
+               ReferencedContainer = "container:Packages/SharedModels">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "StorageTests"
+               BuildableName = "StorageTests"
+               BlueprintName = "StorageTests"
+               ReferencedContainer = "container:Packages/Storage">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AudioCaptureTests"
+               BuildableName = "AudioCaptureTests"
+               BlueprintName = "AudioCaptureTests"
+               ReferencedContainer = "container:Packages/AudioCapture">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "TranscriptionTests"
+               BuildableName = "TranscriptionTests"
+               BlueprintName = "TranscriptionTests"
+               ReferencedContainer = "container:Packages/Transcription">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "SummarizationTests"
+               BuildableName = "SummarizationTests"
+               BlueprintName = "SummarizationTests"
+               ReferencedContainer = "container:Packages/Summarization">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "InsightsRollupTests"
+               BuildableName = "InsightsRollupTests"
+               BlueprintName = "InsightsRollupTests"
+               ReferencedContainer = "container:Packages/InsightsRollup">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "WidgetCoreTests"
+               BuildableName = "WidgetCoreTests"
+               BlueprintName = "WidgetCoreTests"
+               ReferencedContainer = "container:Packages/WidgetCore">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

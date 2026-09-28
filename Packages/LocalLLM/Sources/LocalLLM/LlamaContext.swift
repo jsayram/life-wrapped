@@ -12,206 +12,214 @@ import MLXLMCommon
 import MLXNN
 import Hub
 
-/// Main context for MLX-based LLM inference
-/// Handles model loading, tokenization, and text generation using Apple's MLX framework
+/// Runs the Smart tier's on-device model with Apple's MLX framework.
+/// (The name is historical: the first version used llama.cpp.)
 ///
-/// ⚠️ **Simulator Note:** MLX requires Metal GPU support which is only available on
-/// physical Apple Silicon devices. This actor will gracefully handle simulator environments
-/// by returning `isRunningOnSimulator = true` and preventing Metal operations.
+/// Prompts go in as chat messages, a system message with the instructions and a user
+/// message with the content. MLX formats them with the model's own chat template, which is
+/// downloaded with the model, so no model-specific tags are ever written by hand.
+///
+/// Simulator note: MLX needs a Metal GPU, which the iOS Simulator doesn't provide.
+/// On the simulator every call fails with `LlamaError.metalNotAvailable` and callers fall back.
 public actor LlamaContext {
-    
+
     // MARK: - Properties
-    
+
     private var modelContainer: ModelContainer?
     private var modelType: LocalModelType?
-    
     private var isModelLoaded = false
-    
-    /// Check if running on iOS Simulator (MLX/Metal not supported)
-    private let isRunningOnSimulator: Bool = {
-        #if targetEnvironment(simulator)
-        return true
-        #else
-        return false
-        #endif
-    }()
-    
+
     // MARK: - Initialization
-    
+
     public init() {
-        // Only initialize Metal/GPU on real devices - simulators don't support MLX
         #if !targetEnvironment(simulator)
-        // Set reasonable memory limits for iOS
-        MLX.GPU.set(cacheLimit: 256 * 1024 * 1024) // 256 MB cache
+        // Keep MLX's buffer cache small on iPhone
+        MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
         #else
         print("⚠️ [LlamaContext] Running on simulator - MLX/Metal disabled")
         #endif
     }
-    
+
     // MARK: - Model Management
-    
-    /// Check if model is loaded and ready
+
+    /// Whether a model is loaded and ready
     public func isReady() -> Bool {
         #if targetEnvironment(simulator)
-        return false // MLX not available on simulator
+        return false
         #else
         return isModelLoaded
         #endif
     }
-    
-    /// Load a model into memory
+
+    /// Load a downloaded model into memory
     public func loadModel(_ modelType: LocalModelType) async throws {
         #if targetEnvironment(simulator)
         print("⚠️ [LlamaContext] Cannot load model on simulator - MLX requires Metal GPU")
         throw LlamaError.metalNotAvailable
         #else
-        // Unload existing model if any
         if isModelLoaded {
             unloadModel()
         }
-        
-        let modelPath = try getModelPath(for: modelType)
-        
-        // Verify model directory exists
+
+        guard DeviceMemory.canRun(modelType) else {
+            throw LlamaError.deviceNotSupported
+        }
+
+        let modelPath = getModelPath(for: modelType)
         guard FileManager.default.fileExists(atPath: modelPath) else {
             throw LlamaError.modelNotFound(path: modelPath)
         }
-        
-        print("✅ [LlamaContext] Model directory found: \(modelType.displayName)")
-        print("📂 [LlamaContext] Path: \(modelPath)")
-        
-        // Load model using MLX LLM infrastructure
-        let modelURL = URL(fileURLWithPath: modelPath)
-        let configuration = ModelConfiguration(directory: modelURL)
-        
-        print("🔄 [LlamaContext] Loading model with MLX...")
-        
-        // Load model container using MLX LLM factory
+
+        // Loading with too little free memory gets the app ended by iOS, so fail cleanly instead
+        // and let the caller fall back to Basic
+        if let available = DeviceMemory.availableToAppBytes {
+            let required = modelType.requiredFreeMemoryBytes
+            print("🧠 [LlamaContext] Memory before load: \(DeviceMemory.describe(available)) free, \(DeviceMemory.describe(required)) needed")
+            guard available >= required else {
+                throw LlamaError.notEnoughMemory
+            }
+        }
+
+        print("🔄 [LlamaContext] Loading \(modelType.displayName) with MLX from \(modelPath)")
+
+        let configuration = ModelConfiguration(
+            directory: URL(fileURLWithPath: modelPath),
+            extraEOSTokens: modelType.extraEOSTokens
+        )
         let container = try await LLMModelFactory.shared.loadContainer(configuration: configuration)
-        
+
         self.modelContainer = container
         self.modelType = modelType
         self.isModelLoaded = true
-        
-        print("✅ [LlamaContext] Model loaded with MLX: \(modelType.displayName)")
-        
-        // Eval model to ensure weights are loaded
+
+        // Make sure the weights are actually in memory before the first request
         await container.perform { context in
             eval(context.model)
         }
-        
-        let config = modelType.recommendedConfig
-        print("📊 [LlamaContext] Context size: \(config.nCTX) tokens, Temperature: \(config.temp)")
+
+        print("✅ [LlamaContext] Loaded \(modelType.displayName), context window \(modelType.recommendedConfig.contextTokens) tokens")
         #endif
     }
-    
-    /// Unload the model from memory
+
+    /// Release the model from memory
     public func unloadModel() {
         modelContainer = nil
         isModelLoaded = false
         modelType = nil
     }
-    
+
     // MARK: - Text Generation
-    
-    /// Generate text using the loaded model
+
+    /// Generate a reply.
     /// - Parameters:
-    ///   - prompt: The input prompt (already formatted for model type)
-    ///   - maxTokens: Maximum tokens to generate (overrides default)
-    /// - Returns: Generated text
-    /// - Throws: LlamaError if generation fails
-    public func generate(prompt: String, maxTokens: Int32? = nil) async throws -> String {
+    ///   - system: Instructions for the model (sent as the system message). Optional.
+    ///   - prompt: The content to work on (sent as the user message). Plain text, no chat tags.
+    ///   - maxTokens: Most tokens to generate. Defaults to the model's recommended limit.
+    /// - Returns: The generated text, trimmed.
+    public func generate(system: String? = nil, prompt: String, maxTokens: Int32? = nil) async throws -> String {
         #if targetEnvironment(simulator)
         throw LlamaError.metalNotAvailable
         #else
         guard isModelLoaded, let container = modelContainer, let modelType = modelType else {
             throw LlamaError.modelNotLoaded
         }
-        
+
         let config = modelType.recommendedConfig
-        let maxTokensToGenerate = maxTokens ?? config.maxTokens
-        
-        print("🔄 [LlamaContext] Generating with temperature: \(config.temp), maxTokens: \(maxTokensToGenerate)")
-        print("📝 [LlamaContext] Prompt length: \(prompt.count) characters")
-        
-        // Validate prompt isn't too large
-        guard prompt.count < 8000 else {
-            print("⚠️ [LlamaContext] Prompt too large (\(prompt.count) chars), truncating...")
-            let truncatedPrompt = String(prompt.prefix(7000)) + "\n\nSummary:"
-            return try await generate(prompt: truncatedPrompt, maxTokens: maxTokens)
+        let maxTokensToGenerate = Int(maxTokens ?? Int32(config.maxTokens))
+        let systemText = system ?? ""
+
+        // Keep the request inside the context window. The instructions stay whole;
+        // only the content is shortened if it's too long.
+        var userText = prompt
+        let userBudget = max(modelType.maxPromptCharacters - systemText.count, 500)
+        if userText.count > userBudget {
+            print("⚠️ [LlamaContext] Prompt too long (\(systemText.count + userText.count) chars), shortening content to \(userBudget) chars")
+            userText = String(userText.prefix(userBudget))
         }
-        
+
+        let contentText = userText
+        print("🔄 [LlamaContext] Generating: \(systemText.count + contentText.count) chars in, up to \(maxTokensToGenerate) tokens out")
+
+        let stopSequences = modelType.stopSequences
+        let templateContext = modelType.chatTemplateContext
+        // Safety net in case the token limit is ever misconfigured
+        let maxCharacters = max(4000, maxTokensToGenerate * 8)
+
         do {
-            // Get stop sequences before the closure to avoid capturing self
-            let stopSequences = self.modelType?.stopTokens ?? []
-            
-            // Generate using MLX with error handling
-            let (result, _) = try await container.perform { context in
-                // Prepare input
-                let input = try await context.processor.prepare(input: .init(prompt: prompt))
-                
-                // Set generation parameters with conservative settings
-                let parameters = GenerateParameters(
-                    maxTokens: Int(maxTokensToGenerate),
-                    temperature: config.temp,
-                    topP: 0.95
+            let result: String = try await container.perform { context in
+                var messages: [Chat.Message] = []
+                if !systemText.isEmpty {
+                    messages.append(.system(systemText))
+                }
+                messages.append(.user(contentText))
+
+                // The processor applies the model's chat template exactly once
+                let input = try await context.processor.prepare(
+                    input: UserInput(chat: messages, additionalContext: templateContext)
                 )
-                
-                // Generate text
+
+                let parameters = GenerateParameters(
+                    maxTokens: maxTokensToGenerate,
+                    temperature: config.temperature,
+                    topP: config.topP
+                )
+
                 var output = ""
                 let stream = try MLXLMCommon.generate(input: input, parameters: parameters, context: context)
-            
-                for try await item in stream {
+
+                generation: for try await item in stream {
                     switch item {
                     case .chunk(let text):
                         output += text
-                        
-                        // Check for stop sequences
-                        var shouldStop = false
-                        for stopSeq in stopSequences {
-                            if output.contains(stopSeq) {
-                                // Trim everything after the stop sequence
-                                if let range = output.range(of: stopSeq) {
-                                    output = String(output[..<range.lowerBound])
-                                }
-                                shouldStop = true
-                                break
-                            }
+
+                        // Stop at any end-of-turn text that slipped through (labelled break
+                        // leaves the loop, not just the switch)
+                        if let stop = stopSequences.first(where: { output.contains($0) }),
+                           let range = output.range(of: stop) {
+                            output = String(output[..<range.lowerBound])
+                            break generation
                         }
-                        
-                        if shouldStop {
-                            break
+
+                        if output.count > maxCharacters {
+                            print("⚠️ [LlamaContext] Output passed \(maxCharacters) chars, stopping")
+                            break generation
                         }
-                        
-                        // Safety check: stop if output gets too long
-                        if output.count > 4000 {
-                            print("⚠️ [LlamaContext] Output exceeding 4000 chars, stopping generation")
-                            break
-                        }
-                    case .info:
-                        break
-                    case .toolCall:
-                        break
+                    case .info, .toolCall:
+                        continue
                     }
                 }
-            
-                return (output, ())
+
+                return output
             }
-        
-            print("✅ [LlamaContext] Generated \(result.count) characters")
-            return result.trimmingCharacters(in: Foundation.CharacterSet.whitespacesAndNewlines)
-            
+
+            let cleaned = Self.removeReasoning(from: result)
+            print("✅ [LlamaContext] Generated \(cleaned.count) characters")
+            return cleaned.trimmingCharacters(in: Foundation.CharacterSet.whitespacesAndNewlines)
         } catch {
             print("❌ [LlamaContext] Generation failed: \(error)")
             throw LlamaError.generationFailed(underlying: error)
         }
         #endif
     }
-    
+
     // MARK: - Helpers
-    
-    private func getModelPath(for modelType: LocalModelType) throws -> String {
-        // Use HubApi to get the local repo location
+
+    /// Qwen3-4B-Instruct-2507 never "thinks" out loud and Qwen3 1.7B is told not to, but if a
+    /// <think> block ever appears it must not end up in a summary.
+    static func removeReasoning(from text: String) -> String {
+        var cleaned = text.replacingOccurrences(
+            of: #"<think>[\s\S]*?</think>"#,
+            with: "",
+            options: .regularExpression
+        )
+        // An unfinished block at the end (output cut off mid-thought)
+        if let start = cleaned.range(of: "<think>") {
+            cleaned = String(cleaned[..<start.lowerBound])
+        }
+        return cleaned
+    }
+
+    private func getModelPath(for modelType: LocalModelType) -> String {
         let hub = HubApi()
         let repo = HubApi.Repo(id: modelType.huggingFaceRepo)
         return hub.localRepoLocation(repo).path
@@ -233,11 +241,13 @@ public enum LlamaError: Error, LocalizedError {
     case notImplemented
     case generationFailed(underlying: Error)
     case metalNotAvailable  // MLX requires Metal GPU (not available on simulator)
-    
+    case deviceNotSupported  // Not enough RAM in the device for the model
+    case notEnoughMemory     // Enough RAM in the device, but not free right now
+
     public var errorDescription: String? {
         switch self {
-        case .modelNotFound(let path):
-            return "Model file not found at: \(path). Download the Phi-3.5 model first."
+        case .modelNotFound:
+            return "The Offline AI model isn't downloaded. Download it in Settings, AI & Summaries."
         case .invalidModelSize(let expected, let actual):
             return "Model file size \(actual)MB outside expected range \(expected)MB"
         case .failedToLoadModel:
@@ -245,7 +255,7 @@ public enum LlamaError: Error, LocalizedError {
         case .failedToCreateContext:
             return "Failed to create inference context"
         case .modelNotLoaded:
-            return "No model is currently loaded. Download Phi-3.5 in Settings."
+            return "The Offline AI model isn't loaded. Download it in Settings, AI & Summaries."
         case .tokenizationFailed:
             return "Failed to tokenize input"
         case .contextOverflow(let prompt, let ctx):
@@ -259,7 +269,11 @@ public enum LlamaError: Error, LocalizedError {
         case .generationFailed(let error):
             return "Text generation failed: \(error.localizedDescription)"
         case .metalNotAvailable:
-            return "Local AI requires a physical device with Apple Silicon. Simulators are not supported."
+            return "Offline AI needs a real iPhone or iPad. It doesn't run in the Simulator."
+        case .deviceNotSupported:
+            return "This device doesn't have enough memory to run Offline AI."
+        case .notEnoughMemory:
+            return "There isn't enough free memory to run Offline AI right now. Close some apps and try again."
         }
     }
 }

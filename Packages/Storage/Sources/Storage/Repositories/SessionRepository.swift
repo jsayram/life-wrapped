@@ -228,6 +228,30 @@ public actor SessionRepository {
     // MARK: - Analytics Queries
     
     /// Fetch session counts grouped by hour of day (0-23)
+    /// One date per local calendar day that has a recording (its first recording's start), all time.
+    /// Streaks are built from these, so heavy recording days don't crowd older days out.
+    public func fetchRecordingDays() async throws -> [Date] {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = """
+                SELECT MIN(start_time)
+                FROM audio_chunks
+                WHERE chunk_index = 0
+                GROUP BY DATE(start_time, 'unixepoch', 'localtime')
+                """
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            var days: [Date] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                days.append(Date(timeIntervalSince1970: sqlite3_column_double(stmt, 0)))
+            }
+            return days
+        }
+    }
+
     public func fetchSessionsByHour() async throws -> [(hour: Int, count: Int, sessionIds: [UUID])] {
         try await connection.withDatabase { db in
             guard let db = db else { throw StorageError.notOpen }
@@ -275,7 +299,7 @@ public actor SessionRepository {
                 SELECT 
                     session_id,
                     SUM(end_time - start_time) as total_duration,
-                    MIN(created_at) as session_date
+                    MIN(start_time) as session_date
                 FROM audio_chunks
                 GROUP BY session_id
                 ORDER BY total_duration DESC
@@ -312,8 +336,8 @@ public actor SessionRepository {
             
             let sql = """
                 SELECT 
-                    CAST(strftime('%Y', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as year,
-                    CAST(strftime('%m', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as month,
+                    CAST(strftime('%Y', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as year,
+                    CAST(strftime('%m', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as month,
                     session_id
                 FROM audio_chunks
                 WHERE chunk_index = 0
@@ -396,7 +420,7 @@ public actor SessionRepository {
             // SQLite strftime('%w') returns day of week: 0 = Sunday, 6 = Saturday
             let sql = """
                 SELECT 
-                    CAST(strftime('%w', datetime(created_at, 'unixepoch', 'localtime')) AS INTEGER) as day_of_week,
+                    CAST(strftime('%w', datetime(start_time, 'unixepoch', 'localtime')) AS INTEGER) as day_of_week,
                     session_id
                 FROM audio_chunks
                 WHERE chunk_index = 0
@@ -594,6 +618,39 @@ public actor SessionRepository {
         }
     }
     
+    /// Which of these sessions still have audio. A deleted recording loses its audio chunks,
+    /// but summaries made from it can outlive it.
+    public func existingSessionIds(among sessionIds: [UUID]) async throws -> Set<UUID> {
+        var result: Set<UUID> = []
+        // Stay well under SQLite's bound-variable limit
+        for start in stride(from: 0, to: sessionIds.count, by: 500) {
+            let batch = Array(sessionIds[start..<min(start + 500, sessionIds.count)])
+            let found: Set<UUID> = try await connection.withDatabase { db in
+                guard let db = db else { throw StorageError.notOpen }
+                let placeholders = batch.map { _ in "?" }.joined(separator: ", ")
+                let sql = "SELECT DISTINCT session_id FROM audio_chunks WHERE session_id IN (\(placeholders))"
+                
+                var stmt: OpaquePointer?
+                defer { sqlite3_finalize(stmt) }
+                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                    throw StorageError.prepareFailed(await connection.lastError())
+                }
+                for (index, sessionId) in batch.enumerated() {
+                    sqlite3_bind_text(stmt, Int32(index + 1), sessionId.uuidString, -1, SQLITE_TRANSIENT)
+                }
+                var ids: Set<UUID> = []
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    if let text = sqlite3_column_text(stmt, 0), let id = UUID(uuidString: String(cString: text)) {
+                        ids.insert(id)
+                    }
+                }
+                return ids
+            }
+            result.formUnion(found)
+        }
+        return result
+    }
+    
     /// Update session title
     public func updateSessionTitle(sessionId: UUID, title: String?) async throws {
         // First check if metadata exists
@@ -650,6 +707,74 @@ public actor SessionRepository {
         }
     }
     
+    // MARK: - Change Times
+
+    /// Record that a recording changed. `content`: its journal, notes or summary, which a Year Wrap is
+    /// built from. `transcript`: its transcript was edited. Creates the metadata row if there is none.
+    public func markSessionChanged(sessionId: UUID, content: Bool, transcript: Bool, at date: Date = Date()) async throws {
+        var columns: [String] = []
+        if content { columns.append("content_changed_at = ?1") }
+        if transcript { columns.append("transcript_edited_at = ?1") }
+        guard !columns.isEmpty else { return }
+
+        let statements = [
+            "INSERT OR IGNORE INTO session_metadata (session_id, is_favorite, created_at, updated_at) VALUES (?2, 0, ?1, ?1)",
+            "UPDATE session_metadata SET \(columns.joined(separator: ", ")) WHERE session_id = ?2"
+        ]
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            for sql in statements {
+                var stmt: OpaquePointer?
+                defer { sqlite3_finalize(stmt) }
+                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                    throw StorageError.prepareFailed(await connection.lastError())
+                }
+                sqlite3_bind_double(stmt, 1, date.timeIntervalSince1970)
+                sqlite3_bind_text(stmt, 2, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+                guard sqlite3_step(stmt) == SQLITE_DONE else {
+                    throw StorageError.stepFailed(await connection.lastError())
+                }
+            }
+        }
+    }
+
+    /// When the recording's transcript was last edited, or nil if never
+    public func fetchTranscriptEditedAt(sessionId: UUID) async throws -> Date? {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = "SELECT transcript_edited_at FROM session_metadata WHERE session_id = ?"
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            sqlite3_bind_text(stmt, 1, sessionId.uuidString, -1, SQLITE_TRANSIENT)
+            guard sqlite3_step(stmt) == SQLITE_ROW, sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
+            return Date(timeIntervalSince1970: sqlite3_column_double(stmt, 0))
+        }
+    }
+
+    /// Recordings whose journal, notes or summary changed after `date`
+    public func fetchSessionIdsContentChanged(since date: Date) async throws -> Set<UUID> {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = "SELECT session_id FROM session_metadata WHERE content_changed_at > ?"
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await connection.lastError())
+            }
+            sqlite3_bind_double(stmt, 1, date.timeIntervalSince1970)
+            var ids: Set<UUID> = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let text = sqlite3_column_text(stmt, 0), let id = UUID(uuidString: String(cString: text)) {
+                    ids.insert(id)
+                }
+            }
+            return ids
+        }
+    }
+
     /// Delete session metadata
     public func deleteSessionMetadata(sessionId: UUID) async throws {
         try await connection.withDatabase { db in

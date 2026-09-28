@@ -26,10 +26,10 @@ struct InsightSessionRow: View {
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 16)
-        .background(Color(.secondarySystemBackground))
+        .background(AppTheme.card)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .fill(AppTheme.cardGradient(for: colorScheme))
+                .strokeBorder(AppTheme.hairline, lineWidth: 1)
                 .allowsHitTesting(false)
         )
         .cornerRadius(8)

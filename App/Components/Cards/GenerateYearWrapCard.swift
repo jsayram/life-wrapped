@@ -5,118 +5,144 @@ import Summarization
 
 struct GenerateYearWrapCard: View {
     let onGenerate: () -> Void
-    let isGenerating: Bool
-    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         Button {
             onGenerate()
         } label: {
-            VStack(spacing: 20) {
-                // Animated sparkles icon
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [AppTheme.magenta.opacity(0.2), AppTheme.purple.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 80, height: 80)
-                    
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 40))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [AppTheme.magenta, AppTheme.purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .symbolEffect(.pulse.byLayer, options: .repeating)
-                }
-                
-                VStack(spacing: 12) {
-                    Text("Generate Year Wrapped")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    Text("Create an AI-powered summary of your entire year with insights, highlights, and trends")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                
-                if isGenerating {
-                    VStack(spacing: 8) {
-                        ProgressView()
-                            .tint(AppTheme.purple)
-                            .scaleEffect(1.2)
-                        Text("Generating...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 8)
-                } else {
-                    VStack(spacing: 8) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "wand.and.stars")
-                                .font(.title3)
-                            Text("Generate with AI")
-                                .font(.headline)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            LinearGradient(
-                                colors: [AppTheme.magenta, AppTheme.purple],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: AppTheme.purple.opacity(0.4), radius: 12, y: 6)
-                        
-                        Text("Takes 2-3 minutes • Cannot be stopped")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Wrap your year")
+                    .scaledFont(size: 24, design: .serif)
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Text("Your year so far: a wrap for work and one for personal, side by side under All. It runs in the background while you use the app.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Label("Generate", systemImage: "sparkles")
+                    .fontWeight(.semibold)
+                    .font(.body)
+                    .foregroundStyle(AppTheme.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
+                            .fill(AppTheme.accent)
+                    )
+                    .padding(.top, 4)
             }
-            .frame(maxWidth: .infinity)
-            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
             .background(
-                LinearGradient(
-                    colors: [
-                        AppTheme.darkPurple.opacity(0.1),
-                        AppTheme.magenta.opacity(0.05),
-                        AppTheme.purple.opacity(0.05)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                    .fill(AppTheme.card)
+                    .stroke(AppTheme.hairline, lineWidth: 1)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(
-                        style: StrokeStyle(lineWidth: 2, dash: [8, 4])
-                    )
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [AppTheme.magenta.opacity(0.3), AppTheme.purple.opacity(0.2)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            )
-            .cornerRadius(16)
         }
         .buttonStyle(.plain)
-        .disabled(isGenerating)
+    }
+}
+
+// MARK: - Year Wrap Progress Card
+
+/// Takes the Year Wrap card's place while a wrap is being written. Nothing is locked:
+/// the run belongs to AppCoordinator, so the user can leave this screen and come back.
+struct YearWrapProgressCard: View {
+    let year: Int
+    let progress: YearWrapProgress?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("YEAR WRAPPED · \(String(year))")
+                .font(.caption)
+                .tracking(0.8)
+                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .scaledFont(size: 20)
+                    .symbolEffect(.pulse)
+                    .accessibilityHidden(true)
+                Text("Wrapping up your year")
+                    .scaledFont(size: 26, design: .serif)
+            }
+            .foregroundStyle(AppTheme.onAccent)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: progress?.fractionDone ?? 0)
+                    .tint(AppTheme.onAccent)
+                    .animation(.easeInOut(duration: 0.4), value: progress?.fractionDone)
+
+                HStack {
+                    Text(progress?.label ?? "Getting ready")
+                        .contentTransition(.opacity)
+                        .animation(.easeInOut, value: progress?.label)
+                    Spacer()
+                    if let progress, progress.total > 1 {
+                        Text("Step \(progress.step) of \(progress.total)")
+                            .monospacedDigit()
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.onAccent.opacity(0.85))
+            }
+
+            if let note = progress?.note {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(AppTheme.onAccent.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("You can keep using the app. You'll get a message here when it's ready.")
+                .font(.footnote)
+                .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                .fill(AppTheme.accent)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Missing Category Wrap Card
+
+/// Shown under Work or Personal when there's a wrap for the year but none for that category
+struct MissingCategoryWrapCard: View {
+    let filter: ItemFilter
+    let onGenerate: () -> Void
+
+    private var name: String { filter == .workOnly ? "work" : "personal" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("No \(name) wrap yet")
+                .scaledFont(size: 22, design: .serif)
+                .foregroundStyle(AppTheme.textPrimary)
+            Text("A \(name) wrap is written only from recordings whose category is \(name.capitalized). Set that on a few recordings, then generate again.")
+                .font(.subheadline)
+                .foregroundStyle(AppTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: onGenerate) {
+                Label("Generate again", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+            .tint(AppTheme.accent)
+            .padding(.top, 2)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous)
+                .fill(AppTheme.card)
+                .stroke(AppTheme.hairline, lineWidth: 1)
+        )
     }
 }
 

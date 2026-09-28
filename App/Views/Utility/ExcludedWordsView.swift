@@ -29,8 +29,8 @@ struct ExcludedWordsView: View {
                         .foregroundStyle(.secondary)
                     
                     HStack {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundStyle(.blue)
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(AppTheme.accent)
                         Text("\(excludedWords.count) words excluded")
                             .font(.caption)
                             .fontWeight(.semibold)
@@ -38,7 +38,7 @@ struct ExcludedWordsView: View {
                     .padding(.vertical, 4)
                 }
             } header: {
-                Text("About Excluded Words")
+                Text("About excluded words")
             }
             
             Section {
@@ -70,7 +70,7 @@ struct ExcludedWordsView: View {
                     }
                 }
             } header: {
-                Text("Word Categories")
+                Text("Word categories")
             }
             
             // Display saved custom words
@@ -95,14 +95,14 @@ struct ExcludedWordsView: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(.purple.opacity(0.15))
+                            .background(AppTheme.accent.opacity(0.15))
                             .clipShape(Capsule())
                         }
                     }
                     .padding(.vertical, 8)
                 } header: {
                     HStack {
-                        Text("Your Custom Words")
+                        Text("Your custom words")
                         Spacer()
                         Text("\(customWords.count)")
                             .font(.caption)
@@ -126,7 +126,7 @@ struct ExcludedWordsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     
-                    Button("Save Custom Words") {
+                    Button("Save custom words") {
                         // Dismiss keyboard first, then save after a brief delay
                         isTextFieldFocused = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -134,6 +134,7 @@ struct ExcludedWordsView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .foregroundStyle(AppTheme.onAccent)  // light fill in dark mode needs dark text
                     .tint(AppTheme.purple)
                     .disabled(customWordsText.isEmpty)
                     
@@ -143,11 +144,13 @@ struct ExcludedWordsView: View {
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Add Custom Words")
+                Text("Add custom words")
             }
         }
-        .navigationTitle("Excluded Words")
-        .navigationBarTitleDisplayMode(.inline)
+        .themedScreen()
+        .readableMargins()
+        .navigationTitle("Excluded words")
+        .columnScreenTitleDisplayMode()
         .navigationBarBackButtonHidden(hasUnsavedChanges)
         .toolbar {
             if hasUnsavedChanges {

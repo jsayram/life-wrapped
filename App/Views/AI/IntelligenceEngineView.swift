@@ -111,13 +111,13 @@ struct IntelligenceEngineView: View {
     private func unavailableMessage(for tier: EngineTier) -> String {
         switch tier {
         case .basic:
-            return "Basic engine should always be available. Please restart the app."
+            return "Key Sentences should always be available. Please restart the app."
         case .local:
-            return "Local AI model needs to be downloaded. Go to Settings to download Phi-3.5."
+            return "The Offline AI model needs to be downloaded. Go to Settings, AI & Summaries to download it."
         case .apple:
             return "Apple Intelligence requires iOS 26+ and compatible hardware (A17 Pro / M1 or later). Enable Apple Intelligence in Settings to use this engine."
         case .external:
-            return "External API engine is not yet configured. You'll need to provide your own API key in a future update."
+            return "Cloud AI needs your own OpenAI or Anthropic API key. Add one in Settings, AI & Summaries."
         }
     }
 }

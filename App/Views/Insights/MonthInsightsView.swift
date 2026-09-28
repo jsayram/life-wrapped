@@ -28,8 +28,8 @@ struct MonthInsightsView: View {
                 }
             } else if sessions.isEmpty {
                 Section {
-                    ContentUnavailableView(
-                        "No Sessions",
+                    GraphiteEmptyState(
+                        "No sessions",
                         systemImage: "calendar.badge.exclamationmark",
                         description: Text("No recordings found for \(monthName) \(String(year)).")
                     )
@@ -42,21 +42,21 @@ struct MonthInsightsView: View {
                             icon: "mic.circle.fill",
                             value: "\(sessions.count)",
                             label: "Sessions",
-                            color: .blue
+                            color: AppTheme.accent
                         )
                         
                         StatCard(
                             icon: "timer",
                             value: formatDuration(totalDuration),
                             label: "Total Time",
-                            color: .green
+                            color: AppTheme.accent
                         )
                         
                         StatCard(
                             icon: "text.word.spacing",
                             value: formatWordCount(totalWordCount),
                             label: "Words",
-                            color: .purple
+                            color: AppTheme.accent
                         )
                     }
                     .listRowInsets(EdgeInsets())
@@ -78,8 +78,9 @@ struct MonthInsightsView: View {
                 }
             }
         }
+        .themedScreen()
         .navigationTitle("\(monthName) \(String(year))")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .task {
             await loadMonthData()
         }

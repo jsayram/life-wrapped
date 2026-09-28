@@ -21,6 +21,128 @@ struct DatabaseManagerTests {
         await manager.close()
     }
     
+    @Test("Each journal keeps its own period summary, apart from the unscoped one")
+    func testJournalSummaries() async throws {
+        let manager = try await createTestDatabase()
+        let start = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let end = Calendar.current.date(byAdding: .month, value: 1, to: start)!
+        let middle = start.addingTimeInterval(86_400 * 10)
+
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "old combined", start: start, end: end)
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "work", start: start, end: end, category: .work)
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "personal", start: start, end: end, category: .personal)
+        // Upserting again updates the journal's row instead of adding one
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: "work v2", start: start, end: end, category: .work)
+
+        #expect(try await manager.fetchPeriodSummary(type: .monthDigest, date: middle)?.text == "old combined")
+        #expect(try await manager.fetchPeriodSummary(type: .monthDigest, date: middle, category: .work)?.text == "work v2")
+        #expect(try await manager.fetchPeriodSummary(type: .monthDigest, date: middle, category: .personal)?.text == "personal")
+        #expect(try await manager.fetchSummaries(periodType: .monthDigest, from: start, to: end).count == 3)
+
+        await manager.close()
+    }
+    
+    @Test("Recording days: one per local day, all time, however many recordings a day has")
+    func testRecordingDays() async throws {
+        let manager = try await createTestDatabase()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // 400 recordings on one busy day, plus one recording on each of the 3 days before it
+        for dayOffset in 0...3 {
+            let day = calendar.date(byAdding: .day, value: -dayOffset, to: today)!.addingTimeInterval(9 * 3600)
+            for index in 0..<(dayOffset == 0 ? 400 : 1) {
+                let start = day.addingTimeInterval(Double(index))
+                try await manager.insertAudioChunk(AudioChunk(
+                    fileURL: URL(fileURLWithPath: "/tmp/\(UUID()).m4a"), startTime: start, endTime: start + 1,
+                    format: .m4a, sampleRate: 44100, sessionId: UUID(), chunkIndex: 0))
+            }
+        }
+
+        let days = try await manager.fetchRecordingDays()
+        #expect(days.count == 4)
+        #expect(Set(days.map { calendar.startOfDay(for: $0) }).count == 4)
+
+        await manager.close()
+    }
+
+    @Test("Change times: content changes and transcript edits are recorded separately")
+    func testSessionChangeTimes() async throws {
+        let manager = try await createTestDatabase()
+        let edited = UUID()
+        let untouched = UUID()
+        try await manager.upsertSessionMetadata(.init(sessionId: untouched, title: "Old", category: .work))
+        let before = Date().addingTimeInterval(-1)
+
+        #expect(try await manager.fetchTranscriptEditedAt(sessionId: edited) == nil)
+
+        // Creates the row when there is none, and keeps the journal and notes of one that exists
+        try await manager.markSessionChanged(sessionId: edited, transcript: true)
+        #expect(try await manager.fetchTranscriptEditedAt(sessionId: edited) != nil)
+        #expect(try await manager.fetchSessionIdsContentChanged(since: before).isEmpty)
+
+        try await manager.updateSessionNotes(sessionId: untouched, notes: "More")
+        try await manager.markSessionChanged(sessionId: untouched, content: true)
+        #expect(try await manager.fetchSessionIdsContentChanged(since: before) == [untouched])
+        #expect(try await manager.fetchSessionIdsContentChanged(since: Date().addingTimeInterval(1)).isEmpty)
+        let metadata = try await manager.fetchSessionMetadata(sessionId: untouched)
+        #expect(metadata?.category == .work)
+        #expect(metadata?.notes == "More")
+
+        await manager.close()
+    }
+
+    @Test("A summary's journal survives saving, export and import")
+    func testJournalRoundTrip() async throws {
+        let manager = try await createTestDatabase()
+        let start = Calendar.current.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let summary = Summary(periodType: .monthDigest, periodStart: start, periodEnd: start.addingTimeInterval(86_400 * 31),
+                              text: "{}", category: .work)
+        try await manager.insertSummary(summary)
+        #expect(try await manager.fetchSummary(id: summary.id)?.category == .work)
+
+        // Export writes it; an older export without the field still decodes
+        let encoder = JSONEncoder()
+        let exported = try encoder.encode(JSONSummary(from: summary))
+        #expect(String(decoding: exported, as: UTF8.self).contains("\"category\":\"work\""))
+        let old = #"{"id":"\#(UUID().uuidString)","periodType":"monthDigest","periodStart":0,"periodEnd":10,"text":"{}","createdAt":0}"#
+        let decoded = try JSONDecoder().decode(JSONSummary.self, from: Data(old.utf8))
+        #expect(decoded.category == nil)
+
+        await manager.close()
+    }
+    
+    @Test("Markdown export lists months with their digest and recordings, not deleted ones")
+    func testMarkdownExport() async throws {
+        let manager = try await createTestDatabase()
+        let calendar = Calendar.current
+        let march = calendar.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let recordedAt = calendar.date(from: DateComponents(year: 2026, month: 3, day: 5, hour: 9))!
+        let kept = UUID(), deleted = UUID()
+
+        // Only the kept recording still has audio
+        try await manager.insertAudioChunk(AudioChunk(fileURL: URL(fileURLWithPath: "/tmp/a.m4a"), startTime: recordedAt,
+                                                      endTime: recordedAt.addingTimeInterval(60), format: .m4a, sampleRate: 44100, sessionId: kept))
+        try await manager.upsertSessionMetadata(.init(sessionId: kept, title: "Launch plan", category: .work))
+        try await manager.insertSummary(Summary(periodType: .session, periodStart: recordedAt, periodEnd: recordedAt.addingTimeInterval(60),
+                                                text: "Planned the launch.", sessionId: kept))
+        try await manager.insertSummary(Summary(periodType: .session, periodStart: recordedAt, periodEnd: recordedAt.addingTimeInterval(60),
+                                                text: "A recording that was deleted.", sessionId: deleted))
+        let digest = MonthDigest(monthStart: march, isFinal: true,
+                                 stats: DigestStats(sessionCount: 1, totalMinutes: 1, wordCount: 10, activeDays: 1, workCount: 1, personalCount: 0),
+                                 headline: "Launch month", narrative: nil, items: [], engineTier: "apple", journal: .work)
+        try await manager.upsertPeriodSummary(type: .monthDigest, text: try digest.jsonString(), start: march,
+                                              end: calendar.date(byAdding: .month, value: 1, to: march)!, category: .work)
+
+        let markdown = try await DataExporter(databaseManager: manager).exportToMarkdown(year: 2026)
+        #expect(markdown.contains("## March 2026"))
+        #expect(markdown.contains("Launch month"))
+        #expect(markdown.contains("· Work · Launch plan**"))
+        #expect(markdown.contains("Planned the launch."))
+        #expect(!markdown.contains("deleted"))
+
+        await manager.close()
+    }
+    
     @Test("AudioChunk CRUD operations")
     func testAudioChunkCRUD() async throws {
         let manager = try await createTestDatabase()
@@ -139,6 +261,83 @@ struct DatabaseManagerTests {
         let afterDelete = try await manager.fetchSummary(id: summary.id)
         #expect(afterDelete == nil)
         
+        await manager.close()
+    }
+    
+    @Test("Ranged summary fetch is not cut off by the default row limit")
+    func testRangedSummaryFetchPastDefaultLimit() async throws {
+        let manager = try await createTestDatabase()
+
+        // 150 session summaries, one per day, going back from today
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        for dayOffset in 0..<150 {
+            let start = calendar.date(byAdding: .day, value: -dayOffset, to: today)!.addingTimeInterval(3600)
+            try await manager.insertSummary(Summary(
+                periodType: .session,
+                periodStart: start,
+                periodEnd: start.addingTimeInterval(600),
+                text: "Session \(dayOffset)",
+                sessionId: UUID()
+            ))
+        }
+
+        // The unranged fetch only sees the newest 100, so the oldest day is missing
+        let limited = try await manager.fetchSummaries(periodType: .session)
+        #expect(limited.count == 100)
+
+        let oldestDay = calendar.date(byAdding: .day, value: -149, to: today)!
+        let oldestDayEnd = calendar.date(byAdding: .day, value: 1, to: oldestDay)!
+        let oldest = try await manager.fetchSummaries(periodType: .session, from: oldestDay, to: oldestDayEnd)
+        #expect(oldest.count == 1)
+        #expect(oldest.first?.text == "Session 149")
+
+        // A range covering everything returns all rows, oldest first
+        let all = try await manager.fetchSummaries(periodType: .session, from: oldestDay, to: today.addingTimeInterval(86400))
+        #expect(all.count == 150)
+        #expect(all.first?.text == "Session 149")
+
+        // Other period types are excluded
+        let days = try await manager.fetchSummaries(periodType: .day, from: oldestDay, to: today.addingTimeInterval(86400))
+        #expect(days.isEmpty)
+
+        await manager.close()
+    }
+
+    #if canImport(UIKit)
+    @Test("PDF export reads Year Wraps whose items link to recordings")
+    func exporterReadsLinkedWrap() async throws {
+        let manager = try await createTestDatabase()
+        let exporter = DataExporter(databaseManager: manager)
+        let id = UUID()
+        let json = """
+        {"year_title":"T","year_summary":"S",
+         "biggest_wins":[{"text":"Ran a 10k","category":"personal","session_ids":["\(id.uuidString)"]}],
+         "major_arcs":[{"text":"Old style item","category":"work"}],
+         "people_mentioned":[{"name":"Sarah","impact":"Mentioned in 2 recordings","session_ids":["\(id.uuidString)"]}],
+         "places_visited":[{"name":"Lisbon","frequency":"once"}],
+         "stats":{"session_count":3}}
+        """
+        let wrap = await exporter.parseYearWrapJSON(from: json)
+        #expect(wrap?.biggestWins.first?.text == "Ran a 10k")
+        #expect(wrap?.biggestWins.first?.sessionIds == [id])
+        #expect(wrap?.majorArcs.first?.text == "Old style item")
+        #expect(wrap?.peopleMentioned.first?.sessionIds == [id])
+        #expect(wrap?.placesVisited.first?.name == "Lisbon")
+        await manager.close()
+    }
+    #endif
+    
+    @Test("Deleted recordings are told apart from ones that still have audio")
+    func existingSessionIds() async throws {
+        let manager = try await createTestDatabase()
+        let kept = UUID(), deleted = UUID()
+        for sessionId in [kept, deleted] {
+            try await manager.insertAudioChunk(AudioChunk(fileURL: URL(fileURLWithPath: "/tmp/\(sessionId).m4a"), startTime: Date(), endTime: Date().addingTimeInterval(30), format: .m4a, sampleRate: 44100, sessionId: sessionId))
+        }
+        try await manager.deleteSession(sessionId: deleted)
+        let existing = try await manager.existingSessionIds(among: [kept, deleted, UUID()])
+        #expect(existing == [kept])
         await manager.close()
     }
     

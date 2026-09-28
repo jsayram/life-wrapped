@@ -14,12 +14,12 @@ struct FilteredSessionsView: View {
     var body: some View {
         Group {
             if isLoading {
-                ProgressView("Loading sessions...")
+                ProgressView("Loading recordings…")
             } else if sessions.isEmpty {
-                ContentUnavailableView(
-                    "No Sessions",
+                GraphiteEmptyState(
+                    "No recordings",
                     systemImage: "waveform",
-                    description: Text("No sessions found for this filter.")
+                    description: Text("No recordings match this filter.")
                 )
             } else {
                 List {
@@ -39,6 +39,23 @@ struct FilteredSessionsView: View {
                                     }
                                 }
                                 
+                                if session.title != nil || session.category != nil {
+                                    HStack(spacing: 8) {
+                                        if let category = session.category {
+                                            Label(category.displayName, systemImage: category == .work ? "briefcase" : "house")
+                                                .font(.caption.weight(.medium))
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(AppTheme.fill, in: Capsule())
+                                        }
+                                        if let title = session.title, !title.isEmpty {
+                                            Text(title)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
                                 HStack {
                                     Text("\(session.chunkCount) chunk\(session.chunkCount == 1 ? "" : "s")")
                                         .font(.caption)
@@ -56,7 +73,10 @@ struct FilteredSessionsView: View {
                 }
             }
         }
+        .themedScreen()
+        .readableMargins()
         .navigationTitle(title)
+        .columnScreenTitleDisplayMode()
         .task {
             await loadSessions()
         }
