@@ -134,11 +134,44 @@ public final class AppCoordinator: ObservableObject {
     }
     /// Current step of a running Year Wrap, nil when none is running
     @Published public private(set) var yearWrapProgress: YearWrapProgress?
-    /// How far a bulk upgrade of earlier summaries has got, nil when none is running
-    @Published public private(set) var summaryUpgradeProgress: SummaryUpgradeProgress?
-    public struct SummaryUpgradeProgress: Equatable {
-        public let done: Int
-        public let total: Int
+    /// The bulk upgrade of earlier summaries: which recordings, what happened to each. Stays
+    /// after it finishes so the list can be read back, until the next upgrade starts.
+    @Published public private(set) var summaryUpgrade: SummaryUpgradeReport?
+
+    /// A recording whose summary a stronger engine could rewrite
+    public struct SummaryUpgradeCandidate: Identifiable, Equatable, Sendable {
+        public let sessionId: UUID
+        public var id: UUID { sessionId }
+        public let title: String?
+        public let date: Date
+        public let category: SessionCategory?
+        /// Engine that wrote the current summary
+        public let engineTier: String?
+    }
+
+    public enum SummaryUpgradeOutcome: Equatable, Sendable {
+        case waiting
+        case upgrading
+        /// Rewritten by this engine
+        case upgraded(EngineTier)
+        /// The earlier summary was kept, for this reason
+        case kept(String)
+    }
+
+    public struct SummaryUpgradeReport: Equatable, Sendable {
+        public let tier: EngineTier
+        public let startedAt: Date
+        public var finishedAt: Date?
+        public let candidates: [SummaryUpgradeCandidate]
+        public var outcomes: [UUID: SummaryUpgradeOutcome]
+
+        public var isRunning: Bool { finishedAt == nil }
+        public var doneCount: Int {
+            outcomes.values.filter { if case .upgraded = $0 { return true }; if case .kept = $0 { return true }; return false }.count
+        }
+        public var upgradedCount: Int { outcomes.values.filter { if case .upgraded = $0 { return true }; return false }.count }
+        public var keptCount: Int { outcomes.values.filter { if case .kept = $0 { return true }; return false }.count }
+        public func outcome(for candidate: SummaryUpgradeCandidate) -> SummaryUpgradeOutcome { outcomes[candidate.sessionId] ?? .waiting }
     }
     @Published public private(set) var isGeneratingYearWrap: Bool = false
     
@@ -1425,25 +1458,35 @@ public final class AppCoordinator: ObservableObject {
 
     // MARK: - Upgrading earlier summaries
 
-    /// Recordings whose summary was written by an engine weaker than `tier`, oldest first
-    public func upgradeableSessionIds(for tier: EngineTier) async -> [UUID] {
+    /// Recordings whose summary was written by an engine weaker than `tier`, oldest first,
+    /// with their title, date and journal so the person can see exactly what would change
+    public func upgradeableSummaries(for tier: EngineTier) async -> [SummaryUpgradeCandidate] {
         guard let db = databaseManager else { return [] }
         let summaries = (try? await db.fetchSummaries(periodType: .session, limit: 10_000)) ?? []
         let weaker = summaries
-            .filter { tier.fidelityRank > EngineTier.fidelityRank(of: $0.engineTier) }
+            .filter { tier.fidelityRank > EngineTier.fidelityRank(of: $0.engineTier) && $0.sessionId != nil }
             .sorted { $0.periodStart < $1.periodStart }
-            .compactMap(\.sessionId)
-        let existing = (try? await db.existingSessionIds(among: weaker)) ?? []
-        return weaker.filter(existing.contains)
+        let ids = weaker.compactMap(\.sessionId)
+        let existing = (try? await db.existingSessionIds(among: ids)) ?? []
+        let metadata = (try? await db.fetchSessionMetadataBatch(sessionIds: ids)) ?? [:]
+        return weaker.compactMap { summary -> SummaryUpgradeCandidate? in
+            guard let sessionId = summary.sessionId, existing.contains(sessionId) else { return nil }
+            let meta = metadata[sessionId]
+            let title = meta?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return SummaryUpgradeCandidate(sessionId: sessionId, title: (title?.isEmpty == false) ? title : nil,
+                                           date: summary.periodStart, category: meta?.category, engineTier: summary.engineTier)
+        }
     }
 
     /// Rewrite those recordings' summaries with `tier`, one after another, keeping each earlier
     /// text as a version. If the engine doesn't answer and a weaker one steps in, the earlier
     /// summary is put back, so an upgrade never makes anything worse. Months and the Year Wrap
     /// notice the changed summaries and update when opened.
-    public func upgradeSummaries(sessionIds: [UUID], with tier: EngineTier) {
-        guard summaryUpgradeProgress == nil, let summaryCoordinator, let db = databaseManager, !sessionIds.isEmpty else { return }
-        summaryUpgradeProgress = SummaryUpgradeProgress(done: 0, total: sessionIds.count)
+    public func upgradeSummaries(_ candidates: [SummaryUpgradeCandidate], with tier: EngineTier) {
+        guard summaryUpgrade?.isRunning != true, let summaryCoordinator, let db = databaseManager, !candidates.isEmpty else { return }
+        summaryUpgrade = SummaryUpgradeReport(tier: tier, startedAt: Date(), finishedAt: nil, candidates: candidates,
+                                              outcomes: Dictionary(uniqueKeysWithValues: candidates.map { ($0.sessionId, .waiting) }))
+        let sessionIds = candidates.map(\.sessionId)
 
         Task { @MainActor in
             var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -1455,30 +1498,32 @@ public final class AppCoordinator: ObservableObject {
                 if backgroundTask != .invalid {
                     UIApplication.shared.endBackgroundTask(backgroundTask)
                 }
-                summaryUpgradeProgress = nil
+                summaryUpgrade?.finishedAt = Date()
             }
 
             var upgraded = 0
             var kept = 0
-            for (index, sessionId) in sessionIds.enumerated() {
+            for sessionId in sessionIds {
+                summaryUpgrade?.outcomes[sessionId] = .upgrading
                 let before = try? await db.fetchSummaryForSession(sessionId: sessionId)
                 do {
                     try await summaryCoordinator.generateSessionSummary(sessionId: sessionId, forceRegenerate: true)
-                    if let before,
-                       let after = try? await db.fetchSummaryForSession(sessionId: sessionId),
-                       let used = after.engineTier.flatMap(EngineTier.init(rawValue:)),
-                       used.isWeaker(than: before.engineTier),
+                    let after = try? await db.fetchSummaryForSession(sessionId: sessionId)
+                    let used = after?.engineTier.flatMap(EngineTier.init(rawValue:)) ?? tier
+                    if let before, let after, used.isWeaker(than: before.engineTier),
                        let previous = try? await db.fetchSummaryVersions(for: after).first {
                         _ = try? await db.restoreSummaryVersion(previous, replacing: after)
+                        summaryUpgrade?.outcomes[sessionId] = .kept("\(tier.displayName) didn't answer; \(used.displayName) stepped in, so the earlier summary was kept")
                         kept += 1
                     } else {
+                        summaryUpgrade?.outcomes[sessionId] = .upgraded(used)
                         upgraded += 1
                     }
                 } catch {
                     print("⚠️ [AppCoordinator] Upgrade skipped \(sessionId): \(error.localizedDescription)")
+                    summaryUpgrade?.outcomes[sessionId] = .kept(error.localizedDescription)
                     kept += 1
                 }
-                summaryUpgradeProgress = SummaryUpgradeProgress(done: index + 1, total: sessionIds.count)
             }
 
             NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
@@ -1486,7 +1531,7 @@ public final class AppCoordinator: ObservableObject {
             if kept == 0 {
                 showSuccess("Upgraded \(upgraded) \(noun) with \(tier.displayName). Months and the Year Wrap update as you open them.")
             } else {
-                showToast(Toast(style: .info, message: "Upgraded \(upgraded) of \(sessionIds.count) recordings. \(kept) kept their earlier summary because \(tier.displayName) didn't answer.", duration: 6))
+                showToast(Toast(style: .info, message: "Upgraded \(upgraded) of \(sessionIds.count) recordings. \(kept) kept their earlier summary. Details are under Earlier summaries in Settings.", duration: 6))
             }
         }
     }

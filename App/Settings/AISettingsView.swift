@@ -6,8 +6,7 @@ struct AISettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var activeEngine: EngineTier?
     /// Recordings summarized by an engine weaker than the selected one
-    @State private var upgradeableSessionIds: [UUID] = []
-    @State private var showUpgradeConfirmation = false
+    @State private var upgradeCandidates: [AppCoordinator.SummaryUpgradeCandidate] = []
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     @State private var showingSmartestConfig = false
@@ -123,7 +122,7 @@ struct AISettingsView: View {
 
             // MARK: - Upgrade earlier summaries
             if let tier = activeEngine, tier != .basic, isEngineReady(tier),
-               !upgradeableSessionIds.isEmpty || coordinator.summaryUpgradeProgress != nil {
+               !upgradeCandidates.isEmpty || coordinator.summaryUpgrade?.tier == tier {
                 upgradeSection(tier: tier)
             }
             
@@ -550,7 +549,7 @@ struct AISettingsView: View {
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         activeEngine = await summCoord.getActiveEngine()
         availableEngines = await summCoord.getAvailableEngines()
-        upgradeableSessionIds = await coordinator.upgradeableSessionIds(for: activeEngine ?? .basic)
+        upgradeCandidates = await coordinator.upgradeableSummaries(for: activeEngine ?? .basic)
         
         // Load local model status
         isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
@@ -715,53 +714,45 @@ struct AISettingsView: View {
         }
     }
 
-    /// Rewrite recordings summarized by a weaker engine with the selected one, on request
+    /// Rewrite recordings summarized by a weaker engine with the selected one, on request.
+    /// Opens a screen that lists exactly which recordings, and what happened to each.
     @ViewBuilder
     private func upgradeSection(tier: EngineTier) -> some View {
-        let count = upgradeableSessionIds.count
+        let count = upgradeCandidates.count
         let name = tierDisplayName(tier)
+        let report = coordinator.summaryUpgrade
         Section {
-            if let progress = coordinator.summaryUpgradeProgress {
-                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1))) {
-                    Text("Upgrading \(progress.done) of \(progress.total)")
-                }
-            } else {
-                Button {
-                    showUpgradeConfirmation = true
-                } label: {
-                    Label("Upgrade \(count) \(count == 1 ? "recording" : "recordings") with \(name)", systemImage: "arrow.up.circle")
+            NavigationLink {
+                SummaryUpgradeView(tier: tier)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    if let report, report.tier == tier, report.isRunning {
+                        Label("Upgrading \(report.doneCount) of \(report.candidates.count) with \(name)", systemImage: "arrow.up.circle")
+                        ProgressView(value: Double(report.doneCount), total: Double(max(report.candidates.count, 1)))
+                    } else if count > 0 {
+                        Label("Upgrade \(count) \(count == 1 ? "recording" : "recordings") with \(name)", systemImage: "arrow.up.circle")
+                        Text("See which recordings before anything is rewritten")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let report, report.tier == tier {
+                        Label("Last upgrade with \(name)", systemImage: "checkmark.circle")
+                        Text("\(report.upgradedCount) upgraded, \(report.keptCount) kept")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         } header: {
             Text("Earlier summaries")
         } footer: {
-            Text("\(count) \(count == 1 ? "recording was" : "recordings were") summarized by a weaker engine than \(name). Upgrading rewrites them with \(name). The earlier text is kept and can be restored from each recording.")
-        }
-        .alert("Upgrade \(count) \(count == 1 ? "recording" : "recordings")?", isPresented: $showUpgradeConfirmation) {
-            Button("Upgrade with \(name)") {
-                coordinator.upgradeSummaries(sessionIds: upgradeableSessionIds, with: tier)
-            }
-            Button("Not now", role: .cancel) {}
-        } message: {
-            Text(upgradeWarning(tier))
-        }
-        .onChange(of: coordinator.summaryUpgradeProgress) { _, progress in
-            if progress == nil {
-                Task { upgradeableSessionIds = await coordinator.upgradeableSessionIds(for: tier) }
+            if count > 0 {
+                Text("\(count) \(count == 1 ? "recording was" : "recordings were") summarized by a weaker option than \(name). Nothing is rewritten until you ask; the earlier text is kept and can be restored from each recording.")
             }
         }
-    }
-
-    private func upgradeWarning(_ tier: EngineTier) -> String {
-        switch tier {
-        case .external:
-            return "Sends the transcript of each recording to \(selectedProvider) with your API key. What it costs depends on your plan and the length of the recordings. Keep the app open."
-        case .local:
-            return "Runs the offline model once per recording. It can take a while; keep the app open and plugged in."
-        case .apple:
-            return "Runs Apple Intelligence once per recording on this \(DeviceName.current). Keep the app open."
-        case .basic:
-            return ""
+        .onChange(of: coordinator.summaryUpgrade) { _, report in
+            if report?.isRunning == false {
+                Task { upgradeCandidates = await coordinator.upgradeableSummaries(for: tier) }
+            }
         }
     }
 

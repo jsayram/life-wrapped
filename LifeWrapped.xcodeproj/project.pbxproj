@@ -55,6 +55,7 @@
 		63290A74B4E31559D02315DD /* RecordingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D435825CF6794630D3FC299 /* RecordingRow.swift */; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
 		69FFA0525420B0879A885A45 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34051FCDD4091EBC573F31C6 /* AISettingsView.swift */; };
+		2DD0466C7E18A2CB5B16198B /* SummaryUpgradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99917206CD6690247DD66739 /* SummaryUpgradeView.swift */; };
 		6B99106351F60D6A942DAF4B /* YearWrapDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2176CF79761C5F063CE1F6D3 /* YearWrapDetailView.swift */; };
 		6EC3AC483412F35B275EC9ED /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06B6F620B55F2510DF6F5BD /* ErrorView.swift */; };
 		7236C91D520222B1CC5C1C6E /* FilteredSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FCBA92C81B452D4F9CC3B0 /* FilteredSessionsView.swift */; };
@@ -147,6 +148,7 @@
 		2F4BF5CB52B60C6DEBC0DF8D /* YearWrappedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearWrappedCard.swift; sourceTree = "<group>"; };
 		303597C991FCE6CB954F0D29 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		34051FCDD4091EBC573F31C6 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
+		99917206CD6690247DD66739 /* SummaryUpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryUpgradeView.swift; sourceTree = "<group>"; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
 		372AB55C1C346C295788E7A9 /* TimeRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRange.swift; sourceTree = "<group>"; };
 		A1D1E5700000000000000002 /* MonthDigestCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthDigestCard.swift; sourceTree = "<group>"; };
@@ -253,6 +255,7 @@
 			isa = PBXGroup;
 			children = (
 				34051FCDD4091EBC573F31C6 /* AISettingsView.swift */,
+				99917206CD6690247DD66739 /* SummaryUpgradeView.swift */,
 				65DDEA15CAE2EF3F4908AAE7 /* DataSettingsView.swift */,
 				0BF30675D40BFC469108195C /* EngineSelectionRow.swift */,
 				759CD614B4EE0B24BFB9228D /* LanguageSettingsView.swift */,
@@ -688,6 +691,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				69FFA0525420B0879A885A45 /* AISettingsView.swift in Sources */,
+				2DD0466C7E18A2CB5B16198B /* SummaryUpgradeView.swift in Sources */,
 				839655CED6082F42EFFC8CBC /* AppCoordinator.swift in Sources */,
 				E2DC5B37204ABA9FB45DDD30 /* AppTheme.swift in Sources */,
 				5ECE28BB3245C2952DD749B2 /* CategorySelector.swift in Sources */,
