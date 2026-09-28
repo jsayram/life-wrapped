@@ -20,6 +20,7 @@ The App Store label is **Data Not Collected**. The developer has no servers and 
 
 - **Without an API key:** no network use except the optional Offline AI model download (Hugging Face) and App Store purchases
 - **With an API key and Cloud AI chosen:** requests to api.openai.com or api.anthropic.com, plus a connectivity check to www.apple.com before using Cloud AI (no journal data)
+- **Background processing (1.3):** a `BGProcessingTask` finishes ended months while the device charges. It uses the chosen engine and sends the same month text as the foreground path, and only when Cloud AI is chosen. No new data types or destinations
 - The full list is on the [privacy policy](https://jsayram.github.io/life-wrapped/privacy)
 
 ## Data Not Collected By Developer

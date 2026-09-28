@@ -3,6 +3,7 @@
 // =============================================================================
 
 import Foundation
+import BackgroundTasks
 import SwiftUI
 import UIKit
 import AVFoundation
@@ -133,6 +134,45 @@ public final class AppCoordinator: ObservableObject {
     }
     /// Current step of a running Year Wrap, nil when none is running
     @Published public private(set) var yearWrapProgress: YearWrapProgress?
+    /// The bulk upgrade of earlier summaries: which recordings, what happened to each. Stays
+    /// after it finishes so the list can be read back, until the next upgrade starts.
+    @Published public private(set) var summaryUpgrade: SummaryUpgradeReport?
+
+    /// A recording whose summary a stronger engine could rewrite
+    public struct SummaryUpgradeCandidate: Identifiable, Equatable, Sendable {
+        public let sessionId: UUID
+        public var id: UUID { sessionId }
+        public let title: String?
+        public let date: Date
+        public let category: SessionCategory?
+        /// Engine that wrote the current summary
+        public let engineTier: String?
+    }
+
+    public enum SummaryUpgradeOutcome: Equatable, Sendable {
+        case waiting
+        case upgrading
+        /// Rewritten by this engine
+        case upgraded(EngineTier)
+        /// The earlier summary was kept, for this reason
+        case kept(String)
+    }
+
+    public struct SummaryUpgradeReport: Equatable, Sendable {
+        public let tier: EngineTier
+        public let startedAt: Date
+        public var finishedAt: Date?
+        public let candidates: [SummaryUpgradeCandidate]
+        public var outcomes: [UUID: SummaryUpgradeOutcome]
+
+        public var isRunning: Bool { finishedAt == nil }
+        public var doneCount: Int {
+            outcomes.values.filter { if case .upgraded = $0 { return true }; if case .kept = $0 { return true }; return false }.count
+        }
+        public var upgradedCount: Int { outcomes.values.filter { if case .upgraded = $0 { return true }; return false }.count }
+        public var keptCount: Int { outcomes.values.filter { if case .kept = $0 { return true }; return false }.count }
+        public func outcome(for candidate: SummaryUpgradeCandidate) -> SummaryUpgradeOutcome { outcomes[candidate.sessionId] ?? .waiting }
+    }
     @Published public private(set) var isGeneratingYearWrap: Bool = false
     
     /// Store manager for in-app purchases. Views read it through the coordinator, so its changes are
@@ -186,6 +226,7 @@ public final class AppCoordinator: ObservableObject {
         storeChanges = storeManager.objectWillChange.sink { [weak self] _ in
             MainActor.assumeIsolated { self?.objectWillChange.send() }
         }
+        AppCoordinator.current = self
     }
     
     private func setupAudioCaptureCallback() {
@@ -372,6 +413,10 @@ public final class AppCoordinator: ObservableObject {
             }
             summaryCoord.onYearWrapProgressUpdate = { [weak self] progress in
                 self?.yearWrapProgress = progress
+            }
+            summaryCoord.onEngineFallback = { [weak self] chosen, used in
+                // Say so, or a lapsed API key quietly turns months of Cloud AI summaries into Key Sentences ones
+                self?.showInfo("\(chosen.displayName) wasn't available. This recording was summarized by \(used.displayName).")
             }
             self.summaryCoordinator = summaryCoord
             print("✅ [AppCoordinator] SummaryCoordinator initialized")
@@ -1364,6 +1409,133 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
+    // MARK: - Finishing months in the background
+
+    /// Identifier of the processing task that finishes ended months' digests while the phone charges
+    public static let finalizeMonthsTaskIdentifier = "com.jsayram.lifewrapped.finalize-months"
+
+    /// The running coordinator, for the background task handler registered before it exists
+    nonisolated(unsafe) public private(set) static weak var current: AppCoordinator?
+
+    /// Register the task. Must run before the app finishes launching.
+    public static func registerBackgroundTasks() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: finalizeMonthsTaskIdentifier, using: nil) { task in
+            guard let task = task as? BGProcessingTask else { return }
+            let work = Task { @MainActor in
+                let finished = await AppCoordinator.current?.finalizeClosedMonthsInBackground() ?? false
+                AppCoordinator.scheduleMonthFinalization()
+                task.setTaskCompleted(success: finished)
+            }
+            task.expirationHandler = { work.cancel() }
+        }
+    }
+
+    /// Ask iOS to run the task later, while charging. Harmless to call often; one request replaces the last.
+    public static func scheduleMonthFinalization() {
+        let request = BGProcessingTaskRequest(identifier: finalizeMonthsTaskIdentifier)
+        request.requiresExternalPower = true
+        request.requiresNetworkConnectivity = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("🗓️ [AppCoordinator] Month finalization scheduled")
+        } catch {
+            print("⚠️ [AppCoordinator] Couldn't schedule month finalization: \(error.localizedDescription)")
+        }
+    }
+
+    /// Finish every ended month that still needs it, one at a time, until done or cancelled.
+    /// Returns true when there was nothing left or all of it got done.
+    public func finalizeClosedMonthsInBackground() async -> Bool {
+        guard isInitialized, let summaryCoordinator, !isGeneratingYearWrap, !recordingState.isRecording else { return false }
+        for _ in 0..<24 {
+            if Task.isCancelled { return false }
+            let worked = await summaryCoordinator.finalizeNextClosedMonthDigest()
+            if !worked { return true }
+        }
+        return true
+    }
+
+    // MARK: - Upgrading earlier summaries
+
+    /// Recordings whose summary was written by an engine weaker than `tier`, oldest first,
+    /// with their title, date and journal so the person can see exactly what would change
+    public func upgradeableSummaries(for tier: EngineTier) async -> [SummaryUpgradeCandidate] {
+        guard let db = databaseManager else { return [] }
+        let summaries = (try? await db.fetchSummaries(periodType: .session, limit: 10_000)) ?? []
+        let weaker = summaries
+            .filter { tier.fidelityRank > EngineTier.fidelityRank(of: $0.engineTier) && $0.sessionId != nil }
+            .sorted { $0.periodStart < $1.periodStart }
+        let ids = weaker.compactMap(\.sessionId)
+        let existing = (try? await db.existingSessionIds(among: ids)) ?? []
+        let metadata = (try? await db.fetchSessionMetadataBatch(sessionIds: ids)) ?? [:]
+        return weaker.compactMap { summary -> SummaryUpgradeCandidate? in
+            guard let sessionId = summary.sessionId, existing.contains(sessionId) else { return nil }
+            let meta = metadata[sessionId]
+            let title = meta?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return SummaryUpgradeCandidate(sessionId: sessionId, title: (title?.isEmpty == false) ? title : nil,
+                                           date: summary.periodStart, category: meta?.category, engineTier: summary.engineTier)
+        }
+    }
+
+    /// Rewrite those recordings' summaries with `tier`, one after another, keeping each earlier
+    /// text as a version. If the engine doesn't answer and a weaker one steps in, the earlier
+    /// summary is put back, so an upgrade never makes anything worse. Months and the Year Wrap
+    /// notice the changed summaries and update when opened.
+    public func upgradeSummaries(_ candidates: [SummaryUpgradeCandidate], with tier: EngineTier) {
+        guard summaryUpgrade?.isRunning != true, let summaryCoordinator, let db = databaseManager, !candidates.isEmpty else { return }
+        summaryUpgrade = SummaryUpgradeReport(tier: tier, startedAt: Date(), finishedAt: nil, candidates: candidates,
+                                              outcomes: Dictionary(uniqueKeysWithValues: candidates.map { ($0.sessionId, .waiting) }))
+        let sessionIds = candidates.map(\.sessionId)
+
+        Task { @MainActor in
+            var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "SummaryUpgrade") {
+                UIApplication.shared.endBackgroundTask(backgroundTask)
+                backgroundTask = .invalid
+            }
+            defer {
+                if backgroundTask != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTask)
+                }
+                summaryUpgrade?.finishedAt = Date()
+            }
+
+            var upgraded = 0
+            var kept = 0
+            for sessionId in sessionIds {
+                summaryUpgrade?.outcomes[sessionId] = .upgrading
+                let before = try? await db.fetchSummaryForSession(sessionId: sessionId)
+                do {
+                    try await summaryCoordinator.generateSessionSummary(sessionId: sessionId, forceRegenerate: true)
+                    let after = try? await db.fetchSummaryForSession(sessionId: sessionId)
+                    let used = after?.engineTier.flatMap(EngineTier.init(rawValue:)) ?? tier
+                    if let before, let after, used.isWeaker(than: before.engineTier),
+                       let previous = try? await db.fetchSummaryVersions(for: after).first {
+                        _ = try? await db.restoreSummaryVersion(previous, replacing: after)
+                        summaryUpgrade?.outcomes[sessionId] = .kept("\(tier.displayName) didn't answer; \(used.displayName) stepped in, so the earlier summary was kept")
+                        kept += 1
+                    } else {
+                        summaryUpgrade?.outcomes[sessionId] = .upgraded(used)
+                        upgraded += 1
+                    }
+                } catch {
+                    print("⚠️ [AppCoordinator] Upgrade skipped \(sessionId): \(error.localizedDescription)")
+                    summaryUpgrade?.outcomes[sessionId] = .kept(error.localizedDescription)
+                    kept += 1
+                }
+            }
+
+            NotificationCenter.default.post(name: .periodSummariesUpdated, object: nil)
+            let noun = upgraded == 1 ? "recording" : "recordings"
+            if kept == 0 {
+                showSuccess("Upgraded \(upgraded) \(noun) with \(tier.displayName). Months and the Year Wrap update as you open them.")
+            } else {
+                showToast(Toast(style: .info, message: "Upgraded \(upgraded) of \(sessionIds.count) recordings. \(kept) kept their earlier summary. Details are under Earlier summaries in Settings.", duration: 6))
+            }
+        }
+    }
+
     /// Build or refresh the digest for the month containing `date`
     @discardableResult
     public func updateMonthDigest(date: Date, forceRegenerate: Bool = false) async -> MonthDigest? {

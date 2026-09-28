@@ -137,12 +137,27 @@ public actor DataImporter {
                     text: jsonSummary.text,
                     createdAt: jsonSummary.createdAt,
                     sessionId: jsonSummary.sessionId,
+                    topicsJSON: jsonSummary.topicsJSON,
+                    entitiesJSON: jsonSummary.entitiesJSON,
+                    engineTier: jsonSummary.engineTier,
+                    sourceIds: jsonSummary.sourceIds,
+                    inputHash: jsonSummary.inputHash,
                     category: jsonSummary.category.flatMap(SessionCategory.init(rawValue:))
                 )
                 try await databaseManager.insertSummary(summary)
                 importedSummaries += 1
             } catch {
                 errors.append((jsonSummary.id.uuidString, "Insert failed: \(error.localizedDescription)"))
+            }
+        }
+
+        // Earlier versions of those summaries, from exports that carry them
+        for jsonVersion in export.summaryVersions ?? [] {
+            do {
+                if try await databaseManager.summaryVersionExists(id: jsonVersion.id) { continue }
+                try await databaseManager.insertSummaryVersion(jsonVersion.model)
+            } catch {
+                errors.append((jsonVersion.id.uuidString, "Version insert failed: \(error.localizedDescription)"))
             }
         }
         

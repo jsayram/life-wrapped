@@ -51,7 +51,19 @@ Life Wrapped splits recordings into short parts (30 to 300 seconds, set in Setti
 - **Cloud AI**: the best quality, using your own OpenAI or Anthropic API key. Unlocked with a one-time $2.99 purchase, with no subscription
 
 **Which ones can make a Year Wrap?**
-Apple Intelligence and Cloud AI. You pick one when you create the wrap, and it runs in the background while you use the app.
+All four. You pick one when you create the wrap, and it runs in the background while you use the app. Key Sentences needs no model and builds it instantly from your months: your numbers, people, places and topics, without a written story. Offline AI writes one on your device once the model is downloaded, and takes a few minutes. Apple Intelligence and Cloud AI write the fullest story.
+
+**Will switching to a different option change my summaries?**
+Options rank Cloud AI first, then Apple Intelligence, Offline AI and Key Sentences. The app never rewrites a summary, a month or a Year Wrap with a lower-ranked option on its own. If you regenerate a summary, rebuild a month or make a Year Wrap with a lower-ranked option, it asks first. A month rebuilt by a lower-ranked option keeps its story and only updates its items and numbers.
+
+**Can I get an earlier summary back?**
+Yes. Whenever a summary, a month or a Year Wrap is rewritten, the app keeps the old text (up to ten earlier versions). Open Earlier versions from the menu on a recording's summary, or tap the clock button on a month or a Year Wrap, then pick one to restore. The text it replaces is kept too.
+
+**How do I upgrade older recordings to a better option?**
+Choose the stronger option in Settings, then AI & Summaries. Once it's ready, an Earlier summaries section lists the recordings a lower-ranked option summarized. Nothing is rewritten until you tap Upgrade, and each recording's current summary is kept under Earlier versions. With Cloud AI, this sends each listed transcript to your provider.
+
+**Why did a month summary change while I wasn't using the app?**
+Months that have ended are finished in the background, when you open the app or while your iPhone or iPad charges. This uses your chosen summary option and happens on your device, unless that option is Cloud AI.
 
 **What does "bring your own key" mean?**
 You add your own API key from OpenAI or Anthropic and choose the model. You pay the provider directly and stay in control of your account.
@@ -80,7 +92,7 @@ All purchases are handled by the Apple App Store. To request a refund, visit [re
 Your recordings, transcripts and summaries are stored on your device. We never upload your data to our servers.
 
 **How do I export my data?**
-Go to Settings, then Data, then Export & backup. You can export everything or one year as JSON (transcripts and summaries), Markdown or PDF (summaries). Exports don't include audio.
+Go to Settings, then Data, then Export & backup. You can export everything or one year as JSON (transcripts and summaries, with each summary's earlier versions), Markdown or PDF (summaries). Exports don't include audio. A JSON export can be imported back from the same screen.
 
 **How do I delete all my data?**
 Go to Settings, then Data, then Export & backup, and tap Delete all data. This also removes your saved API keys and the downloaded Offline AI model. You can delete a single year from the same screen.

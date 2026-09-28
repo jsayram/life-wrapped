@@ -7,7 +7,7 @@ A private audio journal for iPhone and iPad. Record your day, get it transcribed
 | | |
 | --- | --- |
 | Platform | iOS and iPadOS 18.0 or later |
-| App version in this repo | 1.1 (build number set by Xcode Cloud) |
+| App version in this repo | 1.3 (build number set by Xcode Cloud) |
 | Language | Swift 6 (language mode 6.0, strict concurrency) |
 | UI | SwiftUI |
 | Toolchain | Xcode 26.1 or later |
@@ -51,12 +51,17 @@ Four summary qualities. The app falls back automatically when the chosen one is 
 - Cloud AI is unlocked with a one-time in-app purchase ($2.99 in the US, product ID `com.jsayram.lifewrapped.smartestai`). There is no subscription: the user pays their provider directly through their own key
 - API keys are stored in the iOS Keychain (`kSecAttrAccessibleAfterFirstUnlock`)
 - The Test button sends a small request with the typed model ID to confirm the key and model work
-- Each recording gets a summary and a short title. Overview lists the summaries for today and yesterday, and builds a digest for each month (per journal, rebuilt when its recordings change). A month that has ended is finished in the background when the app opens
+- Each recording gets a summary and a short title. Overview lists the summaries for today and yesterday, and builds a digest for each month (per journal, rebuilt when its recordings change). A month that has ended is finished in the background when the app opens, and by a background processing task (`com.jsayram.lifewrapped.finalize-months`) that iOS runs while the device charges
+- Key Sentences always writes a summary and a usable title, even for a recording of a few seconds. If any engine returns an empty summary, the opening of the transcript is stored instead
+- Engines are ranked Cloud AI, Apple Intelligence, Offline AI, Key Sentences. The app never rewrites a summary, month or Year Wrap with a lower-ranked engine on its own. Regenerate, Rebuild and a Year Wrap with a weaker engine ask first, and a month rebuilt by a weaker engine keeps its story and only refreshes its items and numbers
+- Every rewrite keeps the text it replaced (up to ten earlier versions per summary, in the `summary_versions` table, schema v4). Recordings, months and the Year Wrap have an **Earlier versions** sheet that restores one, and restoring keeps the replaced text too
+- When a stronger engine is chosen and ready, Settings, then AI & Summaries offers to upgrade the recordings a weaker engine summarized. It lists which recordings it would rewrite before anything runs, and puts the earlier summary back if a weaker engine had to step in
 
 ### Year Wrap
 
 - A year in review with a title, a summary, major arcs, wins, losses, challenges, finished and unfinished projects, top topics, valuable actions, missed opportunities, people and places
-- Generated with Apple Intelligence (on device) or Cloud AI, as All, Work only or Personal only
+- Generated with any summary quality, as All, Work only or Personal only. Cloud AI and Apple Intelligence write the fullest story. Offline AI writes one on the device with one compact request per journal. Key Sentences needs no model and builds the wrap instantly from the month digests (numbers, people, places, topics and the most-mentioned items, without a written story)
+- The Update button on an out-of-date wrap rebuilds it with the engine that wrote it, and says which one
 - People and places can be redacted before exporting it as a PDF
 
 ### Overview, history and statistics
@@ -68,8 +73,8 @@ Four summary qualities. The app falls back automatically when the chosen one is 
 
 ### Data
 
-- Export as JSON (recording times, transcripts and summaries), Markdown (Year Wrap, month digests and each recording's summary with its date, journal and title) or PDF (summaries only), for everything or for one year. No export includes audio, and the JSON leaves out titles, notes, favorites and Work or Personal labels
-- Import from a JSON export
+- Export as JSON (recording times, transcripts, and summaries with their engine and earlier versions; format 1.1), Markdown (Year Wrap, month digests and each recording's summary with its date, journal and title) or PDF (summaries only), for everything or for one year. No export includes audio, and the JSON leaves out titles, notes, favorites and Work or Personal labels
+- Import from a JSON export, including exports made before 1.3
 - Delete all data, or one year of data
 - Storage breakdown for audio, database and the Offline AI model
 
@@ -91,7 +96,7 @@ On iPad, screens keep their content in a centered, readable column instead of st
 - **Audio** never leaves the device.
 - **Transcription** always runs on the device.
 - **Key Sentences, Offline AI and Apple Intelligence** summaries run on the device.
-- **Cloud AI** sends text, never audio, to OpenAI or Anthropic using the user's own key: for a recording's summary, its transcript and Work or Personal label; for its title, the first 400 characters of its summary; for a month, that month's recording summaries, dates, labels and the user's notes; for Year Wrap, the month summaries (and the inputs of any month rebuilt first). Titling untitled recordings and finishing ended months also run in the background when the app opens. Cloud AI is only used when it's the chosen summary quality, or when picked for a Year Wrap.
+- **Cloud AI** sends text, never audio, to OpenAI or Anthropic using the user's own key: for a recording's summary, its transcript and Work or Personal label; for its title, the first 400 characters of its summary; for a month, that month's recording summaries, dates, labels and the user's notes; for Year Wrap, the month summaries (and the inputs of any month rebuilt first). Titling untitled recordings and finishing ended months also run in the background when the app opens, and ended months can also be finished while the device charges. Upgrading earlier summaries in Settings sends each listed recording's transcript again. Cloud AI is only used when it's the chosen summary quality, or when picked for a Year Wrap.
 - **Connectivity check**: when an API key is saved, the app loads `https://www.apple.com` before using Cloud AI. With no key saved it makes no request.
 - **Network use** is limited to: the Offline AI model download from Hugging Face, App Store purchases, Cloud AI requests and the connectivity check above.
 - **No analytics, crash reporting, advertising or tracking.** No account.
@@ -135,9 +140,9 @@ Tests use Swift Testing, except LocalLLM, which uses XCTest. Xcode creates a sch
 | AudioCapture | `AudioCaptureTests.swift` |
 | InsightsRollup | `InsightsRollupTests.swift` |
 | LocalLLM | `LocalLLMTests.swift` |
-| SharedModels | `SharedModelsTests.swift` |
+| SharedModels | `SharedModelsTests.swift`, `JournalDigestsTests.swift`, `MonthDigestTextTests.swift`, `YearWrapDataTests.swift` |
 | Storage | `StorageTests.swift`, `PDFExportPreviewTests.swift` (writes sample PDFs to `TestResults/pdf-preview/`, which git ignores) |
-| Summarization | `SummarizationTests.swift`, `EngineRoutingTests.swift`, `ExternalModelSettingsTests.swift`, `AppleIntelligenceLiveTests.swift` (skips itself where Apple Intelligence is unavailable) |
+| Summarization | `SummarizationTests.swift`, `EngineRoutingTests.swift`, `ExternalModelSettingsTests.swift`, `FidelityProtectionTests.swift`, `BasicEngineShortTranscriptTests.swift`, `SessionTitlerTests.swift`, `MonthDigestTests.swift`, `YearWrapBuilderTests.swift`, `AppleIntelligenceLiveTests.swift` (skips itself where Apple Intelligence is unavailable) |
 | Transcription | `TranscriptionTests.swift` |
 | WidgetCore | `WidgetCoreTests.swift` |
 
@@ -181,7 +186,7 @@ life-wrapped/
 ├── Logo/                         # Logo source files
 ├── LifeWrapped.xcodeproj
 ├── LifeWrapped.xcworkspace       # Open this
-└── project.yml                   # XcodeGen spec (out of date: still lists version 1.0; build from the .xcodeproj)
+└── project.yml                   # XcodeGen spec (version 1.3, but it doesn't list the LocalLLM package; build from the .xcodeproj)
 ```
 
 ### Third-party dependencies

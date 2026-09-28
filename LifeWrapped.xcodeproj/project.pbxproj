@@ -55,6 +55,7 @@
 		63290A74B4E31559D02315DD /* RecordingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D435825CF6794630D3FC299 /* RecordingRow.swift */; };
 		65E37633E53CFCDAF51555A2 /* WidgetCore in Frameworks */ = {isa = PBXBuildFile; productRef = A34D06F783FED7A00B324107 /* WidgetCore */; };
 		69FFA0525420B0879A885A45 /* AISettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34051FCDD4091EBC573F31C6 /* AISettingsView.swift */; };
+		2DD0466C7E18A2CB5B16198B /* SummaryUpgradeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99917206CD6690247DD66739 /* SummaryUpgradeView.swift */; };
 		6B99106351F60D6A942DAF4B /* YearWrapDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2176CF79761C5F063CE1F6D3 /* YearWrapDetailView.swift */; };
 		6EC3AC483412F35B275EC9ED /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06B6F620B55F2510DF6F5BD /* ErrorView.swift */; };
 		7236C91D520222B1CC5C1C6E /* FilteredSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87FCBA92C81B452D4F9CC3B0 /* FilteredSessionsView.swift */; };
@@ -81,6 +82,7 @@
 		B09D1A34297F3DCFB55F9913 /* Summarization in Frameworks */ = {isa = PBXBuildFile; productRef = D3EE294EB38CFB9FDFAE6BCE /* Summarization */; };
 		B225830D660A24C52C117216 /* OnDeviceEnginesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA6CE0D99907D534F30744E9 /* OnDeviceEnginesView.swift */; };
 		B347BC51BCD19786669427D6 /* GenerationOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4AC4493E71B677ACD84F51F /* GenerationOverlay.swift */; };
+		C7275C643E7813702093ABD9 /* SummaryVersionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EB4D1086A2F3A7DA9234214 /* SummaryVersionsSheet.swift */; };
 		B563ACAF356FCFFCB92306CA /* SharedModels in Frameworks */ = {isa = PBXBuildFile; productRef = CA3DCC7908C3EAF40858A0FB /* SharedModels */; };
 		B6818869F253453456AAD6DA /* RecordingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C95B298DE0C9B26176BF5D8 /* RecordingCoordinator.swift */; };
 		C488F3DC98AC290D5EA79D47 /* StoreManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E318C85C292AA907296E275 /* StoreManager.swift */; };
@@ -146,6 +148,7 @@
 		2F4BF5CB52B60C6DEBC0DF8D /* YearWrappedCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearWrappedCard.swift; sourceTree = "<group>"; };
 		303597C991FCE6CB954F0D29 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		34051FCDD4091EBC573F31C6 /* AISettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AISettingsView.swift; sourceTree = "<group>"; };
+		99917206CD6690247DD66739 /* SummaryUpgradeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryUpgradeView.swift; sourceTree = "<group>"; };
 		35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifeWrappedApp.swift; sourceTree = "<group>"; };
 		372AB55C1C346C295788E7A9 /* TimeRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRange.swift; sourceTree = "<group>"; };
 		A1D1E5700000000000000002 /* MonthDigestCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonthDigestCard.swift; sourceTree = "<group>"; };
@@ -196,6 +199,7 @@
 		D35F92101F478EC0D12E403C /* SiriWaveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriWaveView.swift; sourceTree = "<group>"; };
 		D4102285A1E9A900F2412F38 /* IntelligenceEngineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelligenceEngineView.swift; sourceTree = "<group>"; };
 		D4AC4493E71B677ACD84F51F /* GenerationOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenerationOverlay.swift; sourceTree = "<group>"; };
+		7EB4D1086A2F3A7DA9234214 /* SummaryVersionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryVersionsSheet.swift; sourceTree = "<group>"; };
 		D6F85ADCAC4D2970F0FC7C9F /* LoadingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingOverlay.swift; sourceTree = "<group>"; };
 		D8A7D9951119195D635799E7 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		D9BF0A84EFA77115EE53D4E4 /* SessionSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSummaryCard.swift; sourceTree = "<group>"; };
@@ -251,6 +255,7 @@
 			isa = PBXGroup;
 			children = (
 				34051FCDD4091EBC573F31C6 /* AISettingsView.swift */,
+				99917206CD6690247DD66739 /* SummaryUpgradeView.swift */,
 				65DDEA15CAE2EF3F4908AAE7 /* DataSettingsView.swift */,
 				0BF30675D40BFC469108195C /* EngineSelectionRow.swift */,
 				759CD614B4EE0B24BFB9228D /* LanguageSettingsView.swift */,
@@ -563,6 +568,7 @@
 			isa = PBXGroup;
 			children = (
 				D4AC4493E71B677ACD84F51F /* GenerationOverlay.swift */,
+				7EB4D1086A2F3A7DA9234214 /* SummaryVersionsSheet.swift */,
 			);
 			path = AI;
 			sourceTree = "<group>";
@@ -685,6 +691,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				69FFA0525420B0879A885A45 /* AISettingsView.swift in Sources */,
+				2DD0466C7E18A2CB5B16198B /* SummaryUpgradeView.swift in Sources */,
 				839655CED6082F42EFFC8CBC /* AppCoordinator.swift in Sources */,
 				E2DC5B37204ABA9FB45DDD30 /* AppTheme.swift in Sources */,
 				5ECE28BB3245C2952DD749B2 /* CategorySelector.swift in Sources */,
@@ -702,6 +709,7 @@
 				118E7C0B53001E159D22E27C /* FlowLayout.swift in Sources */,
 				3F4BFBF03BD4056C36FD4F3A /* GenerateYearWrapCard.swift in Sources */,
 				B347BC51BCD19786669427D6 /* GenerationOverlay.swift in Sources */,
+				C7275C643E7813702093ABD9 /* SummaryVersionsSheet.swift in Sources */,
 				07CA18D171747965F02521E8 /* HistoryTab.swift in Sources */,
 				D14C9A4F63A98331357D0036 /* HomeTab.swift in Sources */,
 				9EDDEAA04C184D4724FFC0BF /* InfoRow.swift in Sources */,
@@ -786,7 +794,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/Entitlements.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -794,7 +802,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -872,7 +880,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetExtension/Entitlements.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -881,7 +889,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -898,7 +906,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/Entitlements.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -906,7 +914,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -977,7 +985,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetExtension/Entitlements.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -986,7 +994,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

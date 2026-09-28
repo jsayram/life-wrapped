@@ -22,6 +22,19 @@ struct OverviewTab: View {
     @State private var isLoading = true
     @State private var selectedTimeRange: TimeRange = .allTime
     @State private var showYearWrapConfirmation = false
+    /// Asked before a weaker engine rewrites a month story or a Year Wrap written by a better one
+    @State private var showMonthRebuildConfirmation = false
+    @State private var showYearWrapDowngradeConfirmation = false
+    @State private var pendingYearWrapEngine: EngineTier?
+    @State private var downgradeEngineName = ""
+    @State private var downgradeMessage = ""
+    /// Rows whose earlier versions are on screen: a month's journal digests or a Year Wrap.
+    /// Presented as an item so the sheet always sees the rows it was opened with.
+    @State private var versionRows: VersionRows?
+    private struct VersionRows: Identifiable {
+        let id = UUID()
+        let rows: [Summary]
+    }
     @State private var showPurchaseSheet = false
     @State private var reopenYearWrapAfterPurchase = false
     
@@ -144,8 +157,11 @@ struct OverviewTab: View {
                                             coordinator.showSuccess("Month copied")
                                         },
                                         onRegenerate: {
-                                            Task { await refreshMonthDigest(force: true) }
-                                            }
+                                            Task { await confirmMonthRebuild() }
+                                            },
+                                        onHistory: {
+                                            Task { await openMonthVersions() }
+                                        }
                                         )
                                         .padding(.horizontal, 16)
                                         .padding(.top, 8)
@@ -279,6 +295,31 @@ struct OverviewTab: View {
                     await loadInsights()
                 }
             }
+            .alert("Rewrite this month's story?", isPresented: $showMonthRebuildConfirmation) {
+                Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
+                    Task { await refreshMonthDigest(force: true) }
+                }
+                Button("Keep the story", role: .cancel) {}
+            } message: {
+                Text(downgradeMessage)
+            }
+            .sheet(item: $versionRows) { item in
+                SummaryVersionsSheet(rows: item.rows, coordinator: coordinator) {
+                    Task {
+                        monthDigest = await coordinator.fetchMonthDigest(date: selectedMonth)
+                        await loadInsights()
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .alert("Replace this Year Wrap?", isPresented: $showYearWrapDowngradeConfirmation) {
+                Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
+                    if let engine = pendingYearWrapEngine { coordinator.startYearWrap(engine: engine) }
+                }
+                Button("Keep the current wrap", role: .cancel) { pendingYearWrapEngine = nil }
+            } message: {
+                Text(downgradeMessage)
+            }
             .sheet(isPresented: $showYearWrapConfirmation) {
                 YearWrapGenerationSheet(
                     isSmartestAIUnlocked: coordinator.storeManager.isSmartestAIUnlocked,
@@ -286,7 +327,7 @@ struct OverviewTab: View {
                     isPurchasing: coordinator.storeManager.purchaseState == .purchasing,
                     onGenerate: { engine in
                         showYearWrapConfirmation = false
-                        coordinator.startYearWrap(engine: engine)
+                        confirmYearWrap(with: engine)
                     },
                     onPurchaseSmartestAI: {
                         // Close this sheet and show purchase sheet
@@ -417,6 +458,51 @@ struct OverviewTab: View {
         isLoading = false
     }
     
+    /// Rebuild the month now, or ask first when the engine available now would replace a story
+    /// written by a better one. Rebuilding is the one way a person can choose that on purpose.
+    private func confirmMonthRebuild() async {
+        guard let digest = monthDigest else { return }
+        let current = await coordinator.summarizationCoordinator?.digestGenerator()?.tier ?? .basic
+        if digest.hasWrittenStory, current.isWeaker(than: digest.displayedEngineTier) {
+            downgradeEngineName = current.displayName
+            downgradeMessage = "This month's story was written by \(MonthDigestCard.engineNames(digest.displayedEngineTier)). \(current.displayName) is what's available now and writes a plainer one. The items and numbers update either way."
+            showMonthRebuildConfirmation = true
+        } else {
+            await refreshMonthDigest(force: true)
+        }
+    }
+
+    /// Start a Year Wrap, or ask first when the chosen engine writes worse than the one that
+    /// wrote the wrap on screen
+    private func confirmYearWrap(with engine: EngineTier) {
+        if let stored = yearWraps[.all]?.engineTier ?? yearWraps[categoryFilter]?.engineTier, engine.isWeaker(than: stored) {
+            pendingYearWrapEngine = engine
+            downgradeEngineName = engine.displayName
+            downgradeMessage = "Your current wrap was written by \(EngineTier(rawValue: stored)?.displayName ?? stored). \(engine.displayName) writes a plainer one and would replace it."
+            showYearWrapDowngradeConfirmation = true
+        } else {
+            coordinator.startYearWrap(engine: engine)
+        }
+    }
+
+    /// Show the earlier versions of this month's digest, for the journal on screen or both
+    private func openMonthVersions() async {
+        guard let db = coordinator.getDatabaseManager() else { return }
+        let journals: [SessionCategory]
+        switch categoryFilter {
+        case .all: journals = [.work, .personal]
+        case .workOnly: journals = [.work]
+        case .personalOnly: journals = [.personal]
+        }
+        var rows: [Summary] = []
+        for journal in journals {
+            if let row = try? await db.fetchPeriodSummary(type: .monthDigest, date: selectedMonth, category: journal) {
+                rows.append(row)
+            }
+        }
+        versionRows = VersionRows(rows: rows)
+    }
+
     private func refreshMonthDigest(force: Bool) async {
         guard !isUpdatingMonthDigest else { return }
         isUpdatingMonthDigest = true
@@ -443,7 +529,11 @@ struct OverviewTab: View {
                 wraps: yearWraps,
                 coordinator: coordinator,
                 filter: categoryFilter,
-                onRegenerate: { showYearWrapConfirmation = true }
+                onRegenerate: { showYearWrapConfirmation = true },
+                onHistory: {
+                    // All, Work and Personal are written together, so their versions are shown and restored together
+                    versionRows = VersionRows(rows: [ItemFilter.all, .workOnly, .personalOnly].compactMap { yearWraps[$0] })
+                }
             )
             .transition(.opacity)
         } else if yearWraps[.all] != nil {
@@ -767,6 +857,7 @@ struct YearWrapGenerationSheet: View {
     }
     
     private var appleAvailable: Bool { engines?.contains(.apple) ?? false }
+    private var localAvailable: Bool { engines?.contains(.local) ?? false }
     private var smartestReady: Bool { isSmartestAIUnlocked && hasExternalAPIConfigured && (engines?.contains(.external) ?? false) }
     
     var body: some View {
@@ -789,6 +880,8 @@ struct YearWrapGenerationSheet: View {
             VStack(spacing: 12) {
                 smartestRow
                 appleRow
+                localRow
+                basicRow
             }
             .opacity(engines == nil ? 0.5 : 1)
             .disabled(engines == nil)
@@ -887,6 +980,52 @@ struct YearWrapGenerationSheet: View {
         }
     }
     
+    @ViewBuilder
+    private var localRow: some View {
+        if localAvailable {
+            engineButton(
+                icon: "cpu",
+                title: "Offline AI",
+                detail: "Free and private. Slower: a few minutes with the app open.",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.local)
+            }
+        } else if engines != nil {
+            HStack(spacing: 12) {
+                Image(systemName: "cpu")
+                    .font(.title3)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offline AI")
+                        .font(.headline)
+                    Text("Not downloaded. Get it under Settings › Summaries to wrap your year on this \(DeviceName.current).")
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(AppTheme.hairline, lineWidth: 1))
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var basicRow: some View {
+        if engines != nil {
+            engineButton(
+                icon: "bolt",
+                title: "Key Sentences",
+                detail: "Instant. Your numbers, people, places and topics, without a written story.",
+                trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(.secondary))
+            ) {
+                onGenerate(.basic)
+            }
+        }
+    }
+
     private var purchaseBadge: some View {
         Group {
             if isPurchasing {

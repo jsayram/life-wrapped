@@ -90,6 +90,43 @@ public actor SummaryRepository {
         }
     }
     
+    /// Overwrite every field of an existing row, keeping its id
+    public func update(_ summary: Summary) async throws {
+        try await connection.withDatabase { db in
+            guard let db = db else { throw StorageError.notOpen }
+            let sql = """
+                UPDATE summaries
+                SET period_type = ?, period_start = ?, period_end = ?, text = ?, created_at = ?, session_id = ?,
+                    topics_json = ?, entities_json = ?, engine_tier = ?, source_ids = ?, input_hash = ?, category = ?
+                WHERE id = ?
+                """
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw StorageError.prepareFailed(await self.connection.lastError())
+            }
+            func bind(_ index: Int32, _ value: String?) {
+                if let value { sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(stmt, index) }
+            }
+            sqlite3_bind_text(stmt, 1, summary.periodType.rawValue, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(stmt, 2, summary.periodStart.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 3, summary.periodEnd.timeIntervalSince1970)
+            sqlite3_bind_text(stmt, 4, summary.text, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(stmt, 5, summary.createdAt.timeIntervalSince1970)
+            bind(6, summary.sessionId?.uuidString)
+            bind(7, summary.topicsJSON)
+            bind(8, summary.entitiesJSON)
+            bind(9, summary.engineTier)
+            bind(10, summary.sourceIds)
+            bind(11, summary.inputHash)
+            bind(12, summary.category?.rawValue)
+            sqlite3_bind_text(stmt, 13, summary.id.uuidString, -1, SQLITE_TRANSIENT)
+            guard sqlite3_step(stmt) == SQLITE_DONE else {
+                throw StorageError.stepFailed(await self.connection.lastError())
+            }
+        }
+    }
+
     public func fetch(id: UUID) async throws -> Summary? {
         try await connection.withDatabase { db in
             guard let db = db else { throw StorageError.notOpen }

@@ -1,6 +1,6 @@
 # Local AI Architecture (MLX + Qwen3)
 
-> **Status, September 27, 2026:** Offline AI makes recording summaries, titles and month summaries when it is the chosen summary quality (or as the fallback for Apple Intelligence and Cloud AI). It is not used for Year Wrap, which runs on Apple Intelligence or Cloud AI.
+> **Status, September 28, 2026:** Offline AI makes recording summaries, titles and month summaries when it is the chosen summary quality (or as the fallback for Apple Intelligence and Cloud AI). Since 1.3 it can also write the Year Wrap: one compact request per journal (`YearWrapBuilder.generateCompact`), with a second for the title only if the first answer can't be read.
 
 ## Overview
 

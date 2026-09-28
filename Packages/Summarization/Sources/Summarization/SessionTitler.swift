@@ -31,17 +31,33 @@ public enum SessionTitler {
 
     /// A title from the summary alone: its first key point or first sentence, shortened
     public static func fallback(summary: String, keyPoints: [String] = []) -> String? {
-        let source = keyPoints.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        // Key Sentences stores single-word topics as key points; one word is not a title
+        let source = keyPoints.first { $0.split(separator: " ").count >= 3 }
             ?? summary.split(whereSeparator: { ".!?\n".contains($0) }).first.map(String.init)
             ?? ""
         var words = source.split(separator: " ").map(String.init)
         // "I created a test harness..." reads better as a title without the leading "I"
-        while let first = words.first, ["i", "i'm", "i’m", "i've", "i’ve", "today", "so", "okay", "ok", "um"].contains(first.lowercased().trimmingCharacters(in: .punctuationCharacters)) {
+        while let first = words.first, leadingFillers.contains(first.lowercased().trimmingCharacters(in: .punctuationCharacters)) {
             words.removeFirst()
         }
+        words = Array(words.prefix(6))
+        // "...a test harness for the" reads better as "...a test harness"
+        while words.count > 2, let last = words.last, trailingFunctionWords.contains(last.lowercased().trimmingCharacters(in: .punctuationCharacters)) {
+            words.removeLast()
+        }
         guard !words.isEmpty else { return nil }
-        return clean(words.prefix(6).joined(separator: " "))
+        return clean(words.joined(separator: " "))
     }
+
+    private static let leadingFillers: Set<String> = [
+        "i", "i'm", "i’m", "i've", "i’ve", "today", "so", "okay", "ok", "um", "uh", "yeah", "well", "alright"
+    ]
+
+    private static let trailingFunctionWords: Set<String> = [
+        "a", "an", "the", "to", "of", "and", "or", "but", "for", "in", "on", "at", "with", "by", "from",
+        "my", "your", "our", "their", "his", "her", "its", "is", "was", "are", "were", "be",
+        "that", "this", "it", "i", "i'm", "i’m", "so", "then", "if", "as", "about"
+    ]
 
     /// Titles for several recordings in one request. Returns one entry per summary, nil where
     /// the model gave nothing usable; the caller falls back for those.

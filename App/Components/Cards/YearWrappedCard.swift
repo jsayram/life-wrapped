@@ -11,6 +11,8 @@ struct YearWrappedCard: View {
     let coordinator: AppCoordinator
     let filter: ItemFilter
     let onRegenerate: () -> Void
+    /// Opens the wrap's earlier versions; nil hides the button
+    var onHistory: (() -> Void)? = nil
     @Environment(\.colorScheme) var colorScheme
     @State private var showDetailView = false
     
@@ -60,6 +62,17 @@ struct YearWrappedCard: View {
                     .foregroundStyle(AppTheme.onAccent.opacity(0.7))
 
                 Spacer(minLength: 0)
+
+                if let onHistory {
+                    Button(action: onHistory) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .scaledFont(size: 15)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Earlier versions")
+                }
 
                 Button {
                     UIPasteboard.general.string = parsed?.storyText ?? yearSummary
@@ -125,16 +138,24 @@ struct YearWrappedCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            if let engine = summary.engineTier.flatMap(EngineTier.init(rawValue:)) {
+                Label("Written by \(engine.displayName)", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.onAccent.opacity(0.7))
+            }
+
             // Out of date: this journal's recordings added or changed since the wrap was built
             if outdatedCount > 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("\(outdatedCount) \(scopeWord)\(outdatedCount == 1 ? "recording" : "recordings") added or changed since this wrap")
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("\(outdatedCount) \(scopeWord)\(outdatedCount == 1 ? "recording" : "recordings") added or changed since this wrap", systemImage: "arrow.triangle.2.circlepath")
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 8)
-                    Button("Update") { update() }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(AppTheme.onAccent)
+                    HStack {
+                        Spacer(minLength: 0)
+                        // Says which engine so an update is never a surprise; the refresh button above picks another
+                        Button(wrapEngine.map { "Update with \($0.displayName)" } ?? "Update") { update() }
+                            .fontWeight(.semibold)
+                            .foregroundStyle(AppTheme.onAccent)
+                    }
                 }
                 .font(.footnote)
                 .foregroundStyle(AppTheme.onAccent.opacity(0.8))
@@ -187,11 +208,20 @@ struct YearWrappedCard: View {
     /// Rebuild with the engine that made this wrap, reusing every month and journal that didn't
     /// change. Falls back to the engine picker when that engine isn't known.
     private func update() {
-        if let engine = summary.engineTier.flatMap(EngineTier.init(rawValue:)) {
-            coordinator.startYearWrap(engine: engine, forceRegenerate: false)
-        } else {
-            onRegenerate()
+        guard let engine = wrapEngine else { onRegenerate(); return }
+        Task {
+            // The engine may have gone (a removed API key): offer the picker instead of an error
+            if await coordinator.yearWrapEngines().contains(engine) {
+                coordinator.startYearWrap(engine: engine, forceRegenerate: false)
+            } else {
+                onRegenerate()
+            }
         }
+    }
+
+    /// The engine that wrote the wrap on screen
+    private var wrapEngine: EngineTier? {
+        summary.engineTier.flatMap(EngineTier.init(rawValue:))
     }
     
     private var parsed: YearWrapData? {

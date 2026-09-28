@@ -390,13 +390,22 @@ public actor SummarizationCoordinator {
                 #endif
                 
                 // Generate intelligence using this engine
-                let intelligence = try await engineToTry.summarizeSession(
+                var intelligence = try await engineToTry.summarizeSession(
                     sessionId: sessionId,
                     transcriptText: transcriptText,
                     duration: duration,
                     languageCodes: languageCodes
                 )
-                
+
+                // An engine that answers with nothing must not leave the recording with an
+                // empty summary. The opening of the transcript is a better record than none.
+                if intelligence.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    #if DEBUG
+                    print("⚠️ [SummarizationCoordinator] \(tier.displayName) returned an empty summary, using the transcript opening")
+                    #endif
+                    intelligence = intelligence.replacingSummary(Self.transcriptOpening(transcriptText))
+                }
+
                 // Success! Convert to Summary and return
                 #if DEBUG
                 print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
@@ -449,18 +458,20 @@ public actor SummarizationCoordinator {
         return nil
     }
 
-    /// Engines that can write a Year Wrap on this device right now: Smartest (External) and
-    /// Apple Intelligence. Local models are too slow for it and Basic has no model.
+    /// Engines that can write a Year Wrap on this device right now, best first: Cloud AI,
+    /// Apple Intelligence and the downloaded offline model when they are available, and
+    /// Key Sentences always, which builds the wrap from the digests without a model.
     public func yearWrapEngines() async -> [EngineTier] {
         var engines: [EngineTier] = []
-        for tier in [EngineTier.external, .apple] where await availableGenerator(for: tier) != nil {
+        for tier in [EngineTier.external, .apple, .local] where await availableGenerator(for: tier) != nil {
             engines.append(tier)
         }
+        engines.append(.basic)
         return engines
     }
 
-    /// The model for Year Wrap. Only Smartest (External) or Apple Intelligence.
-    public func yearWrapGenerator(tier: EngineTier) async throws -> any TextGenerating {
+    /// The model for Year Wrap, or nil for Key Sentences, which needs none.
+    public func yearWrapGenerator(tier: EngineTier) async throws -> (any TextGenerating)? {
         switch tier {
         case .external:
             guard let external = await availableGenerator(for: .external) else {
@@ -472,8 +483,13 @@ public actor SummarizationCoordinator {
                 throw SummarizationError.summarizationFailed("Apple Intelligence isn't available on this device.")
             }
             return apple
-        case .local, .basic:
-            throw SummarizationError.summarizationFailed("Year Wrap needs Apple Intelligence or Cloud AI.")
+        case .local:
+            guard let local = await availableGenerator(for: .local) else {
+                throw SummarizationError.summarizationFailed("Offline AI isn't downloaded. Get it in Settings.")
+            }
+            return local
+        case .basic:
+            return nil
         }
     }
 
@@ -558,5 +574,40 @@ extension SummarizationCoordinator {
         guard engine.tier == .external else { return }
         self.externalEngine = engine
         await selectBestAvailableEngine()
+    }
+}
+
+// MARK: - Empty summary guard
+
+extension SummarizationCoordinator {
+    /// The first words of a transcript, with any "• Dec 22, 2025 12:00 AM:" markers removed.
+    /// Used as the summary when an engine returns nothing, so a recording is never left blank.
+    nonisolated static func transcriptOpening(_ transcript: String, maxWords: Int = 60) -> String {
+        let timestampPattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
+        let cleaned = transcript
+            .replacingOccurrences(of: timestampPattern, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
+        let words = cleaned.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        let opening = words.prefix(maxWords).joined(separator: " ")
+        return words.count > maxWords ? opening + "…" : opening
+    }
+}
+
+extension SessionIntelligence {
+    /// The same result with a different summary text
+    func replacingSummary(_ summary: String) -> SessionIntelligence {
+        SessionIntelligence(
+            sessionId: sessionId,
+            summary: summary,
+            topics: topics,
+            entities: entities,
+            sentiment: sentiment,
+            duration: duration,
+            wordCount: wordCount,
+            languageCodes: languageCodes,
+            keyMoments: keyMoments,
+            category: category,
+            title: title
+        )
     }
 }

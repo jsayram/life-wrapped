@@ -107,7 +107,20 @@ public actor BasicEngine: SummarizationEngine {
             // Fillers (important for speech transcripts!)
             "um", "uh", "er", "ah", "oh", "hmm", "huh", "mhm", "yeah", "yep", "yup", "nope",
             "like", "okay", "ok", "alright", "right", "well", "anyway", "basically", "actually",
-            "literally", "gonna", "wanna", "gotta", "kinda", "sorta"
+            "literally", "gonna", "wanna", "gotta", "kinda", "sorta",
+            // Quantifiers and other function words
+            "not", "no", "yes", "some", "any", "all", "every", "each", "other", "another",
+            "such", "than", "much", "many", "more", "most", "few", "lot", "lots",
+            "where", "why", "how", "whether", "though", "however",
+            "something", "anything", "everything", "nothing", "someone", "anyone", "everyone",
+            // Vague words that say nothing about the topic of a voice note
+            "thing", "things", "stuff", "kind", "sort", "know", "think", "thought", "mean",
+            "guess", "maybe", "probably", "pretty", "still", "again", "back", "already",
+            // Contractions, as NLTokenizer keeps them whole
+            "i'm", "i've", "i'll", "i'd", "it's", "that's", "there's", "here's", "what's",
+            "he's", "she's", "we're", "you're", "they're", "let's",
+            "don't", "doesn't", "didn't", "can't", "won't", "wouldn't", "couldn't", "shouldn't",
+            "isn't", "aren't", "wasn't", "weren't", "haven't", "hasn't", "hadn't"
         ]
         return words
     }()
@@ -165,15 +178,22 @@ public actor BasicEngine: SummarizationEngine {
         // Truncate if needed
         let processedText = truncateToWords(cleanedText, maxWords: config.maxContextLength)
         
-        // Extract sentences properly
-        let sentences = tokenize(processedText, unit: .sentence)
+        // Extract sentences properly. A recording of only a few words has no sentence long
+        // enough to pass the filter; it is still worth keeping as the summary.
+        let longSentences = tokenize(processedText, unit: .sentence)
             .filter { $0.split(separator: " ").count > 3 }
-        
+        let sentences = longSentences.isEmpty && !processedText.isEmpty ? [processedText] : longSentences
+
         // Build TF-IDF scores for keywords
         let tfidfScores = computeTFIDF(sentences: sentences)
-        
-        // Extract topics using TF-IDF ranking
-        let topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores, limit: 5)
+
+        // Topics: the weightiest words that are nouns where they appear. Tagging whole sentences
+        // is reliable; "turned" or "finally" scoring high shouldn't make them topics.
+        let nouns = nounsInContext(processedText)
+        var topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores.filter { nouns.contains($0.key) }, limit: 5)
+        if topics.count < 2 {
+            topics = extractTopicsWithTFIDF(tfidfScores: tfidfScores, limit: 5)
+        }
         
         // Generate summary using enhanced scoring
         let summaryText = generateSummary(
@@ -253,7 +273,7 @@ public actor BasicEngine: SummarizationEngine {
         let periodSummary: String
         if sentences.count <= 3 {
             // Few sentences - use them all
-            periodSummary = sentences.joined(separator: ". ") + (sentences.isEmpty ? "" : ".")
+            periodSummary = joinSentences(sentences)
         } else {
             // Generate extractive summary
             periodSummary = generateSummary(
@@ -384,42 +404,32 @@ public actor BasicEngine: SummarizationEngine {
         return tfidfScores
     }
     
-    /// Check if word is a content word (not a stopword)
+    /// Whether a word carries meaning: not a stopword, not a number, at least three letters.
+    /// Deliberately a word-list check and nothing more. Tagging a word's part of speech on
+    /// its own, without its sentence, gave different answers on different iOS versions and
+    /// once rejected every word of a short recording, leaving it with no summary at all.
     private nonisolated func isContentWord(_ word: String) -> Bool {
-        let lowered = word.lowercased()
-        
-        // Check custom stopwords
-        if Self.stopWords.contains(lowered) {
-            return false
-        }
-        
-        // Filter very short words
-        if lowered.count < 3 {
-            return false
-        }
-        
-        // Filter numbers
-        if Double(lowered) != nil {
-            return false
-        }
-        
-        // Use NLTagger to check lexical class
-        let tagger = NLTagger(tagSchemes: [.lexicalClass])
-        tagger.string = word
-        
-        if let tag = tagger.tag(at: word.startIndex, unit: .word, scheme: .lexicalClass).0 {
-            // Keep nouns, verbs (non-auxiliary), adjectives, adverbs
-            switch tag {
-            case .noun, .verb, .adjective, .adverb:
-                return true
-            default:
-                return false
-            }
-        }
-        
-        return true
+        let lowered = word.lowercased().replacingOccurrences(of: "’", with: "'")
+        guard lowered.count >= 3, Double(lowered) == nil else { return false }
+        return !Self.stopWords.contains(lowered)
     }
     
+    /// Lowercased words the tagger reads as nouns in their sentences. Unlike tagging a word on its
+    /// own, this uses the words around it, so it is stable across devices.
+    nonisolated func nounsInContext(_ text: String) -> Set<String> {
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = text
+        var nouns: Set<String> = []
+        tagger.enumerateTags(in: text.startIndex..<text.endIndex, unit: .word, scheme: .lexicalClass,
+                             options: [.omitPunctuation, .omitWhitespace, .omitOther]) { tag, range in
+            if tag == .noun {
+                nouns.insert(String(text[range]).lowercased())
+            }
+            return true
+        }
+        return nouns
+    }
+
     /// Extract topics using TF-IDF scores
     private nonisolated func extractTopicsWithTFIDF(tfidfScores: [String: Double], limit: Int) -> [String] {
         return tfidfScores
@@ -585,13 +595,7 @@ public actor BasicEngine: SummarizationEngine {
             .sorted { $0.index < $1.index }
             .map { $0.sentence }
         
-        // Join with proper punctuation
-        var summary = ordered.joined(separator: ". ")
-        if !summary.isEmpty && !summary.hasSuffix(".") && !summary.hasSuffix("!") && !summary.hasSuffix("?") {
-            summary += "."
-        }
-        
-        return summary
+        return joinSentences(ordered)
     }
     
     // MARK: - De-duplication
@@ -615,12 +619,8 @@ public actor BasicEngine: SummarizationEngine {
             guard selected.count < maxSentences else { break }
             
             // Get candidate's word set for Jaccard similarity
-            let candidateWords = Set(
-                tokenize(candidate.sentence, unit: .word)
-                    .map { $0.lowercased() }
-                    .filter { isContentWord($0) }
-            )
-            
+            let candidateWords = lexicalWords(candidate.sentence)
+
             // Skip very short sentences (likely fragments)
             guard candidateWords.count >= 3 else { continue }
             
@@ -666,10 +666,43 @@ public actor BasicEngine: SummarizationEngine {
                 selectedWordSets.append(candidateWords)
             }
         }
-        
+
+        // A short recording can be nothing but "fragments" by the rule above. Its best
+        // sentence is still a better summary than none at all.
+        if selected.isEmpty, let best = sorted.first {
+            selected.append(best)
+        }
+
         return selected
     }
     
+    /// The words that carry a sentence's meaning, by stopword list and length only.
+    /// Used to decide whether a sentence is a fragment and to compare sentences for overlap.
+    /// Deliberately avoids NLTagger: tagging a single word out of context is unreliable and
+    /// differs between OS versions, which made every sentence of a short recording look like
+    /// a fragment on some devices and produced an empty summary.
+    private nonisolated func lexicalWords(_ sentence: String) -> Set<String> {
+        Set(
+            tokenize(sentence, unit: .word)
+                .map { $0.lowercased() }
+                .filter { isContentWord($0) }
+        )
+    }
+
+    /// Join sentences into one paragraph. Each sentence keeps or gets its own end
+    /// punctuation, so a sentence that already ends in "." isn't followed by another one.
+    private nonisolated func joinSentences(_ sentences: [String]) -> String {
+        sentences
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { sentence in
+                sentence.hasSuffix(".") || sentence.hasSuffix("!") || sentence.hasSuffix("?")
+                    ? sentence
+                    : sentence + "."
+            }
+            .joined(separator: " ")
+    }
+
     /// Calculate Jaccard similarity between two word sets
     /// Returns value between 0.0 (no overlap) and 1.0 (identical)
     private nonisolated func jaccardSimilarity(_ set1: Set<String>, _ set2: Set<String>) -> Double {

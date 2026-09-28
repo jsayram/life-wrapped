@@ -26,6 +26,7 @@ struct LifeWrappedApp: App {
     
     init() {
         AppAppearance.configure()
+        AppCoordinator.registerBackgroundTasks()
         print("🚀 [LifeWrappedApp] App starting...")
         print("📱 [LifeWrappedApp] iOS Version: \(UIDevice.current.systemVersion)")
         print("📱 [LifeWrappedApp] Device: \(UIDevice.current.model)")
@@ -132,6 +133,8 @@ struct LifeWrappedApp: App {
             
         case .background:
             print("🔴 [LifeWrappedApp] App entered background")
+            // Finish ended months' digests later, while the phone charges
+            AppCoordinator.scheduleMonthFinalization()
             // App is in background - continue recording if active
             Task {
                 await coordinator.handleAppEnteredBackground()

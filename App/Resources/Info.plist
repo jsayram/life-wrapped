@@ -54,6 +54,11 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.jsayram.lifewrapped.finalize-months</string>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>

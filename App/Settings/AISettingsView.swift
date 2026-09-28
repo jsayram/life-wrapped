@@ -5,6 +5,8 @@ import Summarization
 struct AISettingsView: View {
     @EnvironmentObject var coordinator: AppCoordinator
     @State private var activeEngine: EngineTier?
+    /// Recordings summarized by an engine weaker than the selected one
+    @State private var upgradeCandidates: [AppCoordinator.SummaryUpgradeCandidate] = []
     @State private var availableEngines: [EngineTier] = []
     @State private var isLoading = true
     @State private var showingSmartestConfig = false
@@ -116,6 +118,12 @@ struct AISettingsView: View {
                 Text("Summary quality")
             } footer: {
                 Text("Key Sentences, Offline AI and Apple Intelligence never leave your \(DeviceName.current). Cloud AI sends transcripts to the OpenAI or Anthropic model you choose, with your API key.")
+            }
+
+            // MARK: - Upgrade earlier summaries
+            if let tier = activeEngine, tier != .basic, isEngineReady(tier),
+               !upgradeCandidates.isEmpty || coordinator.summaryUpgrade?.tier == tier {
+                upgradeSection(tier: tier)
             }
             
             // MARK: - Smartest Configuration (only show if purchased)
@@ -541,6 +549,7 @@ struct AISettingsView: View {
         guard let summCoord = coordinator.summarizationCoordinator else { return }
         activeEngine = await summCoord.getActiveEngine()
         availableEngines = await summCoord.getAvailableEngines()
+        upgradeCandidates = await coordinator.upgradeableSummaries(for: activeEngine ?? .basic)
         
         // Load local model status
         isLocalModelDownloaded = await coordinator.isLocalModelDownloaded()
@@ -671,12 +680,18 @@ struct AISettingsView: View {
             return
         }
         
+        let previous = activeEngine
         Task {
             guard let summCoord = coordinator.summarizationCoordinator else { return }
             await summCoord.setPreferredEngine(tier)
             await loadEngineStatus()
             NotificationCenter.default.post(name: NSNotification.Name("EngineDidChange"), object: nil)
-            coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+            if let previous, tier.isWeaker(than: previous.rawValue) {
+                // Nothing already written gets rewritten by a weaker engine
+                coordinator.showToast(Toast(style: .info, message: "Switched to \(tierDisplayName(tier)). Summaries written by \(tierDisplayName(previous)) stay as they are; new recordings use \(tierDisplayName(tier)).", duration: 5))
+            } else {
+                coordinator.showSuccess("Switched to \(tierDisplayName(tier))")
+            }
         }
     }
     
@@ -689,6 +704,58 @@ struct AISettingsView: View {
         }
     }
     
+    /// Whether the engine can run right now, so an upgrade with it makes sense
+    private func isEngineReady(_ tier: EngineTier) -> Bool {
+        switch tier {
+        case .basic: return true
+        case .local: return isLocalModelDownloaded
+        case .apple: return availableEngines.contains(.apple)
+        case .external: return coordinator.storeManager.isSmartestAIUnlocked && hasValidAPIKey()
+        }
+    }
+
+    /// Rewrite recordings summarized by a weaker engine with the selected one, on request.
+    /// Opens a screen that lists exactly which recordings, and what happened to each.
+    @ViewBuilder
+    private func upgradeSection(tier: EngineTier) -> some View {
+        let count = upgradeCandidates.count
+        let name = tierDisplayName(tier)
+        let report = coordinator.summaryUpgrade
+        Section {
+            NavigationLink {
+                SummaryUpgradeView(tier: tier)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    if let report, report.tier == tier, report.isRunning {
+                        Label("Upgrading \(report.doneCount) of \(report.candidates.count) with \(name)", systemImage: "arrow.up.circle")
+                        ProgressView(value: Double(report.doneCount), total: Double(max(report.candidates.count, 1)))
+                    } else if count > 0 {
+                        Label("Upgrade \(count) \(count == 1 ? "recording" : "recordings") with \(name)", systemImage: "arrow.up.circle")
+                        Text("See which recordings before anything is rewritten")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let report, report.tier == tier {
+                        Label("Last upgrade with \(name)", systemImage: "checkmark.circle")
+                        Text("\(report.upgradedCount) upgraded, \(report.keptCount) kept")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Earlier summaries")
+        } footer: {
+            if count > 0 {
+                Text("\(count) \(count == 1 ? "recording was" : "recordings were") summarized by a weaker option than \(name). Nothing is rewritten until you ask; the earlier text is kept and can be restored from each recording.")
+            }
+        }
+        .onChange(of: coordinator.summaryUpgrade) { _, report in
+            if report?.isRunning == false {
+                Task { upgradeCandidates = await coordinator.upgradeableSummaries(for: tier) }
+            }
+        }
+    }
+
     private func hasValidAPIKey() -> Bool {
         let key = selectedProvider == "OpenAI" 
             ? KeychainHelper.load(key: "openai_api_key")

@@ -47,6 +47,11 @@ struct SessionDetailView: View {
     @State private var generationPhase: String = ""
     @State private var showGenerationOverlay = false
     @State private var activeEngineForGeneration: EngineTier?
+    /// Asked before the engine chosen now replaces a summary written by a better one
+    @State private var showDowngradeConfirmation = false
+    @State private var downgradeMessage = ""
+    @State private var downgradeEngineName = ""
+    @State private var showVersions = false
     /// Set once the user moves this recording to the other journal, to explain what that changes
     @State private var movedToJournal: SessionCategory?
     /// Screen width, to switch to two columns when there's room
@@ -121,6 +126,22 @@ struct SessionDetailView: View {
         .themedScreen()
         .navigationTitle(sessionTitle.isEmpty ? "Recording" : sessionTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Replace this summary?", isPresented: $showDowngradeConfirmation) {
+            Button("Rewrite with \(downgradeEngineName)", role: .destructive) {
+                Task { await regenerateSummary() }
+            }
+            Button("Keep the current summary", role: .cancel) {}
+        } message: {
+            Text(downgradeMessage)
+        }
+        .sheet(isPresented: $showVersions) {
+            if let summary = sessionSummary {
+                SummaryVersionsSheet(rows: [summary], coordinator: coordinator) {
+                    Task { await loadSessionSummary() }
+                }
+                .presentationDetents([.medium, .large])
+            }
+        }
         .toolbar {
             // The title is shown large in the content, so keep the bar clean
             ToolbarItem(placement: .principal) { Text("").accessibilityHidden(true) }
@@ -940,9 +961,14 @@ struct SessionDetailView: View {
                             Label("Copy summary", systemImage: "doc.on.doc")
                         }
                         Button {
-                            Task { await regenerateSummary() }
+                            confirmRegenerate()
                         } label: {
                             Label("Regenerate summary", systemImage: "sparkles")
+                        }
+                        Button {
+                            showVersions = true
+                        } label: {
+                            Label("Earlier versions", systemImage: "clock.arrow.circlepath")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -967,7 +993,7 @@ struct SessionDetailView: View {
                     Text("Transcript changed since this summary")
                     Spacer(minLength: 8)
                     Button("Update") {
-                        Task { await regenerateSummary() }
+                        confirmRegenerate()
                     }
                     .fontWeight(.semibold)
                     .foregroundStyle(AppTheme.textPrimary)
@@ -1155,6 +1181,23 @@ struct SessionDetailView: View {
         }
     }
     
+    /// Regenerate now, or ask first when the engine chosen in Settings writes worse than the
+    /// one that wrote this summary. Nothing good is replaced by something plainer by accident.
+    private func confirmRegenerate() {
+        Task {
+            guard let summCoord = coordinator.summarizationCoordinator else { return }
+            let current = await summCoord.getActiveEngine()
+            if let stored = sessionSummary?.engineTier, current.isWeaker(than: stored) {
+                let storedName = EngineTier(rawValue: stored)?.displayName ?? stored
+                downgradeEngineName = current.displayName
+                downgradeMessage = "This summary was written by \(storedName). \(current.displayName) is selected now and writes a plainer one. To keep the better summary, choose \(storedName) in Settings before regenerating."
+                showDowngradeConfirmation = true
+            } else {
+                await regenerateSummary()
+            }
+        }
+    }
+
     private func regenerateSummary() async {
         isRegeneratingSummary = true
         summaryLoadError = nil
@@ -1373,18 +1416,23 @@ struct SessionDetailView: View {
                     let wasPlaying = coordinator.audioPlayback.isPlaying
                     
                     Task {
-                        try await coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
-                            print("✅ [SessionDetailView] Session playback completed after seek")
-                        }
-                        
-                        // Seek within this chunk immediately for smooth scrubbing
-                        // Minimal delay to ensure player is initialized
-                        try? await Task.sleep(for: .milliseconds(10))
-                        coordinator.audioPlayback.seek(to: remainingTime)
-                        
-                        // If wasn't playing before, pause immediately after seeking
-                        if !wasPlaying {
-                            coordinator.audioPlayback.pause()
+                        do {
+                            try await coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
+                                print("✅ [SessionDetailView] Session playback completed after seek")
+                            }
+
+                            // Seek within this chunk immediately for smooth scrubbing
+                            // Minimal delay to ensure player is initialized
+                            try? await Task.sleep(for: .milliseconds(10))
+                            coordinator.audioPlayback.seek(to: remainingTime)
+
+                            // If wasn't playing before, pause immediately after seeking
+                            if !wasPlaying {
+                                coordinator.audioPlayback.pause()
+                            }
+                        } catch {
+                            print("❌ [SessionDetailView] Failed to play after seek: \(error)")
+                            coordinator.showError("Couldn't play the recording")
                         }
                     }
                 }
@@ -1510,17 +1558,27 @@ struct SessionDetailView: View {
             // If user has scrubbed before playing, seek to that position
             if scrubbedTime > 0 {
                 Task {
-                    try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                        print("✅ [SessionDetailView] Session playback completed")
+                    do {
+                        try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                            print("✅ [SessionDetailView] Session playback completed")
+                        }
+                        // Seek to scrubbed position after playback starts
+                        try? await Task.sleep(for: .milliseconds(50))
+                        seekToTotalTime(scrubbedTime)
+                    } catch {
+                        print("❌ [SessionDetailView] Failed to start playback: \(error)")
+                        coordinator.showError("Couldn't play the recording")
                     }
-                    // Seek to scrubbed position after playback starts
-                    try? await Task.sleep(for: .milliseconds(50))
-                    seekToTotalTime(scrubbedTime)
                 }
             } else {
                 Task {
-                    try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                        print("✅ [SessionDetailView] Session playback completed")
+                    do {
+                        try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                            print("✅ [SessionDetailView] Session playback completed")
+                        }
+                    } catch {
+                        print("❌ [SessionDetailView] Failed to start playback: \(error)")
+                        coordinator.showError("Couldn't play the recording")
                     }
                 }
             }

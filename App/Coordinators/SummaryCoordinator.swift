@@ -34,6 +34,9 @@ public final class SummaryCoordinator {
     
     /// Called as Year Wrap generation moves through its steps
     public var onYearWrapProgressUpdate: ((YearWrapProgress) -> Void)?
+    /// Called when a recording was summarized by a different engine than the one chosen in
+    /// Settings, because that one wasn't available. (chosen, used)
+    public var onEngineFallback: ((EngineTier, EngineTier) -> Void)?
     
     // MARK: - Initialization
     
@@ -175,6 +178,13 @@ public final class SummaryCoordinator {
                     if let existingHash = existingSummary.inputHash {
                         print("🔑 [SummaryCoordinator] Old hash: \(existingHash.prefix(8))..., New hash: \(inputHash.prefix(8))...")
                     }
+                    // Not on its own with a weaker engine: the recording keeps its better summary and
+                    // shows "Transcript changed since this summary", where updating is the person's call
+                    let current = await summarizationEngine.getActiveEngine()
+                    if current.isWeaker(than: existingSummary.engineTier) {
+                        print("🛡️ [SummaryCoordinator] Keeping the \(existingSummary.engineTier ?? "") summary; \(current.displayName) would write a weaker one")
+                        return
+                    }
                 }
             }
         } else {
@@ -218,6 +228,9 @@ public final class SummaryCoordinator {
         var generatedSummary = generated.summary
         
         print("✅ [SummaryCoordinator] LLM API returned summary (engine: \(generatedSummary.engineTier ?? "unknown"), text length: \(generatedSummary.text.count))")
+        if let used = generatedSummary.engineTier.flatMap(EngineTier.init(rawValue:)), used != activeEngine {
+            onEngineFallback?(activeEngine, used)
+        }
         print("📝 [SummaryCoordinator] Summary preview: \(generatedSummary.text.prefix(100))...")
         
         // Update time range and include inputHash for caching
@@ -236,16 +249,9 @@ public final class SummaryCoordinator {
             inputHash: inputHash  // Store hash for future cache checks
         )
         
-        // Delete old session summary if it exists (to prevent duplicates in rollups)
-        if let existingSummary = try? await databaseManager.fetchSummaryForSession(sessionId: sessionId) {
-            print("🗑️ [SummaryCoordinator] Deleting old session summary (ID: \(existingSummary.id))...")
-            try await databaseManager.deleteSummary(id: existingSummary.id)
-            print("✅ [SummaryCoordinator] Old session summary deleted")
-        }
-        
-        // Save session summary
+        // Save session summary. The one it replaces is kept as a version, so this can be undone.
         print("💾 [SummaryCoordinator] Saving summary to database...")
-        try await databaseManager.insertSummary(generatedSummary)
+        try await databaseManager.replaceSessionSummary(generatedSummary)
         try? await databaseManager.markSessionChanged(sessionId: sessionId, content: true)
         NotificationCenter.default.post(name: .sessionSummaryUpdated, object: sessionId)
         print("✅ [SummaryCoordinator] Session summary saved successfully!")
@@ -553,12 +559,20 @@ public final class SummaryCoordinator {
                     guard let journalInputs = inputs[journal] else { continue }
                     let sources = await digestSources(from: journalInputs)
                     print("🧩 [SummaryCoordinator] Building \(isFinal ? "final" : "draft") \(journal.displayName) digest for \(bounds.start.formatted(.dateTime.month().year())) from \(sources.count) recordings with \(generator?.tier.displayName ?? "Basic")")
+                    // A story written by a better engine is kept; only the items and numbers are
+                    // rebuilt. Rebuild (force) is the person's explicit choice to rewrite it.
+                    let previous = stored.journals[journal]?.digest
+                    let keep = (!forceRegenerate && previous.map { $0.hasWrittenStory && (generator?.tier ?? .basic).isWeaker(than: $0.displayedEngineTier) } == true) ? previous : nil
+                    if let keep {
+                        print("🛡️ [SummaryCoordinator] Keeping the \(EngineTier(rawValue: keep.displayedEngineTier)?.displayName ?? keep.displayedEngineTier) story for \(journal.displayName); \(generator?.tier.displayName ?? "Key Sentences") would write a plainer one")
+                    }
                     let digest = await MonthDigestBuilder.build(
                         monthStart: bounds.start,
                         sources: sources,
                         isFinal: isFinal,
                         generator: generator,
-                        journal: journal
+                        journal: journal,
+                        keepingStoryFrom: keep
                     )
                     try await saveMonthDigest(digest, inputs: journalInputs)
                     digests.append(digest)
@@ -633,11 +647,12 @@ public final class SummaryCoordinator {
     /// out of date or still drafts. Called when the app comes to the foreground; one month at a
     /// time keeps each launch light, and older mixed digests get replaced this way over time.
     /// Looks back to the start of last year; Year Wrap builds anything older it needs.
-    public func finalizeNextClosedMonthDigest() async {
+    @discardableResult
+    public func finalizeNextClosedMonthDigest() async -> Bool {
         let calendar = Calendar.current
         guard let currentMonth = monthBounds(for: Date())?.start,
               let lastYear = calendar.date(byAdding: .year, value: -1, to: currentMonth),
-              let lookbackStart = calendar.date(from: DateComponents(year: calendar.component(.year, from: lastYear), month: 1, day: 1)) else { return }
+              let lookbackStart = calendar.date(from: DateComponents(year: calendar.component(.year, from: lastYear), month: 1, day: 1)) else { return false }
 
         do {
             let summaries = try await liveSessionSummaries(from: lookbackStart, to: currentMonth)
@@ -649,17 +664,20 @@ public final class SummaryCoordinator {
 
                 print("🗓️ [SummaryCoordinator] Finalizing digests for \(month.formatted(.dateTime.month().year()))")
                 await updateMonthDigest(date: month)
-                return
+                return true
             }
         } catch {
             print("❌ [SummaryCoordinator] Failed to check month digests: \(error)")
         }
+        return false
     }
 
     /// Bump when Year Wrap generation changes, so a cached wrap is rebuilt
     private static let yearWrapVersion = "yearwrap-v4"
     
-    /// Year Wrap, built from the year's month digests with Apple Intelligence or Smartest AI.
+    /// Year Wrap, built from the year's month digests with Cloud AI, Apple Intelligence, the
+    /// offline model, or with no model at all for Key Sentences (numbers, people, places and
+    /// the most-mentioned items, no written story).
     /// Brings every month's journal digests up to date, then writes one wrap per journal from that
     /// journal's months only (one model request each with Smartest). All is the two put together
     /// in code, with each journal's own title and summary. A journal with no recordings this year
@@ -741,7 +759,7 @@ public final class SummaryCoordinator {
 
             // The wrap only changes when its months or the engine change
             let digestTexts = digests.compactMap { try? $0.jsonString() }
-            let inputHash = await databaseManager.computeInputHash([Self.yearWrapVersion, generator.tier.rawValue, journal.rawValue] + digestTexts)
+            let inputHash = await databaseManager.computeInputHash([Self.yearWrapVersion, engine.rawValue, journal.rawValue] + digestTexts)
             if !forceRegenerate,
                let existing = try? await databaseManager.fetchPeriodSummary(type: .yearWrap, date: startOfYear, category: journal),
                existing.inputHash == inputHash,
@@ -751,10 +769,10 @@ public final class SummaryCoordinator {
                 continue
             }
 
-            print("🎁 [SummaryCoordinator] Building \(journal.displayName) Year Wrap for \(year) from \(digests.count) months with \(generator.tier.displayName)")
+            print("🎁 [SummaryCoordinator] Building \(journal.displayName) Year Wrap for \(year) from \(digests.count) months with \(engine.displayName)")
             let wrap = await YearWrapBuilder.build(year: year, digests: digests, generator: generator, scope: journal.itemFilter)
             let sessionIds = Set(digests.flatMap { $0.items.flatMap(\.sessionIds) })
-            try await saveYearWrap(wrap, start: startOfYear, end: endOfYear, engineTier: generator.tier.rawValue,
+            try await saveYearWrap(wrap, start: startOfYear, end: endOfYear, engineTier: engine.rawValue,
                                    sources: sessionSummaries.compactMap { $0.sessionId }.filter { sessionIds.contains($0) },
                                    inputHash: inputHash, category: journal)
             wraps[journal] = wrap
@@ -764,7 +782,7 @@ public final class SummaryCoordinator {
         guard let all = YearWrapData.combining(wraps, year: year, stats: YearWrapBuilder.stats(for: combinedMonths)) else {
             throw SummarizationError.summarizationFailed("Year Wrap couldn't be built. Try again in a moment.")
         }
-        try await saveYearWrap(all, start: startOfYear, end: endOfYear, engineTier: generator.tier.rawValue,
+        try await saveYearWrap(all, start: startOfYear, end: endOfYear, engineTier: engine.rawValue,
                                sources: sessionSummaries.compactMap { $0.sessionId }, inputHash: nil, category: nil)
 
         // Wraps from before journals, stored as their own types, are replaced by the ones above
@@ -773,7 +791,7 @@ public final class SummaryCoordinator {
                 try? await databaseManager.deleteSummary(id: old.id)
             }
         }
-        if generator.tier == .local {
+        if engine == .local {
             await summarizationEngine.getLocalEngine().unloadModel()
         }
         print("✅ [SummaryCoordinator] Year Wraps saved: \(wraps.keys.map(\.displayName).sorted().joined(separator: ", ")) and All")

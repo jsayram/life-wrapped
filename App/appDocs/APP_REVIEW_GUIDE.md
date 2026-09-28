@@ -1,7 +1,7 @@
 # Life Wrapped - App Review Guide
 
-**Version:** 1.1  
-**Date:** September 27, 2026  
+**Version:** 1.3  
+**Date:** September 28, 2026  
 **Developer:** Jose Ramirez-Villa  
 **Contact:** jsayram@Gmail.com
 
@@ -51,7 +51,15 @@ The app offers 4 summary engines, chosen in Settings, then AI & Summaries:
 - View all past recordings in the History tab (on iPad, the list and the recording sit side by side)
 - Search titles, notes and transcripts
 - On the Overview tab, see each recording's summary for today and yesterday, a summary of each month, and the Year Wrap
-- Year Wrap: a year in review built from the month summaries (Apple Intelligence or Cloud AI)
+- Year Wrap: a year in review built from the month summaries, with any summary engine (Key Sentences needs no model)
+
+### 5. New in 1.3
+
+- **Year Wrap without any model or purchase.** On the Overview tab, switch to Year and tap Generate, then choose **Key Sentences**. It builds the wrap at once from the month summaries (numbers, people, places and topics, without a written story). No download, no Apple Intelligence and no in-app purchase are needed. Offline AI, Apple Intelligence and Cloud AI are offered too when they are available on the device.
+- **Earlier versions.** When a summary is rewritten, the app keeps the old text. Open a recording, edit part of its transcript and tap Update on the summary, then choose Earlier versions from the menu on the summary to see and restore the previous text. (Regenerating with Key Sentences on an unchanged transcript gives the same text, so no version is added.) Months and the Year Wrap have the same sheet behind their clock button.
+- **Upgrade earlier summaries.** In Settings, then AI & Summaries, choosing a stronger engine that is ready shows an Earlier summaries section. It lists the recordings a weaker engine summarized, and nothing is rewritten until the user taps Upgrade. To see it without a purchase: record with Key Sentences, then switch to Apple Intelligence (on a supported device) or to Offline AI after downloading the model.
+- **Weaker engines ask first.** Engines rank Cloud AI, Apple Intelligence, Offline AI, Key Sentences. If the selected engine ranks below the one that wrote a summary, month or Year Wrap, Regenerate, Rebuild and Year Wrap ask before replacing it.
+- **Months finished while charging.** See Background Modes below.
 
 ---
 
@@ -63,6 +71,19 @@ The app offers 4 summary engines, chosen in Settings, then AI & Summaries:
 | **Speech Recognition** | On-device transcription | First transcription     |
 
 **Note:** All speech recognition is configured for on-device only. No audio is sent to Apple's servers.
+
+---
+
+## Background Modes
+
+The app declares two background modes in Info.plist. Neither sends data anywhere on its own.
+
+| Mode | Why |
+| --- | --- |
+| **Audio** (`audio`) | Recording keeps going when the screen locks |
+| **Background processing** (`processing`) | A `BGProcessingTask` with the identifier `com.jsayram.lifewrapped.finalize-months` |
+
+The processing task finishes the summaries of months that have ended, so the Year Wrap has finished months to read. The app schedules it when it goes to the background. It asks iOS to run it only while the device is on external power (`requiresExternalPower = true`), no sooner than 30 minutes later, and it doesn't require a network connection. It uses the summary engine the user chose, so with Key Sentences, Offline AI or Apple Intelligence it runs entirely on the device. It is the same work the app already does in the foreground when it opens. If the user chose Cloud AI, the month's text goes to their provider, as described in the privacy policy. iOS decides when the task runs, and it stops when iOS ends the task.
 
 ---
 
@@ -113,8 +134,9 @@ These features are optional and only work if the user chooses to enable them:
 5. **View Transcript** → Full text by part, with playback
 6. **AI Summary** → Automatic summary generation (using selected engine)
 7. **History Tab** → Browse all past recordings
-8. **Overview Tab** → Today's and yesterday's recording summaries, month summaries and the Year Wrap
-9. **Settings** → Choose the summary engine, see Statistics, export data
+8. **Overview Tab** → Today's and yesterday's recording summaries, month summaries and the Year Wrap (switch to Year, then Generate; Key Sentences works on any device)
+9. **Earlier versions** → From a recording's summary menu, or the clock button on a month or the Year Wrap
+10. **Settings** → Choose the summary engine, upgrade earlier summaries, see Statistics, export and import data
 
 ---
 
@@ -148,6 +170,8 @@ These features are optional and only work if the user chooses to enable them:
 5. Export data (Settings, then Data)
 6. Check the Overview tab and Settings, then Statistics
 7. Review Settings options. Under Purchases, Cloud AI opens the purchase sheet, which also has Restore purchases and Redeem code
+8. On the Overview tab, switch to Year and generate a Year Wrap with Key Sentences (no model or purchase needed)
+9. Edit part of a recording's transcript, tap Update on its summary, then open Earlier versions from the summary's menu and restore the previous one
 
 ---
 
@@ -159,6 +183,9 @@ These features are optional and only work if the user chooses to enable them:
 | "Processing" shows for a few seconds | Normal transcription time                  |
 | Offline AI download is large         | ~2.3 GB model file, optional feature       |
 | Some features grayed out             | Depend on iOS version or device capability |
+| Year Wrap with Key Sentences has no written story | By design: it uses no model, only the numbers, people, places and topics from the month summaries |
+| Earlier summaries section missing in Settings | It only shows when the selected engine is ready and some recordings were summarized by a weaker one |
+| A month summary changes while the app is closed | The background processing task finished that month while the device was charging |
 
 ---
 

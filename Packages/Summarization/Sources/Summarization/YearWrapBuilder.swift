@@ -90,6 +90,17 @@ public enum YearWrapBuilder {
                     title = result.title
                     summary = result.summary
                 }
+            } else if generator.tier == .local {
+                // The offline model is slow, so it gets one compact request for everything and,
+                // only if that answer can't be read, one more for the title and summary
+                if let result = try? await generateCompact(year: year, digests: digests, stats: stats, pools: pools, generator: generator, scope: scope) {
+                    picks = result.picks
+                    title = result.title
+                    summary = result.summary
+                } else if let result = try? await generateTitleSummary(year: year, digests: digests, stats: stats, candidates: candidates, generator: generator, scope: scope) {
+                    title = result.title
+                    summary = result.summary
+                }
             } else {
                 for section in Section.allCases {
                     guard let pool = pools[section], !pool.isEmpty else { continue }
@@ -323,6 +334,54 @@ public enum YearWrapBuilder {
         return ((json["year_title"] as? String)?.trimmedNonEmpty, (json["year_summary"] as? String)?.trimmedNonEmpty, picks)
     }
 
+    /// One short request for everything, for a small, slow model: fewer candidates per section,
+    /// fewer picks, and each month reduced to its headline, so the prompt and the answer both fit
+    /// the model's budgets. Sections it leaves empty are filled from the digests by the caller.
+    static func generateCompact(year: Int, digests: [MonthDigest], stats: YearWrapStats, pools: [Section: [Candidate]], generator: any TextGenerating, scope: ItemFilter = .all) async throws -> (title: String?, summary: String?, picks: [Section: [ClassifiedItem]]) {
+        let months = monthLines(digests, maxCharacters: 140)
+        let instructionTokens = 320
+        let perSectionBudget = max((generator.inputTokenBudget - estimatedTokens(months) - instructionTokens) / Section.allCases.count, 120)
+        var shown: [Section: [Candidate]] = [:]
+        var blocks: [String] = []
+        for section in Section.allCases {
+            let pool = capped(pools[section] ?? [], tokenBudget: perSectionBudget)
+            shown[section] = pool
+            guard !pool.isEmpty else { continue }
+            blocks.append("\(section.rawValue) (up to \(compactLimit(section)), \(section.instruction)):\n" + pool.map(\.line).joined(separator: "\n"))
+        }
+
+        let user = """
+        My \(year): \(stats.sessionCount) recordings on \(stats.activeDays) days.
+
+        Months:
+        \(months)
+
+        Candidates have an id in brackets. For each section pick the most significant ones, merge duplicates and list their ids,
+        and rewrite each as one short first-person sentence. Leave a section empty if nothing fits.
+
+        \(blocks.joined(separator: "\n\n"))
+
+        Also a title for my year (under 8 words) and a 3-sentence first-person summary.
+        Return only JSON: {"year_title":"","year_summary":"",\(Section.allCases.map { "\"\($0.rawValue)\":[{\"t\":\"\",\"ids\":[]}]" }.joined(separator: ","))}
+        """
+        let output = try await generator.generateText(system: systemInstruction(scope), user: user, maxTokens: generator.outputTokenBudget)
+        #if DEBUG
+        print("🎁 [YearWrapBuilder] compact answer: \(output.prefix(300))")
+        #endif
+        guard let json = ModelJSON.object(from: output) else { throw SummarizationError.decodingFailed("No JSON for Year Wrap") }
+
+        var picks: [Section: [ClassifiedItem]] = [:]
+        for section in Section.allCases where json[section.rawValue] != nil {
+            picks[section] = parsePicks(json[section.rawValue], candidates: shown[section] ?? [], limit: compactLimit(section))
+        }
+        return ((json["year_title"] as? String)?.trimmedNonEmpty, (json["year_summary"] as? String)?.trimmedNonEmpty, picks)
+    }
+
+    /// Fewer picks per section for the compact request, so the answer fits the output budget
+    static func compactLimit(_ section: Section) -> Int {
+        section == .biggestLosses ? 2 : 3
+    }
+
     /// Turn the model's picks into wrap items. A pick must name at least one candidate it was shown;
     /// it takes their recordings and category, so neither is guessed.
     static func parsePicks(_ value: Any?, candidates: [Candidate], limit: Int) -> [ClassifiedItem] {
@@ -375,7 +434,7 @@ public enum YearWrapBuilder {
         return title
     }
 
-    static func monthLines(_ digests: [MonthDigest]) -> String {
+    static func monthLines(_ digests: [MonthDigest], maxCharacters: Int? = nil) -> String {
         digests.map { digest in
             let month = digest.monthStart.formatted(.dateTime.month(.abbreviated))
             var text = [digest.headline, digest.narrative].compactMap { $0 }.joined(separator: " ")
@@ -385,6 +444,9 @@ public enum YearWrapBuilder {
                     let story = [section.headline, section.narrative].compactMap { $0 }.joined(separator: " ")
                     return story.isEmpty ? nil : "\(section.category.rawValue.capitalized): \(story)"
                 }.joined(separator: " ")
+            }
+            if let maxCharacters, text.count > maxCharacters {
+                text = String(text.prefix(maxCharacters)).trimmingCharacters(in: .whitespaces) + "…"
             }
             return "- \(month) (\(digest.stats.sessionCount) recordings): \(text)"
         }.joined(separator: "\n")
