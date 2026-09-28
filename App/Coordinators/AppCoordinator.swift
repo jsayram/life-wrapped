@@ -226,7 +226,6 @@ public final class AppCoordinator: ObservableObject {
         storeChanges = storeManager.objectWillChange.sink { [weak self] _ in
             MainActor.assumeIsolated { self?.objectWillChange.send() }
         }
-        AppCoordinator.current = self
     }
     
     private func setupAudioCaptureCallback() {
@@ -322,14 +321,29 @@ public final class AppCoordinator: ObservableObject {
         }
     }
     
-    /// Initialize the app coordinator and load initial state
+    /// Setup already under way, so a second caller waits for it instead of starting its own
+    private var initializationTask: Task<Void, Never>?
+
+    /// Initialize the app coordinator and load initial state. The window and the background
+    /// month task can both call this; only one setup runs.
     public func initialize() async {
-        print("🚀 [AppCoordinator] Starting initialization...")
+        if let initializationTask {
+            await initializationTask.value
+            return
+        }
         guard !isInitialized else {
             print("⚠️ [AppCoordinator] Already initialized, skipping")
             return
         }
-        
+        let task = Task { await performInitialization() }
+        initializationTask = task
+        await task.value
+        initializationTask = nil
+    }
+
+    private func performInitialization() async {
+        print("🚀 [AppCoordinator] Starting initialization...")
+
         // Initialize PermissionsCoordinator (before checking permissions)
         print("🔐 [AppCoordinator] Initializing PermissionsCoordinator...")
         self.permissionsCoordinator = PermissionsCoordinator()
@@ -651,6 +665,8 @@ public final class AppCoordinator: ObservableObject {
             for summary in summaries {
                 try await dbManager.deleteSummary(id: summary.id)
             }
+            // Earlier versions of summaries that were already gone, such as a deleted recording's
+            try await dbManager.deleteAllSummaryVersions()
             
             // Delete all insight rollups
             try await dbManager.deleteAllInsightRollups()
@@ -1414,15 +1430,20 @@ public final class AppCoordinator: ObservableObject {
     /// Identifier of the processing task that finishes ended months' digests while the phone charges
     public static let finalizeMonthsTaskIdentifier = "com.jsayram.lifewrapped.finalize-months"
 
-    /// The running coordinator, for the background task handler registered before it exists
-    nonisolated(unsafe) public private(set) static weak var current: AppCoordinator?
+    /// The app's one coordinator. It lives here rather than only in SwiftUI state because iOS
+    /// can launch the app in the background just for the month task, with no window, so the
+    /// view that normally sets the coordinator up never appears.
+    public static let shared = AppCoordinator()
 
     /// Register the task. Must run before the app finishes launching.
     public static func registerBackgroundTasks() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: finalizeMonthsTaskIdentifier, using: nil) { task in
             guard let task = task as? BGProcessingTask else { return }
             let work = Task { @MainActor in
-                let finished = await AppCoordinator.current?.finalizeClosedMonthsInBackground() ?? false
+                let coordinator = AppCoordinator.shared
+                // Does nothing if the app was already running; sets everything up after a background launch
+                await coordinator.initialize()
+                let finished = await coordinator.finalizeClosedMonthsInBackground()
                 AppCoordinator.scheduleMonthFinalization()
                 task.setTaskCompleted(success: finished)
             }
@@ -1448,6 +1469,13 @@ public final class AppCoordinator: ObservableObject {
     /// Returns true when there was nothing left or all of it got done.
     public func finalizeClosedMonthsInBackground() async -> Bool {
         guard isInitialized, let summaryCoordinator, !isGeneratingYearWrap, !recordingState.isRecording else { return false }
+        // Setup starts its own upkeep run, which may be building the same month; wait for it
+        while isFinalizingMonthDigest {
+            try? await Task.sleep(for: .milliseconds(500))
+            if Task.isCancelled { return false }
+        }
+        isFinalizingMonthDigest = true
+        defer { isFinalizingMonthDigest = false }
         for _ in 0..<24 {
             if Task.isCancelled { return false }
             let worked = await summaryCoordinator.finalizeNextClosedMonthDigest()

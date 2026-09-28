@@ -92,7 +92,26 @@ Cloud AI sends text from your journal, never audio, to the provider you choose. 
 
 ## What's New in this version [4000]
 
-Version 1.3:
+Version 1.3, as entered in App Store Connect on September 28, 2026. 1.2 never shipped (the store still has 1.0), so this text covers the 1.2 changes as well:
+
+```
+• A calmer design with serif titles and clear cards, in light and dark mode, and iPad layouts that use the whole screen.
+• Work and Personal are separate journals, each with its own summaries and Year Wrap.
+• Every recording gets a short title, and editing notes and transcripts is simpler.
+• Month summaries in Overview, and a reworked Year Wrap.
+• Every summary option can now make your Year Wrap. Key Sentences builds one instantly, Offline AI writes one on your device, and Apple Intelligence and Cloud AI write the fullest story.
+• Summary options have clearer names: Key Sentences, Offline AI, Apple Intelligence and Cloud AI. Offline AI now runs Qwen3, and Cloud AI works with the OpenAI or Anthropic model you choose.
+• Nothing you already have gets worse. A summary, month or Year Wrap written by a better option is never rewritten by a plainer one without asking you first.
+• Earlier versions: when a summary, month or Year Wrap is rewritten, the old text is kept so you can bring it back.
+• Switch to a stronger summary option and upgrade your earlier recordings in one go.
+• Months that have ended are finished in the background while your iPhone or iPad charges.
+• Key Sentences always writes a summary and a title, even for a few-second recording.
+• A warning when the microphone can't hear you, and a message when playback fails.
+• Backups include each summary's engine and its earlier versions.
+• Fixes for streaks, purchases, restoring and redeeming codes.
+```
+
+Version 1.3 on its own, for TestFlight or if 1.2 had shipped:
 
 ```
 • Every summary option can now make your Year Wrap. Key Sentences builds one instantly from your months, Offline AI writes one on your device, and Apple Intelligence and Cloud AI write the fullest story.
