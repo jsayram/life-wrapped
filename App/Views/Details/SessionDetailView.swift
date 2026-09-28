@@ -1373,18 +1373,23 @@ struct SessionDetailView: View {
                     let wasPlaying = coordinator.audioPlayback.isPlaying
                     
                     Task {
-                        try await coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
-                            print("✅ [SessionDetailView] Session playback completed after seek")
-                        }
-                        
-                        // Seek within this chunk immediately for smooth scrubbing
-                        // Minimal delay to ensure player is initialized
-                        try? await Task.sleep(for: .milliseconds(10))
-                        coordinator.audioPlayback.seek(to: remainingTime)
-                        
-                        // If wasn't playing before, pause immediately after seeking
-                        if !wasPlaying {
-                            coordinator.audioPlayback.pause()
+                        do {
+                            try await coordinator.audioPlayback.playSequence(urls: Array(chunkURLs.dropFirst(index))) {
+                                print("✅ [SessionDetailView] Session playback completed after seek")
+                            }
+
+                            // Seek within this chunk immediately for smooth scrubbing
+                            // Minimal delay to ensure player is initialized
+                            try? await Task.sleep(for: .milliseconds(10))
+                            coordinator.audioPlayback.seek(to: remainingTime)
+
+                            // If wasn't playing before, pause immediately after seeking
+                            if !wasPlaying {
+                                coordinator.audioPlayback.pause()
+                            }
+                        } catch {
+                            print("❌ [SessionDetailView] Failed to play after seek: \(error)")
+                            coordinator.showError("Couldn't play the recording")
                         }
                     }
                 }
@@ -1510,17 +1515,27 @@ struct SessionDetailView: View {
             // If user has scrubbed before playing, seek to that position
             if scrubbedTime > 0 {
                 Task {
-                    try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                        print("✅ [SessionDetailView] Session playback completed")
+                    do {
+                        try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                            print("✅ [SessionDetailView] Session playback completed")
+                        }
+                        // Seek to scrubbed position after playback starts
+                        try? await Task.sleep(for: .milliseconds(50))
+                        seekToTotalTime(scrubbedTime)
+                    } catch {
+                        print("❌ [SessionDetailView] Failed to start playback: \(error)")
+                        coordinator.showError("Couldn't play the recording")
                     }
-                    // Seek to scrubbed position after playback starts
-                    try? await Task.sleep(for: .milliseconds(50))
-                    seekToTotalTime(scrubbedTime)
                 }
             } else {
                 Task {
-                    try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
-                        print("✅ [SessionDetailView] Session playback completed")
+                    do {
+                        try await coordinator.audioPlayback.playSequence(urls: chunkURLs) {
+                            print("✅ [SessionDetailView] Session playback completed")
+                        }
+                    } catch {
+                        print("❌ [SessionDetailView] Failed to start playback: \(error)")
+                        coordinator.showError("Couldn't play the recording")
                     }
                 }
             }
