@@ -22,9 +22,24 @@ struct SessionTitlerTests {
 
     @Test("Without a model, the title comes from the summary's first words")
     func fallback() {
-        #expect(SessionTitler.fallback(summary: "I created a test harness for the Piccolo Xpress. Then lunch.") == "Created a test harness for the")
+        #expect(SessionTitler.fallback(summary: "I created a test harness for the Piccolo Xpress. Then lunch.") == "Created a test harness")
         #expect(SessionTitler.fallback(summary: "Long day.", keyPoints: ["Fix the login bug"]) == "Fix the login bug")
         #expect(SessionTitler.fallback(summary: "") == nil)
+    }
+
+    @Test("Single-word topics from Key Sentences are not used as titles")
+    func fallbackSkipsOneWordKeyPoints() {
+        #expect(SessionTitler.fallback(summary: "This is my test on recording a new personal recording.", keyPoints: ["recording", "test"]) == "This is my test on recording")
+        #expect(SessionTitler.fallback(summary: "Testing one two three", keyPoints: ["testing"]) == "Testing one two three")
+    }
+
+    @Test("Transcript opening stands in for an empty summary")
+    func transcriptOpening() {
+        #expect(SummarizationCoordinator.transcriptOpening("• Dec 22, 2025 12:00 AM: Hello there. • Dec 22, 2025 12:01 AM: Second bit.") == "Hello there. Second bit.")
+        let long = (1...80).map { "w\($0)" }.joined(separator: " ")
+        let opening = SummarizationCoordinator.transcriptOpening(long)
+        #expect(opening.hasSuffix("w60…"))
+        #expect(SummarizationCoordinator.transcriptOpening("   ") == "")
     }
 
     @Test("Batch titles map back to their notes, with unusable ones left for the fallback")

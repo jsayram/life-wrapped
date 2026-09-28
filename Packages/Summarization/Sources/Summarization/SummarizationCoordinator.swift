@@ -390,13 +390,22 @@ public actor SummarizationCoordinator {
                 #endif
                 
                 // Generate intelligence using this engine
-                let intelligence = try await engineToTry.summarizeSession(
+                var intelligence = try await engineToTry.summarizeSession(
                     sessionId: sessionId,
                     transcriptText: transcriptText,
                     duration: duration,
                     languageCodes: languageCodes
                 )
-                
+
+                // An engine that answers with nothing must not leave the recording with an
+                // empty summary. The opening of the transcript is a better record than none.
+                if intelligence.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    #if DEBUG
+                    print("⚠️ [SummarizationCoordinator] \(tier.displayName) returned an empty summary, using the transcript opening")
+                    #endif
+                    intelligence = intelligence.replacingSummary(Self.transcriptOpening(transcriptText))
+                }
+
                 // Success! Convert to Summary and return
                 #if DEBUG
                 print("✅ [SummarizationCoordinator] Successfully generated summary with \(tier.displayName)")
@@ -558,5 +567,40 @@ extension SummarizationCoordinator {
         guard engine.tier == .external else { return }
         self.externalEngine = engine
         await selectBestAvailableEngine()
+    }
+}
+
+// MARK: - Empty summary guard
+
+extension SummarizationCoordinator {
+    /// The first words of a transcript, with any "• Dec 22, 2025 12:00 AM:" markers removed.
+    /// Used as the summary when an engine returns nothing, so a recording is never left blank.
+    nonisolated static func transcriptOpening(_ transcript: String, maxWords: Int = 60) -> String {
+        let timestampPattern = #"[•●]?\s*[A-Za-z]+\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+[AP]M:\s*"#
+        let cleaned = transcript
+            .replacingOccurrences(of: timestampPattern, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"^[•●\s]+"#, with: "", options: .regularExpression)
+        let words = cleaned.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        let opening = words.prefix(maxWords).joined(separator: " ")
+        return words.count > maxWords ? opening + "…" : opening
+    }
+}
+
+extension SessionIntelligence {
+    /// The same result with a different summary text
+    func replacingSummary(_ summary: String) -> SessionIntelligence {
+        SessionIntelligence(
+            sessionId: sessionId,
+            summary: summary,
+            topics: topics,
+            entities: entities,
+            sentiment: sentiment,
+            duration: duration,
+            wordCount: wordCount,
+            languageCodes: languageCodes,
+            keyMoments: keyMoments,
+            category: category,
+            title: title
+        )
     }
 }
