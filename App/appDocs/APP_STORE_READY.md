@@ -4,7 +4,7 @@ Paste-ready copy for App Store Connect and TestFlight, checked against the app (
 
 The live listing needs these updates:
 
-- The in-app purchase is still named **Smartest AI**. Rename it to **Cloud AI** (see below). The product ID stays `com.jsayram.lifewrapped.smartestai`.
+- The in-app purchase was renamed from **Smartest AI** to **Cloud AI** on September 28, 2026 (reference name, display name, description and review notes). The new name needs App Review, so add the purchase to the same submission as 1.3. The product ID stays `com.jsayram.lifewrapped.smartestai`.
 - The description mentions tracking sentiment. The app no longer does that.
 - The screenshots show the old purple design. Replace them with the 10-per-device sets listed under Screenshots below.
 
