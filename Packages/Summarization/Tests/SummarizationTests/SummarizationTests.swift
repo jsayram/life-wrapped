@@ -240,7 +240,7 @@ struct AppleEngineTierTests {
     @Test("Apple tier has correct display name")
     func testAppleTierDisplayName() {
         let tier = EngineTier.apple
-        #expect(tier.displayName == "Smarter")
+        #expect(tier.displayName == "Apple Intelligence")
     }
     
     @Test("Apple tier has correct subtitle")
@@ -286,7 +286,7 @@ struct AppleEngineLegacyTests {
     @available(iOS 18.1, *)
     func testLegacyEngineTier() async throws {
         // Test tier without needing actual storage
-        #expect(EngineTier.apple.displayName == "Smarter")
+        #expect(EngineTier.apple.displayName == "Apple Intelligence")
     }
     
     @Test("Legacy engine error message contains correct iOS version")

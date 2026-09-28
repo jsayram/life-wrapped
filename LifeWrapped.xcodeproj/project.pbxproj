@@ -92,7 +92,6 @@
 		DFAE398E797D760D03FC06F0 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */; };
 		E1B8688CDB9C6DC3BF9AB4EF /* WordAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 142DCAA8833B23E032E4EF7B /* WordAnalyzer.swift */; };
 		E2DC5B37204ABA9FB45DDD30 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 814C43CCC220172288C9F2CD /* AppTheme.swift */; };
-		E36A34C7F828D03C6E3D471E /* ContentView.swift.backup in Resources */ = {isa = PBXBuildFile; fileRef = 5C29DDCC0644E706A9376553 /* ContentView.swift.backup */; };
 		E5F4BFB6621EA617BAFB066C /* SharedModels in Frameworks */ = {isa = PBXBuildFile; productRef = 5164369DCEB7F287DDFA1A0C /* SharedModels */; };
 		E8392283F86CBDBD5FA1E918 /* WidgetCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07D371F1919F8F1A1638BF63 /* WidgetCoordinator.swift */; };
 		F9B57872B294FC66AE65DF8E /* LanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 759CD614B4EE0B24BFB9228D /* LanguageSettingsView.swift */; };
@@ -161,7 +160,6 @@
 		539D0BEC1A7BF60C7E20A555 /* ExcludedWordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExcludedWordsView.swift; sourceTree = "<group>"; };
 		550E33773C2017A99936C6DF /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		5B2BD93126F9D9A4E30A6483 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		5C29DDCC0644E706A9376553 /* ContentView.swift.backup */ = {isa = PBXFileReference; lastKnownFileType = text; path = ContentView.swift.backup; sourceTree = "<group>"; };
 		5EC0935BF876BE76FB08416F /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		613E84EFCFA456951B21A317 /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		65DDEA15CAE2EF3F4908AAE7 /* DataSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSettingsView.swift; sourceTree = "<group>"; };
@@ -279,7 +277,6 @@
 			isa = PBXGroup;
 			children = (
 				47408049BA4C55795D819D9D /* ContentView.swift */,
-				5C29DDCC0644E706A9376553 /* ContentView.swift.backup */,
 				35B5374C073975AB930C84D7 /* LifeWrappedApp.swift */,
 				94BF6C178378485128962780 /* Components */,
 				E7A56CB8935F249318D19F16 /* Constants */,
@@ -675,7 +672,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E36A34C7F828D03C6E3D471E /* ContentView.swift.backup in Resources */,
 				46C839BD2F03313D005BE6B3 /* Assets.xcassets in Resources */,
 				278ECF41590AC7E647B7A9F2 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -790,7 +786,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/Entitlements.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -798,7 +794,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -876,7 +872,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetExtension/Entitlements.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -885,7 +881,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -902,7 +898,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/Resources/Entitlements.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = App/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -910,7 +906,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -981,7 +977,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WidgetExtension/Entitlements.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4UTX6M438C;
 				INFOPLIST_FILE = WidgetExtension/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -990,7 +986,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jsayram.lifewrapped.widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

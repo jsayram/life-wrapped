@@ -215,7 +215,7 @@ struct WidgetDataManagerTests {
     @Test("Shared instance is accessible")
     func sharedInstanceAccessible() {
         let shared = WidgetDataManager.shared
-        #expect(shared != nil)
+        #expect(shared === WidgetDataManager.shared)
     }
     
     @Test("App group identifier is correct")
