@@ -2,7 +2,7 @@
 
 A private audio journal for iPhone and iPad. Record your day, get it transcribed on your device, read a summary of every recording and every month, and look back with a Year Wrap.
 
-[Download on the App Store](https://apps.apple.com/us/app/life-wrapped/id6757250245) · [Website](https://jsayram.github.io/life-wrapped/) · [Privacy policy](https://jsayram.github.io/life-wrapped/privacy) · [Support](https://jsayram.github.io/life-wrapped/support) · [Terms of service](https://jsayram.github.io/life-wrapped/terms)
+[Download on the App Store](https://apps.apple.com/us/app/life-wrapped/id6757250245) · [Website](https://joseramirez.io/life-wrapped/) · [Privacy policy](https://joseramirez.io/life-wrapped/privacy) · [Support](https://joseramirez.io/life-wrapped/support) · [Terms of service](https://joseramirez.io/life-wrapped/terms)
 
 | | |
 | --- | --- |
@@ -102,7 +102,7 @@ On iPad, screens keep their content in a centered, readable column instead of st
 - **No analytics, crash reporting, advertising or tracking.** No account.
 - **Storage**: SQLite database and audio files live in the App Group container `group.com.jsayram.lifewrapped`. The database directory uses `FileProtectionType.completeUntilFirstUserAuthentication`. The widget only receives a few numbers: the streak, and today's recording count, words, minutes and last recording time.
 
-The full policy is at [jsayram.github.io/life-wrapped/privacy](https://jsayram.github.io/life-wrapped/privacy).
+The full policy is at [joseramirez.io/life-wrapped/privacy](https://joseramirez.io/life-wrapped/privacy).
 
 ---
 
@@ -233,7 +233,7 @@ More detail is in `App/appDocs/XCODE_CLOUD_BUILD.md` and `App/appDocs/WORKFLOW.m
 
 | Document | Contents |
 | --- | --- |
-| [`docs/`](docs) | Public website, privacy policy, support and terms (served at [jsayram.github.io/life-wrapped](https://jsayram.github.io/life-wrapped/)) |
+| [`docs/`](docs) | Public website, privacy policy, support and terms (served at [joseramirez.io/life-wrapped](https://joseramirez.io/life-wrapped/)) |
 | [`App/appDocs/`](App/appDocs) | Internal notes on the AI architecture, local AI, App Store submission, privacy labels, in-app purchases, StoreKit testing, widgets and Xcode Cloud |
 
 ---
@@ -248,4 +248,4 @@ Questions, bugs and feature requests: [open an issue](https://github.com/jsayram
 
 The source code in this repository is released under the [MIT License](LICENSE). Copyright (c) 2025-2026 Jose Ramirez-Villa.
 
-The MIT License covers the code. Use of the Life Wrapped app from the App Store is governed by the [terms of service](https://jsayram.github.io/life-wrapped/terms). The Life Wrapped name and app icon are not licensed for use as your own branding.
+The MIT License covers the code. Use of the Life Wrapped app from the App Store is governed by the [terms of service](https://joseramirez.io/life-wrapped/terms). The Life Wrapped name and app icon are not licensed for use as your own branding.
